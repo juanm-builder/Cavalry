@@ -1,0 +1,51 @@
+appId: com.local.cavalry.windows
+productName: Cavalry for Windows
+protocols:
+  - name: Cavalry URL
+    schemes:
+      - cavalry
+
+directories:
+  output: out/release/windows
+
+files:
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
+  - package.json
+
+extraResources:
+  - from: ../../LICENSE
+    to: licenses/Cavalry-LICENSE.txt
+  - from: ../../THIRD_PARTY_NOTICES.md
+    to: licenses/THIRD_PARTY_NOTICES.md
+  - from: packaging/RUNTIME-DEPENDENCY-LICENSES.txt
+    to: licenses/RUNTIME-DEPENDENCY-LICENSES.txt
+  - from: ../../node_modules/electron/dist/LICENSE
+    to: licenses/Electron-LICENSE.txt
+  - from: ../../node_modules/electron/dist/LICENSES.chromium.html
+    to: licenses/LICENSES.chromium.html
+
+electronUpdaterCompatibility: '>= 2.16'
+forceCodeSigning: true
+
+win:
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+  icon: packaging/cavalry-icon.png
+  requestedExecutionLevel: asInvoker
+  verifyUpdateCodeSignature: true
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: true
+  perMachine: false
+  differentialPackage: true
+  deleteAppDataOnUninstall: false
+
+publish:
+  provider: generic
+  url: https://github.com/${env.GITHUB_REPOSITORY}/releases/latest/download
+  channel: latest

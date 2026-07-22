@@ -1,0 +1,15 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/transaction-batch",
+  "idempotency_key": "fixture-missing-1",
+  "body": {
+    "date_default": "2026-06-27",
+    "transactions": [
+      {
+        "description": "Cash parking",
+        "amount": 80,
+        "currency": "PHP",
+        "direction": "expense"
+      }
+    ]
+  }
+}

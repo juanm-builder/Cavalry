@@ -1,0 +1,54 @@
+/* The shell should grow with the window. Feature grids already provide their own
+   sensible minimums, so a global max-width only creates unused desktop space. */
+:root {
+  --layout-gutter-x: clamp(16px, 2.4vw, 48px);
+  --layout-gutter-y: clamp(18px, 2vw, 32px);
+}
+
+.app-main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: calc(100dvh - var(--topbar-height));
+  padding: var(--layout-gutter-y) var(--layout-gutter-x) clamp(28px, 3vw, 52px);
+}
+
+.app-main > [data-react-route],
+.app-main > section:not(.app-notice) {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+}
+
+.advisor-chat-shell {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.app-main-advisor {
+  padding: var(--layout-gutter-y) var(--layout-gutter-x);
+}
+
+@media (min-width: 981px) {
+  .app-main:not(.app-main-advisor) > [data-react-route] {
+    min-height: calc(100dvh - var(--topbar-height) - (var(--layout-gutter-y) * 2));
+  }
+}
+
+html[data-density='compact'] .app-main {
+  padding: clamp(14px, 1.6vw, 24px) var(--layout-gutter-x) clamp(24px, 2.5vw, 40px);
+}
+
+@media (max-width: 980px) {
+  .app-main-advisor {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-main,
+  html[data-density='compact'] .app-main {
+    padding: 17px 14px 28px;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/transaction-batch",
+  "idempotency_key": "fixture-credit-card-liability-from-purchase",
+  "expect": "draft_group",
+  "body": {
+    "date_default": "2026-06-27",
+    "transactions": [
+      {
+        "description": "OpenAI API credits",
+        "amount": 15,
+        "currency": "USD",
+        "direction": "expense",
+        "payment_account_hint": "credit card",
+        "category_hint": "Software",
+        "source_text": "create a credit card charge for 15 USD OpenAI API credits"
+      }
+    ]
+  }
+}

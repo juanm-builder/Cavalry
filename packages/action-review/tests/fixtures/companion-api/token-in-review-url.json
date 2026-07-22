@@ -1,0 +1,4 @@
+{
+  "review_url": "cavalry://draft-groups/dg_123?token=secret",
+  "expect": "sensitive_review_url"
+}

@@ -1,0 +1,14 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/category-changes",
+  "idempotency_key": "fixture-category-cleanup",
+  "body": {
+    "changes": [
+      {
+        "transaction_id": "txn_food",
+        "suggested_category_hint": "Food",
+        "reason": "Merchant appears to be a food purchase.",
+        "confidence": "medium"
+      }
+    ]
+  }
+}

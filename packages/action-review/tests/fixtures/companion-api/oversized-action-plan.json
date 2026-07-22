@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "idempotency_key": "fixture-oversized",
+  "expect": "invalid_action_plan",
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "actions": []
+    }
+  }
+}

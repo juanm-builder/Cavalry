@@ -1,0 +1,28 @@
+{
+  "method": "POST",
+  "path": "/v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "headers": {
+    "authorization": "Bearer dev-token",
+    "content-type": "application/json",
+    "idempotency-key": "example-action-plan-1"
+  },
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "date_default": "2026-06-27",
+      "currency_default": "PHP",
+      "actions": [
+        {
+          "type": "create_transaction",
+          "description": "OpenAI API credits",
+          "amount": 15,
+          "currency": "USD",
+          "direction": "expense",
+          "payment_account_hint": "Credit Card",
+          "category_hint": "Software"
+        }
+      ]
+    }
+  }
+}

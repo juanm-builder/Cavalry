@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "idempotency_key": "fixture-apply-drafts",
+  "expect": "unsupported",
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "actions": [{ "type": "apply_draft", "draft_group_id": "dg_123" }]
+    }
+  }
+}

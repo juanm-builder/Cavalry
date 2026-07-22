@@ -1,0 +1,40 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/recurring-items",
+  "idempotency_key": "fixture-subscription-candidates",
+  "body": {
+    "items": [
+      {
+        "name": "ChatGPT Pro",
+        "amount": 6490,
+        "currency": "PHP",
+        "cadence": "monthly",
+        "category_hint": "Subscriptions",
+        "confidence": "high"
+      },
+      {
+        "name": "Vercel",
+        "amount": 20,
+        "currency": "USD",
+        "cadence": "monthly",
+        "category_hint": "Subscriptions",
+        "confidence": "high"
+      },
+      {
+        "name": "Globe",
+        "amount": 1799,
+        "currency": "PHP",
+        "cadence": "monthly",
+        "category_hint": "Subscriptions",
+        "confidence": "medium"
+      },
+      {
+        "name": "Prepaid Subscription Load",
+        "amount": 500,
+        "currency": "PHP",
+        "cadence": "unknown",
+        "category_hint": "Transport",
+        "confidence": "low"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+:root {
+  --bg: #080b0a;
+  --bg-elevated: #0d1110;
+  --panel: #111514;
+  --panel-soft: #171c1a;
+  --panel-muted: #1b201e;
+  --line: #29302d;
+  --line-strong: #3a4641;
+  --line-soft: #1f2623;
+  --text: #f3f0e8;
+  --text-soft: #ccc8bc;
+  --text-dim: #928f86;
+  --accent: #f3f0e8;
+  --accent-soft: #202723;
+  --good: #8fc9a8;
+  --warn: #d9b66f;
+  --bad: #e58f82;
+  --info: #a5b9ad;
+}

@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "checkJs": false
+  },
+  "include": [
+    "apps/mac/src/**/*",
+    "apps/mac/scripts/**/*",
+    "packages/*/src/**/*",
+    "packages/*/scripts/**/*",
+    "tools/repo/**/*"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/out/**",
+    "**/test-artifacts/**",
+    "apps/mac/src/renderer/legacy/**"
+  ]
+}

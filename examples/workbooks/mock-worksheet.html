@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cavalry Workbook Export</title>
+    <style>
+      body {
+        font-family: 'Courier New', monospace;
+        background: #0b0b0b;
+        color: #f3f3f3;
+        padding: 32px;
+        line-height: 1.6;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+      pre {
+        background: #151515;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+      p {
+        color: #b9b9b9;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Cavalry Workbook Export</h1>
+      <p>Import this file back into Cavalry from Settings.</p>
+      <pre>
+Workbook: Mock Operations Worksheet
+Year: 2026
+Accounts: 12
+Transactions: 10</pre>
+      <script id="ledger-grove-export" type="application/json">
+        {
+          "id": "workbook_mock_operations_2026",
+          "version": 2,
+          "name": "Mock Operations Worksheet",
+          "year": 2026,
+          "currency": "PHP",
+          "categories": [
+            {
+              "id": "cat_salary",
+              "name": "Salary",
+              "type": "income",
+              "color": "#53d18f",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_income",
+              "linkedAccountId": "acct_salary_income",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_cloud",
+              "name": "Cloud Infrastructure",
+              "type": "expense",
+              "color": "#84b7ff",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_bills",
+              "linkedAccountId": "acct_cloud_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_design",
+              "name": "Design Support",
+              "type": "expense",
+              "color": "#d7aefb",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_lifestyle",
+              "linkedAccountId": "acct_design_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_data",
+              "name": "Data Services",
+              "type": "expense",
+              "color": "#9ad0f5",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_bills",
+              "linkedAccountId": "acct_data_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_office",
+              "name": "Office Operations",
+              "type": "expense",
+              "color": "#f2b359",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_other",
+              "linkedAccountId": "acct_office_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_facilities",
+              "name": "Facilities",
+              "type": "expense",
+              "color": "#ef7f7f",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_bills",
+              "linkedAccountId": "acct_facilities_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_marketing",
+              "name": "Marketing",
+              "type": "expense",
+              "color": "#53d18f",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_lifestyle",
+              "linkedAccountId": "acct_marketing_expense",
+              "icon": "",
+              "description": ""
+            },
+            {
+              "id": "cat_professional_fees",
+              "name": "Professional Fees",
+              "type": "expense",
+              "color": "#ef7f7f",
+              "currency": "PHP",
+              "isActive": true,
+              "plannerBucketId": "planner_bucket_other",
+              "linkedAccountId": "acct_professional_expense",
+              "icon": "",
+              "description": ""
+            }
+          ],
+          "plannerBuckets": [
+            {
+              "id": "planner_bucket_income",
+              "name": "Income",
+              "sortOrder": 0,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_bills",
+              "name": "Bills",
+              "sortOrder": 1,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_food",
+              "name": "Food",
+              "sortOrder": 2,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_lifestyle",
+              "name": "Lifestyle",
+              "sortOrder": 3,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_debt",
+              "name": "Debt",
+              "sortOrder": 4,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_savings",
+              "name": "Savings",
+              "sortOrder": 5,
+              "isActive": true
+            },
+            {
+              "id": "planner_bucket_other",
+              "name": "Other",
+              "sortOrder": 6,
+              "isActive": true
+            }
+          ],
+          "assets": [],
+          "settings": {
+            "usdToBaseRate": 56.2,
+            "hiddenMonthlyMetrics": {},
+            "dashboardLayout": [
+              {
+                "id": "command",
+                "visible": true
+              },
+              {
+                "id": "flows",
+                "visible": true
+              },
+              {
+                "id": "money_shape",
+                "visible": true
+              },
+              {
+                "id": "monthly_rhythm",
+                "visible": true
+              },
+              {
+                "id": "recent_activity",
+                "visible": true
+              }
+            ],
+            "activeAdvisorThreadId": "",
+            "subscriptionReviewDecisions": {},
+            "fileAutosave": {
+              "enabled": false,
+              "fileName": "",
+              "lastSavedAt": "",
+              "lastError": ""
+            },
+            "lastSavedAt": ""
+          },
+          "counterparties": [
+            {
+              "id": "counterparty_employer",
+              "name": "Mock Parent Company",
+              "kind": "employer",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_northstar",
+              "name": "Northstar Hosting",
+              "kind": "biller",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_ledgerworks",
+              "name": "LedgerWorks Studio",
+              "kind": "merchant",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_brightline",
+              "name": "Brightline Analytics",
+              "kind": "merchant",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_metro",
+              "name": "Metro Office Supply",
+              "kind": "merchant",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_acme",
+              "name": "Acme Contractors",
+              "kind": "biller",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_signal",
+              "name": "Signal Peak Media",
+              "kind": "merchant",
+              "note": "",
+              "isActive": true
+            },
+            {
+              "id": "counterparty_clearpath",
+              "name": "ClearPath Legal",
+              "kind": "biller",
+              "note": "",
+              "isActive": true
+            }
+          ],
+          "sheets": [
+            {
+              "id": "sheet_january",
+              "name": "January",
+              "monthIndex": 0,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_february",
+              "name": "February",
+              "monthIndex": 1,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_march",
+              "name": "March",
+              "monthIndex": 2,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_april",
+              "name": "April",
+              "monthIndex": 3,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_may",
+              "name": "May",
+              "monthIndex": 4,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_june",
+              "name": "June",
+              "monthIndex": 5,
+              "budgets": [
+                {
+                  "categoryId": "cat_cloud",
+                  "planned": 18000
+                },
+                {
+                  "categoryId": "cat_design",
+                  "planned": 7500
+                },
+                {
+                  "categoryId": "cat_data",
+                  "planned": 12000
+                },
+                {
+                  "categoryId": "cat_office",
+                  "planned": 2400
+                },
+                {
+                  "categoryId": "cat_facilities",
+                  "planned": 22000
+                },
+                {
+                  "categoryId": "cat_marketing",
+                  "planned": 14000
+                },
+                {
+                  "categoryId": "cat_professional_fees",
+                  "planned": 8600
+                }
+              ],
+              "budgetLineItems": [
+                {
+                  "id": "line_cloud_hosting",
+                  "categoryId": "cat_cloud",
+                  "name": "Northstar hosting plan",
+                  "planned": 18000,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-02",
+                  "note": "",
+                  "kind": "bill",
+                  "frequency": "Monthly",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_northstar_hosting",
+                  "autoRenew": false,
+                  "isRecurringBill": true,
+                  "isActive": true
+                },
+                {
+                  "id": "line_design_support",
+                  "categoryId": "cat_design",
+                  "name": "Design support sprint",
+                  "planned": 7500,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-04",
+                  "note": "",
+                  "kind": "vendor",
+                  "frequency": "One-time",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_design_support",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                },
+                {
+                  "id": "line_data_services",
+                  "categoryId": "cat_data",
+                  "name": "Analytics data services",
+                  "planned": 12000,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-09",
+                  "note": "",
+                  "kind": "vendor",
+                  "frequency": "Monthly",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_data_services",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                },
+                {
+                  "id": "line_office_supply",
+                  "categoryId": "cat_office",
+                  "name": "Office supply replenishment",
+                  "planned": 2400,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-12",
+                  "note": "",
+                  "kind": "vendor",
+                  "frequency": "Monthly",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_office_supply",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                },
+                {
+                  "id": "line_facilities",
+                  "categoryId": "cat_facilities",
+                  "name": "Facilities contractor",
+                  "planned": 22000,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-15",
+                  "note": "",
+                  "kind": "bill",
+                  "frequency": "Monthly",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_facilities",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                },
+                {
+                  "id": "line_marketing",
+                  "categoryId": "cat_marketing",
+                  "name": "Campaign production",
+                  "planned": 14000,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-18",
+                  "note": "",
+                  "kind": "vendor",
+                  "frequency": "One-time",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_marketing",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                },
+                {
+                  "id": "line_professional_fees",
+                  "categoryId": "cat_professional_fees",
+                  "name": "Legal review",
+                  "planned": 8600,
+                  "currency": "PHP",
+                  "dueDate": "2026-06-21",
+                  "note": "",
+                  "kind": "bill",
+                  "frequency": "One-time",
+                  "paymentMethod": "",
+                  "accountId": "acct_operating_cash",
+                  "recurringItemId": "recurring_sheet_june_line_professional_fees",
+                  "autoRenew": false,
+                  "isRecurringBill": false,
+                  "isActive": true
+                }
+              ],
+              "entries": [],
+              "notes": "Mock June operating plan with seven sample vendor rows."
+            },
+            {
+              "id": "sheet_july",
+              "name": "July",
+              "monthIndex": 6,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_august",
+              "name": "August",
+              "monthIndex": 7,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_september",
+              "name": "September",
+              "monthIndex": 8,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_october",
+              "name": "October",
+              "monthIndex": 9,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_november",
+              "name": "November",
+              "monthIndex": 10,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            },
+            {
+              "id": "sheet_december",
+              "name": "December",
+              "monthIndex": 11,
+              "budgets": [],
+              "budgetLineItems": [],
+              "entries": [],
+              "notes": ""
+            }
+          ],
+          "recurringItems": [
+            {
+              "id": "recurring_northstar_hosting",
+              "kind": "bill",
+              "name": "Northstar Hosting",
+              "categoryId": "cat_cloud",
+              "counterpartyId": "counterparty_northstar",
+              "accountId": "acct_operating_cash",
+              "amount": 17420,
+              "currency": "PHP",
+              "frequency": "Monthly",
+              "anchorDate": "2026-06-02",
+              "autoRenew": true,
+              "isActive": true,
+              "note": "Mock monthly hosting bill.",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_design_support",
+              "kind": "bill",
+              "name": "Design support sprint",
+              "categoryId": "cat_design",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 7500,
+              "currency": "PHP",
+              "frequency": "One-time",
+              "anchorDate": "2026-06-04",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_data_services",
+              "kind": "bill",
+              "name": "Analytics data services",
+              "categoryId": "cat_data",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 12000,
+              "currency": "PHP",
+              "frequency": "Monthly",
+              "anchorDate": "2026-06-09",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_office_supply",
+              "kind": "bill",
+              "name": "Office supply replenishment",
+              "categoryId": "cat_office",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 2400,
+              "currency": "PHP",
+              "frequency": "Monthly",
+              "anchorDate": "2026-06-12",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_facilities",
+              "kind": "bill",
+              "name": "Facilities contractor",
+              "categoryId": "cat_facilities",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 22000,
+              "currency": "PHP",
+              "frequency": "Monthly",
+              "anchorDate": "2026-06-15",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_marketing",
+              "kind": "bill",
+              "name": "Campaign production",
+              "categoryId": "cat_marketing",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 14000,
+              "currency": "PHP",
+              "frequency": "One-time",
+              "anchorDate": "2026-06-18",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            },
+            {
+              "id": "recurring_sheet_june_line_professional_fees",
+              "kind": "bill",
+              "name": "Legal review",
+              "categoryId": "cat_professional_fees",
+              "counterpartyId": "",
+              "accountId": "acct_operating_cash",
+              "amount": 8600,
+              "currency": "PHP",
+              "frequency": "One-time",
+              "anchorDate": "2026-06-21",
+              "autoRenew": false,
+              "isActive": true,
+              "note": "",
+              "createdFromTransactionId": ""
+            }
+          ],
+          "fxRates": [],
+          "accounts": [
+            {
+              "id": "acct_operating_cash",
+              "name": "Operating Cash",
+              "group": "asset",
+              "subtype": "checking",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_reserve_cash",
+              "name": "Reserve Cash",
+              "group": "asset",
+              "subtype": "savings",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_opening_equity",
+              "name": "Opening Balance Equity",
+              "group": "equity",
+              "subtype": "opening_balance",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": true,
+              "isActive": true
+            },
+            {
+              "id": "acct_salary_income",
+              "name": "Salary Income",
+              "group": "income",
+              "subtype": "salary",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_cloud_expense",
+              "name": "Cloud Infrastructure Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_design_expense",
+              "name": "Design Support Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_data_expense",
+              "name": "Data Services Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_office_expense",
+              "name": "Office Operations Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_facilities_expense",
+              "name": "Facilities Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_marketing_expense",
+              "name": "Marketing Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_professional_expense",
+              "name": "Professional Fees Expense",
+              "group": "expense",
+              "subtype": "operations",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            },
+            {
+              "id": "acct_credit_card",
+              "name": "Company Card",
+              "group": "liability",
+              "subtype": "credit_card",
+              "currency": "PHP",
+              "note": "",
+              "openedDate": "2026-01-01",
+              "placementDate": "",
+              "maturityDate": "",
+              "interestRate": 0,
+              "withholdingTaxRate": 20,
+              "interestPostingStartDate": "",
+              "estimatedMaturityAmount": 0,
+              "isSystem": false,
+              "isActive": true
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn_opening_balance",
+              "date": "2026-06-01",
+              "monthKey": "2026-06",
+              "template": "opening_balance",
+              "description": "Opening operating cash balance",
+              "reference": "mock:opening",
+              "categoryId": "",
+              "counterpartyId": "",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 150000,
+              "baseAmount": 150000,
+              "fxRateToBase": 0,
+              "note": "Seed balance for the mock worksheet.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_opening_debit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "debit",
+                  "amount": 150000,
+                  "currency": "PHP",
+                  "baseAmount": 150000,
+                  "note": "Cash opened"
+                },
+                {
+                  "id": "line_opening_credit",
+                  "accountId": "acct_opening_equity",
+                  "direction": "credit",
+                  "amount": 150000,
+                  "currency": "PHP",
+                  "baseAmount": 150000,
+                  "note": "Opening balance offset"
+                }
+              ]
+            },
+            {
+              "id": "txn_salary_june",
+              "date": "2026-06-01",
+              "monthKey": "2026-06",
+              "template": "income_received",
+              "description": "June operating funding",
+              "reference": "mock:income:june",
+              "categoryId": "cat_salary",
+              "counterpartyId": "counterparty_employer",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 120000,
+              "baseAmount": 120000,
+              "fxRateToBase": 0,
+              "note": "Mock monthly funding deposit.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_salary_debit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "debit",
+                  "amount": 120000,
+                  "currency": "PHP",
+                  "baseAmount": 120000,
+                  "note": "Deposit to operating cash"
+                },
+                {
+                  "id": "line_salary_credit",
+                  "accountId": "acct_salary_income",
+                  "direction": "credit",
+                  "amount": 120000,
+                  "currency": "PHP",
+                  "baseAmount": 120000,
+                  "note": "Funding income"
+                }
+              ]
+            },
+            {
+              "id": "txn_northstar_hosting",
+              "date": "2026-06-02",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "Northstar Hosting",
+              "reference": "mock:vendor:northstar",
+              "categoryId": "cat_cloud",
+              "counterpartyId": "counterparty_northstar",
+              "recurringItemId": "recurring_northstar_hosting",
+              "originalCurrency": "PHP",
+              "amount": 17420,
+              "baseAmount": 17420,
+              "fxRateToBase": 0,
+              "note": "Paid hosting invoice.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_northstar_debit",
+                  "accountId": "acct_cloud_expense",
+                  "direction": "debit",
+                  "amount": 17420,
+                  "currency": "PHP",
+                  "baseAmount": 17420,
+                  "note": "Cloud infrastructure"
+                },
+                {
+                  "id": "line_northstar_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 17420,
+                  "currency": "PHP",
+                  "baseAmount": 17420,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_ledgerworks_studio",
+              "date": "2026-06-04",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "LedgerWorks Studio",
+              "reference": "mock:vendor:ledgerworks",
+              "categoryId": "cat_design",
+              "counterpartyId": "counterparty_ledgerworks",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 8150,
+              "baseAmount": 8150,
+              "fxRateToBase": 0,
+              "note": "Mock design support payment.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_ledgerworks_debit",
+                  "accountId": "acct_design_expense",
+                  "direction": "debit",
+                  "amount": 8150,
+                  "currency": "PHP",
+                  "baseAmount": 8150,
+                  "note": "Design support"
+                },
+                {
+                  "id": "line_ledgerworks_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 8150,
+                  "currency": "PHP",
+                  "baseAmount": 8150,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_brightline_analytics",
+              "date": "2026-06-09",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "Brightline Analytics",
+              "reference": "mock:vendor:brightline",
+              "categoryId": "cat_data",
+              "counterpartyId": "counterparty_brightline",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 10900,
+              "baseAmount": 10900,
+              "fxRateToBase": 0,
+              "note": "Mock analytics data service.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_brightline_debit",
+                  "accountId": "acct_data_expense",
+                  "direction": "debit",
+                  "amount": 10900,
+                  "currency": "PHP",
+                  "baseAmount": 10900,
+                  "note": "Data services"
+                },
+                {
+                  "id": "line_brightline_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 10900,
+                  "currency": "PHP",
+                  "baseAmount": 10900,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_metro_office_supply",
+              "date": "2026-06-12",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "Metro Office Supply",
+              "reference": "mock:vendor:metro",
+              "categoryId": "cat_office",
+              "counterpartyId": "counterparty_metro",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 2110,
+              "baseAmount": 2110,
+              "fxRateToBase": 0,
+              "note": "Mock office supply purchase.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_metro_debit",
+                  "accountId": "acct_office_expense",
+                  "direction": "debit",
+                  "amount": 2110,
+                  "currency": "PHP",
+                  "baseAmount": 2110,
+                  "note": "Office operations"
+                },
+                {
+                  "id": "line_metro_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 2110,
+                  "currency": "PHP",
+                  "baseAmount": 2110,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_acme_contractors",
+              "date": "2026-06-15",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "Acme Contractors",
+              "reference": "mock:vendor:acme",
+              "categoryId": "cat_facilities",
+              "counterpartyId": "counterparty_acme",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 20750,
+              "baseAmount": 20750,
+              "fxRateToBase": 0,
+              "note": "Mock facilities contractor payment.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_acme_debit",
+                  "accountId": "acct_facilities_expense",
+                  "direction": "debit",
+                  "amount": 20750,
+                  "currency": "PHP",
+                  "baseAmount": 20750,
+                  "note": "Facilities"
+                },
+                {
+                  "id": "line_acme_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 20750,
+                  "currency": "PHP",
+                  "baseAmount": 20750,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_signal_peak_media",
+              "date": "2026-06-18",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "Signal Peak Media",
+              "reference": "mock:vendor:signal",
+              "categoryId": "cat_marketing",
+              "counterpartyId": "counterparty_signal",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 13290,
+              "baseAmount": 13290,
+              "fxRateToBase": 0,
+              "note": "Mock marketing campaign production.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_signal_debit",
+                  "accountId": "acct_marketing_expense",
+                  "direction": "debit",
+                  "amount": 13290,
+                  "currency": "PHP",
+                  "baseAmount": 13290,
+                  "note": "Marketing"
+                },
+                {
+                  "id": "line_signal_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 13290,
+                  "currency": "PHP",
+                  "baseAmount": 13290,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_clearpath_legal",
+              "date": "2026-06-21",
+              "monthKey": "2026-06",
+              "template": "expense_paid",
+              "description": "ClearPath Legal",
+              "reference": "mock:vendor:clearpath",
+              "categoryId": "cat_professional_fees",
+              "counterpartyId": "counterparty_clearpath",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 6300,
+              "baseAmount": 6300,
+              "fxRateToBase": 0,
+              "note": "Mock legal review payment. PO is intentionally missing for review.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_clearpath_debit",
+                  "accountId": "acct_professional_expense",
+                  "direction": "debit",
+                  "amount": 6300,
+                  "currency": "PHP",
+                  "baseAmount": 6300,
+                  "note": "Professional fees"
+                },
+                {
+                  "id": "line_clearpath_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 6300,
+                  "currency": "PHP",
+                  "baseAmount": 6300,
+                  "note": "Paid from operating cash"
+                }
+              ]
+            },
+            {
+              "id": "txn_reserve_transfer",
+              "date": "2026-06-24",
+              "monthKey": "2026-06",
+              "template": "transfer",
+              "description": "Move cash to reserve",
+              "reference": "mock:transfer:reserve",
+              "categoryId": "",
+              "counterpartyId": "",
+              "recurringItemId": "",
+              "originalCurrency": "PHP",
+              "amount": 9000,
+              "baseAmount": 9000,
+              "fxRateToBase": 0,
+              "note": "Internal reserve transfer for mock workbook coverage.",
+              "source": "mock",
+              "lines": [
+                {
+                  "id": "line_reserve_debit",
+                  "accountId": "acct_reserve_cash",
+                  "direction": "debit",
+                  "amount": 9000,
+                  "currency": "PHP",
+                  "baseAmount": 9000,
+                  "note": "Reserve cash"
+                },
+                {
+                  "id": "line_reserve_credit",
+                  "accountId": "acct_operating_cash",
+                  "direction": "credit",
+                  "amount": 9000,
+                  "currency": "PHP",
+                  "baseAmount": 9000,
+                  "note": "Operating cash"
+                }
+              ]
+            }
+          ],
+          "advisorThreads": [],
+          "aiDrafts": [],
+          "advisorDraftGroups": [],
+          "migrationNotes": ["Mock file generated as an importable Cavalry workbook HTML fixture."],
+          "createdAt": "2026-06-24T03:31:00.000Z",
+          "updatedAt": "2026-06-24T03:31:00.000Z",
+          "recurringReconciliations": [],
+          "externalDraftGroups": [],
+          "checkpoints": []
+        }
+      </script>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,67 @@
+{
+  "name": "@cavalry/companion-api",
+  "version": "1.0.15",
+  "description": "Optional authenticated local API and draft-first external workflows for Cavalry.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "packages/companion-api"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "test": "vitest run tests",
+    "test:unit": "vitest run tests/application/cavalry-api-controller.test.js tests/application/companion-mutation-gate-service.test.js tests/openapi/cavalry-gpt-actions.test.js",
+    "test:integration": "vitest run tests/application/companion-checkpointed-api.test.js tests/server",
+    "test:cli": "vitest run tests/scripts",
+    "check": "npm run openapi:validate && npm run openapi:action-sanity && npm run gpt-instructions:check && npm run gpt-checkpointed-instructions:check && npm test",
+    "openapi:validate": "node scripts/validate-openapi.mjs",
+    "openapi:action-sanity": "node scripts/openapi-action-sanity.mjs",
+    "gpt-action:certify": "node scripts/companion-gpt-action-certify.mjs",
+    "serve": "node scripts/companion-serve.mjs",
+    "serve:local": "node scripts/companion-serve.mjs --mode=local_dev",
+    "serve:beta": "node scripts/companion-serve.mjs --mode=beta_tunnel",
+    "status": "node scripts/companion-status.mjs",
+    "token": "node scripts/companion-token.mjs create",
+    "token:create-checkpointed": "node scripts/companion-token.mjs create:checkpointed",
+    "token:hash": "node scripts/companion-token.mjs hash",
+    "token:verify": "node scripts/companion-token.mjs verify",
+    "token:rotate": "node scripts/companion-token.mjs rotate",
+    "beta:doctor": "node scripts/companion-beta-doctor.mjs",
+    "beta:openapi": "node scripts/companion-openapi-beta.mjs",
+    "checkpointed:openapi": "node scripts/companion-checkpointed-openapi.mjs",
+    "beta:bundle": "node scripts/companion-beta-bundle.mjs",
+    "checkpointed:bundle": "node scripts/companion-checkpointed-bundle.mjs",
+    "beta:certify": "node scripts/companion-beta-certify.mjs",
+    "checkpointed:certify": "node scripts/companion-checkpointed-certify.mjs",
+    "gpt-instructions:check": "node scripts/companion-gpt-instructions-sanity.mjs",
+    "gpt-checkpointed-instructions:check": "node scripts/companion-gpt-checkpointed-instructions-sanity.mjs",
+    "audit:recent": "node scripts/companion-audit-recent.mjs",
+    "checkpoint-audit:recent": "node scripts/companion-checkpoint-audit-recent.mjs",
+    "disable": "node scripts/companion-disable.mjs"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./application/*": "./src/application/*",
+    "./server/*": "./src/server/*",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@cavalry/action-review": "1.0.15",
+    "@cavalry/advisor": "1.0.15",
+    "@cavalry/finance-core": "1.0.15",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

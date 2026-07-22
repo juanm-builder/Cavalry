@@ -1,0 +1,112 @@
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  gap: 12px;
+  min-width: 0;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 18px;
+  min-width: 0;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  min-width: 0;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  padding: 18px;
+  min-width: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.panel-header h3 {
+  font-size: 18px;
+}
+
+.panel-header p {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 70ch;
+}
+
+.metric-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #141414;
+  padding: 14px;
+  min-height: 118px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+button.metric-card {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-action-card:hover,
+.metric-action-card:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--panel-soft);
+}
+
+.metric-card label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.metric-card b {
+  display: block;
+  margin-top: 12px;
+  font-size: 24px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.metric-card.good b {
+  color: var(--good);
+}
+.metric-card.bad b {
+  color: var(--bad);
+}
+.metric-card.info b {
+  color: var(--info);
+}
+
+.metric-card span {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.metric-card .delta {
+  margin-top: 8px;
+  font-size: 12px;
+}

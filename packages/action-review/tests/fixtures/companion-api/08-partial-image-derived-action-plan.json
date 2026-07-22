@@ -1,0 +1,27 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "idempotency_key": "fixture-image-1",
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "date_default": "2026-06-27",
+      "currency_default": "PHP",
+      "user_goal": "Draft visible receipt lines only",
+      "actions": [
+        {
+          "id": "receipt_1",
+          "type": "create_transaction",
+          "description": "Receipt line unreadable merchant",
+          "amount": 230,
+          "currency": "PHP",
+          "direction": "expense",
+          "category_hint": "Food",
+          "confidence": "low",
+          "requires_review": true,
+          "source_text": "Partial image OCR: total 230, merchant unclear"
+        }
+      ]
+    }
+  }
+}

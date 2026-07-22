@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/juanm-builder/Cavalry/security/advisories/new
+    about: Do not disclose vulnerabilities, tokens, personal data, or account details in a public issue.

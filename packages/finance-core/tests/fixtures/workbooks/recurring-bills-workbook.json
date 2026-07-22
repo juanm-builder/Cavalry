@@ -1,0 +1,144 @@
+{
+  "id": "golden-recurring-bills",
+  "version": 2,
+  "name": "Golden Recurring Bills Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58
+  },
+  "accounts": [
+    { "id": "bank", "name": "Bank", "group": "asset", "currency": "PHP", "isActive": true },
+    { "id": "cash", "name": "Cash", "group": "asset", "currency": "PHP", "isActive": true },
+    {
+      "id": "subscriptions-expense",
+      "name": "Subscriptions Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "utilities-expense",
+      "name": "Utilities Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "subscriptions",
+      "name": "Subscriptions",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "subscriptions-expense",
+      "isActive": true
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "utilities-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [
+    {
+      "id": "txn-streaming-june",
+      "date": "2026-06-01",
+      "monthKey": "2026-06",
+      "template": "expense_paid",
+      "description": "Synthetic streaming bill",
+      "categoryId": "subscriptions",
+      "recurringItemId": "rec-streaming",
+      "amount": 499,
+      "baseAmount": 499,
+      "lines": [
+        {
+          "id": "line-streaming-subscriptions",
+          "accountId": "subscriptions-expense",
+          "direction": "debit",
+          "amount": 499,
+          "baseAmount": 499,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-streaming-bank",
+          "accountId": "bank",
+          "direction": "credit",
+          "amount": 499,
+          "baseAmount": 499,
+          "currency": "PHP"
+        }
+      ]
+    },
+    {
+      "id": "txn-power-june",
+      "date": "2026-06-10",
+      "monthKey": "2026-06",
+      "template": "expense_paid",
+      "description": "Synthetic power bill",
+      "categoryId": "utilities",
+      "recurringItemId": "rec-power",
+      "amount": 2400,
+      "baseAmount": 2400,
+      "lines": [
+        {
+          "id": "line-power-utilities",
+          "accountId": "utilities-expense",
+          "direction": "debit",
+          "amount": 2400,
+          "baseAmount": 2400,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-power-bank",
+          "accountId": "bank",
+          "direction": "credit",
+          "amount": 2400,
+          "baseAmount": 2400,
+          "currency": "PHP"
+        }
+      ]
+    }
+  ],
+  "sheets": [],
+  "recurringItems": [
+    {
+      "id": "rec-streaming",
+      "name": "Synthetic streaming",
+      "categoryId": "subscriptions",
+      "accountId": "bank",
+      "amount": 499,
+      "currency": "PHP",
+      "cadence": "monthly",
+      "nextDueDate": "2026-07-01",
+      "isActive": true
+    },
+    {
+      "id": "rec-power",
+      "name": "Synthetic power",
+      "categoryId": "utilities",
+      "accountId": "bank",
+      "amount": 2400,
+      "currency": "PHP",
+      "cadence": "monthly",
+      "nextDueDate": "2026-07-10",
+      "isActive": true
+    }
+  ],
+  "aiDrafts": [],
+  "externalDraftGroups": [],
+  "advisorDraftGroups": [],
+  "checkpoints": []
+}

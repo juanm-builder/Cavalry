@@ -1,0 +1,21 @@
+# Companion API Checkpointed Release Checklist
+
+- [ ] Server disabled by default.
+- [ ] Checkpointed apply off by default.
+- [ ] Auth required.
+- [ ] `cavalry.ai.checkpoint.execute` scope required.
+- [ ] `cavalry.ai.checkpoint.read` scope required for checkpoint metadata.
+- [ ] Rollback scope not granted to GPT by default.
+- [ ] No raw mutation endpoints.
+- [ ] No permanent delete endpoints.
+- [ ] Rollback works for supported actions.
+- [ ] Conflict detection works.
+- [ ] Checkpoint review UI/projection works.
+- [ ] Checkpoint audit logs work.
+- [ ] Token scan passes.
+- [ ] Draft-only OpenAPI sanity passes.
+- [ ] Checkpointed OpenAPI sanity passes.
+- [ ] Local simulation certification passes.
+- [ ] Real tunnel test not claimed unless actually run.
+- [ ] Real Custom GPT Preview not claimed unless actually run.
+- [ ] Production cloud ready remains false.

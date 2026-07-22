@@ -1,0 +1,7 @@
+# The maintainer reviews all changes, with explicit coverage for release and security controls.
+* @juanm-builder
+/.github/ @juanm-builder
+/tools/release/ @juanm-builder
+/apps/mac/electron-builder*.yml @juanm-builder
+/package.json @juanm-builder
+/package-lock.json @juanm-builder

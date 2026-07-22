@@ -1,0 +1,35 @@
+{
+  "name": "@cavalry/finance-core",
+  "version": "1.0.15",
+  "description": "Platform-independent financial domain and application logic for Cavalry.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "packages/finance-core"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./application/*": "./src/application/*",
+    "./domain/*": "./src/domain/*",
+    "./test-fixtures/*": "./tests/fixtures/*",
+    "./package.json": "./package.json"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,113 @@
+# OS metadata
+.DS_Store
+
+# Dependencies and caches
+node_modules/
+.vite/
+.cache/
+
+# Build and packaging output
+dist/
+build/
+out/
+*.app/
+*.dmg
+*.blockmap
+*.exe
+*.asar
+Portable/
+
+# Test and generated artifacts
+coverage/
+test-artifacts/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.har
+
+# Crash reports and process dumps
+*.crash
+*.ips
+*.stackdump
+core
+core.*
+crashpad/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local.env
+*.local.json
+.npmrc
+.netrc
+.pypirc
+.secrets/
+secrets.local/
+credentials.json
+credentials.*.json
+service-account*.json
+AuthKey_*.p8
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+tools/llama-cpp-launcher/scripts/config.env
+
+# Local databases and exported dumps
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.dump
+*.dmp
+*.rdb
+*.sql.gz
+
+# Editor and backup residue
+*.bak
+*.backup
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+.history/
+
+# Local app and user data
+*.cavalry-workbook.html
+*.cavalry-backup.html
+*.html.bak
+*.html.tmp
+cavalry-advisor-settings.json
+
+# Local AI/editor agent state. Repository-owned guidance belongs in tracked docs or .github.
+.agents/
+.aider*
+.claude/
+.codex/
+.continue/
+.cursor/
+.windsurf/
+
+# Optional llama.cpp launcher runtime
+tools/llama-cpp-launcher/.git/
+tools/llama-cpp-launcher/dist/
+tools/llama-cpp-launcher/models/
+tools/llama-cpp-launcher/logs/
+tools/llama-cpp-launcher/run/
+tools/llama-cpp-launcher/**/*.gguf
+tools/llama-cpp-launcher/**/*.bin
+tools/llama-cpp-launcher/**/*.safetensors
+tools/llama-cpp-launcher/**/*.onnx
+tools/llama-cpp-launcher/**/*.pt
+tools/llama-cpp-launcher/**/*.pth
+tools/llama-cpp-launcher/**/*.mlmodel

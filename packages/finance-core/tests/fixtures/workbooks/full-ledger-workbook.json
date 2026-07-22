@@ -1,0 +1,197 @@
+{
+  "id": "golden-full-ledger",
+  "version": 2,
+  "name": "Golden Full Ledger Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58
+  },
+  "accounts": [
+    { "id": "cash", "name": "Cash", "group": "asset", "currency": "PHP", "isActive": true },
+    { "id": "bank", "name": "Bank", "group": "asset", "currency": "PHP", "isActive": true },
+    {
+      "id": "credit-card",
+      "name": "Credit Card",
+      "group": "liability",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "salary-income",
+      "name": "Salary Income",
+      "group": "income",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "food-expense",
+      "name": "Food Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "utilities-expense",
+      "name": "Utilities Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "salary",
+      "name": "Salary",
+      "type": "income",
+      "currency": "PHP",
+      "linkedAccountId": "salary-income",
+      "isActive": true
+    },
+    {
+      "id": "food",
+      "name": "Food",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "food-expense",
+      "isActive": true
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "utilities-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [
+    {
+      "id": "txn-salary-june",
+      "date": "2026-06-01",
+      "monthKey": "2026-06",
+      "template": "income_received",
+      "description": "Synthetic salary",
+      "categoryId": "salary",
+      "amount": 50000,
+      "baseAmount": 50000,
+      "lines": [
+        {
+          "id": "line-salary-bank",
+          "accountId": "bank",
+          "direction": "debit",
+          "amount": 50000,
+          "baseAmount": 50000,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-salary-income",
+          "accountId": "salary-income",
+          "direction": "credit",
+          "amount": 50000,
+          "baseAmount": 50000,
+          "currency": "PHP"
+        }
+      ]
+    },
+    {
+      "id": "txn-lunch-cash",
+      "date": "2026-06-02",
+      "monthKey": "2026-06",
+      "template": "expense_paid",
+      "description": "Synthetic lunch",
+      "categoryId": "food",
+      "amount": 250,
+      "baseAmount": 250,
+      "lines": [
+        {
+          "id": "line-lunch-food",
+          "accountId": "food-expense",
+          "direction": "debit",
+          "amount": 250,
+          "baseAmount": 250,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-lunch-cash",
+          "accountId": "cash",
+          "direction": "credit",
+          "amount": 250,
+          "baseAmount": 250,
+          "currency": "PHP"
+        }
+      ]
+    },
+    {
+      "id": "txn-utility-card",
+      "date": "2026-06-03",
+      "monthKey": "2026-06",
+      "template": "expense_charged",
+      "description": "Synthetic utilities",
+      "categoryId": "utilities",
+      "amount": 1800,
+      "baseAmount": 1800,
+      "lines": [
+        {
+          "id": "line-utility-expense",
+          "accountId": "utilities-expense",
+          "direction": "debit",
+          "amount": 1800,
+          "baseAmount": 1800,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-utility-card",
+          "accountId": "credit-card",
+          "direction": "credit",
+          "amount": 1800,
+          "baseAmount": 1800,
+          "currency": "PHP"
+        }
+      ]
+    },
+    {
+      "id": "txn-bank-to-cash",
+      "date": "2026-06-04",
+      "monthKey": "2026-06",
+      "template": "transfer",
+      "description": "Synthetic ATM withdrawal",
+      "categoryId": "",
+      "amount": 3000,
+      "baseAmount": 3000,
+      "lines": [
+        {
+          "id": "line-transfer-cash",
+          "accountId": "cash",
+          "direction": "debit",
+          "amount": 3000,
+          "baseAmount": 3000,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-transfer-bank",
+          "accountId": "bank",
+          "direction": "credit",
+          "amount": 3000,
+          "baseAmount": 3000,
+          "currency": "PHP"
+        }
+      ]
+    }
+  ],
+  "sheets": [],
+  "recurringItems": [],
+  "aiDrafts": [],
+  "externalDraftGroups": [],
+  "advisorDraftGroups": [],
+  "checkpoints": []
+}

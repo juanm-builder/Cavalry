@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/v1/workbooks/wb_1/summary?start_date=2026-06-01&end_date=2026-06-30",
+  "headers": {
+    "authorization": "Bearer dev-token"
+  },
+  "required_scope": "cavalry.read.summary"
+}

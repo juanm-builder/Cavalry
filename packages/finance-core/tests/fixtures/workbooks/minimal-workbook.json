@@ -1,0 +1,52 @@
+{
+  "id": "golden-minimal",
+  "version": 2,
+  "name": "Golden Minimal Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58
+  },
+  "accounts": [
+    {
+      "id": "cash",
+      "name": "Cash",
+      "group": "asset",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "food-expense",
+      "name": "Food Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "food",
+      "name": "Food",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "food-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [],
+  "sheets": [],
+  "recurringItems": [],
+  "aiDrafts": [],
+  "externalDraftGroups": [],
+  "advisorDraftGroups": [],
+  "checkpoints": []
+}

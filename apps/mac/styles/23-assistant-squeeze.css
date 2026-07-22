@@ -1,0 +1,196 @@
+/* Assistant-panel squeeze compensation.
+
+   When the Cavalry assistant panel is open at viewport >= 1380px, .app-main gains
+   438px of right padding (features/assistant/22-cavalry-assistant.css) so the panel
+   gets its own column. The content area narrows, but the viewport width is unchanged,
+   so none of the app's viewport media queries fire and the big money figures keep
+   their viewport-based clamp() sizes — amounts clip or wrap.
+
+   The rules below re-apply the app's own narrow-viewport tiers at thresholds shifted
+   by the 438px the panel takes (tier max-width + 438px), and size the money figures
+   off the effective content width, calc(100vw - 438px), instead of raw vw. Every
+   rule is scoped to .app-shell:has(.cavalry-assistant-panel), so rendering with the
+   panel closed is untouched. The panel overlays (no squeeze) below 1380px, hence the
+   min-width guard on every block. */
+
+/* A money figure must never clip silently: the stat tiles' nowrap + hidden overflow
+   truncated "₱100,000,274.10" to a plausible-looking "₱100". Let long values wrap
+   as a last resort instead — visible and correct beats tidy. */
+.finance-stat-copy b {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+/* Figure and heading type scales with the effective content width while the panel
+   is open. Multipliers match each rule's original vw coefficient; minimums keep
+   the figures readable at maximum squeeze. */
+@media (min-width: 1380px) {
+  .app-shell:has(.cavalry-assistant-panel) .page-header h1 {
+    font-size: clamp(20px, calc((100vw - 438px) * 0.02), 29px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .categories-header h1 {
+    font-size: clamp(21px, calc((100vw - 438px) * 0.024), 34px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-net-worth-card strong {
+    font-size: clamp(30px, calc((100vw - 438px) * 0.048), 70px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .spotlight-copy b {
+    font-size: clamp(26px, calc((100vw - 438px) * 0.05), 66px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-flow-summary-item > strong,
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-average-period-selector strong {
+    font-size: clamp(17px, calc((100vw - 438px) * 0.021), 30px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .finance-stat-copy b {
+    font-size: clamp(19px, calc((100vw - 438px) * 0.019), 32px);
+  }
+
+  html[data-density='compact'] .app-shell:has(.cavalry-assistant-panel) .finance-stat-copy b {
+    font-size: clamp(18px, calc((100vw - 438px) * 0.016), 28px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .selected-account-balance b {
+    font-size: clamp(19px, calc((100vw - 438px) * 0.02), 32px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .account-flow-header h2 {
+    font-size: clamp(21px, calc((100vw - 438px) * 0.031), 38px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .account-context-heading-copy h3 {
+    font-size: clamp(20px, calc((100vw - 438px) * 0.03), 31px);
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .budget-status-primary > strong {
+    font-size: clamp(24px, calc((100vw - 438px) * 0.03), 46px);
+  }
+}
+
+/* Mirrors the 1280px tier (shell/18-shell-and-advisor-overrides.css) at 1280 + 438. */
+@media (min-width: 1380px) and (max-width: 1718px) {
+  .app-shell:has(.cavalry-assistant-panel) .hero-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-hero,
+  .app-shell:has(.cavalry-assistant-panel) .grid-2,
+  .app-shell:has(.cavalry-assistant-panel) .grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-flow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .settings-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .settings-layout,
+  .app-shell:has(.cavalry-assistant-panel) .settings-two-column,
+  .app-shell:has(.cavalry-assistant-panel) .settings-counterparty-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-main-grid,
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-card-grid,
+  .app-shell:has(.cavalry-assistant-panel) .ai-drafts-review-grid,
+  .app-shell:has(.cavalry-assistant-panel) .ai-drafts-board,
+  .app-shell:has(.cavalry-assistant-panel) .budget-simple-grid,
+  .app-shell:has(.cavalry-assistant-panel) .budget-layout-grid,
+  .app-shell:has(.cavalry-assistant-panel) .accounts-layout-grid,
+  .app-shell:has(.cavalry-assistant-panel) .accounts-bottom-grid,
+  .app-shell:has(.cavalry-assistant-panel) .bills-layout-grid,
+  .app-shell:has(.cavalry-assistant-panel) .bills-page-grid,
+  .app-shell:has(.cavalry-assistant-panel) .bills-analytics-grid,
+  .app-shell:has(.cavalry-assistant-panel) .categories-page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .ledger-filter-panel,
+  .app-shell:has(.cavalry-assistant-panel) .bill-filter-panel,
+  .app-shell:has(.cavalry-assistant-panel) .bills-filter-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .ai-drafts-command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-timeline-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Register plus detail side panel can't share the squeezed width; stack them
+     (mirrors the 820px tier in transactions 11-ledger-and-origin.css). */
+  .app-shell:has(.cavalry-assistant-panel) .transaction-workspace.has-side-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .transaction-side-panel {
+    position: relative;
+    top: auto;
+    min-height: 0;
+  }
+}
+
+/* Two stat tiles per row while the panel is open, until four ~380px tiles fit
+   (beyond the mirrored 1220px tier: full 15-character amounts like
+   ₱100,000,274.10 need the wider tile to stay on one line). The dashboard hero
+   stacks over the same range — its net worth column has a 280px floor and
+   display-size type, which three-line-wraps beside the open panel. */
+@media (min-width: 1380px) and (max-width: 2100px) {
+  .app-shell:has(.cavalry-assistant-panel) .summary-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-command {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .dashboard-net-worth-card {
+    min-height: 176px;
+  }
+}
+
+/* Mirrors the 1180px accounts tier (features/accounts/12-accounts.css) at 1180 + 438. */
+@media (min-width: 1380px) and (max-width: 1618px) {
+  .app-shell:has(.cavalry-assistant-panel) .accounts-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .accounts-register-filters {
+    grid-template-columns: 140px minmax(170px, 1fr) auto;
+  }
+}
+
+/* Below ~1560px the squeezed content is narrower than the bill register row's
+   ~740px min-content, even at full width — the row spilled out of its card (the
+   card keeps overflow visible for its action menu) and floated over the Due Next
+   column. Stack the row cells instead (mirrors the 640px tier in 19-responsive.css). */
+@media (min-width: 1380px) and (max-width: 1560px) {
+  .app-shell:has(.cavalry-assistant-panel) .bill-register-row,
+  .app-shell:has(.cavalry-assistant-panel) .bill-due-row {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .bill-register-status,
+  .app-shell:has(.cavalry-assistant-panel) .bill-register-actions {
+    justify-content: flex-start;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .bills-filter-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app-shell:has(.cavalry-assistant-panel) .bill-control-select,
+  .app-shell:has(.cavalry-assistant-panel) .bill-control-select select {
+    width: 100%;
+  }
+}

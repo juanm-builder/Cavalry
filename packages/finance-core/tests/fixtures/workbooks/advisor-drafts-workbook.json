@@ -1,0 +1,128 @@
+{
+  "id": "golden-advisor-drafts",
+  "version": 2,
+  "name": "Golden Advisor Drafts Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58,
+    "activeAdvisorThreadId": "thread-synthetic"
+  },
+  "accounts": [
+    { "id": "cash", "name": "Cash", "group": "asset", "currency": "PHP", "isActive": true },
+    { "id": "bank", "name": "Bank", "group": "asset", "currency": "PHP", "isActive": true },
+    {
+      "id": "food-expense",
+      "name": "Food Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "utilities-expense",
+      "name": "Utilities Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "food",
+      "name": "Food",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "food-expense",
+      "isActive": true
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "utilities-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [],
+  "sheets": [],
+  "recurringItems": [],
+  "aiDrafts": [
+    {
+      "id": "draft-food-create",
+      "status": "pending",
+      "operation": "create",
+      "objectType": "transaction",
+      "createdAt": "2026-06-06T08:00:00.000Z",
+      "source": "advisor",
+      "proposed": {
+        "date": "2026-06-06",
+        "description": "Synthetic cafe draft",
+        "amount": 220,
+        "categoryId": "food",
+        "accountId": "cash"
+      }
+    },
+    {
+      "id": "draft-utility-needs-review",
+      "status": "needs_review",
+      "operation": "create",
+      "objectType": "transaction",
+      "createdAt": "2026-06-06T08:05:00.000Z",
+      "source": "advisor",
+      "proposed": {
+        "date": "2026-06-06",
+        "description": "Synthetic utility draft",
+        "amount": 1500,
+        "categoryId": "utilities",
+        "accountId": "bank"
+      }
+    }
+  ],
+  "externalDraftGroups": [
+    {
+      "draft_group_id": "dg-synthetic-chatgpt",
+      "workbook_id": "golden-advisor-drafts",
+      "title": "Synthetic ChatGPT import",
+      "status": "pending_review",
+      "origin": {
+        "origin": "chatgpt_action",
+        "provider": "chatgpt",
+        "createdAt": "2026-06-06T08:10:00.000Z"
+      },
+      "created_at": "2026-06-06T08:10:00.000Z",
+      "summary": {
+        "total": 1,
+        "ready": 1,
+        "needs_review": 0,
+        "needs_info": 0,
+        "blocked": 0
+      },
+      "drafts": [
+        {
+          "draft_id": "external-draft-train",
+          "type": "transaction",
+          "status": "ready",
+          "title": "Synthetic train fare",
+          "display_summary": "Add a PHP 90 transport draft.",
+          "proposed_values": {
+            "date": "2026-06-07",
+            "description": "Synthetic train fare",
+            "amount": 90
+          }
+        }
+      ]
+    }
+  ],
+  "advisorDraftGroups": [],
+  "checkpoints": []
+}

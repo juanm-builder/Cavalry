@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a focused improvement to Cavalry
+title: '[Feature]: '
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem without including personal financial data, account details, tokens, or private files.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What is difficult today, and who does it affect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested approach
+      description: Describe the smallest change that would solve the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional workarounds or alternatives you have tried.

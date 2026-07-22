@@ -1,0 +1,33 @@
+{
+  "name": "@cavalry/sync-foundation",
+  "version": "1.0.15",
+  "description": "Local sync contracts, change tracking, and conflict checks for Cavalry.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "packages/sync-foundation"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./application/sync/*": "./src/application/sync/*",
+    "./package.json": "./package.json"
+  },
+  "devDependencies": {
+    "@cavalry/finance-core": "1.0.15",
+    "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

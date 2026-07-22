@@ -1,0 +1,117 @@
+{
+  "id": "golden-import-preview",
+  "version": 2,
+  "name": "Golden Import Preview Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58
+  },
+  "accounts": [
+    { "id": "cash", "name": "Cash", "group": "asset", "currency": "PHP", "isActive": true },
+    { "id": "bank", "name": "Bank", "group": "asset", "currency": "PHP", "isActive": true },
+    {
+      "id": "food-expense",
+      "name": "Food Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "transport-expense",
+      "name": "Transport Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "food",
+      "name": "Food",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "food-expense",
+      "isActive": true
+    },
+    {
+      "id": "transport",
+      "name": "Transport",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "transport-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [
+    {
+      "id": "txn-existing-import-duplicate",
+      "date": "2026-06-05",
+      "monthKey": "2026-06",
+      "template": "expense_paid",
+      "description": "Existing coffee row",
+      "categoryId": "food",
+      "amount": 180,
+      "baseAmount": 180,
+      "lines": [
+        {
+          "id": "line-existing-food",
+          "accountId": "food-expense",
+          "direction": "debit",
+          "amount": 180,
+          "baseAmount": 180,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-existing-cash",
+          "accountId": "cash",
+          "direction": "credit",
+          "amount": 180,
+          "baseAmount": 180,
+          "currency": "PHP"
+        }
+      ]
+    }
+  ],
+  "importPreview": {
+    "source": "synthetic-csv",
+    "rows": [
+      {
+        "rowNumber": 1,
+        "date": "2026-06-05",
+        "description": "Existing coffee row",
+        "amount": 180,
+        "status": "duplicate_warning"
+      },
+      {
+        "rowNumber": 2,
+        "date": "2026-06-06",
+        "description": "Train fare",
+        "amount": 90,
+        "status": "ready"
+      },
+      {
+        "rowNumber": 3,
+        "date": "",
+        "description": "Missing date row",
+        "amount": 50,
+        "status": "rejected"
+      }
+    ]
+  },
+  "sheets": [],
+  "recurringItems": [],
+  "aiDrafts": [],
+  "externalDraftGroups": [],
+  "advisorDraftGroups": [],
+  "checkpoints": []
+}

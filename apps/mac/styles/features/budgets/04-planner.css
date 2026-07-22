@@ -1,0 +1,279 @@
+.planner-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.planner-summary-chips,
+.planner-toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.planner-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.planner-page-shell {
+  min-height: calc(100vh - 160px);
+}
+
+.planner-bucket-section {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.018);
+  overflow: hidden;
+}
+
+.planner-row-stack {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.planner-row-stack:last-child {
+  border-bottom: 0;
+}
+
+.planner-bucket-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.planner-bucket-header h4 {
+  font-size: 16px;
+}
+
+.planner-bucket-header p,
+.planner-category-cell small,
+.planner-assignment-row small {
+  color: var(--text-dim);
+  margin-top: 4px;
+  display: block;
+  font-size: 12px;
+}
+
+.planner-row-actions {
+  margin-top: 10px;
+}
+
+.planner-row {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1.5fr) minmax(130px, 0.85fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr)
+    minmax(120px, 0.7fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+}
+
+.planner-row-head {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.planner-input-cell input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-total-cell {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-input-cell input[readonly] {
+  opacity: 0.72;
+}
+
+.planner-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+.planner-breakdown {
+  padding: 0 16px 16px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.planner-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+}
+
+.bucket-manager {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.55fr) minmax(0, 1.45fr);
+  gap: 18px;
+}
+
+.bucket-manager-sidebar,
+.bucket-manager-detail {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.018);
+  padding: 14px;
+  min-width: 0;
+}
+
+.bucket-create-form {
+  margin-bottom: 12px;
+}
+
+.bucket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bucket-list-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.bucket-list-row.active {
+  border-color: var(--line-strong);
+  background: var(--panel);
+}
+
+.bucket-select {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.bucket-select strong,
+.bucket-select small {
+  display: block;
+}
+
+.bucket-select small {
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.bucket-row-actions .btn-icon {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+}
+
+.bucket-detail-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.bucket-assignment-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.bucket-assignment-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bucket-assignment-group h4 {
+  margin: 0 0 4px;
+}
+
+.planner-assignment-row.compact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.planner-admin-panel {
+  padding: 18px;
+}
+
+.planner-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.planner-inline-form input {
+  flex: 1 1 180px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.planner-bucket-admin-row {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planner-bucket-admin-row .planner-inline-form {
+  flex: 1 1 auto;
+}
+
+.planner-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.planner-assignment-row select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}

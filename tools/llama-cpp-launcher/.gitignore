@@ -1,0 +1,15 @@
+# Local models, logs, runtime state, and generated launcher output.
+
+.DS_Store
+scripts/config.env
+dist/
+models/
+logs/
+run/
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.mlmodel

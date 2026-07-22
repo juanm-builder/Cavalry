@@ -1,0 +1,222 @@
+import { DEFAULT_ROUTE_ID, getRouteById } from './routes.js';
+
+export const HYDRATION_STATUS = Object.freeze({
+  IDLE: 'idle',
+  LOADING: 'loading',
+  READY: 'ready',
+  EMPTY: 'empty',
+  ERROR: 'error'
+});
+
+export const SAVE_STATUS = Object.freeze({
+  IDLE: 'idle',
+  DIRTY: 'dirty',
+  SAVING: 'saving',
+  SAVED: 'saved',
+  CACHE: 'cache',
+  ERROR: 'error'
+});
+
+export function createWorkbookSessionState(options = {}) {
+  const workbook = options.initialWorkbook || null;
+  const hydrationStatus =
+    options.hydrationStatus ||
+    (options.autoHydrate ? HYDRATION_STATUS.IDLE : HYDRATION_STATUS.READY);
+  return {
+    workbook,
+    hydration: {
+      status: hydrationStatus,
+      source: workbook ? 'initial' : '',
+      error: ''
+    },
+    save: {
+      status: options.initialSaveStatus || SAVE_STATUS.IDLE,
+      lastSavedAt: '',
+      error: ''
+    },
+    routeId: getRouteById(options.initialRouteId || DEFAULT_ROUTE_ID).id,
+    overlays: [],
+    warnings: [],
+    errors: []
+  };
+}
+
+function replaceOverlay(overlays, overlay) {
+  const next = overlays.filter((item) => item.id !== overlay.id);
+  return next.concat(overlay);
+}
+
+function appendError(errors, error) {
+  const nextError = error || {
+    code: 'application.failed',
+    message: 'The requested action could not be completed.'
+  };
+  const code = String(nextError.code || '');
+  const message = String(nextError.message || nextError);
+  const withoutDuplicate = errors.filter(
+    (item) => String(item?.code || '') !== code || String(item?.message || item) !== message
+  );
+  return withoutDuplicate.concat(nextError).slice(-8);
+}
+
+export function workbookSessionReducer(state, action) {
+  switch (action.type) {
+    case 'hydration/started':
+      return {
+        ...state,
+        hydration: { status: HYDRATION_STATUS.LOADING, source: '', error: '' },
+        errors: []
+      };
+    case 'hydration/succeeded':
+      return {
+        ...state,
+        workbook: action.workbook,
+        hydration: { status: HYDRATION_STATUS.READY, source: action.source || '', error: '' },
+        save: {
+          ...state.save,
+          status: action.source === 'cache' ? SAVE_STATUS.CACHE : SAVE_STATUS.SAVED,
+          lastSavedAt: action.lastSavedAt || state.save.lastSavedAt,
+          error: ''
+        },
+        warnings: Array.isArray(action.warnings) ? action.warnings : []
+      };
+    case 'hydration/empty':
+      return {
+        ...state,
+        workbook: null,
+        hydration: { status: HYDRATION_STATUS.EMPTY, source: action.source || '', error: '' },
+        save: { ...state.save, status: SAVE_STATUS.IDLE, error: '' }
+      };
+    case 'hydration/failed': {
+      const error = action.error || {
+        code: 'workbook.load_failed',
+        message: 'Workbook could not be loaded.'
+      };
+      return {
+        ...state,
+        workbook: null,
+        hydration: {
+          status: HYDRATION_STATUS.ERROR,
+          source: action.source || '',
+          error: error.message || String(error)
+        },
+        errors: appendError(state.errors, error)
+      };
+    }
+    case 'workbook/replaced':
+      return {
+        ...state,
+        workbook: action.workbook || null,
+        hydration: {
+          status: action.workbook ? HYDRATION_STATUS.READY : HYDRATION_STATUS.EMPTY,
+          source: action.source || 'command',
+          error: ''
+        },
+        save: {
+          ...state.save,
+          status:
+            action.saveStatus ||
+            (action.markDirty === false ? state.save.status : SAVE_STATUS.DIRTY),
+          error: ''
+        }
+      };
+    case 'route/navigated':
+      return { ...state, routeId: getRouteById(action.routeId).id };
+    case 'overlay/opened':
+      return {
+        ...state,
+        overlays: replaceOverlay(state.overlays, {
+          id: action.overlay.id,
+          type: action.overlay.type || 'modal',
+          model: action.overlay.model || null
+        })
+      };
+    case 'overlay/closed':
+      return {
+        ...state,
+        overlays: action.id
+          ? state.overlays.filter((overlay) => overlay.id !== action.id)
+          : state.overlays.slice(0, -1)
+      };
+    case 'save/started':
+      return { ...state, save: { ...state.save, status: SAVE_STATUS.SAVING, error: '' } };
+    case 'save/succeeded':
+      return {
+        ...state,
+        save: {
+          status: SAVE_STATUS.SAVED,
+          lastSavedAt: action.savedAt || state.save.lastSavedAt,
+          error: ''
+        }
+      };
+    case 'save/cancelled':
+      return {
+        ...state,
+        save: {
+          ...state.save,
+          status: action.status || (state.workbook ? SAVE_STATUS.DIRTY : SAVE_STATUS.IDLE)
+        }
+      };
+    case 'save/cached':
+      return {
+        ...state,
+        save: {
+          status: SAVE_STATUS.CACHE,
+          lastSavedAt: action.savedAt || state.save.lastSavedAt,
+          error: ''
+        }
+      };
+    case 'save/failed': {
+      const error = action.error || {
+        code: 'workbook.save_failed',
+        message: 'Workbook could not be saved.'
+      };
+      return {
+        ...state,
+        save: { ...state.save, status: SAVE_STATUS.ERROR, error: error.message || String(error) },
+        errors: appendError(state.errors, error)
+      };
+    }
+    case 'error/reported':
+      return { ...state, errors: appendError(state.errors, action.error) };
+    case 'warning/dismissed':
+      return {
+        ...state,
+        warnings:
+          typeof action.index === 'number'
+            ? state.warnings.filter((_warning, index) => index !== action.index)
+            : []
+      };
+    case 'error/dismissed':
+      return {
+        ...state,
+        errors:
+          typeof action.index === 'number'
+            ? state.errors.filter((_error, index) => index !== action.index)
+            : []
+      };
+    default:
+      return state;
+  }
+}
+
+export async function hydrateWorkbookFromPorts(ports) {
+  const nativeResult = await ports.workbookStorage.load();
+  if (nativeResult && nativeResult.status === 'loaded') return nativeResult;
+  if (nativeResult && nativeResult.status === 'error') return nativeResult;
+
+  const cacheResult = await ports.browserCache.load();
+  if (cacheResult && cacheResult.status === 'loaded') {
+    return {
+      ...cacheResult,
+      warnings: [
+        ...(Array.isArray(cacheResult.warnings) ? cacheResult.warnings : []),
+        ...(nativeResult && nativeResult.status === 'missing' && nativeResult.error
+          ? [{ code: 'workbook.native_missing', message: nativeResult.error }]
+          : [])
+      ]
+    };
+  }
+  if (cacheResult && cacheResult.status === 'error') return cacheResult;
+  return { status: 'empty', source: 'none' };
+}

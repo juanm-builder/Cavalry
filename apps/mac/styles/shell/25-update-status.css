@@ -1,0 +1,222 @@
+.rail-user-card.has-update {
+  grid-template-columns: 30px minmax(0, 1fr) 31px 31px;
+  gap: 7px;
+}
+
+.rail-update-button,
+.rail-update-indicator {
+  width: 31px;
+  min-width: 31px;
+  height: 31px;
+  min-height: 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+}
+
+.rail-update-button .material-symbols-rounded,
+.rail-update-indicator .material-symbols-rounded {
+  font-size: 18px;
+}
+
+.rail-update-button.available {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rail-update-button.ready {
+  border-color: color-mix(in srgb, var(--good) 42%, transparent);
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.rail-update-button.error {
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.rail-update-button:hover,
+.rail-update-button:focus-visible {
+  border-color: currentColor;
+  background: var(--control-hover);
+}
+
+.rail-update-indicator {
+  border: 1px solid color-mix(in srgb, var(--info) 38%, transparent);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.rail-update-progress-card {
+  margin: 5px 0 3px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: var(--control-bg);
+  color: var(--text-soft);
+  box-shadow: inset 0 1px 0 var(--surface-highlight);
+}
+
+.rail-update-progress-copy {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rail-update-progress-copy > .material-symbols-rounded {
+  color: var(--info);
+  font-size: 18px;
+}
+
+.rail-update-progress-copy strong,
+.rail-update-progress-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-update-progress-copy strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.rail-update-progress-copy small {
+  margin-top: 1px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.rail-update-progress-copy b {
+  color: var(--text-soft);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-update-progress {
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--panel-muted);
+}
+
+.rail-update-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--info);
+  transition: width 180ms var(--ease-out);
+}
+
+.navigation-compact .rail-user-card.has-update {
+  display: grid;
+  grid-template-columns: 28px 28px;
+  justify-content: center;
+  gap: 4px;
+}
+
+.navigation-compact .rail-update-button,
+.navigation-compact .rail-update-indicator,
+.navigation-compact .rail-user-card.has-update .btn-icon {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.navigation-compact .rail-update-progress-card {
+  padding: 7px 6px 6px;
+}
+
+.navigation-compact .rail-update-progress-copy {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.navigation-compact .rail-update-progress-copy > span:not(.material-symbols-rounded) {
+  display: none;
+}
+
+.navigation-compact .rail-update-progress-copy b {
+  font-size: 9px;
+}
+
+.navigation-compact .rail-update-progress {
+  margin-top: 5px;
+}
+
+@media (max-width: 980px) {
+  .rail-update-progress-card {
+    position: fixed;
+    right: 12px;
+    bottom: 78px;
+    left: 12px;
+    z-index: 91;
+    display: block;
+    max-width: 420px;
+    margin: 0 auto;
+    box-shadow:
+      0 12px 34px var(--shadow-color),
+      inset 0 1px 0 var(--surface-highlight);
+  }
+
+  .navigation-compact .rail-update-progress-card {
+    padding: 9px 10px 8px;
+  }
+
+  .navigation-compact .rail-update-progress-copy {
+    display: grid;
+    justify-content: normal;
+    gap: 8px;
+  }
+
+  .navigation-compact .rail-update-progress-copy > span:not(.material-symbols-rounded) {
+    display: block;
+  }
+
+  .navigation-compact .rail-update-progress-copy b {
+    font-size: 10px;
+  }
+
+  .navigation-compact .rail-update-progress {
+    margin-top: 8px;
+  }
+
+  .rail-user-card.has-update,
+  .navigation-compact .rail-user-card.has-update {
+    position: fixed;
+    right: 12px;
+    bottom: 78px;
+    z-index: 91;
+    width: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 31px;
+    gap: 0;
+    margin: 0;
+    padding: 5px;
+    border: 1px solid var(--line-soft);
+    border-radius: 11px;
+    background: var(--control-bg);
+    box-shadow: 0 12px 34px var(--shadow-color);
+  }
+
+  .rail-user-card.has-update > span,
+  .rail-user-card.has-update > strong,
+  .rail-user-card.has-update > .btn-icon:last-child,
+  .rail-user-card.update-downloading {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-update-progress > span {
+    transition: none;
+  }
+}

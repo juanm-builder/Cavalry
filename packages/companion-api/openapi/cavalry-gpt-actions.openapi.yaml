@@ -1,0 +1,1188 @@
+openapi: 3.1.0
+info:
+  title: Cavalry Companion API
+  version: '1.0.0'
+  description: Draft-first API for connecting ChatGPT to Cavalry. Write-like operations create reviewable draft groups only and never post, apply, delete, or silently mutate workbook data.
+servers:
+  - url: https://api.cavalry.app
+security:
+  - OAuth2: []
+paths:
+  /v1/capabilities:
+    get:
+      operationId: getCavalryCapabilities
+      summary: Get Cavalry API capabilities.
+      description: Use this to confirm that Cavalry requires review for all external write-like requests.
+      security:
+        - OAuth2:
+            - cavalry.read.capabilities
+      x-openai-isConsequential: false
+      responses:
+        '200':
+          description: Current API capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+              examples:
+                default:
+                  value:
+                    api_version: '1.0'
+                    capabilities:
+                      read_summary: true
+                      read_recent_transactions: true
+                      create_transaction_drafts: true
+                      create_recurring_item_drafts: true
+                      create_category_change_drafts: true
+                      apply_drafts_from_chatgpt: false
+                    supported_action_plan_versions: ['1.0']
+                    review_required_for_all_external_writes: true
+                    api_enabled: true
+                    api_mode: local_dev
+                    bind_host: 127.0.0.1
+                    public_base_url_configured: false
+                    auth_required: true
+                    draft_only: true
+                    production_cloud_ready: false
+                    manual_import_available: true
+                    review_url_scheme: cavalry://draft-groups/{id}
+                    direct_mutation_endpoints_exposed: false
+  /v1/workbooks:
+    get:
+      operationId: listCavalryWorkbooks
+      summary: List Cavalry workbooks available to the user.
+      description: Use this to find the workbook the user wants to work with. Do not invent workbook IDs.
+      security:
+        - OAuth2:
+            - cavalry.read.workbooks
+      x-openai-isConsequential: false
+      responses:
+        '200':
+          description: Available workbooks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbookListResponse'
+  /v1/workbooks/{workbook_id}/summary:
+    get:
+      operationId: getCavalryWorkbookSummary
+      summary: Read a curated workbook summary.
+      description: Use this before drafting when financial context, date range, spending definitions, or recurring candidates are needed.
+      security:
+        - OAuth2:
+            - cavalry.read.summary
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: as_of_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Curated workbook summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbookSummaryResponse'
+  /v1/workbooks/{workbook_id}/accounts:
+    get:
+      operationId: listCavalryAccounts
+      summary: List selectable accounts.
+      description: Use this to resolve account IDs or display names. Do not create account IDs from user text.
+      security:
+        - OAuth2:
+            - cavalry.read.accounts
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - name: as_of_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Accounts available for drafting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountsResponse'
+  /v1/workbooks/{workbook_id}/categories:
+    get:
+      operationId: listCavalryCategories
+      summary: List categories.
+      description: Use this to resolve category IDs or display names. Ambiguous category hints should be left for Cavalry review.
+      security:
+        - OAuth2:
+            - cavalry.read.categories
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+      responses:
+        '200':
+          description: Categories available for drafting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoriesResponse'
+  /v1/workbooks/{workbook_id}/transactions/recent:
+    get:
+      operationId: listCavalryRecentTransactions
+      summary: List recent transactions with minimal fields.
+      description: Use this for analysis, duplicate checks, or safe transaction/category references. Do not request the full workbook by default.
+      security:
+        - OAuth2:
+            - cavalry.read.transactions.recent
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Minimal transaction rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentTransactionsResponse'
+  /v1/workbooks/{workbook_id}/draft-groups/from-action-plan:
+    post:
+      operationId: createCavalryDraftGroupFromActionPlan
+      summary: Create a reviewable draft group from a CavalryActionPlan.
+      description: Use this for advanced multi-action plans. This creates drafts only. It never applies drafts or mutates workbook core data.
+      security:
+        - OAuth2:
+            - cavalry.draft.create
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionPlanDraftRequest'
+            examples:
+              transactionPlan:
+                value:
+                  action_plan:
+                    cavalry_action_plan_version: '1.0'
+                    source: chatgpt
+                    date_default: '2026-06-27'
+                    currency_default: PHP
+                    actions:
+                      - type: create_transaction
+                        description: OpenAI API credits
+                        amount: 15
+                        currency: USD
+                        direction: expense
+                        payment_account_hint: Credit Card
+                        category_hint: Software
+      responses:
+        '200':
+          $ref: '#/components/responses/DraftGroupCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+  /v1/workbooks/{workbook_id}/drafts/transaction-batch:
+    post:
+      operationId: createCavalryTransactionDraftBatch
+      summary: Create reviewable transaction drafts.
+      description: Use this when the user asks to add one or more transactions to Cavalry. This creates drafts only. The user must review and apply them in Cavalry.
+      security:
+        - OAuth2:
+            - cavalry.draft.create
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionBatchDraftRequest'
+            examples:
+              addTransactions:
+                value:
+                  date_default: '2026-06-27'
+                  currency_default: PHP
+                  transactions:
+                    - description: Printer paper
+                      amount: 150
+                      currency: PHP
+                      direction: expense
+                      payment_account_hint: Office Cash Account
+                      category_hint: Office Supplies
+                    - description: OpenAI API credits
+                      amount: 15
+                      currency: USD
+                      direction: expense
+                      payment_account_hint: Credit Card
+                      category_hint: Software
+      responses:
+        '200':
+          $ref: '#/components/responses/DraftGroupCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /v1/workbooks/{workbook_id}/drafts/recurring-items:
+    post:
+      operationId: createCavalryRecurringItemDrafts
+      summary: Create reviewable recurring item drafts.
+      description: Use this when the user asks to prepare subscriptions or bills. Ambiguous load, top-up, and RFID items should be low confidence or left for review.
+      security:
+        - OAuth2:
+            - cavalry.draft.create
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurringDraftRequest'
+            examples:
+              subscriptions:
+                value:
+                  items:
+                    - name: ChatGPT Pro
+                      amount: 6490
+                      currency: PHP
+                      cadence: monthly
+                      category_hint: Subscriptions
+                      confidence: high
+                    - name: RFID Card Load
+                      amount: 1012
+                      currency: PHP
+                      cadence: unknown
+                      category_hint: Transport
+                      confidence: low
+      responses:
+        '200':
+          $ref: '#/components/responses/DraftGroupCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+  /v1/workbooks/{workbook_id}/drafts/category-changes:
+    post:
+      operationId: createCavalryCategoryChangeDrafts
+      summary: Create reviewable category change drafts.
+      description: Use this for targeted category cleanup. A stable transaction ID is preferred. Vague bulk recategorization must remain reviewable.
+      security:
+        - OAuth2:
+            - cavalry.draft.create
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryChangeDraftRequest'
+            examples:
+              cleanup:
+                value:
+                  changes:
+                    - transaction_id: txn_123
+                      suggested_category_hint: Food
+                      reason: Merchant appears to be a food purchase.
+                      confidence: medium
+      responses:
+        '200':
+          $ref: '#/components/responses/DraftGroupCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+  /v1/workbooks/{workbook_id}/draft-groups/{draft_group_id}:
+    get:
+      operationId: getCavalryDraftGroup
+      summary: Read a draft group status.
+      description: Use this to check the status of drafts previously prepared for review. This endpoint does not apply drafts.
+      security:
+        - OAuth2:
+            - cavalry.draft.read
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/WorkbookId'
+        - name: draft_group_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Draft group status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftGroupResponse'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    WorkbookId:
+      name: workbook_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Cavalry workbook ID returned by listCavalryWorkbooks.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Unique retry key. Reusing the same key with the same body returns the same draft group.
+  responses:
+    DraftGroupCreated:
+      description: Draft group created for Cavalry-side review.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DraftGroupResponse'
+          examples:
+            ready:
+              value:
+                draft_group_id: dg_123
+                status: pending_review
+                review_url: cavalry://draft-groups/dg_123
+                summary:
+                  total: 1
+                  ready: 1
+                  needs_review: 0
+                  needs_info: 0
+                  blocked: 0
+                drafts:
+                  - draft_id: d_123
+                    type: transaction
+                    status: ready
+                    title: OpenAI API credits
+                    display_summary: USD 15.00 expense via Credit Card - Software
+                    proposed_values:
+                      description: OpenAI API credits
+                      amount: 15
+                      currency: USD
+                      direction: expense
+                      payment_account_hint: Credit Card
+                      category_hint: Software
+                    validation_issues: []
+                message: Prepared 1 draft. Review it in Cavalry before applying.
+            mixedReadyNeedsReview:
+              value:
+                draft_group_id: dg_mixed
+                status: partially_ready
+                review_url: cavalry://draft-groups/dg_mixed
+                summary:
+                  total: 2
+                  ready: 1
+                  needs_review: 1
+                  needs_info: 0
+                  blocked: 0
+                drafts:
+                  - draft_id: d_ready
+                    type: transaction
+                    status: ready
+                    title: OpenAI API credits
+                    display_summary: USD 15.00 expense via Credit Card - Software
+                    proposed_values:
+                      description: OpenAI API credits
+                      amount: 15
+                      currency: USD
+                    validation_issues: []
+                  - draft_id: d_review
+                    type: transaction
+                    status: needs_review
+                    title: Groceries
+                    display_summary: PHP 500.00 expense
+                    proposed_values:
+                      description: Groceries
+                      amount: 500
+                      currency: PHP
+                    validation_issues:
+                      - code: missing_required_field
+                        severity: warning
+                        message: Payment account could not be matched safely.
+                        field: payment_account_hint
+                message: Prepared 2 drafts. Review them in Cavalry before applying.
+            duplicateWarning:
+              value:
+                draft_group_id: dg_duplicate
+                status: partially_ready
+                review_url: cavalry://draft-groups/dg_duplicate
+                summary:
+                  total: 1
+                  ready: 0
+                  needs_review: 1
+                  needs_info: 0
+                  blocked: 0
+                drafts:
+                  - draft_id: d_duplicate
+                    type: transaction
+                    status: needs_review
+                    title: Printer paper
+                    display_summary: PHP 150.00 expense via Office Cash Account - Office Supplies
+                    proposed_values:
+                      description: Printer paper
+                      amount: 150
+                      currency: PHP
+                    validation_issues:
+                      - code: duplicate_candidate
+                        severity: warning
+                        message: This looks similar to an existing transaction or pending draft.
+                        field: amount
+                    duplicate_candidates:
+                      - ref: transaction:txn_existing
+                        score: 1
+                message: Prepared 1 draft. Review it in Cavalry before applying.
+            idempotencyReplay:
+              value:
+                draft_group_id: dg_123
+                status: pending_review
+                review_url: cavalry://draft-groups/dg_123
+                idempotency_replayed: true
+                summary:
+                  total: 1
+                  ready: 1
+                  needs_review: 0
+                  needs_info: 0
+                  blocked: 0
+                drafts:
+                  - draft_id: d_123
+                    type: transaction
+                    status: ready
+                    title: OpenAI API credits
+                    display_summary: USD 15.00 expense via Credit Card - Software
+                    proposed_values:
+                      description: OpenAI API credits
+                      amount: 15
+                      currency: USD
+                    validation_issues: []
+                message: Prepared 1 draft. Review it in Cavalry before applying.
+    Error:
+      description: Safe API error without internal stack traces.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unsupportedAction:
+              value:
+                error:
+                  code: unsupported_action_type
+                  message: Unsupported Cavalry action type.
+                  request_id: req_123
+            idempotencyConflict:
+              value:
+                error:
+                  code: idempotency_conflict
+                  message: Idempotency key was reused with a different request body.
+                  request_id: req_123
+            missingAccountOrCategory:
+              value:
+                error:
+                  code: missing_required_field
+                  message: Required draft fields are missing.
+                  request_id: req_123
+                  issues:
+                    - code: missing_required_field
+                      severity: warning
+                      message: Payment account could not be matched safely.
+                      field: payment_account_hint
+            unauthorized:
+              value:
+                error:
+                  code: auth_required
+                  message: Authentication is required.
+                  request_id: req_123
+            forbidden:
+              value:
+                error:
+                  code: scope_denied
+                  message: Required scope is missing.
+                  request_id: req_123
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://api.cavalry.app/oauth/authorize
+          tokenUrl: https://api.cavalry.app/oauth/token
+          scopes:
+            cavalry.read.capabilities: Read Companion API capability flags.
+            cavalry.read.workbooks: List workbooks available to the caller.
+            cavalry.read.summary: Read curated workbook summaries.
+            cavalry.read.accounts: Read selectable account metadata for drafting.
+            cavalry.read.categories: Read category metadata for drafting.
+            cavalry.read.transactions.recent: Read recent scoped transaction rows.
+            cavalry.draft.create: Create reviewable draft groups.
+            cavalry.draft.read: Read draft groups.
+            cavalry.draft.apply: Reserved for future Cavalry-side apply flows, not granted to the initial Custom GPT.
+  schemas:
+    CapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          api_version,
+          capabilities,
+          supported_action_plan_versions,
+          review_required_for_all_external_writes,
+          api_enabled,
+          api_mode,
+          auth_required,
+          draft_only,
+          production_cloud_ready,
+          direct_mutation_endpoints_exposed
+        ]
+      properties:
+        api_version:
+          type: string
+        capabilities:
+          type: object
+          additionalProperties:
+            type: boolean
+        supported_action_plan_versions:
+          type: array
+          items:
+            type: string
+        review_required_for_all_external_writes:
+          type: boolean
+        api_enabled:
+          type: boolean
+        api_mode:
+          type: string
+          enum: [disabled, local_dev, beta_tunnel, cloud_stub]
+        bind_host:
+          type: string
+        public_base_url_configured:
+          type: boolean
+        auth_required:
+          type: boolean
+        draft_only:
+          type: boolean
+        production_cloud_ready:
+          type: boolean
+        manual_import_available:
+          type: boolean
+        review_url_scheme:
+          type: string
+        direct_mutation_endpoints_exposed:
+          type: boolean
+    WorkbookListResponse:
+      type: object
+      additionalProperties: false
+      required: [workbooks]
+      properties:
+        workbooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workbook'
+    Workbook:
+      type: object
+      additionalProperties: false
+      required: [workbook_id, name, default_currency, timezone]
+      properties:
+        workbook_id:
+          type: string
+        name:
+          type: string
+        default_currency:
+          type: string
+        timezone:
+          type: string
+        last_updated_at:
+          type: string
+    WorkbookSummaryResponse:
+      type: object
+      additionalProperties: true
+      required: [workbook, date_range, totals, definitions]
+      properties:
+        workbook:
+          $ref: '#/components/schemas/Workbook'
+        date_range:
+          type: object
+        totals:
+          type: object
+        top_categories:
+          type: array
+          items:
+            type: object
+        budgets_vs_actual:
+          type: array
+          items:
+            type: object
+        recurring_candidates:
+          type: array
+          items:
+            type: object
+        account_snapshot:
+          $ref: '#/components/schemas/AccountSnapshot'
+        data_quality_notes:
+          type: array
+          items:
+            type: string
+        definitions:
+          type: object
+    AccountsResponse:
+      type: object
+      additionalProperties: false
+      required: [accounts]
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+    Account:
+      type: object
+      additionalProperties: false
+      required: [account_id, display_name, type, selectable_for_transaction_drafts]
+      properties:
+        account_id:
+          type: string
+        display_name:
+          type: string
+        type:
+          type: string
+        subtype:
+          type: string
+        currency:
+          type: string
+        selectable_for_transaction_drafts:
+          type: boolean
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+        balance:
+          type: string
+        balance_currency:
+          type: string
+        balance_as_of:
+          type: string
+        source_ref:
+          type: string
+    AccountSnapshot:
+      type: object
+      additionalProperties: true
+      properties:
+        packet_version:
+          type: string
+        as_of:
+          type: string
+        currency:
+          type: string
+        selection:
+          type: object
+        counts:
+          type: object
+        totals:
+          type: object
+        accounts:
+          type: array
+          items:
+            type: object
+        limitations:
+          type: array
+          items:
+            type: string
+    CategoriesResponse:
+      type: object
+      additionalProperties: false
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+    Category:
+      type: object
+      additionalProperties: false
+      required: [category_id, display_name, type, archived]
+      properties:
+        category_id:
+          type: string
+        display_name:
+          type: string
+        type:
+          type: string
+        archived:
+          type: boolean
+        budget_metadata:
+          type: object
+    RecentTransactionsResponse:
+      type: object
+      additionalProperties: false
+      required: [transactions, coverage]
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecentTransaction'
+        coverage:
+          type: object
+          required: [returned, omitted, limit]
+          properties:
+            returned:
+              type: integer
+            omitted:
+              type: integer
+            limit:
+              type: integer
+    RecentTransaction:
+      type: object
+      additionalProperties: false
+      required: [transaction_id, date, description, amount, currency, direction]
+      properties:
+        transaction_id:
+          type: string
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        direction:
+          type: string
+        account_display:
+          type: string
+        category_display:
+          type: string
+        semantic_class:
+          type: string
+        recurrence_hint:
+          type: string
+    ActionPlanDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [action_plan]
+      properties:
+        action_plan:
+          $ref: '#/components/schemas/CavalryActionPlan'
+    CavalryActionPlan:
+      type: object
+      additionalProperties: true
+      required: [cavalry_action_plan_version, actions]
+      properties:
+        cavalry_action_plan_version:
+          type: string
+          const: '1.0'
+        source:
+          type: string
+          enum: [chatgpt, cavalry_companion_gpt, manual, unknown]
+        generated_at:
+          type: string
+        workbook_id:
+          type: string
+        workbook_name:
+          type: string
+        timezone:
+          type: string
+        currency_default:
+          type: string
+        date_default:
+          type: string
+          format: date
+        user_goal:
+          type: string
+        assumptions:
+          type: array
+          items:
+            type: string
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/CreateTransactionDraftInput'
+              - $ref: '#/components/schemas/TransactionBatchAction'
+              - $ref: '#/components/schemas/CreateRecurringItemDraftInput'
+              - $ref: '#/components/schemas/CategoryChangeInput'
+              - $ref: '#/components/schemas/BudgetChangeInput'
+    TransactionBatchDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [transactions]
+      properties:
+        date_default:
+          type: string
+          format: date
+        currency_default:
+          type: string
+        transactions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CreateTransactionDraftInput'
+    TransactionBatchAction:
+      type: object
+      additionalProperties: false
+      required: [type, transactions]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: create_transaction_batch
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateTransactionDraftInput'
+        idempotency_key:
+          type: string
+    CreateTransactionDraftInput:
+      type: object
+      additionalProperties: false
+      required: [description, amount, direction]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [create_transaction]
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        merchant:
+          type: string
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+        direction:
+          type: string
+          enum: [expense, income, transfer, refund, unknown]
+        payment_account_id:
+          type: string
+        payment_account_hint:
+          type: string
+        category_id:
+          type: string
+        category_hint:
+          type: string
+        counterparty_hint:
+          type: string
+        notes:
+          type: string
+        source_text:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        evidence:
+          type: array
+          items:
+            type: string
+        idempotency_key:
+          type: string
+        requires_review:
+          type: boolean
+    RecurringDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CreateRecurringItemDraftInput'
+    CreateRecurringItemDraftInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [create_recurring_item]
+        name:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+        cadence:
+          type: string
+          enum: [weekly, biweekly, monthly, quarterly, yearly, unknown]
+        next_due_date:
+          type: string
+          format: date
+        payment_account_id:
+          type: string
+        payment_account_hint:
+          type: string
+        category_id:
+          type: string
+        category_hint:
+          type: string
+        merchant:
+          type: string
+        source_transaction_refs:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        evidence:
+          type: array
+          items:
+            type: string
+        requires_review:
+          type: boolean
+    CategoryChangeDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CategoryChangeInput'
+    CategoryChangeInput:
+      type: object
+      additionalProperties: false
+      required: [suggested_category_hint]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [update_category_assignment]
+        transaction_id:
+          type: string
+        transaction_match:
+          type: object
+          additionalProperties: false
+          properties:
+            date:
+              type: string
+              format: date
+            amount:
+              type: number
+            description:
+              type: string
+        current_category_hint:
+          type: string
+        suggested_category_id:
+          type: string
+        suggested_category_hint:
+          type: string
+        reason:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+    BudgetChangeInput:
+      type: object
+      additionalProperties: false
+      required: [type, category_hint, amount]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: update_budget
+        category_id:
+          type: string
+        category_hint:
+          type: string
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+        period:
+          type: string
+          enum: [monthly, weekly, yearly]
+        reason:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+    DraftGroupResponse:
+      type: object
+      additionalProperties: true
+      required: [draft_group_id, status, review_url, summary, drafts, message]
+      properties:
+        draft_group_id:
+          type: string
+        status:
+          type: string
+          enum: [pending_review, partially_ready, needs_info, blocked, applied, rejected, expired]
+        review_url:
+          type: string
+        summary:
+          $ref: '#/components/schemas/DraftSummary'
+        drafts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DraftItem'
+        validation_issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        message:
+          type: string
+    DraftSummary:
+      type: object
+      additionalProperties: false
+      required: [total, ready, needs_review, needs_info, blocked]
+      properties:
+        total:
+          type: integer
+        ready:
+          type: integer
+        needs_review:
+          type: integer
+        needs_info:
+          type: integer
+        blocked:
+          type: integer
+    DraftItem:
+      type: object
+      additionalProperties: true
+      required: [draft_id, type, status, title, display_summary, proposed_values, validation_issues]
+      properties:
+        draft_id:
+          type: string
+        type:
+          type: string
+          enum: [transaction, recurring_item, category_change, budget_change, account_change]
+        status:
+          type: string
+          enum: [ready, needs_review, needs_info, blocked]
+        title:
+          type: string
+        display_summary:
+          type: string
+        proposed_values:
+          type: object
+        original_values:
+          type: object
+        validation_issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        duplicate_candidates:
+          type: array
+          items:
+            type: object
+        source_action_id:
+          type: string
+        source_refs:
+          type: array
+          items:
+            type: string
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, severity, message]
+      properties:
+        code:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, error, blocked]
+        message:
+          type: string
+        field:
+          type: string
+        action_id:
+          type: string
+        suggested_fix:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_action_plan
+                - unsupported_action_type
+                - missing_required_field
+                - invalid_amount
+                - invalid_date
+                - invalid_currency
+                - workbook_not_found
+                - scope_denied
+                - idempotency_conflict
+                - duplicate_candidate
+                - draft_validation_failed
+                - payload_too_large
+                - rate_limited
+                - auth_required
+                - auth_forbidden
+                - server_not_enabled
+            message:
+              type: string
+            request_id:
+              type: string
+            issues:
+              type: array
+              items:
+                $ref: '#/components/schemas/ValidationIssue'

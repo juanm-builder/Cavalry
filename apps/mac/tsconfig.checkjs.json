@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "checkJs": false
+  },
+  "include": ["src/renderer/App.jsx", "src/renderer/app/**/*.js", "src/renderer/app/**/*.jsx"]
+}

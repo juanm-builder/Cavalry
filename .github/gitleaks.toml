@@ -1,0 +1,28 @@
+title = "Cavalry gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic idempotency keys in companion API fixtures"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+paths = ['^packages/action-review/tests/fixtures/companion-api/(?:03-duplicate-warning|07-missing-account-category)\.json$']
+regexes = ['"idempotency_key"\s*:\s*"fixture-(?:duplicate|missing)-1"']
+
+[[allowlists]]
+description = "Synthetic API key used to verify log redaction"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+paths = ['^apps/mac/tests/electron/advisor-runtime-controller\.test\.js$']
+regexes = ['api_key=synthetic-api-key-123456']
+
+[[allowlists]]
+description = "Intentionally empty llama.cpp launcher API key setting"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+paths = ['^tools/llama-cpp-launcher/scripts/(?:config\.env\.example|launch-llama-webui\.sh)$']
+regexes = ['LLAMA_API_KEY=(?:"")?[ \t]*(?:\r?\n|$)']

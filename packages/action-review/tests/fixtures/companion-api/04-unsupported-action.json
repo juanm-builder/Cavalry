@@ -1,0 +1,17 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "idempotency_key": "fixture-unsupported-1",
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "actions": [
+        {
+          "id": "bad_1",
+          "type": "delete_transaction",
+          "transaction_id": "txn_1"
+        }
+      ]
+    }
+  }
+}

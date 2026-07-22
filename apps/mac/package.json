@@ -1,0 +1,72 @@
+{
+  "name": "@cavalry/mac",
+  "version": "1.0.19",
+  "description": "Cavalry local finance tracker for macOS and Windows.",
+  "author": "Cavalry",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "apps/mac"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build:renderer && npm run build:main && npm run build:preload",
+    "build:renderer": "vite build --config vite.renderer.config.mjs",
+    "build:main": "vite build --config vite.main.config.mjs",
+    "build:preload": "vite build --config vite.preload.config.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src scripts tests vite.*.config.mjs vitest*.config.mjs",
+    "typecheck": "tsc -p tsconfig.checkjs.json --noEmit",
+    "test": "npm run test:unit && npm run test:renderer",
+    "test:unit": "vitest run",
+    "test:renderer": "vitest run --config vitest.renderer.config.mjs",
+    "test:integration": "vitest run tests/application tests/electron",
+    "test:e2e": "npm run build && node scripts/core-dom-smoke.mjs",
+    "check": "npm run lint && npm run typecheck && npm run build && npm run test",
+    "advisor:certify": "node scripts/advisor-ui-certification.mjs",
+    "advisor:live-smoke": "node scripts/advisor-live-smoke.mjs",
+    "licenses:runtime": "node ../../tools/release/generate-runtime-licenses.mjs",
+    "pack:mac": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.yml --mac dir --arm64",
+    "pack:mac:intel": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.yml --mac dir --x64",
+    "dist:mac": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.yml --mac dmg --arm64",
+    "dist:mac:intel": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.yml --mac dmg --x64",
+    "dist:release:mac": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.release.yml --mac --arm64 --x64 --publish never",
+    "dist:release:windows": "npm run build && npm run licenses:runtime && electron-builder --config electron-builder.windows.yml --win --x64 --publish never"
+  },
+  "dependencies": {
+    "@cavalry/action-review": "1.0.15",
+    "@cavalry/advisor": "1.0.15",
+    "@cavalry/companion-api": "1.0.15",
+    "@cavalry/finance-core": "1.0.15",
+    "@cavalry/sync-foundation": "1.0.15",
+    "@supabase/supabase-js": "^2.110.7",
+    "electron-updater": "6.8.3",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.0.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "41.10.3",
+    "electron-builder": "^26.8.1",
+    "js-yaml": "^4.1.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.9.5",
+    "typescript": "^7.0.2",
+    "vite": "7.3.6",
+    "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

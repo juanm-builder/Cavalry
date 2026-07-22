@@ -1,0 +1,111 @@
+{
+  "id": "golden-checkpoints",
+  "version": 2,
+  "name": "Golden Checkpoints Workbook",
+  "year": 2026,
+  "currency": "PHP",
+  "settings": {
+    "usdToBaseRate": 58
+  },
+  "accounts": [
+    { "id": "cash", "name": "Cash", "group": "asset", "currency": "PHP", "isActive": true },
+    {
+      "id": "food-expense",
+      "name": "Food Expense",
+      "group": "expense",
+      "currency": "PHP",
+      "isActive": true
+    },
+    {
+      "id": "opening_balance_equity",
+      "name": "Opening Balance Equity",
+      "group": "equity",
+      "currency": "PHP",
+      "isSystem": true,
+      "isActive": true
+    }
+  ],
+  "categories": [
+    {
+      "id": "food",
+      "name": "Food",
+      "type": "expense",
+      "currency": "PHP",
+      "linkedAccountId": "food-expense",
+      "isActive": true
+    }
+  ],
+  "counterparties": [],
+  "transactions": [
+    {
+      "id": "txn-checkpoint-food",
+      "date": "2026-06-08",
+      "monthKey": "2026-06",
+      "template": "expense_paid",
+      "description": "Synthetic checkpoint lunch",
+      "categoryId": "food",
+      "amount": 300,
+      "baseAmount": 300,
+      "lines": [
+        {
+          "id": "line-checkpoint-food",
+          "accountId": "food-expense",
+          "direction": "debit",
+          "amount": 300,
+          "baseAmount": 300,
+          "currency": "PHP"
+        },
+        {
+          "id": "line-checkpoint-cash",
+          "accountId": "cash",
+          "direction": "credit",
+          "amount": 300,
+          "baseAmount": 300,
+          "currency": "PHP"
+        }
+      ]
+    }
+  ],
+  "sheets": [],
+  "recurringItems": [],
+  "aiDrafts": [],
+  "externalDraftGroups": [],
+  "advisorDraftGroups": [],
+  "checkpoints": [
+    {
+      "checkpoint_id": "cp_2026_06_08_000001",
+      "checkpoint_version": "1.0",
+      "workbook_id": "golden-checkpoints",
+      "actor": {
+        "type": "external_ai",
+        "display_name": "Synthetic Companion"
+      },
+      "origin": "chatgpt_companion",
+      "status": "applied",
+      "created_at": "2026-06-08T09:00:00.000Z",
+      "source_prompt": "Add the synthetic lunch row.",
+      "summary": {
+        "applied": 1,
+        "blocked": 0,
+        "warnings": 0
+      },
+      "changes": [
+        {
+          "change_id": "chg-synthetic-lunch",
+          "action_id": "act-synthetic-lunch",
+          "entity_type": "transaction",
+          "entity_id": "txn-checkpoint-food",
+          "status": "applied",
+          "human_summary": "Created Synthetic checkpoint lunch transaction.",
+          "inverse_patch": {
+            "type": "delete_entity",
+            "entity_type": "transaction",
+            "entity_id": "txn-checkpoint-food"
+          }
+        }
+      ],
+      "validation_issues": [],
+      "warnings": []
+    }
+  ]
+}

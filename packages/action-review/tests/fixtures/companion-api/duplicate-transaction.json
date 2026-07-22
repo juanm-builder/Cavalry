@@ -1,0 +1,18 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/transaction-batch",
+  "idempotency_key": "fixture-duplicate-transaction",
+  "expect": "duplicate_warning",
+  "body": {
+    "date_default": "2026-06-27",
+    "transactions": [
+      {
+        "description": "Printer paper",
+        "amount": 150,
+        "currency": "PHP",
+        "direction": "expense",
+        "payment_account_hint": "Office Cash Account",
+        "category_hint": "Office Supplies"
+      }
+    ]
+  }
+}

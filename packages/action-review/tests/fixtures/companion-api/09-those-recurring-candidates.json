@@ -1,0 +1,24 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/recurring-items",
+  "idempotency_key": "fixture-recurring-1",
+  "body": {
+    "items": [
+      {
+        "name": "ChatGPT Pro",
+        "amount": 6490,
+        "currency": "PHP",
+        "cadence": "monthly",
+        "category_hint": "Subscriptions",
+        "confidence": "high"
+      },
+      {
+        "name": "RFID Card Load",
+        "amount": 1012,
+        "currency": "PHP",
+        "cadence": "unknown",
+        "category_hint": "Transport",
+        "confidence": "low"
+      }
+    ]
+  }
+}

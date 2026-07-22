@@ -1,0 +1,340 @@
+// Registers the narrow Advisor preload contract and translates runtime errors into renderer-safe results.
+
+'use strict';
+
+const nodePath = require('path');
+
+const ADVISOR_IPC_CHANNELS = Object.freeze([
+  'cavalry-advisor:get-settings',
+  'cavalry-advisor:save-settings',
+  'cavalry-advisor:get-server-status',
+  'cavalry-advisor:start-server',
+  'cavalry-advisor:stop-server',
+  'cavalry-advisor:choose-local-model',
+  'cavalry-advisor:choose-mmproj',
+  'cavalry-advisor:test',
+  'cavalry-advisor:chat',
+  'cavalry-advisor:agent',
+  'cavalry-advisor:get-microphone-status',
+  'cavalry-advisor:request-microphone-access',
+  'cavalry-advisor:open-microphone-settings',
+  'cavalry-advisor:transcribe-audio',
+  'cavalry-advisor:cancel'
+]);
+
+function isAdvisorSecretFieldName(key) {
+  const normalized = String(key == null ? '' : key)
+    .replace(/[\s_-]/g, '')
+    .toLowerCase();
+  return [
+    'apikey',
+    'secret',
+    'token',
+    'accesstoken',
+    'refreshtoken',
+    'credential',
+    'credentials',
+    'clientsecret'
+  ].includes(normalized);
+}
+
+function scrubAdvisorSecretsForRenderer(value) {
+  if (Array.isArray(value)) {
+    return value.map(scrubAdvisorSecretsForRenderer);
+  }
+  if (!(value && typeof value === 'object')) {
+    return value;
+  }
+  return Object.keys(value).reduce((result, key) => {
+    if (!isAdvisorSecretFieldName(key)) {
+      result[key] = scrubAdvisorSecretsForRenderer(value[key]);
+    }
+    return result;
+  }, {});
+}
+
+function getResponsesOutputText(response) {
+  if (response && typeof response.output_text === 'string') return response.output_text;
+  const output = Array.isArray(response && response.output) ? response.output : [];
+  return output
+    .flatMap((item) => (Array.isArray(item && item.content) ? item.content : []))
+    .filter((item) => item && item.type === 'output_text')
+    .map((item) => String(item.text || ''))
+    .join('')
+    .trim();
+}
+
+function createAdvisorIpcController({
+  ipcMain,
+  dialog,
+  runtime,
+  path = nodePath,
+  assertTrustedSender
+} = {}) {
+  if (!runtime) {
+    throw new Error('Advisor runtime is required.');
+  }
+
+  function registerHandlers() {
+    if (!(ipcMain && typeof ipcMain.handle === 'function')) {
+      throw new Error('ipcMain with a handle function is required.');
+    }
+    if (typeof assertTrustedSender !== 'function') {
+      throw new Error('A trusted IPC sender guard is required.');
+    }
+    const handle = (channel, handler) => {
+      ipcMain.handle(channel, (event, ...args) => {
+        assertTrustedSender(event);
+        return handler(event, ...args);
+      });
+    };
+
+    handle('cavalry-advisor:get-settings', async () => {
+      const settings = await runtime.loadAdvisorRuntimeSettings();
+      return { ok: true, settings: runtime.publicAdvisorSettings(settings) };
+    });
+
+    handle('cavalry-advisor:save-settings', async (_event, payload) => {
+      const settings = await runtime.saveAdvisorSettings(payload || {});
+      const status = await runtime.getLocalAdvisorServerStatus(settings);
+      return {
+        ok: true,
+        settings: runtime.publicAdvisorSettings(settings),
+        status,
+        message: 'Settings saved.'
+      };
+    });
+
+    handle('cavalry-advisor:get-server-status', async (_event, payload) => {
+      const settings = runtime.normalizeAdvisorSettings(
+        payload || {},
+        await runtime.loadAdvisorRuntimeSettings()
+      );
+      const status = await runtime.getLocalAdvisorServerStatus(settings);
+      return { ok: true, status };
+    });
+
+    handle('cavalry-advisor:start-server', async (event, payload) => {
+      const settings = await runtime.saveAdvisorSettings(payload || {});
+      const server = await runtime.ensureLocalAdvisorServer(settings, event);
+      const status = await runtime.getLocalAdvisorServerStatus(settings);
+      return {
+        ok: true,
+        settings: runtime.publicAdvisorSettings(settings),
+        status,
+        message: server && server.message ? server.message : 'Local model started.'
+      };
+    });
+
+    handle('cavalry-advisor:stop-server', async (event, payload) => {
+      const settings = runtime.normalizeAdvisorSettings(
+        payload || {},
+        await runtime.loadAdvisorRuntimeSettings()
+      );
+      return runtime.stopLocalAdvisorServer(settings, event, { wait: true, forceAfterMs: 2500 });
+    });
+
+    handle('cavalry-advisor:choose-local-model', async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Choose Local AI Model',
+        properties: ['openFile'],
+        filters: [
+          { name: 'GGUF Model Files', extensions: ['gguf'] },
+          {
+            name: 'Model Files',
+            extensions: ['gguf', 'bin', 'safetensors', 'onnx', 'pt', 'pth', 'mlmodel', 'model']
+          },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result.canceled || !result.filePaths.length) {
+        return { ok: false, canceled: true };
+      }
+      const mmprojPath = await runtime.findAdjacentMmprojPath(result.filePaths[0]);
+      return {
+        ok: true,
+        path: result.filePaths[0],
+        name: path.basename(result.filePaths[0]),
+        mmprojPath,
+        mmprojName: mmprojPath ? path.basename(mmprojPath) : ''
+      };
+    });
+
+    handle('cavalry-advisor:choose-mmproj', async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Choose Multimodal Projector',
+        properties: ['openFile'],
+        filters: [
+          { name: 'Multimodal Projector Files', extensions: ['gguf', 'mmproj'] },
+          { name: 'GGUF Files', extensions: ['gguf'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result.canceled || !result.filePaths.length) {
+        return { ok: false, canceled: true };
+      }
+      return { ok: true, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
+    });
+
+    async function settingsForRequest(payload) {
+      const saved = await runtime.loadAdvisorRuntimeSettings();
+      return runtime.normalizeAdvisorSettings(
+        payload && payload.connection ? payload.connection : {},
+        saved
+      );
+    }
+
+    handle('cavalry-advisor:test', async (event, payload) => {
+      const settings = await runtime.saveAdvisorSettings(payload || {});
+      if (settings.provider === 'local') {
+        return { ok: true, message: 'Using the built-in rules advisor.' };
+      }
+      if (settings.provider === 'custom') {
+        await runtime.ensureLocalAdvisorServer(settings, event);
+      }
+      const text =
+        settings.provider === 'openai'
+          ? getResponsesOutputText(
+              await runtime.callAdvisorAgentTurn(
+                settings,
+                {
+                  instructions:
+                    'Reply with exactly this phrase and nothing else: Model test passed.',
+                  input: 'Run Cavalry assistant model test.',
+                  max_output_tokens: 80
+                },
+                event
+              )
+            )
+          : await runtime.callAdvisorModel(settings, {
+              temperature: 0,
+              max_tokens: 80,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Reply with exactly this phrase and nothing else: Model test passed.'
+                },
+                { role: 'user', content: 'Run Cavalry advisor model test.' }
+              ]
+            });
+      if (!text) throw new Error('The model test returned no text.');
+      return { ok: true, message: text };
+    });
+
+    handle('cavalry-advisor:chat', async (event, payload) => {
+      const settings = await settingsForRequest(payload);
+      if (settings.provider === 'local') {
+        return { ok: false, local: true, error: 'The built-in rules advisor is selected.' };
+      }
+      try {
+        const result = await runtime.callAdvisorModel(settings, payload || {}, event);
+        if (result && typeof result === 'object') {
+          return scrubAdvisorSecretsForRenderer({
+            ok: true,
+            text: String(result.text == null ? '' : result.text),
+            ...(result.message ? { message: result.message } : {})
+          });
+        }
+        return { ok: true, text: result };
+      } catch (error) {
+        if (runtime.isAdvisorCancellationError(error)) {
+          return {
+            ok: false,
+            cancelled: true,
+            requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+            error: 'Cavalry request was cancelled.'
+          };
+        }
+        if (runtime.isAdvisorTimeoutError(error)) {
+          return {
+            ok: false,
+            timeout: true,
+            requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+            error:
+              'The local model did not answer within 5 minutes. Cavalry used the verified workbook calculation instead.'
+          };
+        }
+        throw error;
+      }
+    });
+
+    handle('cavalry-advisor:agent', async (event, payload) => {
+      const settings = await settingsForRequest(payload);
+      if (settings.provider === 'local') {
+        return { ok: false, local: true, error: 'The built-in rules advisor is selected.' };
+      }
+      try {
+        // A provider response is untrusted input. Strip credential-shaped fields before IPC crosses into the renderer.
+        const response = await runtime.callAdvisorAgentTurn(settings, payload || {}, event);
+        return { ok: true, response: scrubAdvisorSecretsForRenderer(response) };
+      } catch (error) {
+        if (runtime.isAdvisorCancellationError(error)) {
+          return {
+            ok: false,
+            cancelled: true,
+            requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+            error: 'Cavalry request was cancelled.'
+          };
+        }
+        throw error;
+      }
+    });
+
+    handle('cavalry-advisor:get-microphone-status', async () =>
+      runtime.getAdvisorMicrophoneAccessStatus()
+    );
+    handle('cavalry-advisor:request-microphone-access', async () =>
+      runtime.requestAdvisorMicrophoneAccess()
+    );
+    handle('cavalry-advisor:open-microphone-settings', async () =>
+      runtime.openAdvisorMicrophoneSettings()
+    );
+
+    handle('cavalry-advisor:transcribe-audio', async (event, payload) => {
+      const settings = await runtime.loadAdvisorRuntimeSettings();
+      try {
+        return {
+          ok: true,
+          text: await runtime.callAdvisorTranscription(settings, payload || {}, event),
+          requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId)
+        };
+      } catch (error) {
+        if (runtime.isAdvisorCancellationError(error)) {
+          return {
+            ok: false,
+            cancelled: true,
+            requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+            error: 'Voice transcription was cancelled.'
+          };
+        }
+        if (runtime.isAdvisorTimeoutError(error)) {
+          return {
+            ok: false,
+            timeout: true,
+            requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+            error: 'Voice transcription timed out.'
+          };
+        }
+        return {
+          ok: false,
+          requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
+          error: error && error.message ? error.message : 'Voice transcription failed.'
+        };
+      }
+    });
+
+    handle('cavalry-advisor:cancel', async (event, payload) => {
+      return runtime.cancelAdvisorRequest(payload && payload.requestId, event);
+    });
+
+    return { channels: ADVISOR_IPC_CHANNELS.slice() };
+  }
+
+  return { registerHandlers };
+}
+
+module.exports = {
+  ADVISOR_IPC_CHANNELS,
+  createAdvisorIpcController,
+  scrubAdvisorSecretsForRenderer
+};

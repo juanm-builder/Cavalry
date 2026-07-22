@@ -1,0 +1,14 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/draft-groups/from-action-plan",
+  "idempotency_key": "fixture-delete-all-transactions",
+  "expect": "unsupported",
+  "body": {
+    "action_plan": {
+      "cavalry_action_plan_version": "1.0",
+      "source": "chatgpt",
+      "actions": [
+        { "type": "delete_transaction", "transaction_match": { "description": "all transactions" } }
+      ]
+    }
+  }
+}

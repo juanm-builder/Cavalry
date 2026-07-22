@@ -1,0 +1,29 @@
+{
+  "draft_group_id": "dg_example",
+  "status": "pending_review",
+  "review_url": "cavalry://draft-groups/dg_example",
+  "summary": {
+    "total": 1,
+    "ready": 1,
+    "needs_review": 0,
+    "needs_info": 0,
+    "blocked": 0
+  },
+  "drafts": [
+    {
+      "draft_id": "d_example",
+      "type": "transaction",
+      "status": "ready",
+      "title": "OpenAI API credits",
+      "display_summary": "USD 15.00 expense via Credit Card - Software",
+      "proposed_values": {
+        "description": "OpenAI API credits",
+        "amount": 15,
+        "currency": "USD",
+        "direction": "expense"
+      },
+      "validation_issues": []
+    }
+  ],
+  "message": "Prepared 1 draft. Review it in Cavalry before applying."
+}

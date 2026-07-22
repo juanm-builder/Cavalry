@@ -1,0 +1,43 @@
+{
+  "name": "@cavalry/action-review",
+  "version": "1.0.15",
+  "description": "Review and safety workflows for proposed Cavalry workbook changes.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "packages/action-review"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "test": "vitest run",
+    "test:domain": "vitest run tests/domain",
+    "test:application": "vitest run tests/application"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./application/ai-actions/*": "./src/application/ai-actions/*",
+    "./application/checkpoints/*": "./src/application/checkpoints/*",
+    "./application/drafts/*": "./src/application/drafts/*",
+    "./application/import-export/*": "./src/application/import-export/*",
+    "./domain/cavalry-action-plan/*": "./src/domain/cavalry-action-plan/*",
+    "./domain/checkpoints/*": "./src/domain/checkpoints/*",
+    "./domain/drafts/*": "./src/domain/drafts/*",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@cavalry/finance-core": "1.0.15"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

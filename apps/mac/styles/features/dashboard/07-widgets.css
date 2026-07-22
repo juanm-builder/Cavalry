@@ -1,0 +1,573 @@
+.dashboard-main-grid,
+.dashboard-card-grid,
+.budget-layout-grid,
+.accounts-layout-grid,
+.accounts-bottom-grid,
+.bills-layout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.dashboard-main-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+.dashboard-t-accounts-card {
+  grid-column: 1 / -1;
+}
+
+.dashboard-t-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dashboard-t-account-column {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.018);
+  overflow: hidden;
+}
+
+.dashboard-t-account-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.dashboard-t-account-column-header span {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.dashboard-t-account-column-header b {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.dashboard-t-account-row {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.dashboard-t-account-row:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-t-account-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dashboard-t-account-row strong,
+.dashboard-t-account-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-t-account-row small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.accounts-layout-grid {
+  grid-template-columns: minmax(0, 1.46fr) minmax(300px, 0.54fr);
+  align-items: start;
+}
+
+.bills-layout-grid {
+  grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.7fr);
+  align-items: start;
+}
+
+.reference-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  padding: 18px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.reference-card-wide {
+  min-width: 0;
+}
+
+.reference-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.reference-card-title h3 {
+  font-size: 16px;
+}
+
+.reference-card-title .btn {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.combo-legend {
+  display: flex;
+  gap: 22px;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.combo-legend span::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 8px;
+  background: currentColor;
+}
+
+.mini-combo-chart-wrap {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.flow-value-axis {
+  min-height: 240px;
+  padding: 18px 0 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.flow-value-axis span {
+  min-width: 42px;
+}
+
+.mini-combo-chart {
+  min-height: 240px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(28px, 1fr));
+  gap: 10px;
+  align-items: end;
+  padding: 16px 4px 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.combo-month {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  min-width: 0;
+}
+
+.combo-bars {
+  width: 100%;
+  height: 190px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+}
+
+.combo-bars i {
+  width: 8px;
+  min-height: 8px;
+  border-radius: 999px 999px 4px 4px;
+  background: var(--text-dim);
+}
+
+.combo-bar {
+  width: 8px;
+  min-height: 8px;
+  border-radius: 999px 999px 4px 4px;
+  background: var(--text-dim);
+}
+
+.combo-bar.good {
+  background: var(--good);
+}
+.combo-bar.bad {
+  background: var(--bad);
+}
+
+.combo-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.combo-label:hover,
+.combo-bar:hover + .combo-label {
+  color: var(--text);
+}
+
+.combo-bars i.good {
+  background: var(--good);
+}
+.combo-bars i.bad {
+  background: var(--bad);
+}
+
+.combo-month:hover small {
+  color: var(--text);
+}
+
+.donut-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.mini-donut {
+  width: 220px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin: auto;
+  position: relative;
+}
+
+.mini-donut > div {
+  width: 56%;
+  height: 56%;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  text-align: center;
+  padding: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.mini-donut-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mini-donut-track,
+.mini-donut-slice {
+  fill: none;
+  stroke-width: 54;
+}
+
+.mini-donut-track {
+  stroke: var(--line-strong);
+}
+
+.mini-donut-slice {
+  stroke: var(--text-dim);
+}
+
+.mini-donut-slice.tone-0 {
+  stroke: var(--info);
+}
+.mini-donut-slice.tone-1 {
+  stroke: var(--good);
+}
+.mini-donut-slice.tone-2 {
+  stroke: var(--bad);
+}
+.mini-donut-slice.tone-3 {
+  stroke: var(--warn);
+}
+.mini-donut-slice.tone-4 {
+  stroke: #9d6ad6;
+}
+.mini-donut-slice.tone-5 {
+  stroke: #d7d7d7;
+}
+
+.mini-donut-label-chip rect {
+  fill: rgba(7, 12, 10, 0.84);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1px;
+}
+
+.mini-donut-label {
+  fill: var(--text);
+  stroke: none;
+  font-size: 13px;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.mini-donut b {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-donut span {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.legend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+
+button.legend-row {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  cursor: pointer;
+}
+
+button.legend-row:hover,
+button.legend-row:focus-visible {
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+}
+
+.legend-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-row small {
+  color: var(--text-dim);
+}
+
+.category-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 999px;
+  margin-right: 8px;
+  background: var(--text-dim);
+  vertical-align: middle;
+}
+
+.category-dot.good,
+.tone-1 {
+  background: var(--good);
+}
+.category-dot.bad,
+.tone-2 {
+  background: var(--bad);
+}
+.category-dot.warn,
+.tone-3 {
+  background: var(--warn);
+}
+.category-dot.info,
+.tone-0 {
+  background: var(--info);
+}
+.tone-4 {
+  background: #9d6ad6;
+}
+.tone-5 {
+  background: #d7d7d7;
+}
+
+.progress-list,
+.account-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-row {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(160px, 0.62fr) minmax(130px, 1fr) minmax(90px, max-content);
+  gap: 14px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 14px;
+  color: var(--text);
+  text-align: left;
+}
+
+.progress-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.progress-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.progress-label strong,
+.progress-label small {
+  display: block;
+}
+
+.progress-label small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #070707;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--text-dim);
+}
+
+.progress-track span.good {
+  background: var(--good);
+}
+.progress-track span.bad {
+  background: var(--bad);
+}
+.progress-track span.warn {
+  background: var(--warn);
+}
+.progress-track span.info {
+  background: var(--info);
+}
+
+.mini-account-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  padding: 10px;
+  border-radius: 14px;
+  color: var(--text);
+  text-align: left;
+}
+
+.mini-account-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mini-icon {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(132, 183, 255, 0.12);
+  color: var(--info);
+}
+
+.mini-icon.good {
+  background: rgba(83, 209, 143, 0.12);
+  color: var(--good);
+}
+
+.mini-icon.bad {
+  background: rgba(239, 127, 127, 0.12);
+  color: var(--bad);
+}
+
+.mini-icon.warn {
+  background: rgba(242, 179, 89, 0.12);
+  color: var(--warn);
+}
+
+.mini-icon.info {
+  background: rgba(132, 183, 255, 0.12);
+  color: var(--info);
+}
+
+.mini-account-row strong,
+.mini-account-row small {
+  display: block;
+}
+
+.mini-account-row small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.mini-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mini-table-row {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) minmax(120px, 0.45fr) max-content;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: var(--text);
+  text-align: left;
+}
+
+.mini-table-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mini-table-row span {
+  color: var(--text-dim);
+  font-size: 12px;
+}

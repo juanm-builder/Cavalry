@@ -1,0 +1,17 @@
+{
+  "endpoint": "POST /v1/workbooks/wb_1/drafts/transaction-batch",
+  "idempotency_key": "fixture-idem-1",
+  "body": {
+    "date_default": "2026-06-27",
+    "transactions": [
+      {
+        "description": "OpenAI API credits",
+        "amount": 16,
+        "currency": "USD",
+        "direction": "expense",
+        "payment_account_hint": "Credit Card",
+        "category_hint": "Software"
+      }
+    ]
+  }
+}
