@@ -27,7 +27,7 @@
     "./package.json": "./package.json"
   },
   "devDependencies": {
-    "vitest": "^4.0.15"
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=22"

@@ -60,11 +60,15 @@ describe('Electron packaging manifest', () => {
 
     expect(manifest.scripts['pack:mac']).toContain('--arm64');
     expect(manifest.scripts['dist:mac']).toContain('--arm64');
+    expect(manifest.scripts['dist:mac']).toContain('--publish never');
     expect(manifest.scripts['pack:mac:intel']).toContain('--x64');
     expect(manifest.scripts['dist:mac:intel']).toContain('--x64');
+    expect(manifest.scripts['dist:mac:intel']).toContain('--publish never');
     expect(workspaceManifest.scripts['package:mac:intel']).toBe(
       'npm run dist:mac:intel --workspace @cavalry/mac'
     );
+    expect(workspaceManifest.devDependencies.react).toBe(manifest.dependencies.react);
+    expect(workspaceManifest.devDependencies['react-dom']).toBe(manifest.dependencies['react-dom']);
     expect(config.dmg.artifactName).toContain('${arch}');
   });
 
@@ -122,7 +126,7 @@ describe('Electron packaging manifest', () => {
     const workflowText = readText('../../.github/workflows/desktop-release.yml');
     const expectedFeed = 'https://github.com/${env.GITHUB_REPOSITORY}/releases/latest/download';
 
-    expect(manifest.dependencies['electron-updater']).toBe('6.8.3');
+    expect(manifest.dependencies['electron-updater']).toBe('6.8.9');
     expect(macConfig.publish).toMatchObject({ provider: 'generic', url: expectedFeed });
     expect(windowsConfig.publish).toMatchObject({ provider: 'generic', url: expectedFeed });
     expect(workflow.on).toEqual({ push: { tags: ['v*'] } });

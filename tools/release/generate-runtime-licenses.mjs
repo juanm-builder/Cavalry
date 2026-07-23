@@ -192,6 +192,10 @@ function dereferenceLockPath(lockfile, lockPath) {
   return target;
 }
 
+function isInstalledPackageLockPath(lockPath) {
+  return /(?:^|\/)node_modules\//u.test(lockPath);
+}
+
 function runtimeLockEntries(lockfile, root) {
   if (lockfile.lockfileVersion !== 3) {
     throw new Error('Runtime license generation requires package-lock.json lockfileVersion 3');
@@ -211,7 +215,7 @@ function runtimeLockEntries(lockfile, root) {
     const metadata = lockfile.packages[lockPath];
     if (!metadata) throw new Error(`Missing lockfile metadata for ${lockPath}`);
 
-    if (lockPath.startsWith('node_modules/')) {
+    if (isInstalledPackageLockPath(lockPath)) {
       if (metadata.dev === true) {
         throw new Error(`Production dependency traversal reached dev-only package ${lockPath}`);
       }

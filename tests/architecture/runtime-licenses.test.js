@@ -22,12 +22,16 @@ function readJson(path) {
   return JSON.parse(readFileSync(resolve(root, path), 'utf8'));
 }
 
+function isInstalledPackageLockPath(path) {
+  return /(?:^|\/)node_modules\//u.test(path);
+}
+
 describe('runtime dependency license bundle', () => {
   it('covers every external non-dev package in the lockfile, including nested dependencies', () => {
     const lockfile = readJson('package-lock.json');
     const expectedLockPaths = Object.entries(lockfile.packages)
       .filter(([path, metadata]) => {
-        return path.startsWith('node_modules/') && metadata.dev !== true && metadata.link !== true;
+        return isInstalledPackageLockPath(path) && metadata.dev !== true && metadata.link !== true;
       })
       .map(([path]) => path)
       .sort();
@@ -35,6 +39,7 @@ describe('runtime dependency license bundle', () => {
     const coveredLockPaths = entries.flatMap((entry) => entry.lockPaths).sort();
     const packageNames = new Set(entries.map((entry) => entry.name));
 
+    expect(coveredLockPaths).toContain('apps/mac/node_modules/electron-updater');
     expect(coveredLockPaths).toEqual(expectedLockPaths);
     for (const name of [
       '@supabase/auth-js',

@@ -34,6 +34,8 @@ git diff --check
 
 `npm run check` is required. Run the integration and E2E gates when the change reaches their boundaries; document any gate that was intentionally not run. Renderer changes should use interaction tests, package mutations should assert the standard immutable command-result contract, and IPC/native-file changes should cover the adapter and Electron contract.
 
+When production dependencies or `package-lock.json` change, run `npm run licenses:runtime` and commit the refreshed runtime dependency notice. The normal check rejects a missing, incomplete, or stale notice.
+
 ## Pull requests
 
 Keep formatting-only or generated changes separate from behavior changes. A pull request should describe:
