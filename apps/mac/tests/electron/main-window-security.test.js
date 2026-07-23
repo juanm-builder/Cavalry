@@ -77,7 +77,7 @@ describe('Electron main window security', () => {
       'if (!BrowserWindow.getAllWindows().length) createMainWindow()'
     );
     const cloudIndex = mainSource.indexOf(
-      'void cloudController.initialize().catch(() => undefined)'
+      'void cloudController.restoreExistingSession().catch(() => undefined)'
     );
 
     expect(localStateIndex).toBeGreaterThan(0);
@@ -88,5 +88,6 @@ describe('Electron main window security', () => {
     expect(mainSource).not.toContain(
       'Promise.all([workbookFileController.loadFileState(), cloudController.initialize()])'
     );
+    expect(mainSource).not.toContain('void cloudController.initialize().catch(() => undefined)');
   });
 });

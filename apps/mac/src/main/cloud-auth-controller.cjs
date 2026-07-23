@@ -1,12 +1,14 @@
 // Owns Supabase PKCE authentication and keeps every credential in the Electron main process.
 'use strict';
 
+const nodeFs = require('node:fs/promises');
 const nodePath = require('node:path');
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js');
 const { asString, isPublishableSupabaseKey, normalizeCloudConfig } = require('./cloud-config.cjs');
 const { createCloudSessionStorage } = require('./cloud-session-storage.cjs');
 
 const CALLBACK_URL = 'cavalry://auth/callback';
+const CLOUD_SESSION_FILE = 'cavalry-cloud-auth.json';
 const OAUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const OAUTH_PENDING_STORAGE_KEY = 'cavalry-cloud-oauth-pending-until';
 
@@ -62,11 +64,30 @@ function publicError(code, message) {
   return { code: asString(code, 64) || 'cloud_error', message: asString(message, 240) };
 }
 
+async function hasEncryptedCloudState(readFile, filePath) {
+  try {
+    const document = JSON.parse(String(await readFile(filePath, 'utf8')));
+    const values =
+      document && document.values && typeof document.values === 'object' ? document.values : null;
+    return !!(
+      document &&
+      document.version === 1 &&
+      document.encryption === 'electron-safe-storage' &&
+      values &&
+      !Array.isArray(values) &&
+      Object.values(values).some((value) => typeof value === 'string' && value.length > 0)
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
 function createCloudAuthController(dependencies = {}) {
   const app = dependencies.app;
   const safeStorage = dependencies.safeStorage;
   const shell = dependencies.shell;
   const path = dependencies.path || nodePath;
+  const readFile = dependencies.readFile || nodeFs.readFile;
   const createClient = dependencies.createClient || createSupabaseClient;
   const createStorage = dependencies.createStorage || createCloudSessionStorage;
   const now = typeof dependencies.now === 'function' ? dependencies.now : Date.now;
@@ -83,6 +104,8 @@ function createCloudAuthController(dependencies = {}) {
   let storage = null;
   let authSubscription = null;
   let initializePromise = null;
+  let restoreExistingSessionPromise = null;
+  let restoreExistingSessionStarted = false;
   let pendingCallback = null;
   let oauthAttemptTimeout = null;
   let state = {
@@ -204,6 +227,10 @@ function createCloudAuthController(dependencies = {}) {
     return [400, 401, 403].includes(status) || /sessionmissing|invalidcredentials/i.test(name);
   }
 
+  function getSessionFilePath() {
+    return path.join(app.getPath('userData'), CLOUD_SESSION_FILE);
+  }
+
   async function recoverSession() {
     const result = await client.auth.getSession();
     if (result.error || !(result.data && result.data.session)) {
@@ -247,7 +274,7 @@ function createCloudAuthController(dependencies = {}) {
     if (initializePromise) return initializePromise;
     initializePromise = (async () => {
       if (!config.configured) return getState();
-      const filePath = path.join(app.getPath('userData'), 'cavalry-cloud-auth.json');
+      const filePath = getSessionFilePath();
       storage = createStorage({ filePath, safeStorage });
       if (!(storage && typeof storage.isPersistent === 'function' && storage.isPersistent())) {
         return setState({
@@ -307,6 +334,36 @@ function createCloudAuthController(dependencies = {}) {
     return initializePromise;
   }
 
+  async function restoreExistingSession() {
+    if (initializePromise) return initializePromise;
+    if (restoreExistingSessionPromise) return restoreExistingSessionPromise;
+    restoreExistingSessionStarted = true;
+    restoreExistingSessionPromise = (async () => {
+      if (!config.configured) return getState();
+      const hasEncryptedState = await hasEncryptedCloudState(readFile, getSessionFilePath());
+      if (initializePromise) return initialize();
+      if (hasEncryptedState) return initialize();
+      if (pendingCallback) {
+        pendingCallback = null;
+        return rejectUnexpectedOAuthCallback().state;
+      }
+      return setState({
+        status: 'signed_out',
+        sessionPersistence: 'pending',
+        user: null,
+        error: null
+      });
+    })().catch(() =>
+      setState({
+        status: 'error',
+        sessionPersistence: 'pending',
+        user: null,
+        error: publicError('cloud_initialization_failed', 'Cavalry Cloud could not start securely.')
+      })
+    );
+    return restoreExistingSessionPromise;
+  }
+
   async function signInWithGoogle() {
     await initialize();
     if (!client || state.status === 'unavailable' || state.status === 'unconfigured') {
@@ -349,6 +406,20 @@ function createCloudAuthController(dependencies = {}) {
     }
   }
 
+  function rejectUnexpectedOAuthCallback() {
+    const rejectedState = setState({
+      status:
+        state.user || ['unavailable', 'unconfigured'].includes(state.status)
+          ? state.status
+          : 'signed_out',
+      error: publicError(
+        'oauth_callback_unexpected',
+        'Cavalry ignored a Google callback that did not match a pending sign-in.'
+      )
+    });
+    return { ok: false, error: rejectedState.error.message, state: rejectedState };
+  }
+
   async function processAuthCallback(callback) {
     if (!client) return { ok: false, state: getState() };
     let pendingExpiry = 0;
@@ -365,14 +436,7 @@ function createCloudAuthController(dependencies = {}) {
       return { ok: false, error: state.error.message, state: getState() };
     }
     if (!pendingExpiry) {
-      setState({
-        status: state.user ? state.status : 'signed_out',
-        error: publicError(
-          'oauth_callback_unexpected',
-          'Cavalry ignored a Google callback that did not match a pending sign-in.'
-        )
-      });
-      return { ok: false, error: state.error.message, state: getState() };
+      return rejectUnexpectedOAuthCallback();
     }
     if (!(callback && callback.ok && callback.code)) {
       const cleared = await clearInvalidSession();
@@ -419,9 +483,13 @@ function createCloudAuthController(dependencies = {}) {
   }
 
   async function handleAuthCallback(callback) {
-    if (!initializePromise) {
+    if (!initializePromise && !restoreExistingSessionStarted) {
       pendingCallback = callback;
       return { ok: true, pending: true, state: getState() };
+    }
+    if (!initializePromise) {
+      await restoreExistingSession();
+      if (!initializePromise) return rejectUnexpectedOAuthCallback();
     }
     await initialize();
     return processAuthCallback(callback);
@@ -471,6 +539,7 @@ function createCloudAuthController(dependencies = {}) {
     handleAuthCallback,
     initialize,
     isSignedIn,
+    restoreExistingSession,
     signInWithGoogle,
     signOut
   };

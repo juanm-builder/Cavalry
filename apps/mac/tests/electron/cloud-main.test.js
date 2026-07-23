@@ -122,6 +122,249 @@ describe('Cavalry Cloud main-process boundary', () => {
     expect(fs.readFile).toHaveBeenCalledTimes(1);
   });
 
+  it('does not touch secure storage on a fresh or signed-out startup', async () => {
+    const storedDocuments = [
+      null,
+      JSON.stringify({
+        version: 1,
+        encryption: 'electron-safe-storage',
+        values: {}
+      })
+    ];
+
+    for (const storedDocument of storedDocuments) {
+      const safeStorage = {
+        isEncryptionAvailable: vi.fn(() => true),
+        encryptString: vi.fn((value) => Buffer.from(`sealed:${value}`, 'utf8')),
+        decryptString: vi.fn()
+      };
+      const readFile = vi.fn(async () => {
+        if (storedDocument === null) throw new Error('missing');
+        return storedDocument;
+      });
+      const createStorage = vi.fn();
+      const createClient = vi.fn();
+      const controller = createCloudAuthController({
+        app: { getPath: () => '/secure' },
+        safeStorage,
+        shell: { openExternal: vi.fn() },
+        supabaseUrl: 'https://project.supabase.co',
+        publishableKey: 'sb_publishable_test-key',
+        readFile,
+        createClient,
+        createStorage
+      });
+
+      await controller.restoreExistingSession();
+
+      expect(readFile).toHaveBeenCalledWith('/secure/cavalry-cloud-auth.json', 'utf8');
+      expect(createStorage).not.toHaveBeenCalled();
+      expect(createClient).not.toHaveBeenCalled();
+      expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+      expect(safeStorage.encryptString).not.toHaveBeenCalled();
+      expect(safeStorage.decryptString).not.toHaveBeenCalled();
+      expect(controller.getState()).toMatchObject({
+        status: 'signed_out',
+        sessionPersistence: 'pending',
+        user: null,
+        error: null
+      });
+    }
+  });
+
+  it('restores an existing encrypted session automatically at startup', async () => {
+    const user = {
+      id: 'returning-user',
+      email: 'returning@example.com',
+      user_metadata: {},
+      app_metadata: { provider: 'google' }
+    };
+    const safeStorage = {
+      ...createSecureStorage(),
+      isEncryptionAvailable: vi.fn(() => true)
+    };
+    const values = new Map([['sb-project-auth-token', 'persisted-session']]);
+    const auth = {
+      getSession: vi.fn(async () => ({ data: { session: { user } }, error: null })),
+      getUser: vi.fn(async () => ({ data: { user }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } }))
+    };
+    const createStorage = vi.fn(() => ({
+      isPersistent: () => safeStorage.isEncryptionAvailable(),
+      getItem: async (key) => values.get(key) || null,
+      setItem: async (key, value) => values.set(key, value),
+      removeItem: async (key) => values.delete(key),
+      clear: async () => values.clear()
+    }));
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage,
+      shell: { openExternal: vi.fn() },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      readFile: vi.fn(async () =>
+        JSON.stringify({
+          version: 1,
+          encryption: 'electron-safe-storage',
+          values: { 'sb-project-auth-token': 'encrypted-value' }
+        })
+      ),
+      createClient: vi.fn(() => ({ auth })),
+      createStorage
+    });
+
+    await controller.restoreExistingSession();
+
+    expect(createStorage).toHaveBeenCalledWith({
+      filePath: '/secure/cavalry-cloud-auth.json',
+      safeStorage
+    });
+    expect(safeStorage.isEncryptionAvailable).toHaveBeenCalled();
+    expect(auth.getSession).toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      status: 'signed_in',
+      sessionPersistence: 'secure',
+      user: { id: 'returning-user' }
+    });
+  });
+
+  it('initializes secure storage on demand when a fresh user chooses Google sign-in', async () => {
+    const safeStorage = {
+      ...createSecureStorage(),
+      isEncryptionAvailable: vi.fn(() => true)
+    };
+    const values = new Map();
+    const openExternal = vi.fn(async () => {});
+    const auth = {
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signInWithOAuth: vi.fn(async () => ({
+        data: { url: 'https://project.supabase.co/auth/v1/authorize?provider=google' },
+        error: null
+      }))
+    };
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage,
+      shell: { openExternal },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      readFile: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      createClient: vi.fn(() => ({ auth })),
+      createStorage: () => ({
+        isPersistent: () => safeStorage.isEncryptionAvailable(),
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      })
+    });
+
+    await controller.restoreExistingSession();
+    expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+
+    await expect(controller.signInWithGoogle()).resolves.toMatchObject({ ok: true });
+    expect(safeStorage.isEncryptionAvailable).toHaveBeenCalled();
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://project.supabase.co/auth/v1/authorize?provider=google'
+    );
+  });
+
+  it('rejects an unsolicited post-startup auth callback without touching secure storage', async () => {
+    const safeStorage = {
+      isEncryptionAvailable: vi.fn(() => true),
+      encryptString: vi.fn(),
+      decryptString: vi.fn()
+    };
+    const createStorage = vi.fn(() => ({
+      isPersistent: () => true
+    }));
+    const createClient = vi.fn();
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage,
+      shell: { openExternal: vi.fn() },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      readFile: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      createClient,
+      createStorage
+    });
+
+    await controller.restoreExistingSession();
+    expect(createStorage).not.toHaveBeenCalled();
+
+    await expect(
+      controller.handleAuthCallback({ ok: true, code: 'unexpected-code' })
+    ).resolves.toMatchObject({
+      ok: false,
+      state: {
+        status: 'signed_out',
+        sessionPersistence: 'pending',
+        user: null,
+        error: { code: 'oauth_callback_unexpected' }
+      }
+    });
+    expect(createStorage).not.toHaveBeenCalled();
+    expect(createClient).not.toHaveBeenCalled();
+    expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(safeStorage.encryptString).not.toHaveBeenCalled();
+    expect(safeStorage.decryptString).not.toHaveBeenCalled();
+  });
+
+  it('waits for fresh-profile restore before rejecting a callback without secure storage', async () => {
+    let finishRead;
+    const safeStorage = {
+      isEncryptionAvailable: vi.fn(() => true),
+      encryptString: vi.fn(),
+      decryptString: vi.fn()
+    };
+    const createStorage = vi.fn();
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage,
+      shell: { openExternal: vi.fn() },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      readFile: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          })
+      ),
+      createClient: vi.fn(),
+      createStorage
+    });
+
+    const restoring = controller.restoreExistingSession();
+    const callback = controller.handleAuthCallback({ ok: true, code: 'unexpected-code' });
+    finishRead(
+      JSON.stringify({
+        version: 1,
+        encryption: 'electron-safe-storage',
+        values: {}
+      })
+    );
+
+    await expect(restoring).resolves.toMatchObject({ status: 'signed_out' });
+    await expect(callback).resolves.toMatchObject({
+      ok: false,
+      state: {
+        status: 'signed_out',
+        sessionPersistence: 'pending',
+        error: { code: 'oauth_callback_unexpected' }
+      }
+    });
+    expect(createStorage).not.toHaveBeenCalled();
+    expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(safeStorage.encryptString).not.toHaveBeenCalled();
+    expect(safeStorage.decryptString).not.toHaveBeenCalled();
+  });
+
   it('accepts only strict PKCE callback links and locates cold-start protocol arguments', () => {
     expect(getCavalryAuthCallback('cavalry://auth/callback?code=abc_123-XYZ')).toEqual({
       type: 'auth-callback',
@@ -279,6 +522,13 @@ describe('Cavalry Cloud main-process boundary', () => {
         exchangeCodeForSession,
         signOut: vi.fn(async () => ({ error: null }))
       };
+      const createStorage = vi.fn(() => ({
+        isPersistent: () => true,
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      }));
       return {
         controller: createCloudAuthController({
           app: { getPath: () => '/secure' },
@@ -287,15 +537,17 @@ describe('Cavalry Cloud main-process boundary', () => {
           supabaseUrl: 'https://project.supabase.co',
           publishableKey: 'sb_publishable_test-key',
           now: () => now,
+          readFile: vi.fn(async () =>
+            JSON.stringify({
+              version: 1,
+              encryption: 'electron-safe-storage',
+              values: includeMarker ? { [OAUTH_PENDING_STORAGE_KEY]: 'encrypted-marker' } : {}
+            })
+          ),
           createClient: () => ({ auth }),
-          createStorage: () => ({
-            isPersistent: () => true,
-            getItem: async (key) => values.get(key) || null,
-            setItem: async (key, value) => values.set(key, value),
-            removeItem: async (key) => values.delete(key),
-            clear: async () => values.clear()
-          })
+          createStorage
         }),
+        createStorage,
         exchangeCodeForSession
       };
     };
@@ -308,16 +560,18 @@ describe('Cavalry Cloud main-process boundary', () => {
       ok: true,
       pending: true
     });
-    await matched.controller.initialize();
+    await matched.controller.restoreExistingSession();
     expect(matched.controller.getState()).toMatchObject({ status: 'signed_in' });
+    expect(matched.createStorage).toHaveBeenCalledTimes(1);
     expect(matched.exchangeCodeForSession).toHaveBeenCalledWith('matched');
 
     await unmatched.controller.handleAuthCallback({ ok: true, code: 'unmatched' });
-    await unmatched.controller.initialize();
+    await unmatched.controller.restoreExistingSession();
     expect(unmatched.controller.getState()).toMatchObject({
       status: 'signed_out',
       error: { code: 'oauth_callback_unexpected' }
     });
+    expect(unmatched.createStorage).not.toHaveBeenCalled();
     expect(unmatched.exchangeCodeForSession).not.toHaveBeenCalled();
   });
 

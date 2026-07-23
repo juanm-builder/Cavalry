@@ -28,7 +28,7 @@ The MVP does not automatically merge changes from two devices. A stale upload fa
 5. Supabase RLS and the snapshot RPC authorize the user and enforce the expected revision.
 6. The renderer receives only safe account/workbook metadata or a validated portable workbook.
 
-OAuth codes and access/refresh tokens never enter the renderer. If Electron cannot encrypt the session with the operating-system credential store, Cloud fails closed instead of writing plaintext credentials.
+OAuth codes and access/refresh tokens never enter the renderer. A fresh signed-out profile does not initialize credential storage during ordinary app startup. Cavalry accesses it only to restore a detected encrypted session or after the user explicitly begins sign-in. On macOS, Keychain may ask the user to approve that access, but Cavalry never receives the user's Mac password. If Electron cannot encrypt the session with the operating-system credential store, Cloud fails closed instead of writing plaintext credentials.
 
 ## Project setup
 

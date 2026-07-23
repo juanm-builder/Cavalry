@@ -257,8 +257,9 @@ function SignedOutCloud({ cloud }) {
       </div>
       <div className="settings-inline-message" role="note">
         <Icon name="shield_lock" />
-        Cavalry opens Google sign-in in your browser. Your local workbook stays on this Mac until
-        you explicitly add it to Cloud.
+        Cavalry opens Google sign-in in your browser. macOS Keychain protects your sign-in and may
+        ask you to approve access; Cavalry never receives your Mac password. Your local workbook
+        stays on this Mac until you explicitly add it to Cloud.
       </div>
     </SettingsCard>
   );

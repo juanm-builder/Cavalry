@@ -14,7 +14,7 @@ The current code does not configure a general product-analytics or advertising s
 
 Cavalry Cloud is optional and requires a configured Supabase project and Google sign-in. Signing in does not upload a workbook. **Add to Cloud** and later **Sync Now** actions upload a complete portable HTML workbook snapshot to Supabase, together with workbook metadata, a content hash, version history, and sync audit records. Google and Supabase receive the account and network data needed to authenticate and serve those requests.
 
-Cloud sessions are stored through the operating system's credential encryption. If secure storage is unavailable, Cloud fails closed instead of persisting plaintext tokens. Cloud snapshots are protected by owner-scoped Row Level Security, but users should still treat the configured Supabase project as a holder of their financial data.
+Cloud sessions are stored through the operating system's credential encryption. A fresh signed-out profile does not access credential storage merely because Cavalry starts; secure storage initializes only to restore an existing encrypted session or after the user explicitly begins sign-in. On macOS, Keychain may ask the user to approve that access, but Cavalry never receives the user's Mac password. If secure storage is unavailable, Cloud fails closed instead of persisting plaintext tokens. Cloud snapshots are protected by owner-scoped Row Level Security, but users should still treat the configured Supabase project as a holder of their financial data.
 
 Deleting a cloud workbook removes its cloud snapshots and related audit records under the current database contract; it does not delete the local workbook. A full account export and account-deletion workflow is not currently implemented.
 

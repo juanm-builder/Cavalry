@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const {
@@ -248,6 +248,36 @@ describe('Advisor runtime controller', () => {
     expect([...fs.files.keys()]).toEqual([
       '/tmp/cavalry-advisor-controller-test/cavalry-advisor-settings.json'
     ]);
+  });
+
+  it('loads local-model-only settings without touching secure storage', async () => {
+    const settingsPath = '/tmp/cavalry-advisor-controller-test/cavalry-advisor-settings.json';
+    const localSettings = {
+      provider: 'custom',
+      providerKind: 'local_model',
+      apiMode: 'chat_completions',
+      endpoint: 'http://127.0.0.1:8080/v1',
+      model: 'local-model',
+      localModelPath: '/Models/local-model.gguf',
+      contextWindowTokens: 8192
+    };
+    const fs = createMemoryFs();
+    fs.files.set(settingsPath, JSON.stringify(localSettings));
+    const safeStorage = createSecureStorage({
+      isEncryptionAvailable: vi.fn(() => true),
+      getSelectedStorageBackend: vi.fn(() => 'keychain'),
+      encryptString: vi.fn((value) => Buffer.from('enc:' + value, 'utf8')),
+      decryptString: vi.fn()
+    });
+    const { controller } = createController({ fs, safeStorage });
+
+    await expect(controller.loadAdvisorRuntimeSettings()).resolves.toMatchObject(localSettings);
+
+    expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(safeStorage.getSelectedStorageBackend).not.toHaveBeenCalled();
+    expect(safeStorage.encryptString).not.toHaveBeenCalled();
+    expect(safeStorage.decryptString).not.toHaveBeenCalled();
+    expect(fs.files.get(settingsPath)).toBe(JSON.stringify(localSettings));
   });
 
   it('encrypts the API key at rest when safeStorage is available', async () => {

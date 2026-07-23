@@ -171,7 +171,7 @@ if (
     const launchDeepLink = deepLinkController.findLaunchUrl(process.argv);
     if (launchDeepLink) deepLinkController.handle(launchDeepLink);
     if (!BrowserWindow.getAllWindows().length) createMainWindow();
-    void cloudController.initialize().catch(() => undefined);
+    void cloudController.restoreExistingSession().catch(() => undefined);
     companionApiController.start();
 
     app.on('activate', function () {
