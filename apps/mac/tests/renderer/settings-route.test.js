@@ -162,6 +162,7 @@ describe('SettingsRoute', () => {
     expect(html).toContain('Signed out');
     expect(html).toContain('Nothing is uploaded until you choose Add to Cloud.');
     expect(html).toContain('Cavalry opens Google sign-in in your browser.');
+    expect(html).toContain('Cavalry never receives your Mac password.');
     expect(html).not.toContain('id="account-profile-form"');
     expect(html).not.toContain('settings-account-email');
   });
@@ -301,6 +302,7 @@ describe('SettingsRoute', () => {
     expect(html).toContain('id="settings-advisor-api-key"');
     expect(html).toContain('disabled=""');
     expect(html).toContain('aria-label="Remove saved OpenAI key"');
+    expect(html).toContain('Saved OpenAI keys are protected with macOS Keychain.');
     expect(html).not.toContain('ChatGPT is connected');
     expect(html).toContain('name="model"');
     expect(html).toContain('name="apiKey"');

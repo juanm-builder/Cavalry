@@ -91,8 +91,8 @@ The existing 1024×1024 PNG is the Windows icon source. electron-builder convert
 2. Update the version in the root and desktop manifests and synchronize the lockfile. For example:
 
    ```bash
-   npm version 1.0.21 --no-git-tag-version
-   npm version 1.0.21 --workspace @cavalry/mac --no-git-tag-version
+   npm version 1.0.22 --no-git-tag-version
+   npm version 1.0.22 --workspace @cavalry/mac --no-git-tag-version
    npm install --package-lock-only
    ```
 
@@ -100,7 +100,7 @@ The existing 1024×1024 PNG is the Windows icon source. electron-builder convert
 
    ```bash
    npm ci
-   npm run release:validate -- v1.0.21
+   npm run release:validate -- v1.0.22
    npm run release:security
    npm run check
    npm run test:integration
@@ -111,8 +111,8 @@ The existing 1024×1024 PNG is the Windows icon source. electron-builder convert
 4. Create and push the matching tag only after that commit is ready:
 
    ```bash
-   git tag -a v1.0.21 -m "Cavalry v1.0.21"
-   git push origin v1.0.21
+   git tag -a v1.0.22 -m "Cavalry v1.0.22"
+   git push origin v1.0.22
    ```
 
 5. Watch the **Desktop Release** workflow. It rejects a version that is not higher than every published stable update, reruns the gates, builds both macOS architectures in one signed/notarized invocation, verifies every macOS payload against `latest-mac.yml`, and creates or refreshes a draft release in this repository.

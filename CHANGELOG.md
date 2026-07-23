@@ -4,6 +4,15 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.22 - 2026-07-23
+
+- Deferred secure credential access during ordinary startup so fresh or signed-out profiles and Advisor setups without a stored key no longer unexpectedly request macOS Keychain access; existing encrypted Cloud sessions still restore automatically, and secure storage initializes when stored credentials exist or the user explicitly starts sign-in.
+- Preserved the user's independently selected list or grid view when navigating away from and back to the Accounts and Categories sections.
+- Migration: none. Existing workbook files and encrypted Cloud sessions require no migration.
+- Known limitation: macOS may still show its system Keychain authorization dialog when a user first enables a feature that stores credentials securely; Cavalry does not receive the user's macOS password.
+- Validation: formatting, runtime-license notices, lint, type checks, production builds, unit/renderer/integration tests, Electron smoke, security/history checks, dependency advisories, and release validation are gated before packaging.
+- Signing/notarization status: distribution remains gated on Developer ID signing with a secure timestamp, Apple notarization and stapling, Gatekeeper, architecture checks, updater metadata verification, and an installed `1.0.21` to `1.0.22` automatic-update test.
+
 ## 1.0.21 - 2026-07-23
 
 - Hardened macOS release packaging so the final DMG containers are Developer ID-signed with a secure timestamp, Apple-notarized, and stapled; their blockmaps and updater hashes are regenerated before upload.

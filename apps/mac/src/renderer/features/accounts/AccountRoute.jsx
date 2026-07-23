@@ -14,6 +14,7 @@ import {
 import { AccountEditModal } from './AccountEditModal.jsx';
 import { AccountTransactionDetailModal } from './AccountTransactionDetailModal.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
+import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
 function Icon({ name, className = '' }) {
   return (
@@ -472,7 +473,8 @@ function AccountRouteController({
   createRequestId = 0,
   onCreateRequestHandled,
   asOfDate = '',
-  asOfLabel = ''
+  asOfLabel = '',
+  viewPreferenceStorage
 }) {
   const actions = useActionBindings();
   const [showArchived, setShowArchived] = useState(() =>
@@ -483,7 +485,10 @@ function AccountRouteController({
   );
   const [accountSearch, setAccountSearch] = useState('');
   const [accountTypeFilter, setAccountTypeFilter] = useState('all');
-  const [accountView, setAccountView] = useState('list');
+  const [accountView, setAccountView] = useCollectionViewPreference(
+    'accounts',
+    viewPreferenceStorage
+  );
   const [modal, setModal] = useState(null);
   const [transactionDetail, setTransactionDetail] = useState(null);
   const transactionDetailTrigger = useRef(null);

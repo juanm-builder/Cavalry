@@ -628,45 +628,52 @@ function AssistantPanel({ advisor, feedback, onAction }) {
           </div>
 
           {advisorUsesRemoteModel ? (
-            <div className="advisor-config-grid advisor-config-grid-openai">
-              <input name="apiMode" type="hidden" value="responses" />
-              <div className="field advisor-api-key-field">
-                <label htmlFor="settings-advisor-api-key">OpenAI key</label>
-                <div className={'advisor-api-key-control' + (apiKeyLocked ? ' is-locked' : '')}>
+            <>
+              <div className="advisor-config-grid advisor-config-grid-openai">
+                <input name="apiMode" type="hidden" value="responses" />
+                <div className="field advisor-api-key-field">
+                  <label htmlFor="settings-advisor-api-key">OpenAI key</label>
+                  <div className={'advisor-api-key-control' + (apiKeyLocked ? ' is-locked' : '')}>
+                    <input
+                      autoComplete="off"
+                      defaultValue={apiKeyLocked ? advisorApiKeyValue : ''}
+                      disabled={apiKeyLocked}
+                      id="settings-advisor-api-key"
+                      key={apiKeyLocked ? 'saved-key' : 'editable-key'}
+                      name="apiKey"
+                      placeholder={advisor.apiKeyPlaceholder}
+                      type="password"
+                    />
+                    {apiKeyLocked ? (
+                      <button
+                        aria-label="Remove saved OpenAI key"
+                        className="btn btn-icon advisor-api-key-remove"
+                        onClick={() => setUnlockedApiKeyPreview(advisorApiKeyValue)}
+                        title="Remove saved key and enter a new one"
+                        type="button"
+                      >
+                        <Icon name="close" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="settings-advisor-model">Model</label>
                   <input
-                    autoComplete="off"
-                    defaultValue={apiKeyLocked ? advisorApiKeyValue : ''}
-                    disabled={apiKeyLocked}
-                    id="settings-advisor-api-key"
-                    key={apiKeyLocked ? 'saved-key' : 'editable-key'}
-                    name="apiKey"
-                    placeholder={advisor.apiKeyPlaceholder}
-                    type="password"
+                    defaultValue={advisorSettings.model || ''}
+                    id="settings-advisor-model"
+                    name="model"
+                    placeholder={advisor.modelPlaceholder}
+                    type="text"
                   />
-                  {apiKeyLocked ? (
-                    <button
-                      aria-label="Remove saved OpenAI key"
-                      className="btn btn-icon advisor-api-key-remove"
-                      onClick={() => setUnlockedApiKeyPreview(advisorApiKeyValue)}
-                      title="Remove saved key and enter a new one"
-                      type="button"
-                    >
-                      <Icon name="close" />
-                    </button>
-                  ) : null}
                 </div>
               </div>
-              <div className="field">
-                <label htmlFor="settings-advisor-model">Model</label>
-                <input
-                  defaultValue={advisorSettings.model || ''}
-                  id="settings-advisor-model"
-                  name="model"
-                  placeholder={advisor.modelPlaceholder}
-                  type="text"
-                />
+              <div className="settings-inline-message" role="note">
+                <Icon name="shield_lock" />
+                Saved OpenAI keys are protected with macOS Keychain. If macOS asks you to approve
+                access, Cavalry never receives your Mac password.
               </div>
-            </div>
+            </>
           ) : null}
 
           {advisorUsesLocalModel ? (

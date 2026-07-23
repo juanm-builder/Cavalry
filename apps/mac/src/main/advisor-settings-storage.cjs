@@ -47,8 +47,10 @@ function createAdvisorSettingsStorage({
     }
     const hadLegacyPlaintextKey = hasLegacyPlaintextAdvisorApiKey(parsed);
     const hadStoredKey = hasStoredAdvisorApiKey(parsed);
-    const secureStorageAvailable = canEncryptAdvisorApiKey(safeStorage);
-    let settings = normalizeSettings(unsealAdvisorApiKey(safeStorage, parsed));
+    const secureStorageAvailable = hadStoredKey && canEncryptAdvisorApiKey(safeStorage);
+    let settings = normalizeSettings(
+      hadStoredKey ? unsealAdvisorApiKey(safeStorage, parsed) : parsed
+    );
     if (hadLegacyPlaintextKey || (hadStoredKey && !secureStorageAvailable)) {
       if (!secureStorageAvailable) settings = normalizeSettings({ ...settings, apiKey: '' });
       await persist(getPersistentSettings(settings));

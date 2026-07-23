@@ -8,6 +8,7 @@ import {
 } from './category-controller.js';
 import { CATEGORY_COLORS, CATEGORY_ICONS } from './category-options.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
+import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
 function Icon({ name, className = '' }) {
   return (
@@ -806,7 +807,8 @@ function CategoryRouteController({
   onTargetHandled,
   periodLabel = '',
   rangeStart = '',
-  rangeEnd = ''
+  rangeEnd = '',
+  viewPreferenceStorage
 }) {
   const actions = useActionBindings();
   const [showHidden, setShowHidden] = useState(() =>
@@ -814,7 +816,7 @@ function CategoryRouteController({
   );
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState('type');
-  const [view, setView] = useState('grid');
+  const [view, setView] = useCollectionViewPreference('categories', viewPreferenceStorage);
   const [expanded, setExpanded] = useState(false);
   const [modal, setModal] = useState(null);
   const [referenceTargetId, setReferenceTargetId] = useState('');

@@ -104,6 +104,12 @@ function createCloudController(dependencies = {}) {
     return broadcastState();
   }
 
+  async function restoreExistingSession() {
+    await auth.restoreExistingSession();
+    if (auth.isSignedIn()) await Promise.all([refreshProfile(), refreshWorkbooks()]);
+    return broadcastState();
+  }
+
   async function signInWithGoogle() {
     const result = await auth.signInWithGoogle();
     return { ...result, state: broadcastState() };
@@ -192,7 +198,8 @@ function createCloudController(dependencies = {}) {
     getState,
     handleAuthCallback,
     initialize,
-    registerHandlers
+    registerHandlers,
+    restoreExistingSession
   };
 }
 
