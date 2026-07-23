@@ -120,20 +120,9 @@ The existing 1024×1024 PNG is the Windows icon source. electron-builder convert
 
 The workflow safely reuses an existing draft for the same tag and overwrites only its generated asset names. It refuses to alter a release that is already public. If a build fails, fix the tagged source by creating a new release commit and new version rather than silently moving a published version tag.
 
-## Migrating from the legacy update repository
-
-Installed copies built before this repository became public still read the legacy `cavalry-updates` feed. Do not delete that feed before shipping a transition build.
-
-1. Build the first higher version from this repository so its embedded feed points here.
-2. Verify the signed assets and updater metadata, then publish the identical transition assets in both this repository and the legacy update repository.
-3. Confirm an installed legacy version discovers and installs the transition release. Confirm the transition version then discovers a later draft or test release from this repository.
-4. Revoke the old cross-repository publication token and archive the legacy repository. Keep the transition release and its assets available for older installations.
-
-Future versions are drafted and published only in this repository.
-
 ## Tester experience
 
-New macOS testers manually install a signed DMG once. Existing testers on a non-updater build need one final manual installation of a signed, updater-enabled version; clients on the legacy feed follow the transition procedure above. Signed Windows installers and Windows automatic updates are not distributed through the current release channel. Packaged production apps check the public release feed; local development and unpackaged runs do not. When a newer version exists, the app offers **Update now** or **Later**. Choosing update downloads in the background while the app remains usable. After a verified download is ready, the app asks for a restart before installation.
+New macOS testers manually install a signed DMG once. Later signed releases update from this repository. Signed Windows installers and Windows automatic updates are not distributed through the current release channel. Packaged production apps check the public release feed; local development and unpackaged runs do not. When a newer version exists, the app offers **Update now** or **Later**. Choosing update downloads in the background while the app remains usable. After a verified download is ready, the app asks for a restart before installation.
 
 No update, an offline check, a dismissed prompt, or a transient download failure leaves the current version running. If the operating system cannot prepare or launch a downloaded installer, Cavalry restores its normal quit behavior and optional background service, then shows a friendly failure message without exposing a raw platform error. Those states do not produce a success prompt or force the application to quit. The next app launch (or a newly published higher version) can retry. Choosing **Later** suppresses that version for the rest of the current app session.
 

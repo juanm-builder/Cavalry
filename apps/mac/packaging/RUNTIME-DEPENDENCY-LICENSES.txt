@@ -8,14 +8,14 @@ Electron and Chromium notices are shipped as separate files. Cavalry project cod
 is covered by Cavalry-LICENSE.txt.
 
 PACKAGE COUNT: 28
-INVENTORY SHA-256: 0f84942da7e62bedc7cd5dc88d4311c27756d06f6137747f322e2f702c2298d4
+INVENTORY SHA-256: b58dae2058444c3ce6f38cc63b056c6c14ac3a4aee32d5d32a74c759ad9c0e0e
 
 ================================================================================
-PACKAGE: @supabase/auth-js@2.110.7
+PACKAGE: @supabase/auth-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-M5Bpl4hCv6kHcOO/xM06Dyfg1mYLHljMkp1plhzG9IRZPc3czvyMsSN1XpL5+GKisOKM3lSN59zhpcm6sMVXfA==
-LOCK PATHS: node_modules/@supabase/auth-js
+LOCK IDENTITY: sha512-TQ5neTUDX2C2WmyYa03yGhLMkhdE/SkHXtK8/qxO/APUy3rsymsJCBP48p4jcN6iO2G0ow6RRexQd2mX+dSyJg==
+LOCK PATHS: apps/mac/node_modules/@supabase/auth-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -44,11 +44,11 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: @supabase/functions-js@2.110.7
+PACKAGE: @supabase/functions-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-megYmexlYEoR/0qlsr4Snh9wtzAodO7MAri3NMevZrXzNvQRKlvmTcSBoKGLQEPDakgDZMqbMdf9DwoZz6qfoA==
-LOCK PATHS: node_modules/@supabase/functions-js
+LOCK IDENTITY: sha512-5yB9TLYzvv2oSQxwb0gamEvIAsuH66pVt7AM/pz03S7wN6ehD34GNgbShrccetqPedXQSz7e/1hAJ9NeEhoZVg==
+LOCK PATHS: apps/mac/node_modules/@supabase/functions-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -111,11 +111,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ----- END LICENSE.md -----
 
 ================================================================================
-PACKAGE: @supabase/postgrest-js@2.110.7
+PACKAGE: @supabase/postgrest-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-ban6YV0djhVaqVYezlOARKLIuOBSvLLhyQVZjA2nxPrtswhxHCl1+gI4giFgI9ATQAaMNbUZb4JXiuL5lEA/5g==
-LOCK PATHS: node_modules/@supabase/postgrest-js
+LOCK IDENTITY: sha512-QeRROxl1PpOZw5Jzi7BwdN9icsycMrLlCCvsjS0hYLW+nZoaT46zdagz/glJirj8jHF4jSd5Jyipuae2cBClCw==
+LOCK PATHS: apps/mac/node_modules/@supabase/postgrest-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -144,11 +144,11 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: @supabase/realtime-js@2.110.7
+PACKAGE: @supabase/realtime-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-AMtZjyFA2gsmjuxopPNS/sRznLQHG0Ht5x+ytTPTOh3vAcOTUlVRLx7gW4/CONNnbb3PKOkE+HmM35HOSbmomQ==
-LOCK PATHS: node_modules/@supabase/realtime-js
+LOCK IDENTITY: sha512-mwX7ituX6O31fLf+0g65rpLlNxqgnMaPltPsQwzox6jfmbfVl3tCxXrfr3HEsQcCRjpjuJG1+A0vFzP1yVjKHA==
+LOCK PATHS: apps/mac/node_modules/@supabase/realtime-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -177,11 +177,11 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: @supabase/storage-js@2.110.7
+PACKAGE: @supabase/storage-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-2tcDE8cjEDy1uKxKavBpKQod1JdMV1jDXQag48TCa+kycmJOltc0yVabC0BUlhOwAl6WykXU2aOsH3ELMtZrmQ==
-LOCK PATHS: node_modules/@supabase/storage-js
+LOCK IDENTITY: sha512-CcfhkZFBLxsthgUabZKxwfsoXdrikIGsL3LsGoV3FZTqCMx/s1y49taT4jT/oya5+1IuB0sFFHw6pF0o0iJniQ==
+LOCK PATHS: apps/mac/node_modules/@supabase/storage-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -210,11 +210,11 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: @supabase/supabase-js@2.110.7
+PACKAGE: @supabase/supabase-js@2.110.8
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/supabase/supabase-js.git
-LOCK IDENTITY: sha512-AnfO3A230Shy6RMO7cya3Wl1OcXnABJrzH8vP+fY7/RFjhzcchB7DjKkkTIAntlwekD+GkSFzEvt2tC+D4Fp8w==
-LOCK PATHS: node_modules/@supabase/supabase-js
+LOCK IDENTITY: sha512-E5qzoe74zhJRv4wRcbO9eMYzeQDb/+h6c603pL8shcxLGBjTKsIF7XXj05IcNj23TLDgJN1WkMw7mwAPyu5dZg==
+LOCK PATHS: apps/mac/node_modules/@supabase/supabase-js
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -509,11 +509,11 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: builder-util-runtime@9.5.1
+PACKAGE: builder-util-runtime@9.7.0
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/electron-userland/electron-builder.git
-LOCK IDENTITY: sha512-qt41tMfgHTllhResqM5DcnHyDIWNgzHvuY2jDcYP9iaGpkWxTUzV6GQjDeLnlR1/DtdlcsWQbA7sByMpmJFTLQ==
-LOCK PATHS: node_modules/builder-util-runtime
+LOCK IDENTITY: sha512-g/kR520giAFYkSXTzcmF3kqQq7wi8F6N6SzeDgZrqTBN+VHdmgWOyTdD1yD7AATDId/yXLvuP34CxW46/BwCdw==
+LOCK PATHS: apps/mac/node_modules/builder-util-runtime
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -573,11 +573,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: electron-updater@6.8.3
+PACKAGE: electron-updater@6.8.9
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/electron-userland/electron-builder.git
-LOCK IDENTITY: sha512-Z6sgw3jgbikWKXei1ENdqFOxBP0WlXg3TtKfz0rgw2vIZFJUyI4pD7ZN7jrkm7EoMK+tcm/qTnPUdqfZukBlBQ==
-LOCK PATHS: node_modules/electron-updater
+LOCK IDENTITY: sha512-ZhVxM9iGONUpZGI1FxdMRgJjUFXi7AYGVa5PwKlO1tV1/4zDxQmfKpXOHVztKrd6L9rLcFjERvi1Mf2vxyTkig==
+LOCK PATHS: apps/mac/node_modules/electron-updater
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -610,7 +610,7 @@ PACKAGE: fs-extra@10.1.0
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/jprichardson/node-fs-extra
 LOCK IDENTITY: sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==
-LOCK PATHS: node_modules/electron-updater/node_modules/fs-extra
+LOCK PATHS: node_modules/fs-extra
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -730,7 +730,7 @@ PACKAGE: jsonfile@6.2.1
 DECLARED LICENSE: MIT
 SOURCE: git@github.com:jprichardson/node-jsonfile.git
 LOCK IDENTITY: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==
-LOCK PATHS: node_modules/electron-updater/node_modules/jsonfile
+LOCK PATHS: node_modules/fs-extra/node_modules/jsonfile
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -937,10 +937,10 @@ SOFTWARE.
 ----- END license.md -----
 
 ================================================================================
-PACKAGE: react-dom@19.2.7
+PACKAGE: react-dom@19.2.8
 DECLARED LICENSE: MIT
-SOURCE: https://github.com/facebook/react.git
-LOCK IDENTITY: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==
+SOURCE: https://github.com/react/react.git
+LOCK IDENTITY: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==
 LOCK PATHS: node_modules/react-dom
 LEGAL FILES: LICENSE
 ================================================================================
@@ -970,10 +970,10 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: react@19.2.7
+PACKAGE: react@19.2.8
 DECLARED LICENSE: MIT
-SOURCE: https://github.com/facebook/react.git
-LOCK IDENTITY: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==
+SOURCE: https://github.com/react/react.git
+LOCK IDENTITY: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==
 LOCK PATHS: node_modules/react
 LEGAL FILES: LICENSE
 ================================================================================
@@ -1107,7 +1107,7 @@ PACKAGE: semver@7.7.4
 DECLARED LICENSE: ISC
 SOURCE: https://github.com/npm/node-semver.git
 LOCK IDENTITY: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==
-LOCK PATHS: node_modules/electron-updater/node_modules/semver
+LOCK PATHS: apps/mac/node_modules/semver
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -1208,7 +1208,7 @@ PACKAGE: universalify@2.0.1
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/RyanZim/universalify.git
 LOCK IDENTITY: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==
-LOCK PATHS: node_modules/electron-updater/node_modules/universalify
+LOCK PATHS: node_modules/fs-extra/node_modules/universalify
 LEGAL FILES: LICENSE
 ================================================================================
 

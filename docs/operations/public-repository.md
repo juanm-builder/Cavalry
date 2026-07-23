@@ -6,7 +6,7 @@ Do not change the old source repository's visibility and do not push this workin
 
 ## Build the fresh source snapshot
 
-1. Freeze releases in both retired repositories. Keep them private or archived until the updater transition is complete.
+1. Freeze changes in the retired private source repository and keep it private or archived.
 2. Create an empty directory outside this clone. Copy only the existing source files reported by `git ls-files --cached --others --exclude-standard`; never copy `.git`, ignored `.env` files, dependencies, build output, test artifacts, local models, or editor/agent state.
 3. Initialize `main` in that directory and configure a GitHub `noreply` commit address if the normal author email should remain private.
 4. Run `npm ci`, `npm run release:security -- --content-only`, `npm run check`, `npm run test:integration`, and `npm run test:e2e` in the new directory. The content-only security mode is used here because a history scan requires at least one commit.
@@ -25,11 +25,9 @@ Do **not** use `git push --mirror`. A local clone can contain private stashes, t
 - Enable GitHub code scanning with CodeQL default setup for JavaScript/TypeScript.
 - Review Actions retention. Public repositories remove standard hosted-runner minute charges, but artifact storage and larger runners can still incur charges.
 
-## Updater transition
+## Fresh updater baseline
 
-Installed releases must not be stranded on an old update repository. Publish one higher transition version to both the legacy update repository and this repository, with the transition build configured to read future updates from this repository. Verify update metadata and both macOS architectures before retiring the old publication path. Keep the legacy transition assets available for older clients.
-
-After the transition succeeds, publish future releases from the main repository using the scoped GitHub-provided token and revoke the separate update-repository token.
+No updater-enabled build was distributed before this public repository was created. The first signed public release therefore establishes this repository as the only update feed. Do not dual-publish releases or create a cross-repository publication token.
 
 ## Final verification
 

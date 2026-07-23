@@ -5,7 +5,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 ## Unreleased
 
 - Prepared the source tree for public review with an Apache-2.0 license, contribution and conduct guidance, private security reporting, privacy/support documentation, and packaged third-party notices.
-- Added release-time security and repository hygiene checks, tightened resource retention, and documented the safe transition to publishing updates from the main repository.
+- Added release-time security and repository hygiene checks, tightened resource retention, and documented same-repository public update publishing.
+- Fixed CI package builds so they remain artifact-only, preserved license coverage for workspace-nested dependencies, and refreshed compatible dependency patches.
 - Removed stale internal planning archives and private-history revision references while retaining user-facing release history.
 
 ## 1.0.19 - 2026-07-21
