@@ -4,10 +4,16 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.20 - 2026-07-23
+
 - Prepared the source tree for public review with an Apache-2.0 license, contribution and conduct guidance, private security reporting, privacy/support documentation, and packaged third-party notices.
 - Added release-time security and repository hygiene checks, tightened resource retention, and documented same-repository public update publishing.
 - Fixed CI package builds so they remain artifact-only, preserved license coverage for workspace-nested dependencies, and refreshed compatible dependency patches.
 - Removed stale internal planning archives and private-history revision references while retaining user-facing release history.
+- Migration: none. Existing workbook files require no migration.
+- Known limitation: this is the first signed public updater baseline, so automatic updating can be proven only after a later `1.0.21` release is published.
+- Validation: formatting, runtime-license notices, lint, type checks, production builds, unit/renderer/integration tests, Electron smoke, security/history checks, and dependency advisories are gated before packaging.
+- Signing/notarization status: distribution is gated on Developer ID signing, Apple notarization and stapling, architecture checks, and updater metadata verification for the final `v1.0.20` artifacts.
 
 ## 1.0.19 - 2026-07-21
 
