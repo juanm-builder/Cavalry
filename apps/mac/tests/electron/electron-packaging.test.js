@@ -90,9 +90,11 @@ describe('Electron packaging manifest', () => {
     expect(releaseConfig.mac.notarize).toBe(true);
     expect(releaseConfig.forceCodeSigning).toBe(true);
     expect(releaseConfig.mac.target).toEqual(['dmg', 'zip']);
+    expect(releaseConfig.dmg).toEqual({ sign: true });
     expect(releaseConfig.mac.artifactName).toBe('Cavalry-for-Mac-${version}-${arch}.${ext}');
     expect(releaseConfig.directories.output).toBe('out/release/mac');
     expect(packageFileEntries('electron-builder.release.yml')).toEqual(packageFileEntries());
+    expect(manifest.devDependencies['electron-builder']).toBe('26.15.3');
     expect(manifest.scripts['dist:release:mac']).toContain('--arm64 --x64');
     expect(manifest.scripts['dist:release:mac']).toContain('--publish never');
   });
@@ -151,6 +153,21 @@ describe('Electron packaging manifest', () => {
     expect(workflowText).not.toContain('"${published_tags[@]}"');
     expect(workflowText.match(/electron-updater\/out\/main\.js/g)).toHaveLength(1);
     expect(workflowText).toContain('pattern: cavalry-release-macos-${{ github.ref_name }}');
+    expect(workflowText).toContain('apps/mac/scripts/finalize-release-dmgs.mjs');
+    const releaseStepNames = workflow.jobs['build-macos'].steps.map((step) => step.name);
+    expect(releaseStepNames.indexOf('Notarize and staple the signed disk images')).toBeLessThan(
+      releaseStepNames.indexOf(
+        'Verify macOS signatures, notarization, architectures, and disk images'
+      )
+    );
+    expect(
+      releaseStepNames.indexOf(
+        'Verify macOS signatures, notarization, architectures, and disk images'
+      )
+    ).toBeLessThan(releaseStepNames.indexOf('Upload macOS release assets'));
+    expect(workflowText).toContain('spctl --assess');
+    expect(workflowText).toContain('context:primary-signature');
+    expect(workflowText).toContain('verify-release-assets.mjs');
     expect(workflowText).toContain('gh release create "$tag"');
     expect(workflowText).toContain('--draft');
     expect(workflowText).not.toContain('--draft=false');

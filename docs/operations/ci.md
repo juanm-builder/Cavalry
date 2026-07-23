@@ -8,7 +8,7 @@ The **Desktop Release** workflow is intentionally separate and has only a `v*` t
 
 After validation:
 
-- One macOS job invokes electron-builder once with both `arm64` and `x64`. This is required to merge both ZIP payloads into one `latest-mac.yml`. The job requires Developer ID signing, hardened runtime, notarization, stapling, and per-file architecture checks.
+- One macOS job invokes electron-builder once with both `arm64` and `x64`. This is required to merge both architectures into one `latest-mac.yml`. The job requires Developer ID signing, hardened runtime, notarization, stapling, and per-file architecture checks for the app bundles, then separately signs, notarizes, staples, and verifies the final DMG containers before upload.
 - The Windows packaging configuration remains in the repository for a future rollout, but no Windows release job runs in the current workflow. Enabling it later requires Authenticode credentials and restoration of Windows asset validation.
 - A final job downloads the macOS build output, verifies the complete metadata-to-asset graph including every declared SHA-512 and file size, writes SHA-256 checksums, and creates or refreshes a draft release in this repository.
 

@@ -46,6 +46,9 @@ mac:
     - dmg
     - zip
 
+dmg:
+  sign: true
+
 publish:
   provider: generic
   url: https://github.com/${env.GITHUB_REPOSITORY}/releases/latest/download

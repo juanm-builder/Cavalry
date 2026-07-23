@@ -4,6 +4,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+- Hardened macOS release packaging so the final DMG containers are Developer ID-signed, Apple-notarized, and stapled; their blockmaps and updater hashes are regenerated before upload.
+
 ## 1.0.20 - 2026-07-23
 
 - Prepared the source tree for public review with an Apache-2.0 license, contribution and conduct guidance, private security reporting, privacy/support documentation, and packaged third-party notices.
