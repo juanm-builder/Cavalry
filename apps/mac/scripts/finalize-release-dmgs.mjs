@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -9,10 +10,23 @@ import { spawn } from 'node:child_process';
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 
 const require = createRequire(import.meta.url);
+const { TmpDir } = require('builder-util');
 const { buildBlockMap } = require('app-builder-lib/out/targets/blockmap/blockmap.js');
+const {
+  createKeychain,
+  findIdentity,
+  removeKeychain
+} = require('app-builder-lib/out/codeSign/macCodeSign.js');
 
 const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const credentialNames = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+const credentialNames = [
+  'APPLE_API_KEY',
+  'APPLE_API_KEY_ID',
+  'APPLE_API_ISSUER',
+  'CSC_LINK',
+  'CSC_KEY_PASSWORD'
+];
+const diskImageIdentifier = 'com.local.cavalry.mac.dmg';
 
 function fail(message) {
   throw new Error(`DMG finalization failed: ${message}`);
@@ -49,11 +63,23 @@ function expectedPayloadNames(version) {
 function requireCredentials(environment) {
   return Object.fromEntries(
     credentialNames.map((name) => {
-      const value = String(environment[name] || '').trim();
-      if (!value) fail(`required environment value ${name} is missing.`);
-      return [name, value];
+      const value = String(environment[name] || '');
+      if (!value.trim()) fail(`required environment value ${name} is missing.`);
+      return [name, name === 'CSC_KEY_PASSWORD' ? value : value.trim()];
     })
   );
+}
+
+function signatureDetails(result) {
+  return [result.stdout, result.stderr].filter(Boolean).join('\n');
+}
+
+export function releaseKeychainPath(currentDirectory, keychainDirectory) {
+  const name = createHash('sha256')
+    .update(resolve(currentDirectory))
+    .update('app-builder')
+    .digest('hex');
+  return resolve(keychainDirectory, `${name}.keychain`);
 }
 
 async function hashFile(path) {
@@ -222,6 +248,11 @@ export async function finalizeReleaseDmgs({
   platform = process.platform,
   commandRunner = runCommand,
   blockMapBuilder = buildBlockMap,
+  keychainFactory = createKeychain,
+  keychainRemover = removeKeychain,
+  identityFinder = findIdentity,
+  temporaryDirectoryFactory = (prefix) => mkdtemp(resolve(tmpdir(), prefix)),
+  temporaryManagerFactory = (prefix) => new TmpDir(prefix),
   retryDelayMs = 5000
 }) {
   if (platform !== 'darwin') {
@@ -231,52 +262,132 @@ export async function finalizeReleaseDmgs({
   const directory = resolve(assetDirectory);
   const credentials = requireCredentials(environment);
   const dmgNames = [`Cavalry-for-Mac-${version}-arm64.dmg`, `Cavalry-for-Mac-${version}-x64.dmg`];
+  const keychainDirectory = await temporaryDirectoryFactory('cavalry-release-keychain-');
+  const temporaryManager = temporaryManagerFactory('cavalry-release-signing');
+  const keychainPath = releaseKeychainPath(directory, keychainDirectory);
+  const previousTemporaryDirectory = process.env.APP_BUILDER_TMP_DIR;
+  let operationError;
 
-  for (const name of dmgNames) {
-    const dmgPath = resolve(directory, name);
-    await requireFile(dmgPath);
-    await commandRunner('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmgPath]);
-    const notarization = await commandRunner('/usr/bin/xcrun', [
-      'notarytool',
-      'submit',
-      dmgPath,
-      '--key',
-      credentials.APPLE_API_KEY,
-      '--key-id',
-      credentials.APPLE_API_KEY_ID,
-      '--issuer',
-      credentials.APPLE_API_ISSUER,
-      '--wait',
-      '--output-format',
-      'json'
-    ]);
-    let notarizationResult;
+  try {
+    process.env.APP_BUILDER_TMP_DIR = keychainDirectory;
+    const signingInfo = await keychainFactory({
+      tmpDir: temporaryManager,
+      cscLink: credentials.CSC_LINK,
+      cscKeyPassword: credentials.CSC_KEY_PASSWORD,
+      currentDir: directory
+    });
+    if (resolve(signingInfo?.keychainFile || '') !== keychainPath) {
+      fail('electron-builder did not create the expected isolated release keychain.');
+    }
+    const identity = await identityFinder('Developer ID Application', undefined, keychainPath);
+    if (
+      !identity ||
+      typeof identity.name !== 'string' ||
+      !identity.name.startsWith('Developer ID Application:') ||
+      typeof identity.hash !== 'string' ||
+      identity.hash.length === 0
+    ) {
+      fail('the release certificate is not a Developer ID Application identity.');
+    }
+
+    for (const name of dmgNames) {
+      const dmgPath = resolve(directory, name);
+      await requireFile(dmgPath);
+      await commandRunner('/usr/bin/codesign', [
+        '--force',
+        '--timestamp',
+        '--identifier',
+        diskImageIdentifier,
+        '--sign',
+        identity.hash,
+        '--keychain',
+        keychainPath,
+        dmgPath
+      ]);
+      await commandRunner('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmgPath]);
+      const signature = signatureDetails(
+        await commandRunner('/usr/bin/codesign', ['-dv', '--verbose=4', dmgPath])
+      );
+      if (!signature.split(/\r?\n/).includes(`Authority=${identity.name}`)) {
+        fail(`${name} is not signed with the imported Developer ID Application identity.`);
+      }
+      if (!/^Timestamp=/m.test(signature)) {
+        fail(`${name} does not contain a secure timestamp.`);
+      }
+      const notarization = await commandRunner('/usr/bin/xcrun', [
+        'notarytool',
+        'submit',
+        dmgPath,
+        '--key',
+        credentials.APPLE_API_KEY,
+        '--key-id',
+        credentials.APPLE_API_KEY_ID,
+        '--issuer',
+        credentials.APPLE_API_ISSUER,
+        '--wait',
+        '--output-format',
+        'json'
+      ]);
+      let notarizationResult;
+      try {
+        notarizationResult = JSON.parse(notarization.stdout);
+      } catch {
+        fail(`Apple returned unreadable notarization output for ${name}.`);
+      }
+      if (notarizationResult.status !== 'Accepted') {
+        fail(`Apple did not accept ${name} for notarization.`);
+      }
+      await stapleWithRetry(dmgPath, commandRunner, retryDelayMs);
+      await commandRunner('/usr/bin/xcrun', ['stapler', 'validate', '-v', dmgPath]);
+      await commandRunner('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmgPath]);
+      await commandRunner('/usr/sbin/spctl', [
+        '--assess',
+        '--type',
+        'open',
+        '--context',
+        'context:primary-signature',
+        '--verbose=4',
+        dmgPath
+      ]);
+      await regenerateBlockmap(dmgPath, blockMapBuilder);
+      process.stdout.write(`Apple accepted and stapled ${name}.\n`);
+    }
+
+    await refreshMacUpdateMetadata(directory, version);
+    process.stdout.write(`Refreshed macOS updater metadata for ${version}.\n`);
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    let cleanupError;
     try {
-      notarizationResult = JSON.parse(notarization.stdout);
-    } catch {
-      fail(`Apple returned unreadable notarization output for ${name}.`);
+      await keychainRemover(keychainPath, false);
+    } catch (error) {
+      cleanupError = error;
     }
-    if (notarizationResult.status !== 'Accepted') {
-      fail(`Apple did not accept ${name} for notarization.`);
+    try {
+      await temporaryManager.cleanup();
+    } catch (error) {
+      cleanupError ||= error;
     }
-    await stapleWithRetry(dmgPath, commandRunner, retryDelayMs);
-    await commandRunner('/usr/bin/xcrun', ['stapler', 'validate', '-v', dmgPath]);
-    await commandRunner('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmgPath]);
-    await commandRunner('/usr/sbin/spctl', [
-      '--assess',
-      '--type',
-      'open',
-      '--context',
-      'context:primary-signature',
-      '--verbose=4',
-      dmgPath
-    ]);
-    await regenerateBlockmap(dmgPath, blockMapBuilder);
-    process.stdout.write(`Apple accepted and stapled ${name}.\n`);
+    try {
+      await rm(keychainDirectory, { recursive: true, force: true });
+    } catch (error) {
+      cleanupError ||= error;
+    }
+    if (previousTemporaryDirectory === undefined) {
+      delete process.env.APP_BUILDER_TMP_DIR;
+    } else {
+      process.env.APP_BUILDER_TMP_DIR = previousTemporaryDirectory;
+    }
+    if (cleanupError) {
+      if (operationError) {
+        process.stderr.write('Release signing keychain cleanup also failed.\n');
+      } else {
+        throw cleanupError;
+      }
+    }
   }
-
-  await refreshMacUpdateMetadata(directory, version);
-  process.stdout.write(`Refreshed macOS updater metadata for ${version}.\n`);
 }
 
 async function main() {

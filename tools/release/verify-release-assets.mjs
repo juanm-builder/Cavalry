@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  createReadStream,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 
 import { load as loadYaml } from 'js-yaml';
@@ -117,19 +126,21 @@ function inspectBlockmap(blockmapPath, payloadName, payloadSize) {
   if (coveredBytes !== payloadSize) {
     fail(`${payloadName}.blockmap covers ${coveredBytes} bytes instead of ${payloadSize}.`);
   }
+  return blockmap;
 }
 
 async function verifyBlockmap(payloadName) {
   const payloadPath = requireAsset(payloadName);
   const blockmapPath = requireAsset(`${payloadName}.blockmap`);
   const payloadSize = statSync(payloadPath).size;
-  inspectBlockmap(blockmapPath, payloadName, payloadSize);
+  const actualBlockmap = inspectBlockmap(blockmapPath, payloadName, payloadSize);
 
   const temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'cavalry-blockmap-check-'));
   const expectedBlockmapPath = resolve(temporaryDirectory, 'expected.blockmap');
   try {
     await buildBlockMap(payloadPath, 'gzip', expectedBlockmapPath);
-    if (!readFileSync(blockmapPath).equals(readFileSync(expectedBlockmapPath))) {
+    const expectedBlockmap = inspectBlockmap(expectedBlockmapPath, payloadName, payloadSize);
+    if (!isDeepStrictEqual(actualBlockmap, expectedBlockmap)) {
       fail(`${payloadName}.blockmap does not match the final payload bytes.`);
     }
   } finally {
@@ -146,6 +157,34 @@ const macX64Dmg = `Cavalry-for-Mac-${version}-x64.dmg`;
 const macArm64Zip = `Cavalry-for-Mac-${version}-arm64.zip`;
 const macX64Zip = `Cavalry-for-Mac-${version}-x64.zip`;
 const expectedPayloads = [macX64Zip, macArm64Zip, macX64Dmg, macArm64Dmg];
+const expectedUploadableAssets = new Set([
+  ...expectedPayloads,
+  ...expectedPayloads.map((name) => `${name}.blockmap`),
+  'latest-mac.yml'
+]);
+const uploadableAssets = readdirSync(assetDirectory, { withFileTypes: true })
+  .filter(
+    (entry) =>
+      entry.isFile() &&
+      (entry.name.endsWith('.dmg') ||
+        entry.name.endsWith('.zip') ||
+        entry.name.endsWith('.blockmap') ||
+        entry.name === 'latest-mac.yml')
+  )
+  .map((entry) => entry.name);
+const unexpectedUploadableAssets = uploadableAssets.filter(
+  (name) => !expectedUploadableAssets.has(name)
+);
+const missingUploadableAssets = [...expectedUploadableAssets].filter(
+  (name) => !uploadableAssets.includes(name)
+);
+if (unexpectedUploadableAssets.length > 0 || missingUploadableAssets.length > 0) {
+  fail(
+    `release directory must contain exactly the expected uploadable assets` +
+      `${unexpectedUploadableAssets.length > 0 ? `; unexpected: ${unexpectedUploadableAssets.join(', ')}` : ''}` +
+      `${missingUploadableAssets.length > 0 ? `; missing: ${missingUploadableAssets.join(', ')}` : ''}.`
+  );
+}
 
 for (const payloadName of expectedPayloads) {
   requireAsset(payloadName);
@@ -163,7 +202,12 @@ if (
 
 const legacyPath = metadataAssetName(macMetadata.path);
 const legacyFile = macMetadata.files.find((file) => metadataAssetName(file.url) === legacyPath);
-if (!legacyFile || !legacyPath.endsWith('.zip')) {
+if (
+  typeof macMetadata.path !== 'string' ||
+  macMetadata.path !== legacyPath ||
+  !legacyFile ||
+  !legacyPath.endsWith('.zip')
+) {
   fail('latest-mac.yml legacy path must reference one of the verified macOS ZIP payloads.');
 }
 if (macMetadata.sha512 !== legacyFile.sha512) {

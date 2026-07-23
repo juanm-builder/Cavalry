@@ -11,17 +11,48 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 
 import {
   finalizeReleaseDmgs,
+  releaseKeychainPath,
   refreshMacUpdateMetadata
 } from '../../scripts/finalize-release-dmgs.mjs';
 
 const require = createRequire(import.meta.url);
 const { buildBlockMap } = require('app-builder-lib/out/targets/blockmap/blockmap.js');
 const temporaryDirectories = [];
+const signingIdentity = {
+  name: 'Developer ID Application: Example (TEAMID)',
+  hash: '1234567890ABCDEF1234567890ABCDEF12345678'
+};
+
+function releaseEnvironment() {
+  return {
+    APPLE_API_KEY: '/private/key.p8',
+    APPLE_API_KEY_ID: 'KEY123',
+    APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000',
+    CSC_LINK: 'base64-encoded-p12',
+    CSC_KEY_PASSWORD: 'p12-password'
+  };
+}
+
+function signingDependencies({ identity = signingIdentity, keychainFactory } = {}) {
+  const temporaryManager = { cleanup: vi.fn(async () => {}) };
+  const dependencies = {
+    keychainFactory: vi.fn(
+      keychainFactory ||
+        (async ({ currentDir }) => ({
+          keychainFile: releaseKeychainPath(currentDir, process.env.APP_BUILDER_TMP_DIR)
+        }))
+    ),
+    keychainRemover: vi.fn(async () => {}),
+    identityFinder: vi.fn(async () => identity),
+    temporaryManagerFactory: vi.fn(() => temporaryManager)
+  };
+  return { ...dependencies, temporaryManager };
+}
 
 async function sha512(path) {
   return createHash('sha512').update(readFileSync(path)).digest('base64');
@@ -74,8 +105,16 @@ describe('release DMG finalization', () => {
   it('notarizes and staples both DMGs before refreshing blockmaps and metadata', async () => {
     const { directory } = await createReleaseAssets();
     const commandCalls = [];
+    const signing = signingDependencies();
+    const previousTemporaryDirectory = process.env.APP_BUILDER_TMP_DIR;
     const commandRunner = async (command, argumentsList) => {
       commandCalls.push([command, ...argumentsList]);
+      if (argumentsList[0] === '-dv') {
+        return {
+          stdout: '',
+          stderr: `Authority=${signingIdentity.name}\nTimestamp=Jul 23, 2026 at 12:00:00`
+        };
+      }
       if (argumentsList[0] === 'notarytool') {
         appendFileSync(argumentsList[2], ':apple-ticket');
         return { stdout: JSON.stringify({ status: 'Accepted' }), stderr: '' };
@@ -86,23 +125,50 @@ describe('release DMG finalization', () => {
     await finalizeReleaseDmgs({
       assetDirectory: directory,
       versionArgument: 'v1.0.20',
-      environment: {
-        APPLE_API_KEY: '/private/key.p8',
-        APPLE_API_KEY_ID: 'KEY123',
-        APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000'
-      },
+      environment: releaseEnvironment(),
       platform: 'darwin',
-      commandRunner
+      commandRunner,
+      ...signing
     });
 
+    const signingCalls = commandCalls.filter((call) => call[1] === '--force');
+    expect(signingCalls).toHaveLength(2);
+    for (const call of signingCalls) {
+      expect(call).toContain('--timestamp');
+      expect(call).toContain('--identifier');
+      expect(call).toContain('com.local.cavalry.mac.dmg');
+      expect(call).toContain(signingIdentity.hash);
+    }
     const notaryCalls = commandCalls.filter((call) => call[1] === 'notarytool');
     expect(notaryCalls).toHaveLength(2);
     expect(notaryCalls.map((call) => call[3])).toEqual([
       resolve(directory, 'Cavalry-for-Mac-1.0.20-arm64.dmg'),
       resolve(directory, 'Cavalry-for-Mac-1.0.20-x64.dmg')
     ]);
+    for (const dmgPath of notaryCalls.map((call) => call[3])) {
+      const signIndex = commandCalls.findIndex(
+        (call) => call[1] === '--force' && call.at(-1) === dmgPath
+      );
+      const notarizeIndex = commandCalls.findIndex(
+        (call) => call[1] === 'notarytool' && call[3] === dmgPath
+      );
+      expect(signIndex).toBeGreaterThanOrEqual(0);
+      expect(signIndex).toBeLessThan(notarizeIndex);
+    }
     expect(commandCalls.filter((call) => call.includes('staple'))).toHaveLength(2);
     expect(commandCalls.filter((call) => call.includes('validate'))).toHaveLength(2);
+    expect(signing.keychainFactory).toHaveBeenCalledOnce();
+    expect(signing.identityFinder).toHaveBeenCalledWith(
+      'Developer ID Application',
+      undefined,
+      expect.stringMatching(/\.keychain$/)
+    );
+    expect(signing.keychainRemover).toHaveBeenCalledWith(
+      expect.stringMatching(/\.keychain$/),
+      false
+    );
+    expect(signing.temporaryManager.cleanup).toHaveBeenCalledOnce();
+    expect(process.env.APP_BUILDER_TMP_DIR).toBe(previousTemporaryDirectory);
 
     const metadata = loadYaml(readFileSync(resolve(directory, 'latest-mac.yml'), 'utf8'));
     for (const entry of metadata.files) {
@@ -122,23 +188,135 @@ describe('release DMG finalization', () => {
 
   it('fails closed when Apple does not accept a DMG', async () => {
     const { directory } = await createReleaseAssets();
+    const signing = signingDependencies();
 
     await expect(
       finalizeReleaseDmgs({
         assetDirectory: directory,
         versionArgument: '1.0.20',
-        environment: {
-          APPLE_API_KEY: '/private/key.p8',
-          APPLE_API_KEY_ID: 'KEY123',
-          APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000'
-        },
+        environment: releaseEnvironment(),
         platform: 'darwin',
-        commandRunner: async (_command, argumentsList) => ({
-          stdout: argumentsList[0] === 'notarytool' ? JSON.stringify({ status: 'Invalid' }) : '',
-          stderr: ''
-        })
+        commandRunner: async (_command, argumentsList) => {
+          if (argumentsList[0] === '-dv') {
+            return {
+              stdout: '',
+              stderr: `Authority=${signingIdentity.name}\nTimestamp=Jul 23, 2026 at 12:00:00`
+            };
+          }
+          return {
+            stdout: argumentsList[0] === 'notarytool' ? JSON.stringify({ status: 'Invalid' }) : '',
+            stderr: ''
+          };
+        },
+        ...signing
       })
     ).rejects.toThrow('Apple did not accept');
+    expect(signing.keychainRemover).toHaveBeenCalledOnce();
+  });
+
+  it('does not submit a DMG signed by a different authority to Apple', async () => {
+    const { directory } = await createReleaseAssets();
+    const commandCalls = [];
+    const signing = signingDependencies();
+
+    await expect(
+      finalizeReleaseDmgs({
+        assetDirectory: directory,
+        versionArgument: '1.0.20',
+        environment: releaseEnvironment(),
+        platform: 'darwin',
+        commandRunner: async (command, argumentsList) => {
+          commandCalls.push([command, ...argumentsList]);
+          return {
+            stdout: '',
+            stderr:
+              argumentsList[0] === '-dv'
+                ? 'Authority=Developer ID Application: Different (OTHERID)\nTimestamp=Jul 23, 2026 at 12:00:00'
+                : ''
+          };
+        },
+        ...signing
+      })
+    ).rejects.toThrow('not signed with the imported Developer ID Application identity');
+
+    expect(commandCalls.some((call) => call.includes('notarytool'))).toBe(false);
+    expect(signing.keychainRemover).toHaveBeenCalledOnce();
+  });
+
+  it('does not submit a DMG without a secure timestamp to Apple', async () => {
+    const { directory } = await createReleaseAssets();
+    const commandCalls = [];
+    const signing = signingDependencies();
+
+    await expect(
+      finalizeReleaseDmgs({
+        assetDirectory: directory,
+        versionArgument: '1.0.20',
+        environment: releaseEnvironment(),
+        platform: 'darwin',
+        commandRunner: async (command, argumentsList) => {
+          commandCalls.push([command, ...argumentsList]);
+          return {
+            stdout: '',
+            stderr: argumentsList[0] === '-dv' ? `Authority=${signingIdentity.name}` : ''
+          };
+        },
+        ...signing
+      })
+    ).rejects.toThrow('does not contain a secure timestamp');
+
+    expect(commandCalls.some((call) => call.includes('notarytool'))).toBe(false);
+    expect(signing.keychainRemover).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a non-Developer ID identity before signing or notarizing', async () => {
+    const { directory } = await createReleaseAssets();
+    const commandRunner = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const signing = signingDependencies({
+      identity: {
+        name: 'Mac Developer: Example (TEAMID)',
+        hash: signingIdentity.hash
+      }
+    });
+
+    await expect(
+      finalizeReleaseDmgs({
+        assetDirectory: directory,
+        versionArgument: '1.0.20',
+        environment: releaseEnvironment(),
+        platform: 'darwin',
+        commandRunner,
+        ...signing
+      })
+    ).rejects.toThrow('not a Developer ID Application identity');
+
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(signing.keychainRemover).toHaveBeenCalledOnce();
+  });
+
+  it('cleans the known isolated keychain path when certificate import fails', async () => {
+    const { directory } = await createReleaseAssets();
+    let expectedKeychainPath;
+    const signing = signingDependencies({
+      keychainFactory: async ({ currentDir }) => {
+        expectedKeychainPath = releaseKeychainPath(currentDir, process.env.APP_BUILDER_TMP_DIR);
+        throw new Error('certificate import failed');
+      }
+    });
+
+    await expect(
+      finalizeReleaseDmgs({
+        assetDirectory: directory,
+        versionArgument: '1.0.20',
+        environment: releaseEnvironment(),
+        platform: 'darwin',
+        commandRunner: vi.fn(),
+        ...signing
+      })
+    ).rejects.toThrow('certificate import failed');
+
+    expect(signing.keychainRemover).toHaveBeenCalledWith(expectedKeychainPath, false);
+    expect(signing.temporaryManager.cleanup).toHaveBeenCalledOnce();
   });
 
   it('rejects incomplete metadata instead of silently dropping an architecture', async () => {

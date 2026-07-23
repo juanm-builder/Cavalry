@@ -90,7 +90,7 @@ describe('Electron packaging manifest', () => {
     expect(releaseConfig.mac.notarize).toBe(true);
     expect(releaseConfig.forceCodeSigning).toBe(true);
     expect(releaseConfig.mac.target).toEqual(['dmg', 'zip']);
-    expect(releaseConfig.dmg).toEqual({ sign: true });
+    expect(releaseConfig.dmg).toEqual({ sign: false });
     expect(releaseConfig.mac.artifactName).toBe('Cavalry-for-Mac-${version}-${arch}.${ext}');
     expect(releaseConfig.directories.output).toBe('out/release/mac');
     expect(packageFileEntries('electron-builder.release.yml')).toEqual(packageFileEntries());
@@ -154,8 +154,12 @@ describe('Electron packaging manifest', () => {
     expect(workflowText.match(/electron-updater\/out\/main\.js/g)).toHaveLength(1);
     expect(workflowText).toContain('pattern: cavalry-release-macos-${{ github.ref_name }}');
     expect(workflowText).toContain('apps/mac/scripts/finalize-release-dmgs.mjs');
+    expect(workflowText.match(/CSC_LINK: \$\{\{ secrets\.MAC_CSC_LINK \}\}/g)).toHaveLength(2);
+    expect(
+      workflowText.match(/CSC_KEY_PASSWORD: \$\{\{ secrets\.MAC_CSC_KEY_PASSWORD \}\}/g)
+    ).toHaveLength(2);
     const releaseStepNames = workflow.jobs['build-macos'].steps.map((step) => step.name);
-    expect(releaseStepNames.indexOf('Notarize and staple the signed disk images')).toBeLessThan(
+    expect(releaseStepNames.indexOf('Sign, notarize, and staple the disk images')).toBeLessThan(
       releaseStepNames.indexOf(
         'Verify macOS signatures, notarization, architectures, and disk images'
       )

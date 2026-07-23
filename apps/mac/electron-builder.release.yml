@@ -47,7 +47,8 @@ mac:
     - zip
 
 dmg:
-  sign: true
+  # The post-build finalizer signs with Apple's required secure timestamp.
+  sign: false
 
 publish:
   provider: generic

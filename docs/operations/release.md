@@ -15,7 +15,7 @@ The current release workflow builds the following signed artifacts from the same
 | macOS Apple silicon (`arm64`) | `Cavalry-for-Mac-<version>-arm64.dmg` | matching `.zip` and `.zip.blockmap` |
 | macOS Intel (`x64`)           | `Cavalry-for-Mac-<version>-x64.dmg`   | matching `.zip` and `.zip.blockmap` |
 
-The release filenames deliberately avoid spaces because GitHub normalizes spaces in uploaded asset names, which would otherwise break the generic updater URLs in `latest-mac.yml`. The metadata contains both macOS ZIP and DMG entries. They must be built in one electron-builder invocation so the metadata is merged instead of one architecture overwriting the other. After electron-builder signs each DMG, the workflow submits the final containers to Apple, staples their tickets, and regenerates the DMG blockmaps and updater hashes before verification. `SHA256SUMS.txt` lets a maintainer independently verify every uploaded file.
+The release filenames deliberately avoid spaces because GitHub normalizes spaces in uploaded asset names, which would otherwise break the generic updater URLs in `latest-mac.yml`. The metadata contains both macOS ZIP and DMG entries. They must be built in one electron-builder invocation so the metadata is merged instead of one architecture overwriting the other. After electron-builder builds the containers, the finalizer imports the release certificate into an isolated temporary keychain, signs each DMG with its Developer ID Application identity and a secure Apple timestamp, and verifies both before notarization. It then submits the final containers to Apple, staples their tickets, and regenerates the DMG blockmaps and updater hashes before verification. `SHA256SUMS.txt` lets a maintainer independently verify every uploaded file.
 
 Windows x64 packaging remains available but dormant. When Windows signing is intentionally enabled later, it will produce `Cavalry for Windows-Setup-<version>-x64.exe`, its blockmap, and `latest.yml`; those files are not required in the current macOS release.
 
@@ -65,7 +65,7 @@ Enroll in the Apple Developer Program and export a **Developer ID Application** 
 | `APPLE_API_KEY_ID`        | App Store Connect key ID                       |
 | `APPLE_API_ISSUER`        | App Store Connect issuer ID                    |
 
-The workflow decodes the API key into a temporary `.p8` file and passes its path as `APPLE_API_KEY`. The release configuration requires signing, hardened runtime, notarization, and the existing entitlements. It notarizes and staples both the app bundles used by ZIP updates and the final DMG containers used for first installation. It preserves the current `com.local.cavalry.mac` bundle ID and `Cavalry for Mac` product name. Do not change that bundle ID or signing team after testers install the first updating build unless a deliberate migration is planned.
+The workflow decodes the API key into a temporary `.p8` file and passes its path as `APPLE_API_KEY`. The release configuration requires signing, hardened runtime, notarization, and the existing entitlements. The finalizer reuses the base64 `.p12` only inside the protected signing job, deletes its isolated temporary keychain even when a signing or notarization step fails, and never logs credential values. It notarizes and staples both the app bundles used by ZIP updates and the final DMG containers used for first installation. It preserves the current `com.local.cavalry.mac` bundle ID and `Cavalry for Mac` product name. Do not change that bundle ID or signing team after testers install the first updating build unless a deliberate migration is planned.
 
 ### Future Windows signing (dormant)
 
@@ -119,7 +119,7 @@ The existing 1024×1024 PNG is the Windows icon source. electron-builder convert
 6. Review the draft's version, notes, complete asset list, signatures, stapled tickets, and `SHA256SUMS.txt`. Download and smoke-test both DMGs before the first public release and whenever packaging changes. Edit the user-facing release notes as needed.
 7. Click **Publish release** and keep it as the latest release. That manual action is the rollout switch. The public `releases/latest/download` endpoint changes only after publication, and installed apps will then discover the new metadata.
 
-The workflow safely reuses an existing draft for the same tag and overwrites only its generated asset names. It refuses to alter a release that is already public. If a build fails, fix the tagged source by creating a new release commit and new version rather than silently moving a published version tag.
+The workflow safely reuses an existing draft for the same immutable tag when rerunning that tag's existing source and workflow, and overwrites only its generated asset names. It refuses to alter a release that is already public. If a correction requires source or workflow code that is absent from the tag, create a new release commit and higher version instead of repairing the draft with untagged code or moving the tag.
 
 ## Tester experience
 
@@ -143,6 +143,6 @@ macOS updates must use the same Developer ID signing identity as the installed b
 ## Recovery rules
 
 - Never replace a bad public release with different files under the same version. Publish a higher fix-forward version; clients already on the bad version will otherwise have nothing newer to install.
-- A draft can be repaired and rerun because clients cannot see it. Once public, the workflow refuses to clobber it.
+- A draft can be refreshed by rerunning the same tagged source and workflow because clients cannot see it. A correction that is not present in that immutable tag requires a new release commit and higher version. Once public, the workflow refuses to clobber it.
 - Removing the latest release can strand clients or point `releases/latest` at an older version. Prefer a higher corrective release.
 - Keep the signing certificates and identities backed up and access-controlled. Losing or changing them can prevent installed clients from accepting future updates.
