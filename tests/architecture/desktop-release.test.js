@@ -3,11 +3,20 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 
 const temporaryDirectories = [];
 const currentVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
+const requireFromMacWorkspace = createRequire(
+  new URL('../../apps/mac/package.json', import.meta.url)
+);
+const { buildBlockMap } = requireFromMacWorkspace(
+  'app-builder-lib/out/targets/blockmap/blockmap.js'
+);
 
 function runScript(script, ...args) {
   return spawnSync(process.execPath, [resolve(script), ...args], {
@@ -24,24 +33,18 @@ function runScriptWithEnv(script, environment) {
   });
 }
 
-function createAssetDirectory(version, { includeX64Mac = true } = {}) {
+async function createAssetDirectory(version, { includeX64Mac = true } = {}) {
   const directory = mkdtempSync(resolve(tmpdir(), 'cavalry-release-assets-'));
   temporaryDirectories.push(directory);
   const macArm64Zip = `Cavalry-for-Mac-${version}-arm64.zip`;
   const macX64Zip = `Cavalry-for-Mac-${version}-x64.zip`;
   const macArm64Dmg = `Cavalry-for-Mac-${version}-arm64.dmg`;
   const macX64Dmg = `Cavalry-for-Mac-${version}-x64.dmg`;
-  const assets = [
-    macArm64Dmg,
-    macX64Dmg,
-    macArm64Zip,
-    macX64Zip,
-    `${macArm64Dmg}.blockmap`,
-    `${macX64Dmg}.blockmap`,
-    `${macArm64Zip}.blockmap`,
-    `${macX64Zip}.blockmap`
-  ];
-  assets.forEach((asset) => writeFileSync(resolve(directory, asset), 'test-asset'));
+  const assets = [macArm64Dmg, macX64Dmg, macArm64Zip, macX64Zip];
+  assets.forEach((asset) => writeFileSync(resolve(directory, asset), `test-asset:${asset}`));
+  for (const asset of assets) {
+    await buildBlockMap(resolve(directory, asset), 'gzip', resolve(directory, `${asset}.blockmap`));
+  }
   const metadataEntry = (url) => {
     const contents = readFileSync(resolve(directory, url));
     return {
@@ -54,13 +57,32 @@ function createAssetDirectory(version, { includeX64Mac = true } = {}) {
     entries
       .map(({ url, sha512, size }) => `  - url: ${url}\n    sha512: ${sha512}\n    size: ${size}`)
       .join('\n');
-  const macFiles = [macArm64Zip, ...(includeX64Mac ? [macX64Zip] : [])];
+  const macFiles = [
+    macArm64Zip,
+    ...(includeX64Mac ? [macX64Zip] : []),
+    macArm64Dmg,
+    ...(includeX64Mac ? [macX64Dmg] : [])
+  ];
   const legacyFile = metadataEntry(macFiles[0]);
   writeFileSync(
     resolve(directory, 'latest-mac.yml'),
     `version: ${version}\nfiles:\n${serializeEntries(macFiles.map(metadataEntry))}\npath: ${legacyFile.url}\nsha512: ${legacyFile.sha512}\n`
   );
   return directory;
+}
+
+function updateMetadata(directory, mutate) {
+  const metadataPath = resolve(directory, 'latest-mac.yml');
+  const metadata = loadYaml(readFileSync(metadataPath, 'utf8'));
+  mutate(metadata);
+  writeFileSync(metadataPath, dumpYaml(metadata, { lineWidth: -1 }));
+}
+
+function updateBlockmap(directory, payloadName, mutate) {
+  const blockmapPath = resolve(directory, `${payloadName}.blockmap`);
+  const blockmap = JSON.parse(gunzipSync(readFileSync(blockmapPath)).toString('utf8'));
+  mutate(blockmap);
+  writeFileSync(blockmapPath, gzipSync(JSON.stringify(blockmap)));
 }
 
 afterEach(() => {
@@ -111,24 +133,46 @@ describe('desktop release tooling', () => {
     expect(nonIncreasing.stderr).toContain('must be higher than');
   });
 
-  it('verifies a complete two-architecture macOS update set', () => {
-    const directory = createAssetDirectory('1.0.16');
+  it('verifies a complete two-architecture macOS update set', async () => {
+    const directory = await createAssetDirectory('1.0.16');
     const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Verified complete macOS arm64/x64 assets');
   });
 
-  it('rejects Mac metadata that would strand one architecture', () => {
-    const directory = createAssetDirectory('1.0.16', { includeX64Mac: false });
+  it('accepts a semantically identical blockmap with a platform-specific gzip header', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    const blockmapPath = resolve(directory, 'Cavalry-for-Mac-1.0.16-arm64.dmg.blockmap');
+    const blockmap = readFileSync(blockmapPath);
+    blockmap[9] = blockmap[9] === 3 ? 19 : 3;
+    writeFileSync(blockmapPath, blockmap);
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('rejects an unexpected uploadable release asset', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    writeFileSync(resolve(directory, 'Cavalry-for-Mac-1.0.15-arm64.dmg'), 'stale');
+
     const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('both the arm64 and x64 ZIP update payloads');
+    expect(result.stderr).toContain('unexpected: Cavalry-for-Mac-1.0.15-arm64.dmg');
   });
 
-  it('rejects a payload that does not match its published metadata', () => {
-    const directory = createAssetDirectory('1.0.16');
+  it('rejects Mac metadata that would strand one architecture', async () => {
+    const directory = await createAssetDirectory('1.0.16', { includeX64Mac: false });
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('exactly the arm64/x64 DMG and ZIP payloads');
+  });
+
+  it('rejects a payload that does not match its published metadata', async () => {
+    const directory = await createAssetDirectory('1.0.16');
     writeFileSync(resolve(directory, 'Cavalry-for-Mac-1.0.16-arm64.zip'), 'corrupted');
     const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
 
@@ -136,17 +180,17 @@ describe('desktop release tooling', () => {
     expect(result.stderr).toContain('sha512 does not match');
   });
 
-  it('rejects an incomplete differential-download asset set', () => {
-    const directory = createAssetDirectory('1.0.16');
+  it('rejects an incomplete differential-download asset set', async () => {
+    const directory = await createAssetDirectory('1.0.16');
     rmSync(resolve(directory, 'Cavalry-for-Mac-1.0.16-arm64.dmg.blockmap'));
     const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('missing or empty asset');
+    expect(result.stderr).toContain('missing: Cavalry-for-Mac-1.0.16-arm64.dmg.blockmap');
   });
 
-  it('rejects inconsistent legacy updater metadata', () => {
-    const directory = createAssetDirectory('1.0.16');
+  it('rejects inconsistent legacy updater metadata', async () => {
+    const directory = await createAssetDirectory('1.0.16');
     const metadataPath = resolve(directory, 'latest-mac.yml');
     const metadata = readFileSync(metadataPath, 'utf8');
     writeFileSync(metadataPath, metadata.replace(/(\nsha512: )[^\n]+/, '$1invalid'));
@@ -154,5 +198,131 @@ describe('desktop release tooling', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('legacy sha512 must match');
+  });
+
+  it.each([
+    'https://github.com/example/releases/Cavalry-for-Mac-1.0.16-arm64.zip',
+    'Cavalry-for-Mac-1.0.16-arm64.zip?download=1'
+  ])('rejects a non-basename legacy updater path: %s', async (path) => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateMetadata(directory, (metadata) => {
+      metadata.path = path;
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('legacy path must reference');
+  });
+
+  it('rejects duplicate metadata payloads', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateMetadata(directory, (metadata) => {
+      metadata.files.push({ ...metadata.files[0] });
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('contains duplicate payload');
+  });
+
+  it('rejects a non-basename metadata payload URL', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateMetadata(directory, (metadata) => {
+      metadata.files[0].url = `downloads/${metadata.files[0].url}`;
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('must be a basename only');
+  });
+
+  it('rejects invalid metadata payload sizes', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateMetadata(directory, (metadata) => {
+      metadata.files[0].size = 0;
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('has no usable size');
+  });
+
+  it('rejects unexpected metadata payloads', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    const payloadName = 'unexpected-update.bin';
+    const payloadPath = resolve(directory, payloadName);
+    writeFileSync(payloadPath, 'unexpected');
+    const payload = readFileSync(payloadPath);
+    updateMetadata(directory, (metadata) => {
+      metadata.files.push({
+        url: payloadName,
+        sha512: createHash('sha512').update(payload).digest('base64'),
+        size: payload.length
+      });
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('exactly the arm64/x64 DMG and ZIP payloads');
+  });
+
+  it('rejects a corrupt blockmap', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    writeFileSync(
+      resolve(directory, 'Cavalry-for-Mac-1.0.16-arm64.dmg.blockmap'),
+      'not-a-blockmap'
+    );
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('is not valid gzip-compressed JSON');
+  });
+
+  it('rejects an unsupported blockmap version', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateBlockmap(directory, 'Cavalry-for-Mac-1.0.16-arm64.dmg', (blockmap) => {
+      blockmap.version = '1';
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('expected version 2 single-file format');
+  });
+
+  it('rejects a blockmap that does not cover its payload', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    updateBlockmap(directory, 'Cavalry-for-Mac-1.0.16-arm64.dmg', (blockmap) => {
+      blockmap.files[0].sizes[0] -= 1;
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('blockmap covers');
+  });
+
+  it('rejects a same-size payload mutation with a stale blockmap', async () => {
+    const directory = await createAssetDirectory('1.0.16');
+    const payloadName = 'Cavalry-for-Mac-1.0.16-arm64.dmg';
+    const payloadPath = resolve(directory, payloadName);
+    const payload = readFileSync(payloadPath);
+    payload[0] ^= 0xff;
+    writeFileSync(payloadPath, payload);
+
+    updateMetadata(directory, (metadata) => {
+      const entry = metadata.files.find((file) => file.url === payloadName);
+      entry.sha512 = createHash('sha512').update(payload).digest('base64');
+    });
+
+    const result = runScript('tools/release/verify-release-assets.mjs', directory, 'v1.0.16');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('blockmap does not match the final payload bytes');
   });
 });

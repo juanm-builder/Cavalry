@@ -4,16 +4,19 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
-## 1.0.20 - 2026-07-23
+- Hardened macOS release packaging so the final DMG containers are Developer ID-signed with a secure timestamp, Apple-notarized, and stapled; their blockmaps and updater hashes are regenerated before upload.
+
+## 1.0.20 - 2026-07-23 (Unpublished release candidate)
 
 - Prepared the source tree for public review with an Apache-2.0 license, contribution and conduct guidance, private security reporting, privacy/support documentation, and packaged third-party notices.
 - Added release-time security and repository hygiene checks, tightened resource retention, and documented same-repository public update publishing.
 - Fixed CI package builds so they remain artifact-only, preserved license coverage for workspace-nested dependencies, and refreshed compatible dependency patches.
 - Removed stale internal planning archives and private-history revision references while retaining user-facing release history.
 - Migration: none. Existing workbook files require no migration.
-- Known limitation: this is the first signed public updater baseline, so automatic updating can be proven only after a later `1.0.21` release is published.
+- Publication status: this candidate was not published or distributed. Independent draft verification confirmed the embedded apps but found that the outer DMG containers were not separately signed, notarized, or stapled.
+- Known limitation: a later version will become the first public updater baseline, and automatic updating can be proven only with a subsequent higher release.
 - Validation: formatting, runtime-license notices, lint, type checks, production builds, unit/renderer/integration tests, Electron smoke, security/history checks, and dependency advisories are gated before packaging.
-- Signing/notarization status: distribution is gated on Developer ID signing, Apple notarization and stapling, architecture checks, and updater metadata verification for the final `v1.0.20` artifacts.
+- Signing/notarization status: the embedded apps passed Developer ID signing, Apple notarization and stapling, Gatekeeper, and architecture checks. Publication was withheld because the final DMG containers did not meet the same outer-container gate.
 
 ## 1.0.19 - 2026-07-21
 
