@@ -4,7 +4,15 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.21 - 2026-07-23
+
 - Hardened macOS release packaging so the final DMG containers are Developer ID-signed with a secure timestamp, Apple-notarized, and stapled; their blockmaps and updater hashes are regenerated before upload.
+- Added fail-closed release verification for the exact Apple-silicon and Intel asset inventory, updater hashes and sizes, legacy metadata, and platform-independent blockmap contents.
+- Isolated the release certificate in a temporary keychain that is removed after signing, including when certificate import or notarization fails.
+- Migration: none. Existing workbook files require no migration.
+- Known limitation: this is intended to become the first public updater baseline, so automatic updating can be proven only after a higher `1.0.22` release is published.
+- Validation: formatting, runtime-license notices, lint, type checks, production builds, unit/renderer/integration tests, Electron smoke, security/history checks, dependency advisories, and release-asset verification are gated before packaging.
+- Signing/notarization status: distribution remains gated on Developer ID signing with a secure timestamp, Apple notarization and stapling, Gatekeeper, architecture checks, updater metadata verification, and independent testing of both final DMGs.
 
 ## 1.0.20 - 2026-07-23 (Unpublished release candidate)
 
