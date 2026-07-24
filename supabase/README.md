@@ -1,9 +1,9 @@
 # Cavalry Cloud database
 
 This directory contains the Supabase database contract for Cavalry Cloud. The
-first migration creates an authenticated, multi-workbook store with immutable
-version snapshots, append-only audit history, device records, and owner-only Row
-Level Security (RLS).
+initial migrations create an authenticated, multi-workbook store with immutable
+version snapshots, append-only audit history, device records, durable product
+feedback, and owner-only Row Level Security (RLS).
 
 ## What the migration provides
 
@@ -17,9 +17,18 @@ Level Security (RLS).
   their own history but cannot insert, update, or delete it directly.
 - `sync_audit_events`: append-only metadata describing each accepted save. It
   intentionally does not duplicate workbook contents.
+- `feedback_reports`: private feedback and bug reports submitted by the signed-in
+  owner. Report status is readable by the owner but reserved for server-side
+  triage.
+- `feedback_attachments`: metadata for at most one optional image per report.
+  Image bytes live in the private `feedback-attachments` Storage bucket under an
+  owner/report-scoped object key.
 - `save_workbook_snapshot(...)`: the only authenticated write path for workbook
   snapshots. It locks the workbook row and compares `p_expected_revision` before
   appending the next revision.
+- Feedback RPCs create bounded report and attachment metadata with an
+  owner-scoped idempotency key, finalize a successful private upload, and
+  discard failed or stale pre-upload attachment metadata.
 
 The first upload omits `p_expected_revision` (or sends `null`). Every later upload
 must pass the `latest_revision` most recently read by the client. A stale save
@@ -44,6 +53,9 @@ Keep the GitHub Supabase integration rooted at the repository root so it finds
 `supabase/config.toml` and `supabase/migrations/`. Review production deployment
 settings in Supabase before enabling automatic migration deployment from the
 default branch.
+
+Deploy feedback migrations before publishing a desktop version that exposes the
+feedback UI. The desktop release workflow does not run `supabase db push`.
 
 The project reference is an identifier, not a database password. Do not commit
 the database password, access or refresh tokens, OAuth secrets, the legacy
@@ -115,6 +127,16 @@ privacy deletion and cascades all versions and audit rows for that workbook.
   limits apply even when an authenticated user calls the public RPC directly.
 - Authenticated roles have read-only access to workbooks, versions, and audit
   events. History updates are also rejected by triggers.
+- Feedback report creation is RPC-only and quota-checked. Authenticated users can
+  list only their own reports and attachment metadata; Cavalry surfaces only
+  finalized uploads. Exact retries recover the original report instead of
+  creating duplicates, while conflicting reuse of a request key fails closed.
+  The attachment bucket is private; Storage policies require the authenticated
+  owner, the exact owner/report object-key shape, and matching metadata before
+  upload or download.
+- The desktop main process validates attachment size, declared MIME type, and
+  PNG/JPEG file signatures before upload and after download. Renderer code
+  never receives a Supabase session token, storage path, or signed URL.
 - Administrative deletion remains possible for lawful account deletion and data
   retention. Delete Cavalry rows before deleting an Auth user if an operational
   workflow adds additional restrictive references later.
@@ -122,6 +144,8 @@ privacy deletion and cascades all versions and audit rows for that workbook.
   should use `workbook_versions`, and restoring an old snapshot should append a
   new version through the same concurrency RPC.
 
-Before production, run the migration against a disposable Supabase branch and
+Before production, run the migrations against a disposable Supabase branch and
 verify with two real test users that neither can list, read, mutate, or invoke a
-save against the other's workbook.
+save against the other's workbook or feedback records. Also verify that each
+user can upload and download only an image whose private object key matches that
+user's own pending/finalized attachment metadata.

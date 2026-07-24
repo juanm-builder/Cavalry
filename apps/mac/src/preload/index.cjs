@@ -83,6 +83,12 @@ contextBridge.exposeInMainWorld('cavalryCloud', {
   uploadWorkbook: (payload) => invokeCloudCommand('cavalry-cloud:upload-workbook', payload),
   downloadWorkbook: (payload) => invokeCloudCommand('cavalry-cloud:download-workbook', payload),
   deleteWorkbook: (payload) => invokeCloudCommand('cavalry-cloud:delete-workbook', payload),
+  listFeedbackReports: (payload) =>
+    invokeCloudCommand('cavalry-cloud:list-feedback-reports', payload),
+  submitFeedbackReport: (payload) =>
+    invokeCloudCommand('cavalry-cloud:submit-feedback-report', payload),
+  getFeedbackAttachment: (payload) =>
+    invokeCloudCommand('cavalry-cloud:get-feedback-attachment', payload),
   onStateChanged: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, state) => callback(state || {});

@@ -11,7 +11,15 @@ const migrationSource = migrationFiles
   .map((name) => readFileSync(resolve(migrationsDirectory, name), 'utf8'))
   .join('\n');
 
-const cloudTables = ['profiles', 'devices', 'workbooks', 'workbook_versions', 'sync_audit_events'];
+const cloudTables = [
+  'profiles',
+  'devices',
+  'workbooks',
+  'workbook_versions',
+  'sync_audit_events',
+  'feedback_reports',
+  'feedback_attachments'
+];
 
 describe('Supabase Cavalry Cloud migration', () => {
   it('creates the multi-workbook ownership and history model', () => {
@@ -118,6 +126,97 @@ describe('Supabase Cavalry Cloud migration', () => {
     expect(migrationSource).toContain('> 524288000');
   });
 
+  it('stores private owner-scoped feedback and image metadata', () => {
+    expect(migrationFiles).toContain('20260724000100_cloud_feedback.sql');
+    expect(migrationSource).toMatch(/create table public\.feedback_reports \(/i);
+    expect(migrationSource).toMatch(/create table public\.feedback_attachments \(/i);
+    expect(migrationSource).toMatch(
+      /foreign key \(report_id,\s*owner_id\)[\s\S]*?references public\.feedback_reports \(id,\s*owner_id\)/i
+    );
+    expect(migrationSource).toMatch(/unique\s*\(report_id\)/i);
+    expect(migrationSource).toMatch(
+      /unique\s*\(owner_id,\s*client_request_id\)[\s\S]*?request_hash/i
+    );
+    expect(migrationSource).toMatch(/feedback_reports_kind[\s\S]*?'bug'[\s\S]*?'feedback'/i);
+    expect(migrationSource).toMatch(/feedback_attachments_size[\s\S]*?8388608/i);
+    expect(migrationSource).toMatch(/image\/png[\s\S]*?image\/jpeg/i);
+    expect(migrationSource).not.toContain('image/webp');
+
+    expect(migrationSource).toContain(
+      'grant select on table public.feedback_reports to authenticated;'
+    );
+    expect(migrationSource).toContain(
+      'grant select on table public.feedback_attachments to authenticated;'
+    );
+    expect(migrationSource).not.toMatch(
+      /grant\s+(?:all|insert|update|delete)[^;]*public\.feedback_(?:reports|attachments)\s+to authenticated/i
+    );
+    expect(migrationSource).toContain('create or replace function public.create_feedback_report(');
+    expect(migrationSource).toContain(
+      'create or replace function public.finalize_feedback_attachment('
+    );
+    expect(migrationSource).toContain(
+      'create or replace function public.discard_feedback_attachment('
+    );
+    expect(migrationSource).toContain(
+      'create or replace function public.recover_feedback_attachments()'
+    );
+    expect(migrationSource).toMatch(
+      /public\.create_feedback_report\([\s\S]*?security definer[\s\S]*?set search_path = ''/i
+    );
+    expect(migrationSource).toMatch(
+      /create_feedback_report\(\s*p_expected_owner_id uuid,\s*p_client_request_id uuid[\s\S]*?p_expected_owner_id <> v_owner_id[\s\S]*?'cloud_session_changed'/i
+    );
+    expect(migrationSource).toMatch(
+      /report\.client_request_id = p_client_request_id[\s\S]*?report\.request_hash = v_request_hash/i
+    );
+    expect(migrationSource).toMatch(
+      /attachment\.created_at < clock_timestamp\(\) - interval '24 hours'[\s\S]*?not exists \([\s\S]*?storage\.objects/i
+    );
+    expect(migrationSource).toMatch(
+      /recover_feedback_attachments\(\)[\s\S]*?set uploaded_at = clock_timestamp\(\)[\s\S]*?return query[\s\S]*?attachment\.storage_path/i
+    );
+    expect(migrationSource).toContain('v_owner_id uuid := (select auth.uid())');
+  });
+
+  it('creates a private feedback bucket with authenticated owner-path policies', () => {
+    expect(migrationSource).toMatch(
+      /insert into storage\.buckets[\s\S]*?'feedback-attachments'[\s\S]*?false[\s\S]*?8388608/i
+    );
+    expect(migrationSource).toMatch(/allowed_mime_types[\s\S]*?image\/png[\s\S]*?image\/jpeg/i);
+    expect(migrationSource).toMatch(
+      /create policy feedback_attachments_storage_insert[\s\S]*?on storage\.objects for insert[\s\S]*?to authenticated/i
+    );
+    expect(migrationSource).toMatch(
+      /create policy feedback_attachments_storage_select[\s\S]*?on storage\.objects for select[\s\S]*?to authenticated/i
+    );
+    expect(migrationSource).toMatch(
+      /create policy feedback_attachments_storage_upload_select[\s\S]*?storage\.allow_only_operation\('object\.upload'\)/i
+    );
+    expect(migrationSource).toMatch(
+      /feedback_attachments_storage_select[\s\S]*?storage\.allow_only_operation\('object\.get_authenticated'\)/i
+    );
+    expect(migrationSource).toMatch(
+      /feedback_attachments_storage_delete_select[\s\S]*?storage\.allow_any_operation\(array\['object\.delete',\s*'object\.delete_many'\]\)/i
+    );
+    expect(migrationSource).toMatch(
+      /create policy feedback_attachments_storage_delete[\s\S]*?on storage\.objects for delete[\s\S]*?to authenticated/i
+    );
+    expect(migrationSource).toContain('(storage.foldername(name))[1] = (select auth.uid())::text');
+    expect(migrationSource).toMatch(
+      /storage\.objects[\s\S]*?exists \([\s\S]*?public\.feedback_attachments/i
+    );
+    expect(migrationSource).toMatch(/metadata\s*->>\s*'size'[\s\S]*?attachment\.size_bytes/i);
+    expect(migrationSource).toMatch(/metadata\s*->>\s*'mimetype'[\s\S]*?attachment\.mime_type/i);
+    expect(migrationSource).toMatch(
+      /discard_feedback_attachment[\s\S]*?and not exists \([\s\S]*?from storage\.objects/i
+    );
+    expect(migrationSource).not.toMatch(
+      /create policy feedback_attachments_storage_[\s\S]{0,240}?to anon/i
+    );
+    expect(migrationSource).not.toMatch(/update storage\.buckets[\s\S]*?public\s*=\s*true/i);
+  });
+
   it('documents safe project setup without embedding credentials', () => {
     const setup = readFileSync(resolve('supabase/README.md'), 'utf8');
 
@@ -129,6 +228,8 @@ describe('Supabase Cavalry Cloud migration', () => {
     expect(setup).toContain('workbook_revision_conflict');
     expect(setup).toMatch(/must never\s+retry with the new revision automatically/);
     expect(setup).toMatch(/Never ship a\s+secret key or `service_role` key/);
+    expect(setup).toContain('feedback-attachments');
+    expect(setup).toMatch(/desktop release workflow does not run `supabase db push`/i);
     expect(setup).not.toMatch(/(?:eyJ[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9_-]+)/);
   });
 });

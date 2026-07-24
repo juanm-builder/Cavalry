@@ -33,6 +33,7 @@ import {
   useCavalryAssistantPanelResize
 } from './useCavalryAssistantPanelResize.js';
 import { useCompanionVoice } from './useCompanionVoice.js';
+import { CompanionFeedbackPanel } from '../feedback/CompanionFeedbackPanel.jsx';
 
 export { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
 
@@ -250,6 +251,7 @@ export function CavalryAssistant({
   createId,
   downloads,
   executeTool,
+  feedback,
   isOpen,
   onClose,
   onOpen,
@@ -270,6 +272,7 @@ export function CavalryAssistant({
     createCavalryAssistantConversationState(workbook)
   );
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [composer, setComposer] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attachmentNotice, setAttachmentNotice] = useState('');
@@ -373,6 +376,7 @@ export function CavalryAssistant({
         : createCavalryAssistantConversationState(workbook)
     );
     setHistoryOpen(false);
+    setFeedbackOpen(false);
     setComposer('');
     setAttachments([]);
     setAttachmentNotice('');
@@ -439,12 +443,13 @@ export function CavalryAssistant({
         if (isOpen) onClose?.();
         else onOpen?.();
       } else if (event.key === 'Escape' && isOpen) {
-        onClose?.();
+        if (feedbackOpen) setFeedbackOpen(false);
+        else onClose?.();
       }
     };
     document.addEventListener('keydown', handleShortcut);
     return () => document.removeEventListener('keydown', handleShortcut);
-  }, [isOpen, onClose, onOpen]);
+  }, [feedbackOpen, isOpen, onClose, onOpen]);
 
   async function addImageFiles(files) {
     if (processingImages || pending || !files?.length) return;
@@ -700,6 +705,7 @@ export function CavalryAssistant({
     clearConversationDraft();
     setConversationState((current) => startNewCavalryAssistantConversation(current));
     setHistoryOpen(false);
+    setFeedbackOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
 
@@ -708,6 +714,7 @@ export function CavalryAssistant({
     clearConversationDraft();
     setConversationState((current) => selectCavalryAssistantConversation(current, conversationId));
     setHistoryOpen(false);
+    setFeedbackOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
 
@@ -802,7 +809,7 @@ export function CavalryAssistant({
             <button
               aria-label="New conversation"
               className="btn btn-icon"
-              disabled={pending || !messages.length}
+              disabled={pending || !messages.length || feedbackOpen}
               onClick={startConversation}
               title="New conversation"
               type="button"
@@ -813,8 +820,16 @@ export function CavalryAssistant({
               canExport={Boolean(downloads) && messages.length > 0 && !pending}
               historyOpen={historyOpen}
               onExportChat={exportConversation}
+              onOpenFeedback={() => {
+                void voice.cancel();
+                setHistoryOpen(false);
+                setFeedbackOpen(true);
+              }}
               onOpenSettings={onOpenSettings}
-              onToggleHistory={() => setHistoryOpen((current) => !current)}
+              onToggleHistory={() => {
+                setFeedbackOpen(false);
+                setHistoryOpen((current) => !current);
+              }}
               pending={pending}
             />
             <button
@@ -830,18 +845,34 @@ export function CavalryAssistant({
 
           <div className="cavalry-assistant-context-bar">
             <Icon name={route.icon} />
-            <span>Working with {route.label}</span>
+            <span>
+              {feedbackOpen ? 'Reporting from' : 'Working with'} {route.label}
+            </span>
             <small>{workbook?.name || 'Current workbook'}</small>
           </div>
 
-          {historyOpen ? (
+          {feedbackOpen ? (
+            <CompanionFeedbackPanel
+              createId={makeId}
+              feedback={feedback}
+              key={feedback?.model?.sessionKey || 'feedback-session'}
+              onBack={() => setFeedbackOpen(false)}
+              onOpenSettings={onOpenSettings}
+              routeId={route.id}
+            />
+          ) : null}
+          {historyOpen && !feedbackOpen ? (
             <ConversationHistory
               activeConversationId={conversationState.activeConversationId}
               conversations={conversations}
               onSelect={resumeConversation}
             />
           ) : null}
-          <div className="cavalry-assistant-messages" hidden={historyOpen} ref={messageListRef}>
+          <div
+            className="cavalry-assistant-messages"
+            hidden={historyOpen || feedbackOpen}
+            ref={messageListRef}
+          >
             {messages.length ? (
               messages.map((message) => (
                 <Message
@@ -904,7 +935,7 @@ export function CavalryAssistant({
             ) : null}
           </div>
 
-          <footer className="cavalry-assistant-composer-wrap" hidden={historyOpen}>
+          <footer className="cavalry-assistant-composer-wrap" hidden={historyOpen || feedbackOpen}>
             {draggingImages ? (
               <div className="cavalry-assistant-drop-overlay">Drop images to attach them</div>
             ) : null}

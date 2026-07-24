@@ -266,6 +266,56 @@ describe('Electron renderer ports', () => {
     });
   });
 
+  it('adapts the narrow cloud feedback bridge without exposing Cloud auth state', async () => {
+    const calls = [];
+    const ports = createElectronRendererPorts({
+      cavalryCloud: {
+        listFeedbackReports: async () => ({ ok: true, reports: [{ id: 'report-1' }] }),
+        submitFeedbackReport: async (payload) => {
+          calls.push(['submit', payload]);
+          return { ok: true, report: { id: 'report-2', ...payload } };
+        },
+        getFeedbackAttachment: async (payload) => {
+          calls.push(['download', payload]);
+          return {
+            ok: true,
+            attachment: {
+              id: payload.attachmentId,
+              mimeType: 'image/png',
+              dataUrl: 'data:image/png;base64,AA=='
+            }
+          };
+        }
+      }
+    });
+
+    await expect(ports.feedback.invoke('list')).resolves.toMatchObject({
+      ok: true,
+      reports: [{ id: 'report-1' }]
+    });
+    await expect(
+      ports.feedback.invoke('submit', {
+        kind: 'bug',
+        description: 'Something broke.',
+        source: 'assistant'
+      })
+    ).resolves.toMatchObject({ ok: true, report: { id: 'report-2', kind: 'bug' } });
+    await expect(
+      ports.feedback.invoke('download', { attachmentId: 'attachment-1' })
+    ).resolves.toMatchObject({
+      ok: true,
+      attachment: { id: 'attachment-1', dataUrl: expect.stringContaining('data:image/png') }
+    });
+    expect(calls).toEqual([
+      ['submit', { kind: 'bug', description: 'Something broke.', source: 'assistant' }],
+      ['download', { attachmentId: 'attachment-1' }]
+    ]);
+    await expect(ports.feedback.invoke('unknown')).resolves.toMatchObject({
+      ok: false,
+      unavailable: true
+    });
+  });
+
   it('does not publish or retain a workbook over IPC when Companion is disabled', async () => {
     const getStatus = vi.fn(async () => ({ ok: true, status: { enabled: false } }));
     const publishWorkbook = vi.fn(async () => ({ ok: true }));

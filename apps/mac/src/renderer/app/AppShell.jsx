@@ -255,12 +255,13 @@ function SessionContent({ routeId, routeModels, onAction }) {
         createId={ports.ids.create}
         downloads={ports.downloads}
         executeTool={application.assistant.executeTool}
+        feedback={application.routeProps.settings.feedback}
         isOpen={assistantOpen}
         onClose={() => setAssistantOpen(false)}
         onOpen={() => setAssistantOpen(true)}
         onOpenReference={openAssistantReference}
-        onOpenSettings={() => {
-          application.assistant.openSettings();
+        onOpenSettings={(sectionId) => {
+          application.assistant.openSettings(sectionId);
           setAssistantOpen(false);
         }}
         settings={application.assistant.settings}

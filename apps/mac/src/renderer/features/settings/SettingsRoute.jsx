@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAppearance } from '../../app/AppearanceProvider.jsx';
 import { CUSTOM_COLOR_FIELDS } from '../../app/appearance-preferences.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
+import { FeedbackSettingsPanel } from '../feedback/FeedbackSettingsPanel.jsx';
 import { CloudAccountPanel } from './CloudAccountPanel.jsx';
 
 function formPayload(form) {
@@ -118,6 +119,11 @@ const SETTINGS_SECTIONS = [
     id: 'settings-account',
     label: 'Account',
     icon: 'account_circle'
+  },
+  {
+    id: 'settings-feedback',
+    label: 'Feedback',
+    icon: 'feedback'
   },
   {
     id: 'settings-files',
@@ -952,7 +958,7 @@ function FilesPanel({ feedback, files, summaryItems }) {
   );
 }
 
-function SettingsRouteView({ model, onAction }) {
+function SettingsRouteView({ feedback: cloudFeedback, model, onAction }) {
   const data = model || {};
   const requestedSection = SETTINGS_SECTIONS.some((section) => section.id === data.activeSection)
     ? data.activeSection
@@ -1003,6 +1009,12 @@ function SettingsRouteView({ model, onAction }) {
               workbook={workbook}
             />
           </SettingsTabPanel>
+          <SettingsTabPanel activeSection={activeSection} id="settings-feedback">
+            <FeedbackSettingsPanel
+              feedback={cloudFeedback}
+              onOpenAccountSettings={() => setActiveSection('settings-account')}
+            />
+          </SettingsTabPanel>
           <SettingsTabPanel activeSection={activeSection} id="settings-files">
             <FilesPanel
               feedback={feedbackFor('settings-files')}
@@ -1016,10 +1028,10 @@ function SettingsRouteView({ model, onAction }) {
   );
 }
 
-export function SettingsRoute({ model, onAction }) {
+export function SettingsRoute({ feedback, model, onAction }) {
   return (
     <ActionBindingProvider onAction={onAction}>
-      <SettingsRouteView model={model} onAction={onAction} />
+      <SettingsRouteView feedback={feedback} model={model} onAction={onAction} />
     </ActionBindingProvider>
   );
 }

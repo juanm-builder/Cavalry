@@ -217,6 +217,30 @@ function createCloudAuthController(dependencies = {}) {
     return client;
   }
 
+  async function createSessionBoundClient(expectedUserId) {
+    if (!client || !isSignedIn() || typeof client.auth.getSession !== 'function') return null;
+    const expectedId = asString(expectedUserId, 128);
+    try {
+      const result = await client.auth.getSession();
+      const session = result && result.data && result.data.session;
+      const accessToken = String((session && session.access_token) || '').trim();
+      if (
+        (result && result.error) ||
+        !session ||
+        !session.user ||
+        asString(session.user.id, 128) !== expectedId ||
+        !accessToken
+      ) {
+        return null;
+      }
+      return createClient(config.url, config.publishableKey, {
+        accessToken: async () => accessToken
+      });
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function isSignedIn() {
     return state.status === 'signed_in' && !!state.user && !!client;
   }
@@ -533,6 +557,7 @@ function createCloudAuthController(dependencies = {}) {
   }
 
   return {
+    createSessionBoundClient,
     dispose,
     getClient,
     getState,

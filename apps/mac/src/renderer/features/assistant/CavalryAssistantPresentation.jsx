@@ -28,6 +28,7 @@ export function AssistantHeaderMenu({
   canExport,
   historyOpen,
   onExportChat,
+  onOpenFeedback,
   onOpenSettings,
   onToggleHistory,
   pending
@@ -109,6 +110,19 @@ export function AssistantHeaderMenu({
           >
             <Icon name="tune" />
             Assistant settings
+          </button>
+          <button
+            className="cavalry-assistant-header-menu-item feedback"
+            disabled={pending}
+            onClick={() => {
+              setOpen(false);
+              onOpenFeedback?.();
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <Icon name="bug_report" />
+            Report a problem
           </button>
         </div>
       ) : null}

@@ -224,6 +224,66 @@ describe('SettingsRoute', () => {
     expect(html).not.toContain('id="account-profile-form"');
   });
 
+  it('provides a Cloud-synced Feedback tab with report submission and review', () => {
+    const model = buildSettingsRouteFixture();
+    model.activeSection = 'settings-feedback';
+    const html = renderToStaticMarkup(
+      React.createElement(SettingsRoute, {
+        model,
+        feedback: {
+          model: {
+            configured: true,
+            signedIn: true,
+            status: 'signed_in',
+            loaded: true,
+            reports: [
+              {
+                id: 'report-1',
+                kind: 'bug',
+                description: 'The filter stopped responding.',
+                status: 'received',
+                source: 'settings',
+                context: { routeId: 'ledger' },
+                createdAt: '2026-07-24T02:00:00.000Z',
+                attachment: null
+              }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain('id="settings-feedback"');
+    expect(html).toContain('aria-label="Feedback"');
+    expect(html).toContain('Send feedback');
+    expect(html).toContain('Cloud synced');
+    expect(html).toContain('The filter stopped responding.');
+    expect(html).toContain('From Transactions');
+    expect(html).toContain('Your reports');
+  });
+
+  it('does not render a feedback submit action while Cavalry Cloud is signed out', () => {
+    const model = buildSettingsRouteFixture();
+    model.activeSection = 'settings-feedback';
+    const html = renderToStaticMarkup(
+      React.createElement(SettingsRoute, {
+        model,
+        feedback: {
+          model: {
+            configured: true,
+            signedIn: false,
+            status: 'signed_out',
+            reports: []
+          }
+        }
+      })
+    );
+
+    expect(html).toContain('Sign in to send feedback');
+    expect(html).toContain('Open Account settings');
+    expect(html).not.toContain('>Send report</button>');
+  });
+
   it('shows explicit sync state for a linked current workbook', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {

@@ -51,6 +51,13 @@ export function createNullRendererPorts(overrides = {}) {
       }),
       subscribe: () => () => {}
     },
+    feedback: {
+      invoke: async () => ({
+        ok: false,
+        unavailable: true,
+        error: 'Cloud feedback is unavailable in this build.'
+      })
+    },
     updates: {
       invoke: async () => ({
         ok: false,
@@ -88,6 +95,7 @@ export function createNullRendererPorts(overrides = {}) {
     advisor: Object.freeze({ ...defaults.advisor, ...(overrides.advisor || {}) }),
     companion: Object.freeze({ ...defaults.companion, ...(overrides.companion || {}) }),
     cloud: Object.freeze({ ...defaults.cloud, ...(overrides.cloud || {}) }),
+    feedback: Object.freeze({ ...defaults.feedback, ...(overrides.feedback || {}) }),
     updates: Object.freeze({ ...defaults.updates, ...(overrides.updates || {}) }),
     downloads: Object.freeze({ ...defaults.downloads, ...(overrides.downloads || {}) }),
     filePicker: Object.freeze({ ...defaults.filePicker, ...(overrides.filePicker || {}) }),
@@ -107,6 +115,7 @@ export function assertRendererPorts(ports) {
     ['advisor', 'invoke'],
     ['companion', 'publish'],
     ['cloud', 'invoke'],
+    ['feedback', 'invoke'],
     ['updates', 'invoke'],
     ['downloads', 'save'],
     ['filePicker', 'openText'],

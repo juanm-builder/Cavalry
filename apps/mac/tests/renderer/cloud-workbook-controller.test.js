@@ -50,6 +50,7 @@ describe('cloud workbook controller model', () => {
           updatedAt: '2026-07-20T04:00:00.000Z'
         }
       ],
+      sessionGeneration: 0,
       sessionPersistence: false,
       error: ''
     });
