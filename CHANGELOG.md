@@ -4,6 +4,17 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.23 - 2026-07-24
+
+- Added private, cross-device feedback and bug reports for signed-in Cavalry Cloud users, with an optional PNG or JPEG screenshot and an owner-visible report history in Settings.
+- Added an unobtrusive **Report a problem** flow inside the Cavalry AI companion so a report can carry the current app section as context without adding another dashboard surface.
+- Kept Supabase sessions, tokens, private object paths, and network calls in Electron main behind trusted, narrowly scoped IPC; owner-bound request keys make lost responses safely retryable, while account changes invalidate private results and clear unsent descriptions and images.
+- Added owner-scoped report and attachment quotas, forced RLS, RPC-only report creation/finalization, and operation-aware policies for a private `feedback-attachments` bucket. No service-role secret or durable image bytes are exposed to the renderer.
+- Migration: deploy `20260724000100_cloud_feedback.sql` to the Cavalry Supabase project before publishing or enabling this desktop version. Existing workbook files and Cloud snapshots require no migration.
+- Known limitation: feedback submission is available only to signed-in Cavalry Cloud users. Signed-out or Cloud-unavailable reports are not sent, queued locally, or presented as cross-device synced.
+- Validation: formatting, runtime-license notices, lint, type checks, production builds, workspace/unit/renderer/integration tests, Electron smoke, migration/RLS checks, release security/history checks, dependency advisories, and release validation are gated before packaging.
+- Signing/notarization status: distribution remains gated on Developer ID signing with a secure timestamp, Apple notarization and stapling, Gatekeeper, architecture checks, updater metadata verification, and an installed `1.0.22` to `1.0.23` automatic-update test.
+
 ## 1.0.22 - 2026-07-23
 
 - Deferred secure credential access during ordinary startup so fresh or signed-out profiles and Advisor setups without a stored key no longer unexpectedly request macOS Keychain access; existing encrypted Cloud sessions still restore automatically, and secure storage initializes when stored credentials exist or the user explicitly starts sign-in.

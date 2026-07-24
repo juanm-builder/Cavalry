@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useCloudFeedbackController } from './use-cloud-feedback-controller.js';
+
 const CLOUD_STATUSES = new Set([
   'unconfigured',
   'initializing',
@@ -15,6 +17,7 @@ const EMPTY_CLOUD_STATE = Object.freeze({
   status: 'unconfigured',
   user: null,
   workbooks: [],
+  sessionGeneration: 0,
   sessionPersistence: false
 });
 
@@ -70,6 +73,7 @@ export function normalizeCloudState(value) {
     configured,
     status,
     user: normalizeCloudUser(source.user),
+    sessionGeneration: Math.max(0, Number(source.sessionGeneration) || 0),
     workbooks: (Array.isArray(source.workbooks) ? source.workbooks : [])
       .map(normalizeCloudWorkbook)
       .filter(Boolean),
@@ -115,6 +119,7 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
 
 export function useCloudWorkbookController({
   cloud,
+  feedback,
   workbook,
   browserCache,
   workbookStorage,
@@ -341,6 +346,7 @@ export function useCloudWorkbookController({
     () => buildCloudSettingsModel(cloudState, workbook, uiState),
     [cloudState, uiState, workbook]
   );
+  const feedbackController = useCloudFeedbackController({ cloud: model, feedback });
 
-  return { execute, model, refreshState };
+  return { execute, feedback: feedbackController, model, refreshState };
 }

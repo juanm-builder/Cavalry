@@ -46,4 +46,18 @@ describe('preload contract', () => {
     expect(updateBlock).toContain("'cavalry-updates:state-changed'");
     expect(updateBlock).not.toMatch(/setFeedURL|requestHeaders|updateConfigPath/);
   });
+
+  it('keeps feedback inside the authenticated Cavalry Cloud bridge', () => {
+    const source = readFileSync(preloadPath, 'utf8');
+    const cloudStart = source.indexOf("exposeInMainWorld('cavalryCloud'");
+    const updateStart = source.indexOf("exposeInMainWorld('cavalryUpdates'");
+    const cloudBlock = source.slice(cloudStart, updateStart);
+
+    expect(cloudBlock).toContain('listFeedbackReports');
+    expect(cloudBlock).toContain('submitFeedbackReport');
+    expect(cloudBlock).toContain('getFeedbackAttachment');
+    expect(cloudBlock).toContain("'cavalry-cloud:list-feedback-reports'");
+    expect(cloudBlock).toContain("'cavalry-cloud:submit-feedback-report'");
+    expect(cloudBlock).toContain("'cavalry-cloud:get-feedback-attachment'");
+  });
 });

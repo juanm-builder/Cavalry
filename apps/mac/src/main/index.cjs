@@ -7,6 +7,7 @@ const {
   Menu,
   dialog,
   ipcMain,
+  nativeImage,
   safeStorage,
   shell,
   systemPreferences
@@ -27,7 +28,6 @@ const {
   resolveCavalryRendererUrl
 } = require('./privileged-ipc-security.cjs');
 const { createWorkbookFileController } = require('./workbook-file-controller.cjs');
-
 const APP_TITLE = getCavalryAppTitle(process.platform);
 const RENDERER_INDEX_PATH = path.join(__dirname, '..', 'renderer', 'index.html');
 const rendererUrl = resolveCavalryRendererUrl({
@@ -68,6 +68,7 @@ const cloudController = createCloudController({
   app,
   BrowserWindow,
   ipcMain,
+  nativeImage,
   safeStorage,
   shell,
   indexPath: RENDERER_INDEX_PATH,
@@ -76,7 +77,6 @@ const cloudController = createCloudController({
   publishableKey: process.env.CAVALRY_SUPABASE_PUBLISHABLE_KEY,
   assertTrustedSender: assertTrustedRendererIpcSender
 });
-
 const shutdownController = createAppShutdownController({
   app,
   advisorController,

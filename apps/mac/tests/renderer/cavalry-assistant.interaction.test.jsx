@@ -15,6 +15,8 @@ function AssistantHarness({
   conversationStorage,
   downloads,
   executeTool,
+  feedback,
+  onOpenSettings,
   onOpenReference,
   settings,
   activeRouteId = 'ledger'
@@ -31,11 +33,12 @@ function AssistantHarness({
       createId={(prefix) => `${prefix}_${++sequenceRef.current}`}
       downloads={downloads}
       executeTool={executeTool}
+      feedback={feedback}
       isOpen={open}
       onClose={() => setOpen(false)}
       onOpen={() => setOpen(true)}
       onOpenReference={onOpenReference}
-      onOpenSettings={vi.fn()}
+      onOpenSettings={onOpenSettings || vi.fn()}
       settings={settings}
       today={() => '2026-07-10'}
       workbook={{ id: 'workbook-1', name: 'The Plan' }}
@@ -152,6 +155,88 @@ describe('Cavalry assistant', () => {
     expect(screen.getByRole('heading', { name: 'What do you want to do?' })).not.toBeNull();
     expect(screen.queryByText('AI Drafts')).toBeNull();
     expect(screen.queryByText('Sources')).toBeNull();
+  });
+
+  it('submits a route-scoped Cloud report from the assistant overflow without invoking a model', async () => {
+    const user = userEvent.setup();
+    const advisor = { invoke: vi.fn(), subscribe: () => () => {} };
+    const submit = vi.fn(async (payload) => ({
+      ok: true,
+      report: { id: 'report-1', status: 'received', ...payload }
+    }));
+    render(
+      <AssistantHarness
+        advisor={advisor}
+        executeTool={vi.fn()}
+        feedback={{
+          model: {
+            configured: true,
+            signedIn: true,
+            status: 'signed_in',
+            pendingOperation: ''
+          },
+          submit
+        }}
+        settings={{ provider: 'local' }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
+    await user.click(screen.getByRole('button', { name: 'More options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Report a problem' }));
+    expect(screen.getByRole('heading', { name: 'Report a problem' })).not.toBeNull();
+    expect(screen.getByText(/Reporting from Transactions/)).not.toBeNull();
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Description' }),
+      'The transaction filter stopped responding.'
+    );
+    await user.click(screen.getByRole('button', { name: 'Send report' }));
+
+    expect(await screen.findByRole('heading', { name: 'Report sent' })).not.toBeNull();
+    expect(submit).toHaveBeenCalledWith({
+      clientRequestId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      ),
+      kind: 'bug',
+      description: 'The transaction filter stopped responding.',
+      source: 'assistant',
+      context: { routeId: 'ledger' }
+    });
+    expect(advisor.invoke).not.toHaveBeenCalled();
+  });
+
+  it('honestly gates assistant reports when the user is signed out', async () => {
+    const user = userEvent.setup();
+    const onOpenSettings = vi.fn();
+    const submit = vi.fn();
+    render(
+      <AssistantHarness
+        advisor={{ invoke: vi.fn(), subscribe: () => () => {} }}
+        executeTool={vi.fn()}
+        feedback={{
+          model: {
+            configured: true,
+            signedIn: false,
+            status: 'signed_out',
+            pendingOperation: ''
+          },
+          submit
+        }}
+        onOpenSettings={onOpenSettings}
+        settings={{ provider: 'local' }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
+    await user.click(screen.getByRole('button', { name: 'More options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Report a problem' }));
+    expect(screen.getByText('Sign in to send feedback')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send report' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open Account settings' }));
+    expect(onOpenSettings).toHaveBeenCalledWith('settings-account');
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it('groups a legacy same-label claim into one inline source with exact child records', async () => {

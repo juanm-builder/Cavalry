@@ -2,6 +2,7 @@
 'use strict';
 
 const { createCloudAuthController } = require('./cloud-auth-controller.cjs');
+const { createCloudFeedbackController } = require('./cloud-feedback-controller.cjs');
 const { createTrustedCloudIpcGuard } = require('./cloud-ipc-security.cjs');
 const { createCloudProfileController } = require('./cloud-profile-controller.cjs');
 const { createCloudWorkbookController } = require('./cloud-workbook-controller.cjs');
@@ -15,6 +16,9 @@ const CLOUD_IPC_CHANNELS = Object.freeze({
   uploadWorkbook: 'cavalry-cloud:upload-workbook',
   downloadWorkbook: 'cavalry-cloud:download-workbook',
   deleteWorkbook: 'cavalry-cloud:delete-workbook',
+  listFeedbackReports: 'cavalry-cloud:list-feedback-reports',
+  submitFeedbackReport: 'cavalry-cloud:submit-feedback-report',
+  getFeedbackAttachment: 'cavalry-cloud:get-feedback-attachment',
   stateChanged: 'cavalry-cloud:state-changed'
 });
 
@@ -31,6 +35,16 @@ function createCloudController(dependencies = {}) {
   let workbooks = [];
   let profileName = '';
   let handlersRegistered = false;
+  let cloudSession = { userId: '', generation: 0 };
+
+  function updateCloudSession(authState) {
+    const nextUserId =
+      authState && authState.status === 'signed_in' && authState.user
+        ? String(authState.user.id || '')
+        : '';
+    if (nextUserId === cloudSession.userId) return;
+    cloudSession = { userId: nextUserId, generation: cloudSession.generation + 1 };
+  }
 
   function getState() {
     const authState = auth.getState();
@@ -42,6 +56,7 @@ function createCloudController(dependencies = {}) {
           : authState.user
             ? { ...authState.user }
             : null,
+      sessionGeneration: cloudSession.generation,
       workbooks: workbooks.map((workbook) => ({ ...workbook }))
     };
   }
@@ -73,6 +88,7 @@ function createCloudController(dependencies = {}) {
     createClient: dependencies.createClient,
     createStorage: dependencies.createStorage,
     onStateChange(nextAuthState) {
+      updateCloudSession(nextAuthState);
       if (nextAuthState.status !== 'signed_in') {
         workbooks = [];
         profileName = '';
@@ -81,6 +97,13 @@ function createCloudController(dependencies = {}) {
     }
   });
   const profileController = createCloudProfileController({ auth });
+  const feedbackController = createCloudFeedbackController({
+    app: dependencies.app,
+    auth,
+    getSessionBinding: () => ({ ...cloudSession }),
+    nativeImage: dependencies.nativeImage,
+    platform: dependencies.platform
+  });
   const workbookController = createCloudWorkbookController({
     auth,
     getPersistenceService: dependencies.getPersistenceService
@@ -186,6 +209,18 @@ function createCloudController(dependencies = {}) {
     ipcMain.handle(
       CLOUD_IPC_CHANNELS.deleteWorkbook,
       trusted((payload) => mutateWorkbook('deleteWorkbook', payload))
+    );
+    ipcMain.handle(
+      CLOUD_IPC_CHANNELS.listFeedbackReports,
+      trusted((payload) => feedbackController.listReports(payload))
+    );
+    ipcMain.handle(
+      CLOUD_IPC_CHANNELS.submitFeedbackReport,
+      trusted((payload) => feedbackController.submitReport(payload))
+    );
+    ipcMain.handle(
+      CLOUD_IPC_CHANNELS.getFeedbackAttachment,
+      trusted((payload) => feedbackController.getAttachment(payload))
     );
   }
 

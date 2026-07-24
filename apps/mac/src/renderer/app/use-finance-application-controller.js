@@ -107,6 +107,7 @@ export function useFinanceApplicationController({
 
   const cloud = useCloudWorkbookController({
     cloud: ports.cloud,
+    feedback: ports.feedback,
     workbook,
     browserCache: ports.browserCache,
     workbookStorage: ports.workbookStorage,
@@ -116,7 +117,6 @@ export function useFinanceApplicationController({
   });
   const executeCloudOperation = cloud.execute;
   const cloudModel = cloud.model;
-
   useEffect(() => {
     let active = true;
     loadAdvisorRuntimeState(ports.advisor).then((runtimeState) => {
@@ -983,6 +983,7 @@ export function useFinanceApplicationController({
       },
       settings: {
         instanceKey: settingsModel.activeSectionKey || 'settings',
+        feedback: cloud.feedback,
         model: settingsModel,
         onAction: handleSettingsAction
       },
@@ -1036,6 +1037,7 @@ export function useFinanceApplicationController({
       budgetModel,
       budgetReferenceTarget,
       billsModel,
+      cloud.feedback,
       recurringReferenceTarget,
       categoryReferenceTarget,
       consumeBudgetReferenceTarget,
@@ -1071,7 +1073,6 @@ export function useFinanceApplicationController({
       workbook
     ]
   );
-
   return {
     errors: applicationErrors,
     dismissError,

@@ -185,10 +185,15 @@ describe('Cavalry Cloud main-process boundary', () => {
     };
     const values = new Map([['sb-project-auth-token', 'persisted-session']]);
     const auth = {
-      getSession: vi.fn(async () => ({ data: { session: { user } }, error: null })),
+      getSession: vi.fn(async () => ({
+        data: { session: { access_token: 'owner-session-token', user } },
+        error: null
+      })),
       getUser: vi.fn(async () => ({ data: { user }, error: null })),
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } }))
     };
+    const boundClient = { ownerBound: true };
+    const createClient = vi.fn().mockReturnValueOnce({ auth }).mockReturnValueOnce(boundClient);
     const createStorage = vi.fn(() => ({
       isPersistent: () => safeStorage.isEncryptionAvailable(),
       getItem: async (key) => values.get(key) || null,
@@ -209,7 +214,7 @@ describe('Cavalry Cloud main-process boundary', () => {
           values: { 'sb-project-auth-token': 'encrypted-value' }
         })
       ),
-      createClient: vi.fn(() => ({ auth })),
+      createClient,
       createStorage
     });
 
@@ -226,6 +231,11 @@ describe('Cavalry Cloud main-process boundary', () => {
       sessionPersistence: 'secure',
       user: { id: 'returning-user' }
     });
+    await expect(controller.createSessionBoundClient('returning-user')).resolves.toBe(boundClient);
+    const boundOptions = createClient.mock.calls[1][2];
+    expect(boundOptions).toEqual({ accessToken: expect.any(Function) });
+    await expect(boundOptions.accessToken()).resolves.toBe('owner-session-token');
+    await expect(controller.createSessionBoundClient('another-user')).resolves.toBeNull();
   });
 
   it('initializes secure storage on demand when a fresh user chooses Google sign-in', async () => {

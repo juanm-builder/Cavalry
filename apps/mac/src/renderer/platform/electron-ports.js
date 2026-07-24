@@ -299,6 +299,36 @@ function createCloudPort(bridge) {
   };
 }
 
+const FEEDBACK_BRIDGE_METHODS = Object.freeze({
+  list: 'listFeedbackReports',
+  submit: 'submitFeedbackReport',
+  download: 'getFeedbackAttachment'
+});
+
+function createFeedbackPort(bridge) {
+  return {
+    async invoke(operation, payload = {}) {
+      const methodName = FEEDBACK_BRIDGE_METHODS[operation];
+      const method = methodName && bridge && bridge[methodName];
+      if (typeof method !== 'function') {
+        return {
+          ok: false,
+          unavailable: true,
+          error: 'Cloud feedback is unavailable in this build.'
+        };
+      }
+      try {
+        return (await method(payload)) || { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error && error.message ? error.message : 'The feedback request failed.'
+        };
+      }
+    }
+  };
+}
+
 const UPDATE_BRIDGE_METHODS = Object.freeze({
   getState: 'getState',
   checkForUpdates: 'checkForUpdates',
@@ -444,6 +474,7 @@ export function createElectronRendererPorts(globalObject = globalThis) {
     advisor: createAdvisorPort(browserWindow && browserWindow.cavalryAdvisor),
     companion: createCompanionPort(browserWindow && browserWindow.cavalryCompanion),
     cloud: createCloudPort(browserWindow && browserWindow.cavalryCloud),
+    feedback: createFeedbackPort(browserWindow && browserWindow.cavalryCloud),
     updates: createUpdatePort(browserWindow && browserWindow.cavalryUpdates),
     downloads: createDownloadPort(browserWindow),
     filePicker: createFilePickerPort(browserWindow),
