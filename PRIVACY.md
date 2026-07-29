@@ -1,12 +1,18 @@
 # Privacy and data handling
 
-Last updated: 2026-07-23
+Last updated: 2026-07-29
 
 Cavalry is local-first, but optional features can send selected data to external services. This document describes the current repository behavior; it does not replace the privacy terms of Supabase, Google, GitHub, OpenAI, a configured model provider, or a tunnel provider.
 
 ## Local workbook data
 
 Workbook contents are stored in the portable file you create or open. Cavalry may also keep local application cache, recent-file paths, settings, temporary save files, and rolling backups so the desktop workflow can recover and reopen work. These files can contain financial data or reveal where a workbook is stored. Protect the operating-system account and device backups, and securely remove copies that are no longer needed.
+
+The Notes workspace keeps unfinished note text in local application storage,
+scoped to the current workbook, so it can be restored after navigation or an app
+restart. Processing Notes locally uses deterministic parsing. If optional AI
+processing is selected, the note lines and the active account and category
+choices needed to resolve them are sent through the configured Advisor provider.
 
 The current code does not configure a general product-analytics or advertising service. A packaged app still makes ordinary network requests for update checks and the Material Symbols font stylesheet, and optional features add the requests described below.
 
@@ -15,6 +21,11 @@ The current code does not configure a general product-analytics or advertising s
 Cavalry Cloud is optional and requires a configured Supabase project and Google sign-in. Signing in does not upload a workbook. **Add to Cloud** and later **Sync Now** actions upload a complete portable HTML workbook snapshot to Supabase, together with workbook metadata, a content hash, version history, and sync audit records. Google and Supabase receive the account and network data needed to authenticate and serve those requests.
 
 Cloud sessions are stored through the operating system's credential encryption. A fresh signed-out profile does not access credential storage merely because Cavalry starts; secure storage initializes only to restore an existing encrypted session or after the user explicitly begins sign-in. On macOS, Keychain may ask the user to approve that access, but Cavalry never receives the user's Mac password. If secure storage is unavailable, Cloud fails closed instead of persisting plaintext tokens. Cloud snapshots are protected by owner-scoped Row Level Security, but users should still treat the configured Supabase project as a holder of their financial data.
+
+To prevent a stale local copy from silently overwriting a newer Cloud copy,
+Cavalry stores the signed-in user ID, workbook ID, last acknowledged Cloud
+revision, and conflict flag in local application storage. This sync marker does
+not contain workbook contents, account balances, transactions, or Cloud tokens.
 
 Deleting a cloud workbook removes its cloud snapshots and related audit records under the current database contract; it does not delete the local workbook. A full account export and account-deletion workflow is not currently implemented.
 

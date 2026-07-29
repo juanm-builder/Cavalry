@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  readCloudWorkbookSyncState,
+  writeCloudWorkbookSyncState
+} from '../../src/renderer/app/cloud-workbook-sync-state.js';
 import { useCloudWorkbookController } from '../../src/renderer/app/use-cloud-workbook-controller.js';
 import {
   cloneFixture,
@@ -25,6 +29,22 @@ function makeCloud(downloadResult) {
     }),
     subscribe: () => () => {}
   };
+}
+
+function createSyncStorage(revision = null, conflict = false) {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key)
+  };
+  if (revision || conflict) {
+    writeCloudWorkbookSyncState(storage, 'user-1', 'cloud-workbook', {
+      revision,
+      conflict
+    });
+  }
+  return storage;
 }
 
 describe('cloud workbook controller interactions', () => {
@@ -203,5 +223,428 @@ describe('cloud workbook controller interactions', () => {
 
     expect(result.current.model.error).toBe('Enter a profile name.');
     expect(cloud.invoke).not.toHaveBeenCalledWith('updateProfile', expect.anything());
+  });
+
+  it('clears a deleted Cloud link so the local workbook can be added again deliberately', async () => {
+    let uploadCount = 0;
+    const recreatedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 1 }]
+    };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'uploadWorkbook') {
+          uploadCount += 1;
+          return uploadCount === 1
+            ? {
+                ok: false,
+                code: 'workbook_revision_conflict',
+                conflict: true,
+                error: 'This workbook changed in Cavalry Cloud.',
+                state: { ...signedInState(), workbooks: [] }
+              }
+            : { ok: true, state: recreatedState };
+        }
+        return { ok: true, state: recreatedState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage(2);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Local Plan' },
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    let conflicted;
+    await act(async () => {
+      conflicted = await result.current.execute('upload');
+    });
+    expect(conflicted.error).toContain('no longer exists');
+    expect(result.current.model.current).toMatchObject({
+      conflict: false,
+      linked: false,
+      status: 'local_only'
+    });
+
+    let recreated;
+    await act(async () => {
+      recreated = await result.current.execute('upload');
+    });
+    expect(recreated).toMatchObject({ ok: true });
+    expect(cloud.invoke).toHaveBeenLastCalledWith('uploadWorkbook', {
+      workbook: { id: 'cloud-workbook', name: 'Local Plan' },
+      expectedRevision: null
+    });
+    expect(result.current.model.current).toMatchObject({
+      conflict: false,
+      linked: true,
+      revision: 1
+    });
+  });
+
+  it('latches a newer Cloud copy until the saved local workbook is explicitly replaced', async () => {
+    const downloadedWorkbook = cloneFixture(makeMinimalWorkbook());
+    downloadedWorkbook.id = 'cloud-workbook';
+    downloadedWorkbook.name = 'Newer Cloud Plan';
+    const changedState = {
+      ...signedInState(),
+      workbooks: [
+        {
+          ...signedInState().workbooks[0],
+          name: downloadedWorkbook.name,
+          revision: 3
+        }
+      ]
+    };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: false,
+            code: 'workbook_revision_conflict',
+            conflict: true,
+            error: 'This workbook changed in Cavalry Cloud.',
+            state: changedState
+          };
+        }
+        if (command === 'downloadWorkbook') {
+          return { ok: true, workbook: downloadedWorkbook, state: changedState };
+        }
+        return { ok: true, state: changedState };
+      }),
+      subscribe: () => () => {}
+    };
+    const forget = vi.fn(async () => ({ ok: true }));
+    const setWorkbook = vi.fn();
+    const syncStorage = createSyncStorage(2);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        browserCache: { save: vi.fn(async () => ({ ok: true })) },
+        workbookStorage: {
+          forget,
+          load: async () => ({
+            status: 'loaded',
+            workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' }
+          })
+        },
+        saveStatus: 'saved',
+        syncStorage,
+        setWorkbook,
+        navigate: vi.fn()
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    let conflicted;
+    await act(async () => {
+      conflicted = await result.current.execute('upload');
+    });
+    expect(conflicted).toMatchObject({ ok: false, code: 'workbook_revision_conflict' });
+    expect(result.current.model.current).toMatchObject({
+      conflict: true,
+      revision: 3,
+      status: 'conflict'
+    });
+
+    let blockedUpload;
+    await act(async () => {
+      blockedUpload = await result.current.execute('upload');
+    });
+    expect(blockedUpload).toMatchObject({ ok: false, code: 'workbook_revision_conflict' });
+    expect(
+      cloud.invoke.mock.calls.filter(([command]) => command === 'uploadWorkbook')
+    ).toHaveLength(1);
+
+    let opened;
+    await act(async () => {
+      opened = await result.current.execute('open', { workbookId: 'cloud-workbook' });
+    });
+    expect(opened).toMatchObject({ ok: true, workbook: downloadedWorkbook });
+    expect(cloud.invoke).toHaveBeenCalledWith('downloadWorkbook', {
+      workbookId: 'cloud-workbook'
+    });
+    expect(forget).toHaveBeenCalledOnce();
+    expect(setWorkbook).toHaveBeenCalledWith(downloadedWorkbook, {
+      source: 'cloud',
+      markDirty: false,
+      saveStatus: 'cache'
+    });
+    expect(result.current.model.current.conflict).toBe(false);
+  });
+
+  it('keeps the acknowledged revision and conflict latch across a remount', async () => {
+    const baseState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 7 }]
+    };
+    const latestState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 8 }]
+    };
+    let serverState = baseState;
+    const syncStorage = createSyncStorage(7);
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: serverState };
+        if (command === 'uploadWorkbook') {
+          serverState = latestState;
+          return {
+            ok: false,
+            code: 'workbook_revision_conflict',
+            conflict: true,
+            error: 'This workbook changed in Cavalry Cloud.',
+            state: latestState
+          };
+        }
+        return { ok: true, state: latestState };
+      }),
+      subscribe: () => () => {}
+    };
+    const first = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(first.result.current.model.status).toBe('signed_in'));
+
+    await act(async () => {
+      await first.result.current.execute('upload');
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+      expectedRevision: 7
+    });
+    expect(first.result.current.model.current.conflict).toBe(true);
+    first.unmount();
+
+    const second = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(second.result.current.model.current.conflict).toBe(true));
+
+    let blocked;
+    await act(async () => {
+      blocked = await second.result.current.execute('upload');
+    });
+    expect(blocked).toMatchObject({ ok: false, code: 'workbook_revision_conflict' });
+    expect(
+      cloud.invoke.mock.calls.filter(([command]) => command === 'uploadWorkbook')
+    ).toHaveLength(1);
+  });
+
+  it('prevents a same-tick duplicate upload from reaching the main process', async () => {
+    let resolveUpload;
+    const uploadResult = new Promise((resolve) => {
+      resolveUpload = resolve;
+    });
+    const cloud = {
+      invoke: vi.fn((command) => {
+        if (command === 'getState') return Promise.resolve({ ok: true, state: signedInState() });
+        if (command === 'uploadWorkbook') return uploadResult;
+        return Promise.resolve({ ok: true, state: signedInState() });
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage(2);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Cloud Plan' },
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    let firstUpload;
+    act(() => {
+      firstUpload = result.current.execute('upload');
+    });
+    let duplicateUpload;
+    await act(async () => {
+      duplicateUpload = await result.current.execute('upload');
+    });
+
+    expect(duplicateUpload).toMatchObject({
+      ok: false,
+      code: 'cloud_operation_in_progress'
+    });
+    expect(
+      cloud.invoke.mock.calls.filter(([command]) => command === 'uploadWorkbook')
+    ).toHaveLength(1);
+
+    let firstResult;
+    await act(async () => {
+      resolveUpload({ ok: true, state: signedInState() });
+      firstResult = await firstUpload;
+    });
+    expect(firstResult).toMatchObject({ ok: true });
+  });
+
+  it('records a slow upload against the workbook that started it', async () => {
+    let resolveUpload;
+    const uploadResult = new Promise((resolve) => {
+      resolveUpload = resolve;
+    });
+    const syncStorage = createSyncStorage(2);
+    const cloud = {
+      invoke: vi.fn((command) => {
+        if (command === 'getState') return Promise.resolve({ ok: true, state: signedInState() });
+        if (command === 'uploadWorkbook') return uploadResult;
+        return Promise.resolve({ ok: true, state: signedInState() });
+      }),
+      subscribe: () => () => {}
+    };
+    const hook = renderHook(
+      ({ workbook }) =>
+        useCloudWorkbookController({
+          cloud,
+          workbook,
+          syncStorage
+        }),
+      {
+        initialProps: {
+          workbook: { id: 'cloud-workbook', name: 'Cloud Plan' }
+        }
+      }
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+
+    let pendingUpload;
+    act(() => {
+      pendingUpload = hook.result.current.execute('upload');
+    });
+    hook.rerender({ workbook: { id: 'other-workbook', name: 'Other Plan' } });
+
+    await act(async () => {
+      resolveUpload({
+        ok: true,
+        metadata: { id: 'cloud-workbook', revision: 3 },
+        state: {
+          ...signedInState(),
+          workbooks: [{ ...signedInState().workbooks[0], revision: 3 }]
+        }
+      });
+      await pendingUpload;
+    });
+
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+      known: true,
+      revision: 3,
+      conflict: false
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'other-workbook').known).toBe(false);
+    expect(hook.result.current.model.current.workbookId).toBe('other-workbook');
+  });
+
+  it('records a slow conflict against the workbook that started it', async () => {
+    let resolveUpload;
+    const uploadResult = new Promise((resolve) => {
+      resolveUpload = resolve;
+    });
+    const syncStorage = createSyncStorage(2);
+    const cloud = {
+      invoke: vi.fn((command) => {
+        if (command === 'getState') return Promise.resolve({ ok: true, state: signedInState() });
+        if (command === 'uploadWorkbook') return uploadResult;
+        return Promise.resolve({ ok: true, state: signedInState() });
+      }),
+      subscribe: () => () => {}
+    };
+    const hook = renderHook(
+      ({ workbook }) =>
+        useCloudWorkbookController({
+          cloud,
+          workbook,
+          syncStorage
+        }),
+      {
+        initialProps: {
+          workbook: { id: 'cloud-workbook', name: 'Cloud Plan' }
+        }
+      }
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+
+    let pendingUpload;
+    act(() => {
+      pendingUpload = hook.result.current.execute('upload');
+    });
+    hook.rerender({ workbook: { id: 'other-workbook', name: 'Other Plan' } });
+
+    await act(async () => {
+      resolveUpload({
+        ok: false,
+        code: 'workbook_revision_conflict',
+        conflict: true,
+        error: 'This workbook changed in Cavalry Cloud.',
+        state: {
+          ...signedInState(),
+          workbooks: [{ ...signedInState().workbooks[0], revision: 3 }]
+        }
+      });
+      await pendingUpload;
+    });
+
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+      known: true,
+      revision: 2,
+      conflict: true
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'other-workbook').known).toBe(false);
+    expect(hook.result.current.model.current).toMatchObject({
+      workbookId: 'other-workbook',
+      conflict: false
+    });
+  });
+
+  it('rejects mismatched workbook metadata from an upload response', async () => {
+    const syncStorage = createSyncStorage(2);
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: true,
+            metadata: { id: 'other-workbook', revision: 3 },
+            state: signedInState()
+          };
+        }
+        return { ok: true, state: signedInState() };
+      }),
+      subscribe: () => () => {}
+    };
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Cloud Plan' },
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    let uploaded;
+    await act(async () => {
+      uploaded = await result.current.execute('upload');
+    });
+
+    expect(uploaded).toMatchObject({
+      ok: false,
+      code: 'cloud_workbook_identity_mismatch'
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook').revision).toBe(2);
   });
 });

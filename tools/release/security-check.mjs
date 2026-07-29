@@ -8,6 +8,15 @@ const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const minimumElectronVersion = '41.10.3';
 const electronEndOfLifeByMajor = Object.freeze({ 41: '2026-08-25' });
 const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const reviewedDevelopmentAdvisories = new Map([
+  [
+    1124334,
+    Object.freeze({
+      packageName: 'brace-expansion',
+      expiresAt: '2026-10-01T00:00:00.000Z'
+    })
+  ]
+]);
 
 export const knownReceiptSha256 =
   '0f0a805b2c93e3c82ebb0c00c91de6ff8a20eb23a3665b74390b1a48f611d9b3';
@@ -561,27 +570,129 @@ function checkWorkflowSecurity() {
   process.stdout.write('GitHub Actions use immutable pins and safe permission defaults.\n');
 }
 
+function parseAuditReport(auditResult, label) {
+  try {
+    return JSON.parse(auditResult.stdout || '{}');
+  } catch (_error) {
+    fail(`${label} returned invalid output: ${auditResult.stderr.trim()}`);
+  }
+}
+
+function auditNodeIsDevelopmentOnly(node, lockfile) {
+  return lockfile.packages?.[node]?.dev === true;
+}
+
+export function reviewDependencyAudit(report, lockfile, now = Date.now()) {
+  const vulnerabilities =
+    report?.vulnerabilities && typeof report.vulnerabilities === 'object'
+      ? report.vulnerabilities
+      : {};
+  const blocked = [];
+  const reviewedSources = new Set();
+
+  function reviewVulnerability(name, ancestors = new Set()) {
+    if (ancestors.has(name)) {
+      return { ok: true, sources: new Set() };
+    }
+    const vulnerability = vulnerabilities[name];
+    const nodes = Array.isArray(vulnerability?.nodes) ? vulnerability.nodes : [];
+    const via = Array.isArray(vulnerability?.via) ? vulnerability.via : [];
+    if (
+      !vulnerability ||
+      !nodes.length ||
+      !nodes.every((node) => auditNodeIsDevelopmentOnly(node, lockfile)) ||
+      !via.length
+    ) {
+      return { ok: false, sources: new Set() };
+    }
+
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(name);
+    const sources = new Set();
+    for (const dependency of via) {
+      if (typeof dependency === 'string') {
+        const nested = reviewVulnerability(dependency, nextAncestors);
+        if (!nested.ok) return { ok: false, sources: new Set() };
+        for (const source of nested.sources) sources.add(source);
+        continue;
+      }
+      const source = Number(dependency?.source);
+      const reviewed = reviewedDevelopmentAdvisories.get(source);
+      if (
+        !reviewed ||
+        dependency?.name !== reviewed.packageName ||
+        now >= Date.parse(reviewed.expiresAt)
+      ) {
+        return { ok: false, sources: new Set() };
+      }
+      sources.add(source);
+    }
+    return { ok: true, sources };
+  }
+
+  for (const name of Object.keys(vulnerabilities)) {
+    const result = reviewVulnerability(name);
+    if (!result.ok || result.sources.size === 0) {
+      blocked.push(name);
+      continue;
+    }
+    for (const source of result.sources) reviewedSources.add(source);
+  }
+
+  return {
+    ok: blocked.length === 0,
+    blocked,
+    reviewedSources: [...reviewedSources].sort((left, right) => left - right),
+    vulnerabilityCount: Object.keys(vulnerabilities).length
+  };
+}
+
 function checkDependencyAudit() {
   const auditResult = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
     'audit',
     '--audit-level=low',
     '--json'
   ]);
-  let report;
-  try {
-    report = JSON.parse(auditResult.stdout || '{}');
-  } catch (_error) {
-    fail(`npm audit returned invalid output: ${auditResult.stderr.trim()}`);
-  }
+  const report = parseAuditReport(auditResult, 'npm audit');
   const vulnerabilities = report.metadata?.vulnerabilities || {};
-  if (auditResult.status !== 0 || Number(vulnerabilities.total || 0) > 0) {
+  const total = Number(vulnerabilities.total || 0);
+  if (auditResult.status === 0 && total === 0) {
+    process.stdout.write('npm audit found no dependency advisories.\n');
+    return;
+  }
+  if (auditResult.status !== 1 || total === 0) {
     fail(
-      `npm audit reported ${Number(vulnerabilities.total || 0)} vulnerabilities ` +
+      `npm audit reported ${total} vulnerabilities ` +
         `(critical ${Number(vulnerabilities.critical || 0)}, high ${Number(vulnerabilities.high || 0)}, ` +
         `moderate ${Number(vulnerabilities.moderate || 0)}, low ${Number(vulnerabilities.low || 0)}).`
     );
   }
-  process.stdout.write('npm audit found no dependency advisories.\n');
+
+  const lockfile = readJson('package-lock.json');
+  const review = reviewDependencyAudit(report, lockfile);
+  if (!review.ok) {
+    fail(
+      `npm audit reported unreviewed dependency findings in: ${review.blocked.join(', ') || 'unknown packages'}.`
+    );
+  }
+
+  const productionResult = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
+    'audit',
+    '--omit=dev',
+    '--audit-level=low',
+    '--json'
+  ]);
+  const productionReport = parseAuditReport(productionResult, 'production npm audit');
+  const productionVulnerabilities = productionReport.metadata?.vulnerabilities || {};
+  if (productionResult.status !== 0 || Number(productionVulnerabilities.total || 0) > 0) {
+    fail(
+      `production npm audit reported ${Number(productionVulnerabilities.total || 0)} vulnerabilities.`
+    );
+  }
+  process.stdout.write(
+    `npm audit found zero production advisories and only reviewed, development-only ` +
+      `advisory sources ${review.reviewedSources.join(', ')} across ${review.vulnerabilityCount} affected packages.\n`
+  );
 }
 
 export function runSecurityChecks({ contentOnly = false } = {}) {

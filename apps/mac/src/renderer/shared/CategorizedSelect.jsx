@@ -67,13 +67,197 @@ function normalizeOptions(options) {
     .filter(Boolean);
 }
 
+function normalizedCategoryType(value) {
+  const type = asString(value).toLowerCase();
+  return ['income', 'savings', 'debt'].includes(type) ? type : 'expense';
+}
+
+function categoryTypeLabel(value) {
+  const type = normalizedCategoryType(value);
+  return `${type.charAt(0).toUpperCase()}${type.slice(1)}`;
+}
+
+function normalizedCategoryTypes(values, fallback) {
+  const types = [
+    ...new Set((Array.isArray(values) ? values : []).map(normalizedCategoryType).filter(Boolean))
+  ];
+  return types.length ? types : [normalizedCategoryType(fallback)];
+}
+
+function createdCategoryFromResult(result, payload) {
+  if (!(result && result.ok)) return null;
+  const categoryId =
+    asString(result.category?.id || result.createdCategory?.id) ||
+    asString(
+      (Array.isArray(result.events) ? result.events : []).find(
+        (event) => event?.type === 'category.created'
+      )?.categoryId
+    );
+  if (!categoryId) return null;
+  const category =
+    result.createdCategory ||
+    result.category ||
+    (Array.isArray(result.workbook?.categories)
+      ? result.workbook.categories.find((item) => asString(item?.id) === categoryId)
+      : null) ||
+    {};
+  return {
+    ...category,
+    id: categoryId,
+    value: categoryId,
+    name: asString(category.name || payload.name),
+    label: asString(category.name || payload.name),
+    type: normalizedCategoryType(category.type || payload.type)
+  };
+}
+
+function InlineCategoryCreateDialog({
+  categoryType,
+  categoryTypes,
+  createLabel,
+  onCancel,
+  onCreate,
+  parentLabel
+}) {
+  const inputId = useId();
+  const typeInputId = `${inputId}-type`;
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const allowedTypes = normalizedCategoryTypes(categoryTypes, categoryType);
+  const [type, setType] = useState(() =>
+    allowedTypes.includes(normalizedCategoryType(categoryType))
+      ? normalizedCategoryType(categoryType)
+      : allowedTypes[0]
+  );
+
+  useEffect(() => {
+    const closeBeforeParent = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+    };
+    document.addEventListener('keydown', closeBeforeParent, true);
+    return () => document.removeEventListener('keydown', closeBeforeParent, true);
+  }, [onCancel]);
+
+  return createPortal(
+    <div
+      className="categorized-select-create-backdrop"
+      onMouseDown={(event) => {
+        event.stopPropagation();
+        if (event.target === event.currentTarget && !submitting) onCancel();
+      }}
+      role="presentation"
+    >
+      <section
+        aria-label={createLabel}
+        aria-modal="true"
+        className="categorized-select-create-dialog"
+        role="dialog"
+      >
+        <header>
+          <span aria-hidden="true" className="material-symbols-rounded">
+            new_label
+          </span>
+          <div>
+            <h2>{createLabel}</h2>
+            <p>
+              Add a {categoryTypeLabel(type).toLowerCase()} category without leaving{' '}
+              {parentLabel.toLowerCase()}.
+            </p>
+          </div>
+        </header>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const trimmedName = name.trim();
+            if (!trimmedName || submitting) return;
+            setSubmitting(true);
+            setError('');
+            try {
+              const result = await onCreate({
+                name: trimmedName,
+                postingAccountName: trimmedName,
+                type
+              });
+              if (!(result && result.ok)) {
+                setError(
+                  result?.errors?.[0]?.message || 'The category could not be created. Try again.'
+                );
+              }
+            } catch (createError) {
+              setError(createError?.message || 'The category could not be created. Try again.');
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+        >
+          <label htmlFor={inputId}>Category name</label>
+          <input
+            autoFocus
+            disabled={submitting}
+            id={inputId}
+            maxLength="30"
+            onChange={(event) => setName(event.target.value)}
+            placeholder={type === 'income' ? 'e.g. Freelance income' : 'e.g. Trip fund'}
+            required
+            value={name}
+          />
+          {allowedTypes.length > 1 ? (
+            <>
+              <label htmlFor={typeInputId}>Category type</label>
+              <select
+                disabled={submitting}
+                id={typeInputId}
+                onChange={(event) => setType(normalizedCategoryType(event.target.value))}
+                value={type}
+              >
+                {allowedTypes.map((option) => (
+                  <option key={option} value={option}>
+                    {categoryTypeLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+          <small>
+            This will be available in every category dropdown. You can add rules and customize it
+            later in Categories.
+          </small>
+          {error ? (
+            <div className="categorized-select-create-error" role="alert">
+              {error}
+            </div>
+          ) : null}
+          <footer>
+            <button disabled={submitting} onClick={onCancel} type="button">
+              Cancel
+            </button>
+            <button className="btn btn-primary" disabled={!name.trim() || submitting} type="submit">
+              {submitting ? 'Creating…' : 'Create & select'}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 export function CategorizedSelect({
   'aria-label': ariaLabel = 'Category',
   clearLabel = '',
+  createCategoryType = 'expense',
+  createCategoryTypes,
+  createLabel = 'Create new category',
   disabled = false,
   id,
   name,
   onChange,
+  onCreateCategory,
   onValueChange,
   options = [],
   placeholder = 'Select category',
@@ -84,9 +268,25 @@ export function CategorizedSelect({
   const listboxId = `${controlId}-listbox`;
   const rootRef = useRef(null);
   const menuRef = useRef(null);
+  const triggerRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState({});
-  const normalized = useMemo(() => normalizeOptions(options), [options]);
+  const [creating, setCreating] = useState(false);
+  const [createdOptions, setCreatedOptions] = useState([]);
+  const allowedCreateTypes = useMemo(
+    () => normalizedCategoryTypes(createCategoryTypes, createCategoryType),
+    [createCategoryType, createCategoryTypes]
+  );
+  const normalized = useMemo(() => {
+    const provided = normalizeOptions(options);
+    const providedIds = new Set(provided.map((option) => option.value));
+    const matchingCreated = createdOptions.filter(
+      (option) =>
+        allowedCreateTypes.includes(normalizedCategoryType(option.type)) &&
+        !providedIds.has(asString(option.value || option.id))
+    );
+    return [...provided, ...normalizeOptions(matchingCreated)];
+  }, [allowedCreateTypes, createdOptions, options]);
   const selected = normalized.find((option) => option.value === asString(value)) || null;
   const selectedIndex = Math.max(
     0,
@@ -144,6 +344,24 @@ export function CategorizedSelect({
     onValueChange?.(nextValue);
     onChange?.({ target: { value: nextValue }, currentTarget: { value: nextValue } });
     setOpen(false);
+  };
+
+  const closeCreator = () => {
+    setCreating(false);
+    queueMicrotask(() => triggerRef.current?.focus());
+  };
+
+  const createCategory = async (payload) => {
+    const result = await onCreateCategory?.(payload);
+    const category = createdCategoryFromResult(result, payload);
+    if (!category) return result;
+    setCreatedOptions((current) => [
+      ...current.filter((option) => asString(option.value || option.id) !== category.value),
+      category
+    ]);
+    closeCreator();
+    selectValue(category.value);
+    return result;
   };
 
   const moveSelection = (offset) => {
@@ -217,6 +435,26 @@ export function CategorizedSelect({
               ))}
             </section>
           ))}
+          {typeof onCreateCategory === 'function' ? (
+            <button
+              aria-selected="false"
+              className="categorized-select-create-option"
+              onClick={() => {
+                setOpen(false);
+                setCreating(true);
+              }}
+              role="option"
+              type="button"
+            >
+              <span aria-hidden="true" className="material-symbols-rounded">
+                add_circle
+              </span>
+              <span>{createLabel}</span>
+              <span aria-hidden="true" className="material-symbols-rounded">
+                arrow_forward
+              </span>
+            </button>
+          ) : null}
         </div>,
         document.body
       )
@@ -245,6 +483,7 @@ export function CategorizedSelect({
           }
         }}
         role="combobox"
+        ref={triggerRef}
         type="button"
       >
         <span aria-hidden="true" className="material-symbols-rounded categorized-select-leading">
@@ -257,6 +496,16 @@ export function CategorizedSelect({
       </button>
       {name ? <input name={name} type="hidden" value={asString(value)} /> : null}
       {menu}
+      {creating ? (
+        <InlineCategoryCreateDialog
+          categoryType={createCategoryType}
+          categoryTypes={allowedCreateTypes}
+          createLabel={createLabel}
+          onCancel={closeCreator}
+          onCreate={createCategory}
+          parentLabel={ariaLabel}
+        />
+      ) : null}
     </div>
   );
 }

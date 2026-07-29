@@ -230,7 +230,7 @@ describe('budget controller', () => {
     expectSerializable(flowResult);
   });
 
-  it('returns a structured failure when no budget category is available', () => {
+  it('opens the budget editor when no category exists so one can be created inline', () => {
     const controller = createBudgetController({ currentDate: FIXED_DATE });
 
     expect(
@@ -242,16 +242,25 @@ describe('budget controller', () => {
         }
       )
     ).toEqual({
-      ok: false,
+      ok: true,
       handled: true,
-      events: [],
-      warnings: [],
-      errors: [
+      events: [
         {
-          code: 'budget.add.category-required',
-          message: 'Create an expense category before adding a budget.'
+          type: BUDGET_EVENT_TYPES.addBudget,
+          payload: {
+            sheetId: '',
+            rangeStart: '2026-06-01',
+            rangeEnd: '2026-06-30',
+            categoryId: '',
+            planned: '',
+            createdAt: FIXED_DATE,
+            currentDate: FIXED_DATE,
+            sheet: null
+          }
         }
-      ]
+      ],
+      warnings: [],
+      errors: []
     });
   });
 

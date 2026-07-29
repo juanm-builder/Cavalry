@@ -89,6 +89,13 @@ export function ActionBindingProvider({ onAction, getActionProps, children }) {
 
 export function useActionBindings() {
   const { onAction, getActionProps } = useContext(ActionBindingContext);
+  const dispatch = useCallback(
+    (type, payload = {}) => {
+      if (typeof onAction !== 'function') return undefined;
+      return onAction(createAction(type, payload));
+    },
+    [onAction]
+  );
   const bind = useCallback(
     (type, payload = {}, options = {}) => {
       const action = createAction(type, payload);
@@ -115,8 +122,9 @@ export function useActionBindings() {
     () => ({
       action: (type, payload, options) => bind(type, payload, options),
       change: (type, payload, options = {}) => bind(type, payload, { ...options, event: 'change' }),
+      dispatch,
       navigate: (routeId) => bind(NAVIGATE_ACTION_TYPE, { routeId })
     }),
-    [bind]
+    [bind, dispatch]
   );
 }

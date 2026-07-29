@@ -202,6 +202,15 @@ describe('settings controller', () => {
     });
     expect(
       controller.handleAction(workbook, {
+        type: 'clear-mmproj',
+        payload: { provider: 'custom', mmprojPath: '/models/old-mmproj.gguf' }
+      }).events[0]
+    ).toMatchObject({
+      type: 'test/advisor',
+      payload: { operation: 'vision-projector-clear' }
+    });
+    expect(
+      controller.handleAction(workbook, {
         type: 'request-advisor-microphone-access'
       }).events[0]
     ).toMatchObject({ type: 'test/advisor', payload: { operation: 'microphone-request' } });

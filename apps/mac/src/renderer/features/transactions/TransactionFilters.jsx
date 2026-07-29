@@ -138,7 +138,7 @@ function AmountRangeFilter({ filters, range }) {
   );
 }
 
-function FilterFields({ filters, options, includeSearch = true }) {
+function FilterFields({ filters, options }) {
   const actions = useActionBindings();
   const data = asObject(filters);
   const lists = asObject(options);
@@ -173,19 +173,6 @@ function FilterFields({ filters, options, includeSearch = true }) {
           {...actions.change('set-ledger-filter-category')}
         />
       </div>
-      {includeSearch ? (
-        <div className="field ledger-search-field">
-          <label htmlFor="ledger-filter-search">Search</label>
-          <input
-            id="ledger-filter-search"
-            name="search"
-            type="search"
-            value={data.search || ''}
-            placeholder="Description, note, account"
-            {...actions.change('set-ledger-filter-search')}
-          />
-        </div>
-      ) : null}
       <div className="field">
         <label htmlFor="ledger-filter-type">Type</label>
         <select
@@ -225,6 +212,31 @@ export function InlineFilterToolbar({ filters, filterOpen, activeFilterCount }) 
   const data = asObject(filters);
   return (
     <div className="transaction-filter-toolbar">
+      <div className="transaction-search-control" role="search">
+        <Icon name="search" />
+        <label className="sr-only" htmlFor="ledger-filter-search">
+          Search transactions
+        </label>
+        <input
+          autoComplete="off"
+          id="ledger-filter-search"
+          name="search"
+          placeholder="Search descriptions, categories, accounts"
+          type="search"
+          value={data.search || ''}
+          {...actions.change('set-ledger-filter-search')}
+        />
+        {data.search ? (
+          <button
+            aria-label="Clear transaction search"
+            className="transaction-search-clear"
+            type="button"
+            {...actions.action('set-ledger-filter-search', { value: '' })}
+          >
+            <Icon name="close" />
+          </button>
+        ) : null}
+      </div>
       <button
         aria-expanded={filterOpen}
         className="btn transaction-filter-button"
@@ -280,7 +292,7 @@ export function FilterSidePanel({ filters, options, activeFilterCount }) {
         </button>
       </div>
       <div className="transaction-side-panel-content" id="ledger-filter-form">
-        <FilterFields filters={filters} options={options} includeSearch={false} />
+        <FilterFields filters={filters} options={options} />
       </div>
       <div className="transaction-side-panel-actions">
         <button className="btn btn-ghost" type="button" {...actions.action('reset-ledger-filter')}>

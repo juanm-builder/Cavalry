@@ -36,6 +36,7 @@ function createCloudController(dependencies = {}) {
   let profileName = '';
   let handlersRegistered = false;
   let cloudSession = { userId: '', generation: 0 };
+  let workbookMutationInProgress = false;
 
   function updateCloudSession(authState) {
     const nextUserId =
@@ -162,20 +163,41 @@ function createCloudController(dependencies = {}) {
     return { ...result, state: broadcastState() };
   }
 
-  async function mutateWorkbook(method, payload) {
-    const result = await workbookController[method](payload || {});
-    if (result.ok) {
-      const refreshed = await refreshWorkbooks();
-      if (!refreshed.ok && method === 'uploadWorkbook' && result.metadata) {
-        workbooks = [
-          result.metadata,
-          ...workbooks.filter((workbook) => workbook.id !== result.metadata.id)
-        ];
-      } else if (!refreshed.ok && method === 'deleteWorkbook' && result.id) {
-        workbooks = workbooks.filter((workbook) => workbook.id !== result.id);
-      }
+  function mutateWorkbook(method, payload) {
+    const safePayload = payload || {};
+    if (workbookMutationInProgress) {
+      return {
+        ok: false,
+        code: 'cloud_operation_in_progress',
+        error: 'Another Cavalry Cloud operation is already in progress.',
+        state: getState()
+      };
     }
-    return { ...result, state: broadcastState() };
+    workbookMutationInProgress = true;
+
+    const mutation = (async () => {
+      try {
+        const result = await workbookController[method](safePayload);
+        const revisionConflict =
+          result.conflict === true || result.code === 'workbook_revision_conflict';
+        if (result.ok || revisionConflict) {
+          const refreshed = await refreshWorkbooks();
+          if (result.ok && !refreshed.ok && method === 'uploadWorkbook' && result.metadata) {
+            workbooks = [
+              result.metadata,
+              ...workbooks.filter((workbook) => workbook.id !== result.metadata.id)
+            ];
+          } else if (result.ok && !refreshed.ok && method === 'deleteWorkbook' && result.id) {
+            workbooks = workbooks.filter((workbook) => workbook.id !== result.id);
+          }
+        }
+        return { ...result, state: broadcastState() };
+      } finally {
+        workbookMutationInProgress = false;
+      }
+    })();
+
+    return mutation;
   }
 
   async function downloadWorkbook(payload) {

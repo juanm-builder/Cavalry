@@ -64,6 +64,23 @@ function getResponsesOutputText(response) {
     .trim();
 }
 
+function normalizeAdvisorIpcError(error) {
+  const source = error && typeof error === 'object' ? error : {};
+  const message = String(
+    source.userMessage || source.message || error || 'Assistant operation failed.'
+  )
+    .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i, '')
+    .trim()
+    .slice(0, 1000);
+  return {
+    ok: false,
+    error: message || 'Assistant operation failed.',
+    code: String(source.code || 'ADVISOR_OPERATION_FAILED').slice(0, 120),
+    ...(source.detail ? { detail: String(source.detail).slice(0, 2000) } : {}),
+    ...(source.logPath ? { logPath: String(source.logPath).slice(0, 1000) } : {})
+  };
+}
+
 function createAdvisorIpcController({
   ipcMain,
   dialog,
@@ -90,40 +107,78 @@ function createAdvisorIpcController({
     };
 
     handle('cavalry-advisor:get-settings', async () => {
-      const settings = await runtime.loadAdvisorRuntimeSettings();
-      return { ok: true, settings: runtime.publicAdvisorSettings(settings) };
+      try {
+        const settings = await runtime.loadAdvisorRuntimeSettings();
+        return { ok: true, settings: runtime.publicAdvisorSettings(settings) };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
     });
 
     handle('cavalry-advisor:save-settings', async (_event, payload) => {
-      const settings = await runtime.saveAdvisorSettings(payload || {});
-      const status = await runtime.getLocalAdvisorServerStatus(settings);
-      return {
-        ok: true,
-        settings: runtime.publicAdvisorSettings(settings),
-        status,
-        message: 'Settings saved.'
-      };
-    });
-
-    handle('cavalry-advisor:get-server-status', async (_event, payload) => {
       const settings = runtime.normalizeAdvisorSettings(
         payload || {},
         await runtime.loadAdvisorRuntimeSettings()
       );
-      const status = await runtime.getLocalAdvisorServerStatus(settings);
-      return { ok: true, status };
+      try {
+        const savedSettings = await runtime.saveAdvisorSettings(settings);
+        const status = await runtime.getLocalAdvisorServerStatus(savedSettings);
+        return {
+          ok: true,
+          settings: runtime.publicAdvisorSettings(savedSettings),
+          status,
+          message: 'Settings saved.'
+        };
+      } catch (error) {
+        const failure = normalizeAdvisorIpcError(error);
+        try {
+          failure.status = await runtime.getLocalAdvisorServerStatus(settings);
+        } catch (_statusError) {
+          // Preserve the validation failure when status reconciliation also fails.
+        }
+        return failure;
+      }
+    });
+
+    handle('cavalry-advisor:get-server-status', async (_event, payload) => {
+      try {
+        const settings = runtime.normalizeAdvisorSettings(
+          payload || {},
+          await runtime.loadAdvisorRuntimeSettings()
+        );
+        const status = await runtime.getLocalAdvisorServerStatus(settings);
+        return { ok: true, status };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
     });
 
     handle('cavalry-advisor:start-server', async (event, payload) => {
-      const settings = await runtime.saveAdvisorSettings(payload || {});
-      const server = await runtime.ensureLocalAdvisorServer(settings, event);
-      const status = await runtime.getLocalAdvisorServerStatus(settings);
-      return {
-        ok: true,
-        settings: runtime.publicAdvisorSettings(settings),
-        status,
-        message: server && server.message ? server.message : 'Local model started.'
-      };
+      const settings = runtime.normalizeAdvisorSettings(
+        payload || {},
+        await runtime.loadAdvisorRuntimeSettings()
+      );
+      try {
+        const server = await runtime.ensureLocalAdvisorServer(settings, event);
+        const savedSettings = await runtime.saveAdvisorSettings(settings, {
+          allowActiveLocalConfiguration: true
+        });
+        const status = await runtime.getLocalAdvisorServerStatus(savedSettings);
+        return {
+          ok: true,
+          settings: runtime.publicAdvisorSettings(savedSettings),
+          status,
+          message: server && server.message ? server.message : 'Local model started.'
+        };
+      } catch (error) {
+        const failure = normalizeAdvisorIpcError(error);
+        try {
+          failure.status = await runtime.getLocalAdvisorServerStatus(settings);
+        } catch (_statusError) {
+          // Preserve the original launch failure when status reconciliation also fails.
+        }
+        return failure;
+      }
     });
 
     handle('cavalry-advisor:stop-server', async (event, payload) => {
@@ -131,49 +186,85 @@ function createAdvisorIpcController({
         payload || {},
         await runtime.loadAdvisorRuntimeSettings()
       );
-      return runtime.stopLocalAdvisorServer(settings, event, { wait: true, forceAfterMs: 2500 });
+      try {
+        return await runtime.stopLocalAdvisorServer(settings, event, {
+          wait: true,
+          forceAfterMs: 2500
+        });
+      } catch (error) {
+        const failure = normalizeAdvisorIpcError(error);
+        try {
+          failure.status = await runtime.getLocalAdvisorServerStatus(settings);
+        } catch (_statusError) {
+          // Preserve the original stop failure when status reconciliation also fails.
+        }
+        return failure;
+      }
     });
 
-    handle('cavalry-advisor:choose-local-model', async () => {
-      const result = await dialog.showOpenDialog({
-        title: 'Choose Local AI Model',
-        properties: ['openFile'],
-        filters: [
-          { name: 'GGUF Model Files', extensions: ['gguf'] },
+    handle('cavalry-advisor:choose-local-model', async (_event, payload) => {
+      try {
+        const result = await dialog.showOpenDialog({
+          title: 'Choose Local AI Model',
+          properties: ['openFile'],
+          filters: [
+            { name: 'GGUF Model Files', extensions: ['gguf'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
+        if (result.canceled || !result.filePaths.length) {
+          return { ok: false, canceled: true };
+        }
+        const mmprojPath = await runtime.findAdjacentMmprojPath(result.filePaths[0]);
+        const settings = runtime.normalizeAdvisorSettings(
           {
-            name: 'Model Files',
-            extensions: ['gguf', 'bin', 'safetensors', 'onnx', 'pt', 'pth', 'mlmodel', 'model']
+            ...(payload || {}),
+            provider: 'custom',
+            localModelPath: result.filePaths[0],
+            mmprojPath
           },
-          { name: 'All Files', extensions: ['*'] }
-        ]
-      });
-      if (result.canceled || !result.filePaths.length) {
-        return { ok: false, canceled: true };
+          await runtime.loadAdvisorRuntimeSettings()
+        );
+        await runtime.assertAdvisorLocalModelCompatibility(settings);
+        return {
+          ok: true,
+          path: result.filePaths[0],
+          name: path.basename(result.filePaths[0]),
+          mmprojPath,
+          mmprojName: mmprojPath ? path.basename(mmprojPath) : ''
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
       }
-      const mmprojPath = await runtime.findAdjacentMmprojPath(result.filePaths[0]);
-      return {
-        ok: true,
-        path: result.filePaths[0],
-        name: path.basename(result.filePaths[0]),
-        mmprojPath,
-        mmprojName: mmprojPath ? path.basename(mmprojPath) : ''
-      };
     });
 
-    handle('cavalry-advisor:choose-mmproj', async () => {
-      const result = await dialog.showOpenDialog({
-        title: 'Choose Multimodal Projector',
-        properties: ['openFile'],
-        filters: [
-          { name: 'Multimodal Projector Files', extensions: ['gguf', 'mmproj'] },
-          { name: 'GGUF Files', extensions: ['gguf'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
-      });
-      if (result.canceled || !result.filePaths.length) {
-        return { ok: false, canceled: true };
+    handle('cavalry-advisor:choose-mmproj', async (_event, payload) => {
+      try {
+        const result = await dialog.showOpenDialog({
+          title: 'Choose Multimodal Projector',
+          properties: ['openFile'],
+          filters: [
+            { name: 'Multimodal Projector Files', extensions: ['gguf', 'mmproj'] },
+            { name: 'GGUF Files', extensions: ['gguf'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
+        if (result.canceled || !result.filePaths.length) {
+          return { ok: false, canceled: true };
+        }
+        const settings = runtime.normalizeAdvisorSettings(
+          {
+            ...(payload || {}),
+            provider: 'custom',
+            mmprojPath: result.filePaths[0]
+          },
+          await runtime.loadAdvisorRuntimeSettings()
+        );
+        await runtime.assertAdvisorLocalModelCompatibility(settings);
+        return { ok: true, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
       }
-      return { ok: true, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
     });
 
     async function settingsForRequest(payload) {
@@ -185,40 +276,60 @@ function createAdvisorIpcController({
     }
 
     handle('cavalry-advisor:test', async (event, payload) => {
-      const settings = await runtime.saveAdvisorSettings(payload || {});
-      if (settings.provider === 'local') {
-        return { ok: true, message: 'Using the built-in rules advisor.' };
+      const settings = runtime.normalizeAdvisorSettings(
+        payload || {},
+        await runtime.loadAdvisorRuntimeSettings()
+      );
+      try {
+        let message = 'Using the built-in rules advisor.';
+        if (settings.provider !== 'local') {
+          const text =
+            settings.provider === 'openai'
+              ? getResponsesOutputText(
+                  await runtime.callAdvisorAgentTurn(
+                    settings,
+                    {
+                      instructions:
+                        'Reply with exactly this phrase and nothing else: Model test passed.',
+                      input: 'Run Cavalry assistant model test.',
+                      max_output_tokens: 80
+                    },
+                    event
+                  )
+                )
+              : await runtime.callAdvisorModel(settings, {
+                  temperature: 0,
+                  max_tokens: 80,
+                  messages: [
+                    {
+                      role: 'system',
+                      content: 'Reply with exactly this phrase and nothing else: Model test passed.'
+                    },
+                    { role: 'user', content: 'Run Cavalry advisor model test.' }
+                  ]
+                });
+          if (!text) throw new Error('The model test returned no text.');
+          message = text;
+        }
+        const savedSettings = await runtime.saveAdvisorSettings(settings, {
+          allowActiveLocalConfiguration: true
+        });
+        const status = await runtime.getLocalAdvisorServerStatus(savedSettings);
+        return {
+          ok: true,
+          settings: runtime.publicAdvisorSettings(savedSettings),
+          status,
+          message
+        };
+      } catch (error) {
+        const failure = normalizeAdvisorIpcError(error);
+        try {
+          failure.status = await runtime.getLocalAdvisorServerStatus(settings);
+        } catch (_statusError) {
+          // Preserve the original model-test failure when status reconciliation also fails.
+        }
+        return failure;
       }
-      if (settings.provider === 'custom') {
-        await runtime.ensureLocalAdvisorServer(settings, event);
-      }
-      const text =
-        settings.provider === 'openai'
-          ? getResponsesOutputText(
-              await runtime.callAdvisorAgentTurn(
-                settings,
-                {
-                  instructions:
-                    'Reply with exactly this phrase and nothing else: Model test passed.',
-                  input: 'Run Cavalry assistant model test.',
-                  max_output_tokens: 80
-                },
-                event
-              )
-            )
-          : await runtime.callAdvisorModel(settings, {
-              temperature: 0,
-              max_tokens: 80,
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Reply with exactly this phrase and nothing else: Model test passed.'
-                },
-                { role: 'user', content: 'Run Cavalry advisor model test.' }
-              ]
-            });
-      if (!text) throw new Error('The model test returned no text.');
-      return { ok: true, message: text };
     });
 
     handle('cavalry-advisor:chat', async (event, payload) => {
@@ -336,5 +447,6 @@ function createAdvisorIpcController({
 module.exports = {
   ADVISOR_IPC_CHANNELS,
   createAdvisorIpcController,
+  normalizeAdvisorIpcError,
   scrubAdvisorSecretsForRenderer
 };

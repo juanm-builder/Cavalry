@@ -78,6 +78,80 @@ describe('budget editor interactions', () => {
     expect(onAction).toHaveBeenLastCalledWith({ type: 'close-budget-editor', payload: {} });
   });
 
+  it('creates and selects a category without losing the budget draft', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn((action) => {
+      if (action.type !== 'category/create') return undefined;
+      return {
+        ok: true,
+        workbook: {
+          categories: [
+            {
+              id: 'trip',
+              name: 'Trip fund',
+              type: action.payload.type,
+              icon: 'flight',
+              isActive: true
+            }
+          ]
+        },
+        events: [{ type: 'category.created', categoryId: 'trip' }]
+      };
+    });
+    render(<BudgetRoute model={model()} onAction={onAction} />);
+
+    const amount = screen.getByLabelText('Planned amount');
+    const notes = screen.getByLabelText('Budget notes');
+    await user.type(amount, '850');
+    await user.type(notes, 'Monthly trip contribution');
+
+    await user.click(screen.getByRole('combobox', { name: 'Budget category' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Create new category' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Budget editor' })).not.toBeNull();
+    expect(onAction).not.toHaveBeenCalledWith({ type: 'close-budget-editor', payload: {} });
+
+    await user.click(screen.getByRole('combobox', { name: 'Budget category' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+    const createDialog = screen.getByRole('dialog', { name: 'Create new category' });
+    await user.type(within(createDialog).getByLabelText('Category name'), 'Trip fund');
+    expect(
+      within(createDialog)
+        .getAllByRole('option')
+        .map((option) => option.textContent)
+    ).toEqual(['Expense', 'Savings', 'Debt']);
+    await user.selectOptions(within(createDialog).getByLabelText('Category type'), 'savings');
+    await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
+
+    expect(screen.getByRole('combobox', { name: 'Budget category' }).textContent).toContain(
+      'Trip fund'
+    );
+    expect(amount.value).toBe('850.00');
+    expect(notes.value).toBe('Monthly trip contribution');
+    expect(onAction).toHaveBeenCalledWith({
+      type: 'category/create',
+      payload: {
+        name: 'Trip fund',
+        postingAccountName: 'Trip fund',
+        type: 'savings'
+      }
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Save Budget' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'save-budget',
+      payload: {
+        sheetId: 'sheet-july',
+        categoryId: 'trip',
+        planned: 850,
+        createdAt: '2026-07-11',
+        rangeStart: '2026-07-01',
+        rangeEnd: '2026-07-31'
+      }
+    });
+  });
+
   it('offers reference-safe budget archival only for an existing budget', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();

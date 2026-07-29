@@ -97,6 +97,11 @@ describe('Cavalry assistant runtime', () => {
     expect(instructions).toContain('paying a card in full only when it is newly relevant');
     expect(instructions).toContain('native balance/currency');
     expect(instructions).toContain('Never relabel a foreign-currency amount');
+    expect(instructions).toContain('omit date when the user did not specify one');
+    expect(instructions).toContain('Never ask a follow-up question only');
+    expect(instructions).toContain('Do not record a card payment as a new expense');
+    expect(instructions).toContain('saved auto-categorization rules');
+    expect(instructions).toContain('do not ask preemptively merely because the field was omitted');
     expect(instructions).toContain('auto_assign_category_icons');
     expect(instructions).toContain('instead of guessing icon IDs');
     expect(instructions).toContain('Treat returned persisted icon and verified fields as truth');
@@ -204,6 +209,7 @@ describe('Cavalry assistant runtime', () => {
       expect.objectContaining({
         activeRouteId: 'ledger',
         callId: 'call_1',
+        question: 'Find my coffee purchase.',
         requestId: 'assistant_turn_1',
         today: '2026-07-10'
       })
@@ -525,6 +531,16 @@ describe('Cavalry assistant runtime', () => {
     });
     expect(advisor.invoke.mock.calls[0][1].tools[1].function.name).toBe(
       CAVALRY_ASSISTANT_CLARIFICATION_TOOL_NAME
+    );
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_transaction',
+      { amount: 125 },
+      expect.objectContaining({
+        activeRouteId: 'ledger',
+        question: 'Yes, add the confirmed transaction.',
+        requestId: 'assistant_turn_custom',
+        today: '2026-07-10'
+      })
     );
     const continuedMessages = advisor.invoke.mock.calls[1][1].messages;
     expect(continuedMessages.at(-2)).toEqual({

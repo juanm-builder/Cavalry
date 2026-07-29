@@ -59,6 +59,24 @@ function expectNoCommand(outcome, workbook, originalWorkbook) {
   return outcome.state;
 }
 
+describe('transaction table controller', () => {
+  it('preserves live search spacing and returns to the first page', () => {
+    const workbook = makeIncomeAndExpenseWorkbook();
+    const state = createTransactionControllerState({
+      view: { page: 3, search: 'Credit', sort: { key: 'date', direction: 'desc' } }
+    });
+
+    const outcome = dispatch(workbook, state, 'set-ledger-filter-search', {
+      value: 'Credit '
+    });
+
+    expect(outcome.state.view).toMatchObject({
+      page: 1,
+      search: 'Credit '
+    });
+  });
+});
+
 describe('transaction create wizard controller', () => {
   it('opens a bill-originated transaction with the reconciliation details prefilled', () => {
     const workbook = makeIncomeAndExpenseWorkbook();

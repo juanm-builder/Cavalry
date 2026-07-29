@@ -205,17 +205,52 @@ function fieldEditKey(draftId, row) {
   return `${draftId}:${asArray(row?.path).join('.')}`;
 }
 
+function categoryTypesFromOptions(options) {
+  return [
+    ...new Set(
+      asArray(options)
+        .map((option) => String(option?.type || '').toLowerCase())
+        .filter((type) => ['income', 'expense', 'savings', 'debt'].includes(type))
+    )
+  ];
+}
+
+function categoryTypesForRow(row) {
+  const explicitTypes = categoryTypesFromOptions(
+    asArray(row?.categoryTypes).map((type) => ({ type }))
+  );
+  return explicitTypes.length ? explicitTypes : categoryTypesFromOptions(row?.inputOptions);
+}
+
+function categoryOptionsForRow(row, currentValue) {
+  const allowedTypes = categoryTypesForRow(row);
+  return asArray(row?.inputOptions).filter((option) => {
+    if (String(option?.value || '') === String(currentValue || '')) return true;
+    const type = String(option?.type || '').toLowerCase();
+    return option?.isActive !== false && (!allowedTypes.length || allowedTypes.includes(type));
+  });
+}
+
+function categoryTypeForRow(row) {
+  const types = categoryTypesForRow(row);
+  return types[0] || 'expense';
+}
+
 function EditableDraftField({
   draftId,
   row,
   edit,
   onStartEdit,
   onChangeEdit,
+  onCreateCategory,
   onCancelEdit,
   onSaveEdit
 }) {
   const editing = edit?.key === fieldEditKey(draftId, row);
   const interactive = row.editable === true;
+  const categoryField = /category_?id/i.test(String(row.key || ''));
+  const categoryTypes = categoryTypesForRow(row);
+  const categoryOptions = categoryOptionsForRow(row, edit?.value);
 
   function handleKeyDown(event) {
     if (event.key === 'Escape' && editing) {
@@ -250,11 +285,14 @@ function EditableDraftField({
       </span>
       {editing ? (
         <div className="ai-draft-inline-editor">
-          {asArray(row.inputOptions).length && /categoryid/i.test(String(row.key || '')) ? (
+          {categoryField ? (
             <CategorizedSelect
               aria-label={`Edit ${row.label}`}
+              createCategoryType={categoryTypeForRow(row)}
+              createCategoryTypes={categoryTypes}
+              onCreateCategory={onCreateCategory}
               onValueChange={onChangeEdit}
-              options={row.inputOptions}
+              options={categoryOptions}
               value={edit.value}
             />
           ) : asArray(row.inputOptions).length ? (
@@ -319,6 +357,7 @@ function DraftDetail({
   edit,
   onStartEdit,
   onChangeEdit,
+  onCreateCategory,
   onCancelEdit,
   onSaveEdit,
   onToggleDraft,
@@ -413,6 +452,7 @@ function DraftDetail({
                     key={row.key}
                     onCancelEdit={onCancelEdit}
                     onChangeEdit={onChangeEdit}
+                    onCreateCategory={onCreateCategory}
                     onSaveEdit={onSaveEdit}
                     onStartEdit={onStartEdit}
                     row={row}
@@ -528,6 +568,7 @@ function DraftReviewController({
   model,
   workbook,
   onAction,
+  onCreateCategory,
   onCommandResult,
   commandExecutor,
   services = {},
@@ -690,6 +731,7 @@ function DraftReviewController({
                 onChangeEdit={(value) =>
                   setFieldEdit((current) => ({ ...current, value, error: '' }))
                 }
+                onCreateCategory={onCreateCategory}
                 onRequestApply={() =>
                   setConfirmation({ kind: 'apply', item: selectedItem, error: '' })
                 }

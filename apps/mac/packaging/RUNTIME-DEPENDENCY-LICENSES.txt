@@ -8,7 +8,7 @@ Electron and Chromium notices are shipped as separate files. Cavalry project cod
 is covered by Cavalry-LICENSE.txt.
 
 PACKAGE COUNT: 28
-INVENTORY SHA-256: b58dae2058444c3ce6f38cc63b056c6c14ac3a4aee32d5d32a74c759ad9c0e0e
+INVENTORY SHA-256: b517908621e96254031fb15a93a5863caabef2bc4ec70bee653658c557c41981
 
 ================================================================================
 PACKAGE: @supabase/auth-js@2.110.8
@@ -513,7 +513,7 @@ PACKAGE: builder-util-runtime@9.7.0
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/electron-userland/electron-builder.git
 LOCK IDENTITY: sha512-g/kR520giAFYkSXTzcmF3kqQq7wi8F6N6SzeDgZrqTBN+VHdmgWOyTdD1yD7AATDId/yXLvuP34CxW46/BwCdw==
-LOCK PATHS: apps/mac/node_modules/builder-util-runtime
+LOCK PATHS: node_modules/builder-util-runtime
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -730,7 +730,7 @@ PACKAGE: jsonfile@6.2.1
 DECLARED LICENSE: MIT
 SOURCE: git@github.com:jprichardson/node-jsonfile.git
 LOCK IDENTITY: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==
-LOCK PATHS: node_modules/fs-extra/node_modules/jsonfile
+LOCK PATHS: node_modules/jsonfile
 LEGAL FILES: LICENSE
 ================================================================================
 
@@ -1208,7 +1208,7 @@ PACKAGE: universalify@2.0.1
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/RyanZim/universalify.git
 LOCK IDENTITY: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==
-LOCK PATHS: node_modules/fs-extra/node_modules/universalify
+LOCK PATHS: node_modules/universalify
 LEGAL FILES: LICENSE
 ================================================================================
 

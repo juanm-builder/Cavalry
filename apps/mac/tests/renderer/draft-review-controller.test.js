@@ -312,4 +312,56 @@ describe('draft review controller', () => {
     expect(rows.find((row) => row.key === 'creditLimit').value).toBe('₱100,000.00');
     expect(rows.find((row) => row.key === 'estimatedMaturityAmount').value).toBe('₱125,000.00');
   });
+
+  it('describes the compatible category type even when the workbook has no categories', () => {
+    const workbook = makeWorkbook();
+    workbook.categories = [];
+
+    const rows = formatDraftProposedRows(
+      {
+        direction: 'expense',
+        template: 'expense_paid',
+        category_id: ''
+      },
+      {
+        workbook,
+        draftType: 'transaction',
+        includeEmpty: true
+      }
+    );
+
+    expect(rows.find((row) => row.key === 'category_id')).toMatchObject({
+      inputOptions: [],
+      categoryTypes: ['expense'],
+      editable: true
+    });
+  });
+
+  it('infers category-change types from the transaction being recategorized', () => {
+    const workbook = makeWorkbook();
+    workbook.categories.push({
+      id: 'salary',
+      name: 'Salary',
+      type: 'income',
+      linkedAccountId: 'income-account',
+      isActive: true
+    });
+    workbook.transactions.push({
+      id: 'income-transaction',
+      template: 'income_received',
+      categoryId: 'salary'
+    });
+
+    const rows = formatDraftProposedRows(
+      {
+        transaction_id: 'income-transaction',
+        suggested_category_id: 'salary'
+      },
+      { workbook, draftType: 'category_change' }
+    );
+
+    expect(rows.find((row) => row.key === 'suggested_category_id').categoryTypes).toEqual([
+      'income'
+    ]);
+  });
 });

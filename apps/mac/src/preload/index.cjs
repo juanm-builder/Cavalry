@@ -54,8 +54,9 @@ contextBridge.exposeInMainWorld('cavalryAdvisor', {
   getServerStatus: (payload) => invokeAdvisorCommand('cavalry-advisor:get-server-status', payload),
   startServer: (payload) => invokeAdvisorCommand('cavalry-advisor:start-server', payload),
   stopServer: (payload) => invokeAdvisorCommand('cavalry-advisor:stop-server', payload),
-  chooseLocalModel: () => invokeAdvisorCommand('cavalry-advisor:choose-local-model'),
-  chooseMmproj: () => invokeAdvisorCommand('cavalry-advisor:choose-mmproj'),
+  chooseLocalModel: (payload) =>
+    invokeAdvisorCommand('cavalry-advisor:choose-local-model', payload),
+  chooseMmproj: (payload) => invokeAdvisorCommand('cavalry-advisor:choose-mmproj', payload),
   testConnection: (payload) => invokeAdvisorCommand('cavalry-advisor:test', payload),
   chat: (payload) => invokeAdvisorCommand('cavalry-advisor:chat', payload),
   runAgentTurn: (payload) => invokeAdvisorCommand('cavalry-advisor:agent', payload),

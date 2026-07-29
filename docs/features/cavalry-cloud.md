@@ -17,7 +17,13 @@ The MVP supports:
 - immutable version history and append-only sync audit records
 - owner-scoped Row Level Security
 
-The MVP does not automatically merge changes from two devices. A stale upload fails with `workbook_revision_conflict`; Cavalry never retries with the remote revision because doing so could overwrite financial changes. Local files remain authoritative and usable when Cloud is unavailable.
+The MVP does not automatically merge changes from two devices. A stale upload
+fails once with `workbook_revision_conflict` (`PT412` / HTTP 412); Cavalry never
+retries with the remote revision because doing so could overwrite financial
+changes. It keeps the last acknowledged revision and any conflict flag locally,
+scoped to the signed-in user and workbook. A newer Cloud copy must be explicitly
+reviewed, while a deleted Cloud copy can be deliberately re-added. Local files
+remain authoritative and usable when Cloud is unavailable.
 
 ## Runtime flow
 
@@ -32,7 +38,9 @@ OAuth codes and access/refresh tokens never enter the renderer. A fresh signed-o
 
 ## Project setup
 
-Apply [`../../supabase/migrations/20260720000100_cavalry_cloud.sql`](../../supabase/migrations/20260720000100_cavalry_cloud.sql) to the linked Supabase project. Then:
+Apply the migrations in [`../../supabase/migrations/`](../../supabase/migrations/)
+to the linked Supabase project, including
+`20260726000100_fix_workbook_conflict_retry.sql`. Then:
 
 1. Enable Google in Supabase Authentication providers.
 2. Put the Google client ID and secret in Supabase—not in Cavalry.
@@ -45,7 +53,14 @@ Never place a Supabase secret/service-role key or Google OAuth secret in the des
 
 ## Data and deletion
 
-Each snapshot is the complete schema-v2 portable HTML workbook, limited to 25 MiB and hashed with SHA-256 in Postgres. Closed-beta owner quotas are enforced inside the save transaction: 50 workbooks, 200 versions per workbook, 1,000 versions total, and 500 MiB of snapshots. Workbook metadata can be listed without downloading financial contents. Removing a cloud workbook is an explicit privacy deletion that cascades its snapshot history and audit records; it does not delete the local file.
+Each snapshot is the complete schema-v2 portable HTML workbook, limited to 25
+MiB and hashed with SHA-256 in Postgres. Closed-beta owner quotas are enforced
+inside the save transaction: 50 workbooks, 200 versions per workbook, 1,000
+versions total, and 500 MiB of snapshots. Workbook metadata can be listed without
+downloading financial contents. Cavalry stores only the user ID, workbook ID,
+last acknowledged revision, and conflict flag locally for concurrency safety.
+Removing a cloud workbook is an explicit privacy deletion that cascades its
+snapshot history and audit records; it does not delete the local file.
 
 See [`../../supabase/README.md`](../../supabase/README.md) for the database contract and deployment commands.
 

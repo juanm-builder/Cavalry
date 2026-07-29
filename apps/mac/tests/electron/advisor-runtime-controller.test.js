@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,9 @@ const {
   prepareAdvisorLogFile,
   redactAdvisorLogText
 } = require('../../src/main/advisor-runtime-controller.cjs');
+const {
+  createAdvisorLocalProcessLifecycle
+} = require('../../src/main/advisor-local-process-lifecycle.cjs');
 
 const EXPECTED_ADVISOR_CHANNELS = [
   'cavalry-advisor:get-settings',
@@ -111,6 +115,119 @@ function createSecureStorage(overrides = {}) {
   };
 }
 
+function createMemoryFsSync() {
+  const chunks = [];
+  return {
+    chunks,
+    createWriteStream() {
+      return {
+        write(value) {
+          chunks.push(Buffer.from(value));
+        },
+        end() {}
+      };
+    }
+  };
+}
+
+function createFakeChild(pid = 4100) {
+  const child = new EventEmitter();
+  child.pid = pid;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.killed = false;
+  child.finish = (code = null, signal = null) => {
+    child.exitCode = code;
+    child.signalCode = signal;
+    child.emit('exit', code, signal);
+  };
+  child.kill = vi.fn((signal = 'SIGTERM') => {
+    child.killed = true;
+    queueMicrotask(() => child.finish(null, signal));
+    return true;
+  });
+  return child;
+}
+
+function createLocalLaunchHarness(overrides = {}) {
+  const binaryPath = overrides.binaryPath || '/opt/homebrew/bin/llama-server';
+  const modelPath = overrides.modelPath || '/Models/local-model.gguf';
+  const fs = overrides.fs || createMemoryFs();
+  fs.files.set(binaryPath, 'llama-server executable');
+  fs.files.set(modelPath, 'GGUF model');
+  const helpText =
+    overrides.helpText ||
+    [
+      '--host HOST',
+      '--port PORT',
+      '-m, --model FNAME',
+      '--alias STRING',
+      '--no-webui',
+      '--ctx-size N',
+      '--n-gpu-layers N',
+      '--flash-attn',
+      '--jinja',
+      '--reasoning-format FORMAT'
+    ].join('\n');
+  const execFileAsync =
+    overrides.execFileAsync ||
+    vi.fn(async (executable, args) => {
+      if (executable === 'which') return { stdout: `${binaryPath}\n`, stderr: '' };
+      if (executable === binaryPath && args[0] === '--help') {
+        return { stdout: helpText, stderr: '' };
+      }
+      const error = new Error(`${executable} unavailable`);
+      error.code = 'ENOENT';
+      throw error;
+    });
+  const spawn = overrides.spawn || vi.fn(() => createFakeChild());
+  const fetch = overrides.fetch || vi.fn(async () => ({ ok: false }));
+  const process = overrides.process || {
+    env: { LLAMA_SERVER_BIN: binaryPath },
+    kill: vi.fn(),
+    platform: 'darwin'
+  };
+  const fsSync = overrides.fsSync || createMemoryFsSync();
+  const created = createController({
+    execFileAsync,
+    fetch,
+    fs,
+    fsSync,
+    inspectGgufCompatibility:
+      overrides.inspectGgufCompatibility ||
+      vi.fn(async ({ mmprojPath }) => ({
+        status: 'compatible',
+        compatible: true,
+        reason: mmprojPath ? 'metadata-match' : 'text-only'
+      })),
+    process,
+    spawn
+  });
+  return {
+    ...created,
+    binaryPath,
+    execFileAsync,
+    fetch,
+    fsSync,
+    modelPath,
+    process,
+    settings: {
+      provider: 'custom',
+      providerKind: 'local_model',
+      apiMode: 'chat_completions',
+      endpoint: 'http://127.0.0.1:8080/v1/chat/completions',
+      model: 'cavalry-advisor',
+      localModelPath: modelPath,
+      mmprojPath: '',
+      contextWindowTokens: 8192,
+      apiKey: ''
+    },
+    spawn
+  };
+}
+
 function createController(overrides = {}) {
   const ipcMain = overrides.ipcMain || createIpcMain();
   const fs = overrides.fs || createMemoryFs();
@@ -208,6 +325,616 @@ describe('Advisor runtime controller', () => {
     expect(fs.modes.get(logPath)).toBe(0o600);
   });
 
+  it('launches older llama-server builds with backward-compatible optional flags', async () => {
+    let spawned = false;
+    const spawn = vi.fn(() => {
+      spawned = true;
+      return createFakeChild();
+    });
+    const harness = createLocalLaunchHarness({
+      spawn,
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+
+    await expect(
+      harness.controller.ensureLocalAdvisorServer(harness.settings)
+    ).resolves.toMatchObject({
+      ok: true,
+      message: 'Local model started at http://127.0.0.1:8080'
+    });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const [binaryPath, args, options] = spawn.mock.calls[0];
+    expect(binaryPath).toBe(harness.binaryPath);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '8080',
+        '-m',
+        harness.modelPath,
+        '--ctx-size',
+        '8192',
+        '--flash-attn',
+        '--reasoning-format',
+        'none'
+      ])
+    );
+    expect(args).not.toContain('--n-gpu-layers');
+    expect(args[args.indexOf('--flash-attn') + 1]).not.toBe('auto');
+    expect(options).toMatchObject({
+      cwd: '/tmp/cavalry-advisor-controller-test',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+  });
+
+  it('uses automatic GPU layers only when the installed build documents support', async () => {
+    let spawned = false;
+    const helpText = [
+      '--host HOST',
+      '--port PORT',
+      '-m, --model FNAME',
+      '--n-gpu-layers N    exact number, auto, or all (default: auto)',
+      '--flash-attn [on|off|auto]    set Flash Attention use (default: auto)'
+    ].join('\n');
+    const spawn = vi.fn(() => {
+      spawned = true;
+      return createFakeChild();
+    });
+    const harness = createLocalLaunchHarness({
+      helpText,
+      spawn,
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+
+    await expect(
+      harness.controller.ensureLocalAdvisorServer(harness.settings)
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(spawn.mock.calls[0][1]).toEqual(
+      expect.arrayContaining(['--n-gpu-layers', 'auto', '--flash-attn', 'auto'])
+    );
+  });
+
+  it('skips a broken configured executable when a compatible llama-server is discoverable', async () => {
+    const brokenBinaryPath = '/Applications/Broken llama-server';
+    const workingBinaryPath = '/opt/homebrew/bin/llama-server';
+    const fs = createMemoryFs();
+    fs.files.set(brokenBinaryPath, 'not executable');
+    let spawned = false;
+    const execFileAsync = vi.fn(async (executable, args) => {
+      if (executable === 'which') {
+        return { stdout: `${workingBinaryPath}\n`, stderr: '' };
+      }
+      if (executable === brokenBinaryPath && args[0] === '--help') {
+        const error = new Error('permission denied');
+        error.code = 'EACCES';
+        throw error;
+      }
+      if (executable === workingBinaryPath && args[0] === '--help') {
+        return {
+          stdout: ['--host HOST', '--port PORT', '-m, --model FNAME'].join('\n'),
+          stderr: ''
+        };
+      }
+      throw new Error(`Unexpected command: ${executable}`);
+    });
+    const spawn = vi.fn(() => {
+      spawned = true;
+      return createFakeChild();
+    });
+    const harness = createLocalLaunchHarness({
+      binaryPath: workingBinaryPath,
+      execFileAsync,
+      fetch: vi.fn(async () => ({ ok: spawned })),
+      fs,
+      process: {
+        env: { LLAMA_SERVER_BIN: brokenBinaryPath },
+        kill: vi.fn(),
+        platform: 'darwin'
+      },
+      spawn
+    });
+
+    await expect(
+      harness.controller.ensureLocalAdvisorServer(harness.settings)
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(spawn.mock.calls[0][0]).toBe(workingBinaryPath);
+    expect(execFileAsync).toHaveBeenCalledWith(
+      brokenBinaryPath,
+      ['--help'],
+      expect.objectContaining({ timeout: 15000 })
+    );
+  });
+
+  it('reports asynchronous spawn errors promptly and can retry the launch', async () => {
+    let spawnCount = 0;
+    const spawn = vi.fn(() => {
+      spawnCount += 1;
+      const child = createFakeChild(4100 + spawnCount);
+      if (spawnCount === 1) {
+        queueMicrotask(() => {
+          const error = new Error('spawn EACCES');
+          error.code = 'EACCES';
+          child.emit('error', error);
+        });
+      }
+      return child;
+    });
+    const harness = createLocalLaunchHarness({
+      spawn,
+      fetch: vi.fn(async () => ({ ok: spawnCount >= 2 }))
+    });
+
+    await expect(harness.controller.ensureLocalAdvisorServer(harness.settings)).rejects.toThrow(
+      /Could not launch llama-server \(spawn EACCES\)/
+    );
+    await expect(
+      harness.controller.ensureLocalAdvisorServer(harness.settings)
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(Buffer.concat(harness.fsSync.chunks).toString('utf8')).toContain(
+      'llama-server process error: spawn EACCES'
+    );
+  });
+
+  it('does not wait for the startup timeout after llama-server terminates by signal', async () => {
+    const spawn = vi.fn(() => {
+      const child = createFakeChild();
+      queueMicrotask(() => {
+        child.signalCode = 'SIGABRT';
+        child.emit('exit', null, 'SIGABRT');
+      });
+      return child;
+    });
+    const harness = createLocalLaunchHarness({ spawn });
+    let timeout = null;
+    const launchResult = harness.controller.ensureLocalAdvisorServer(harness.settings).then(
+      () => ({ resolved: true, error: null }),
+      (error) => ({ resolved: false, error })
+    );
+    const raceResult = await Promise.race([
+      launchResult,
+      new Promise((resolve) => {
+        timeout = setTimeout(() => resolve({ timedOut: true }), 100);
+      })
+    ]);
+    clearTimeout(timeout);
+
+    expect(raceResult).not.toMatchObject({ timedOut: true });
+    expect(raceResult).toMatchObject({ resolved: false });
+    expect(raceResult.error).toMatchObject({
+      message: expect.stringContaining('SIGABRT')
+    });
+  });
+
+  it('shares one startup operation when Start and Test race before preflight finishes', async () => {
+    let releaseModelAccess = null;
+    const modelAccessGate = new Promise((resolve) => {
+      releaseModelAccess = resolve;
+    });
+    let spawned = false;
+    const spawn = vi.fn(() => {
+      spawned = true;
+      return createFakeChild();
+    });
+    const harness = createLocalLaunchHarness({
+      spawn,
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+    const originalAccess = harness.fs.access.bind(harness.fs);
+    harness.fs.access = vi.fn(async (filePath) => {
+      if (filePath === harness.modelPath) {
+        await modelAccessGate;
+      }
+      return originalAccess(filePath);
+    });
+
+    const firstStart = harness.controller.ensureLocalAdvisorServer(harness.settings);
+    const concurrentTestStart = harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    expect(concurrentTestStart).toBe(firstStart);
+    expect(spawn).not.toHaveBeenCalled();
+    releaseModelAccess();
+    await expect(Promise.all([firstStart, concurrentTestStart])).resolves.toHaveLength(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels an in-flight startup before it can spawn when Stop is pressed', async () => {
+    let releaseModelAccess = null;
+    const modelAccessGate = new Promise((resolve) => {
+      releaseModelAccess = resolve;
+    });
+    const harness = createLocalLaunchHarness();
+    const originalAccess = harness.fs.access.bind(harness.fs);
+    harness.fs.access = vi.fn(async (filePath) => {
+      if (filePath === harness.modelPath) {
+        await modelAccessGate;
+      }
+      return originalAccess(filePath);
+    });
+
+    const startResult = harness.controller.ensureLocalAdvisorServer(harness.settings).then(
+      () => ({ resolved: true, error: null }),
+      (error) => ({ resolved: false, error })
+    );
+    await Promise.resolve();
+    const stopPromise = harness.controller.stopLocalAdvisorProcess({
+      wait: true,
+      forceAfterMs: 25
+    });
+
+    await expect(
+      Promise.race([
+        stopPromise,
+        new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100))
+      ])
+    ).resolves.toEqual({ stopped: true });
+    expect(harness.spawn).not.toHaveBeenCalled();
+
+    releaseModelAccess();
+    await expect(startResult).resolves.toMatchObject({
+      resolved: false,
+      error: {
+        cavalryCancelled: true,
+        code: 'ERR_CAVALRY_LOCAL_ADVISOR_START_CANCELLED'
+      }
+    });
+  });
+
+  it('rejects a concurrent Start until an in-flight Stop has confirmed exit', async () => {
+    let spawned = false;
+    let releaseExit = null;
+    const child = createFakeChild();
+    child.kill = vi.fn((signal = 'SIGTERM') => {
+      child.killed = true;
+      if (signal === 'SIGTERM') {
+        releaseExit = () => child.finish(null, signal);
+      }
+      return true;
+    });
+    const harness = createLocalLaunchHarness({
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned && child.exitCode === null }))
+    });
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    const stopPromise = harness.controller.stopLocalAdvisorProcess({
+      wait: true,
+      forceAfterMs: 1000
+    });
+    await expect(harness.controller.ensureLocalAdvisorServer(harness.settings)).rejects.toThrow(
+      'The local model server is being stopped.'
+    );
+    expect(harness.spawn).toHaveBeenCalledTimes(1);
+
+    releaseExit();
+    await expect(stopPromise).resolves.toEqual({ stopped: true });
+  });
+
+  it('escalates from SIGTERM to SIGKILL and waits for the confirmed child exit', async () => {
+    let spawned = false;
+    let exited = false;
+    const child = createFakeChild();
+    child.on('exit', () => {
+      exited = true;
+    });
+    child.kill = vi.fn((signal = 'SIGTERM') => {
+      child.killed = true;
+      if (signal === 'SIGKILL') {
+        queueMicrotask(() => child.finish(null, signal));
+      }
+      return true;
+    });
+    const harness = createLocalLaunchHarness({
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned && !exited }))
+    });
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    const result = await harness.controller.stopLocalAdvisorProcess({
+      wait: true,
+      forceAfterMs: 25
+    });
+
+    expect(result).toEqual({ stopped: true });
+    expect(child.kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(exited).toBe(true);
+  });
+
+  it('does not report a successful stop when the child remains alive after SIGKILL', async () => {
+    let spawned = false;
+    const child = createFakeChild();
+    child.kill = vi.fn(() => {
+      child.killed = true;
+      return true;
+    });
+    const harness = createLocalLaunchHarness({
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    await expect(
+      harness.controller.stopLocalAdvisorProcess({
+        wait: true,
+        forceAfterMs: 25
+      })
+    ).rejects.toThrow('Could not confirm that local model server process 4100 stopped.');
+    expect(child.kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL']);
+  });
+
+  it('does not treat a ChildProcess signal error as a confirmed exit', async () => {
+    let spawned = false;
+    const child = createFakeChild();
+    child.kill = vi.fn((signal = 'SIGTERM') => {
+      child.killed = true;
+      queueMicrotask(() => child.emit('error', new Error(`could not deliver ${signal}`)));
+      return true;
+    });
+    const process = {
+      env: { LLAMA_SERVER_BIN: '/opt/homebrew/bin/llama-server' },
+      kill: vi.fn((_pid, signal) => {
+        if (signal === 0) return true;
+        throw new Error('process is still alive');
+      }),
+      platform: 'darwin'
+    };
+    const harness = createLocalLaunchHarness({
+      process,
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    await expect(
+      harness.controller.stopLocalAdvisorProcess({
+        wait: true,
+        forceAfterMs: 25
+      })
+    ).rejects.toThrow('Could not confirm that local model server process 4100 stopped.');
+    expect(child.exitCode).toBeNull();
+    expect(process.kill).toHaveBeenCalledWith(4100, 0);
+  });
+
+  it('does not SIGKILL a replacement process that reuses an adopted PID', async () => {
+    let matchesOriginalProcess = true;
+    const process = {
+      kill: vi.fn((_pid, signal) => {
+        if (signal === 'SIGTERM') matchesOriginalProcess = false;
+        return true;
+      })
+    };
+    const lifecycle = createAdvisorLocalProcessLifecycle({ process });
+
+    await expect(
+      lifecycle.stopPid(7331, {
+        wait: true,
+        forceAfterMs: 25,
+        validateIdentity: async () => matchesOriginalProcess
+      })
+    ).resolves.toBe(true);
+
+    expect(process.kill).toHaveBeenCalledWith(7331, 'SIGTERM');
+    expect(process.kill).not.toHaveBeenCalledWith(7331, 'SIGKILL');
+  });
+
+  it('stops the tracked server even after the saved model changes its server key', async () => {
+    const child = createFakeChild();
+    let spawned = false;
+    let exited = false;
+    child.on('exit', () => {
+      exited = true;
+    });
+    const harness = createLocalLaunchHarness({
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned && !exited }))
+    });
+    await harness.controller.saveAdvisorSettings(harness.settings);
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    const replacementModelPath = '/Models/replacement-model.gguf';
+    harness.fs.files.set(replacementModelPath, 'replacement GGUF model');
+    await harness.controller.saveAdvisorSettings({
+      ...harness.settings,
+      localModelPath: replacementModelPath
+    });
+
+    const result = await harness.controller.stopLocalAdvisorServerForSavedSettings({
+      wait: true,
+      forceAfterMs: 25
+    });
+
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(exited).toBe(true);
+    expect(result).toMatchObject({
+      ok: true,
+      status: {
+        running: false,
+        starting: false
+      },
+      message: 'Local model server stopped.'
+    });
+  });
+
+  it('revalidates an adopted PID identity before signaling it', async () => {
+    const adoptedPid = 7331;
+    const binaryPath = '/opt/homebrew/bin/llama-server';
+    const modelPath = '/Models/local-model.gguf';
+    let command = `${binaryPath} --host 127.0.0.1 --port 8080 -m ${modelPath} --ctx-size 8192`;
+    let healthy = true;
+    const execFileAsync = vi.fn(async (executable, args) => {
+      if (executable === 'lsof') return { stdout: `p${adoptedPid}\n`, stderr: '' };
+      if (executable === 'ps') return { stdout: `1 ${command}\n`, stderr: '' };
+      if (executable === 'which') return { stdout: `${binaryPath}\n`, stderr: '' };
+      if (executable === binaryPath && args[0] === '--help') {
+        return { stdout: '--host HOST\n--port PORT\n-m, --model FNAME\n', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${executable}`);
+    });
+    const process = {
+      env: { LLAMA_SERVER_BIN: binaryPath },
+      kill: vi.fn(() => true),
+      platform: 'darwin'
+    };
+    const harness = createLocalLaunchHarness({
+      binaryPath,
+      execFileAsync,
+      fetch: vi.fn(async () => ({ ok: healthy })),
+      modelPath,
+      process
+    });
+    await harness.controller.saveAdvisorSettings(harness.settings);
+    await expect(
+      harness.controller.getLocalAdvisorServerStatus(harness.settings)
+    ).resolves.toMatchObject({
+      running: true,
+      source: 'adopted',
+      pid: adoptedPid
+    });
+
+    command = '/usr/bin/sleep 999';
+    healthy = false;
+    await expect(
+      harness.controller.stopLocalAdvisorServerForSavedSettings({
+        wait: true,
+        forceAfterMs: 25
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      status: { running: false }
+    });
+
+    expect(
+      process.kill.mock.calls.filter(([, signal]) => signal === 'SIGTERM' || signal === 'SIGKILL')
+    ).toHaveLength(0);
+  });
+
+  it('fails Stop when the configured endpoint remains live after the tracked PID exits', async () => {
+    let spawned = false;
+    const child = createFakeChild();
+    const harness = createLocalLaunchHarness({
+      spawn: vi.fn(() => {
+        spawned = true;
+        return child;
+      }),
+      fetch: vi.fn(async () => ({ ok: spawned }))
+    });
+    await harness.controller.saveAdvisorSettings(harness.settings);
+    await harness.controller.ensureLocalAdvisorServer(harness.settings);
+
+    await expect(
+      harness.controller.stopLocalAdvisorServerForSavedSettings({
+        wait: true,
+        forceAfterMs: 25
+      })
+    ).rejects.toMatchObject({
+      code: 'ADVISOR_LOCAL_MODEL_STILL_RUNNING',
+      message: expect.stringContaining('still responding')
+    });
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('rejects file formats that llama-server cannot load before spawning', async () => {
+    const harness = createLocalLaunchHarness({ modelPath: '/Models/local-model.safetensors' });
+
+    await expect(harness.controller.ensureLocalAdvisorServer(harness.settings)).rejects.toThrow(
+      'The local advisor requires a GGUF model file.'
+    );
+    expect(harness.spawn).not.toHaveBeenCalled();
+  });
+
+  it('blocks a proven model/projector mismatch before spawning or saving it', async () => {
+    const mmprojPath = '/Models/qwen-9b-mmproj.gguf';
+    const inspectGgufCompatibility = vi.fn(async () => ({
+      status: 'incompatible',
+      compatible: false,
+      reason: 'dimension-mismatch',
+      message:
+        'Qwen3.5-9B expects a 4096-dimension text model, but Qwen3.5-4B uses 2560. Choose a matching vision projector or leave the projector empty.',
+      model: { embeddingDimension: 2560 },
+      projector: { projectionDimension: 4096 }
+    }));
+    const harness = createLocalLaunchHarness({ inspectGgufCompatibility });
+    harness.fs.files.set(mmprojPath, 'GGUF projector');
+    const settings = { ...harness.settings, mmprojPath };
+
+    await expect(harness.controller.ensureLocalAdvisorServer(settings)).rejects.toMatchObject({
+      code: 'ADVISOR_PROJECTOR_MISMATCH',
+      message: expect.stringContaining('Qwen3.5-9B expects a 4096-dimension text model'),
+      detail: expect.stringContaining('Model dimension: 2560')
+    });
+    await expect(harness.controller.saveAdvisorSettings(settings)).rejects.toMatchObject({
+      code: 'ADVISOR_PROJECTOR_MISMATCH'
+    });
+
+    expect(inspectGgufCompatibility).toHaveBeenCalledWith({
+      modelPath: harness.modelPath,
+      mmprojPath
+    });
+    expect(harness.spawn).not.toHaveBeenCalled();
+    expect(
+      harness.fs.files.has('/tmp/cavalry-advisor-controller-test/cavalry-advisor-settings.json')
+    ).toBe(false);
+  });
+
+  it('auto-selects only the single metadata-compatible adjacent projector', async () => {
+    const fs = createMemoryFs();
+    fs.readdir = vi.fn(async () => ['mmproj-F16.gguf', 'mmproj-qwen-4b.gguf', 'notes.txt']);
+    const inspectGgufCompatibility = vi.fn(async ({ mmprojPath }) => ({
+      status: mmprojPath.endsWith('mmproj-qwen-4b.gguf') ? 'compatible' : 'incompatible',
+      reason: mmprojPath.endsWith('mmproj-qwen-4b.gguf') ? 'metadata-match' : 'dimension-mismatch'
+    }));
+    const { controller } = createController({ fs, inspectGgufCompatibility });
+
+    await expect(controller.findAdjacentMmprojPath('/Models/qwen-4b.gguf')).resolves.toBe(
+      '/Models/mmproj-qwen-4b.gguf'
+    );
+    expect(inspectGgufCompatibility).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the projector empty when adjacent metadata is incompatible or inconclusive', async () => {
+    const fs = createMemoryFs();
+    fs.readdir = vi.fn(async () => ['mmproj-F16.gguf', 'mmproj-unknown.gguf']);
+    const inspectGgufCompatibility = vi.fn(async ({ mmprojPath }) => ({
+      status: mmprojPath.endsWith('mmproj-F16.gguf') ? 'incompatible' : 'unknown'
+    }));
+    const { controller } = createController({ fs, inspectGgufCompatibility });
+
+    await expect(controller.findAdjacentMmprojPath('/Models/qwen-4b.gguf')).resolves.toBe('');
+  });
+
+  it('does not auto-select a projector from identity alone without a verified dimension match', async () => {
+    const fs = createMemoryFs();
+    fs.readdir = vi.fn(async () => ['mmproj-qwen-4b.gguf']);
+    const inspectGgufCompatibility = vi.fn(async () => ({
+      status: 'compatible',
+      reason: 'identity-match'
+    }));
+    const { controller } = createController({ fs, inspectGgufCompatibility });
+
+    await expect(controller.findAdjacentMmprojPath('/Models/qwen-4b.gguf')).resolves.toBe('');
+  });
+
   it('registers the complete narrow IPC contract exactly once', () => {
     const { controller, ipcMain } = createController();
 
@@ -248,6 +975,25 @@ describe('Advisor runtime controller', () => {
     expect([...fs.files.keys()]).toEqual([
       '/tmp/cavalry-advisor-controller-test/cavalry-advisor-settings.json'
     ]);
+  });
+
+  it('does not apply GGUF validation to OpenAI settings', async () => {
+    const inspectGgufCompatibility = vi.fn(async () => {
+      throw new Error('GGUF inspection must not run for OpenAI.');
+    });
+    const { controller } = createController({ inspectGgufCompatibility });
+
+    await expect(
+      controller.saveAdvisorSettings({
+        provider: 'openai',
+        model: 'gpt-5-mini',
+        apiKey: 'sk-controller-test'
+      })
+    ).resolves.toMatchObject({
+      provider: 'openai',
+      model: 'gpt-5-mini'
+    });
+    expect(inspectGgufCompatibility).not.toHaveBeenCalled();
   });
 
   it('loads local-model-only settings without touching secure storage', async () => {
@@ -524,7 +1270,11 @@ describe('Advisor runtime controller', () => {
 
   it('keeps model-selection dialogs inside the controller IPC adapter', async () => {
     const ipcMain = createIpcMain();
-    const { controller } = createController({ ipcMain });
+    const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: [] }));
+    const { controller } = createController({
+      ipcMain,
+      dialog: { showOpenDialog }
+    });
     controller.registerHandlers();
 
     await expect(ipcMain.handlers.get('cavalry-advisor:choose-local-model')()).resolves.toEqual({
@@ -535,6 +1285,10 @@ describe('Advisor runtime controller', () => {
       ok: false,
       canceled: true
     });
+    expect(showOpenDialog.mock.calls[0][0].filters).toEqual([
+      { name: 'GGUF Model Files', extensions: ['gguf'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]);
   });
 
   it('keeps saved credentials in the main process and scrubs structured provider responses', async () => {
@@ -588,6 +1342,11 @@ describe('Advisor runtime controller', () => {
 
   it('uses the current message connection when saved provider state is stale', async () => {
     const { controller, ipcMain } = createController({
+      inspectGgufCompatibility: vi.fn(async () => ({
+        status: 'compatible',
+        compatible: true,
+        reason: 'text-only'
+      })),
       fetch: async () => ({
         ok: true,
         text: async () => JSON.stringify({ id: 'resp_current', output: [] })

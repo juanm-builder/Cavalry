@@ -158,7 +158,8 @@ export function buildSettingsAdvisorViewModel(options = {}) {
       ? options.advisorServerStatus
       : {};
   const advisorContextLocked =
-    advisorProvider === 'custom' && !!(advisorServerStatus.running || advisorServerStatus.starting);
+    advisorProvider === 'custom' &&
+    !!(advisorServerStatus.running || advisorServerStatus.starting || advisorServerStatus.stopping);
   const advisorUsesConfiguredModel = advisorProvider === 'openai' || advisorProvider === 'custom';
   return {
     providerLabel,

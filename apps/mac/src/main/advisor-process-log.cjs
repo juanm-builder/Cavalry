@@ -116,7 +116,9 @@ async function createAdvisorProcessLog({ fs, fsSync, path, logPath }) {
   const stream = fsSync.createWriteStream(logPath, { flags: 'a', mode: 0o600 });
   const writer = createBoundedAdvisorLogWriter(stream, { initialBytes: existingBytes });
   let collectedText = '';
+  let finished = false;
   const collect = (text) => {
+    if (finished) return;
     collectedText += writer.write(text);
     if (collectedText.length > ADVISOR_LOG_TAIL_MAX_CHARS) {
       collectedText = collectedText.slice(-ADVISOR_LOG_TAIL_MAX_CHARS);
@@ -126,19 +128,52 @@ async function createAdvisorProcessLog({ fs, fsSync, path, logPath }) {
   const stderr = createAdvisorLogLineCollector(collect);
 
   writer.write(`\n[${new Date().toISOString()}] Starting local llama-server process.\n`);
+  const finish = (outcome, onExit, lifecycle = { exited: true }) => {
+    if (finished) return;
+    stdout.flush();
+    stderr.flush();
+    finished = true;
+    if (outcome && outcome.error) {
+      writer.write(
+        `\n[${new Date().toISOString()}] llama-server failed to launch: ${
+          outcome.error.message || outcome.error
+        }\n`
+      );
+    } else {
+      writer.write(
+        `\n[${new Date().toISOString()}] llama-server exited with code ${
+          outcome && outcome.code != null ? outcome.code : ''
+        } signal ${(outcome && outcome.signal) || ''}\n`
+      );
+    }
+    if (stream && typeof stream.end === 'function') stream.end();
+    if (typeof onExit === 'function') onExit(outcome || {}, lifecycle);
+  };
   return {
     attach(child, onExit) {
-      child.stdout.on('data', (chunk) => stdout.push(chunk));
-      child.stderr.on('data', (chunk) => stderr.push(chunk));
-      child.on('exit', (code, signal) => {
-        stdout.flush();
-        stderr.flush();
+      if (child.stdout && typeof child.stdout.on === 'function') {
+        child.stdout.on('data', (chunk) => stdout.push(chunk));
+      }
+      if (child.stderr && typeof child.stderr.on === 'function') {
+        child.stderr.on('data', (chunk) => stderr.push(chunk));
+      }
+      child.once('error', (error) => {
+        const outcome = { error };
         writer.write(
-          `\n[${new Date().toISOString()}] llama-server exited with code ${code} signal ${signal || ''}\n`
+          `\n[${new Date().toISOString()}] llama-server process error: ${
+            error && error.message ? error.message : error
+          }\n`
         );
-        stream.end();
-        onExit();
+        if (!child.pid) {
+          finish(outcome, onExit, { exited: true });
+        } else if (typeof onExit === 'function') {
+          onExit(outcome, { exited: false });
+        }
       });
+      child.once('exit', (code, signal) => finish({ code, signal }, onExit));
+    },
+    close(error) {
+      finish(error ? { error } : {}, null);
     },
     getCollectedText() {
       return collectedText;

@@ -214,6 +214,18 @@ describe('transaction submit intent service', () => {
     });
   });
 
+  it('identifies transactions captured through Notes', () => {
+    const intent = buildManualTransactionSubmitIntent(makeWorkbook(), {
+      sourceRoute: 'notes'
+    });
+
+    expect(intent.nextRoute).toBe('ledger');
+    expect(intent.sourceOptions).toEqual({
+      reference: '',
+      source: 'notes'
+    });
+  });
+
   it('stays free of direct DOM, Electron, provider, and workbook mutation behavior', () => {
     const source = buildManualTransactionSubmitIntent.toString();
 

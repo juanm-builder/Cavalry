@@ -308,6 +308,39 @@ describe('SettingsRoute', () => {
     expect(html).not.toContain('Add to Cloud</button>');
   });
 
+  it('requires explicit review when the current Cloud workbook has changed', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'Alex Example', email: 'alex@example.com' },
+      current: {
+        workbookId: 'workbook-plan',
+        name: 'The Plan',
+        linked: true,
+        conflict: true,
+        status: 'conflict'
+      },
+      workbooks: [
+        {
+          id: 'workbook-plan',
+          name: 'The Plan',
+          year: 2026,
+          currency: 'PHP',
+          revision: 8
+        }
+      ]
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('The Cloud copy changed.');
+    expect(html).toContain('Cloud copy changed</button>');
+    expect(html).toContain('Review The Plan from Cavalry Cloud');
+    expect(html).toContain('>Review</button>');
+    expect(html).not.toContain('Sync Now');
+  });
+
   it('hides the retired microphone controls from the assistant settings', () => {
     const html = renderSettingsRoute();
 
@@ -424,5 +457,26 @@ describe('SettingsRoute', () => {
     expect(html).toContain('Stop Model');
     expect(html).toContain('Test Model');
     expect(html).not.toContain('Start Model');
+  });
+
+  it('keeps Stop enabled and prevents another Test while a local model is starting', () => {
+    const model = buildSettingsRouteFixture();
+    model.advisor.toggle = {
+      disabled: false,
+      icon: 'stop',
+      label: 'Stop Model',
+      shouldStop: true,
+      pending: true,
+      testDisabled: true
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toMatch(
+      /<button aria-busy="true" class="btn" type="button"><span[^>]*>stop<\/span>Stop Model<\/button>/
+    );
+    expect(html).toMatch(
+      /<button aria-busy="true" class="btn" disabled="" type="button"><span[^>]*>network_check<\/span>Testing Model…<\/button>/
+    );
   });
 });

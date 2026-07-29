@@ -7,6 +7,13 @@ export const NAVIGATION_ROUTES = Object.freeze([
     component: 'dashboard'
   },
   {
+    id: 'notes',
+    label: 'Notes',
+    icon: 'note_alt',
+    description: 'Turn simple text into transactions',
+    component: 'notes'
+  },
+  {
     id: 'ledger',
     label: 'Transactions',
     icon: 'receipt_long',

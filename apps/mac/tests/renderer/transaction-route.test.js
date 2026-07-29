@@ -47,7 +47,9 @@ describe('TransactionRoute', () => {
     expect(html).toContain('Minimum date range');
     expect(html).toContain('Maximum amount range');
     expect(html).toContain('transaction-sort-button');
-    expect(html).not.toContain('Search transactions');
+    expect(html).toContain('type="search"');
+    expect(html).toContain('Search transactions');
+    expect(html).toContain('transaction-search-control');
     expect(html).not.toContain('<th>Type</th>');
     expect(html).not.toContain('<label>Transactions</label>');
     expect(html).not.toContain('mini-icon');

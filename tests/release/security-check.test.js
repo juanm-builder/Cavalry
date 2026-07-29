@@ -8,6 +8,7 @@ import {
   findWorkflowPinViolations,
   isHighRiskPath,
   knownReceiptSha256,
+  reviewDependencyAudit,
   scanEmbeddedImages,
   scanText
 } from '../../tools/release/security-check.mjs';
@@ -122,5 +123,90 @@ describe('release security content scanner', () => {
     expect(findWorkflowPinViolations(unsafe, '.github/workflows/example.yml')).toHaveLength(2);
     expect(findWorkflowPinViolations(safe, '.github/workflows/example.yml')).toEqual([]);
     expect(findWorkflowPinViolations('steps:\n  - uses: ./local-action\n')).toEqual([]);
+  });
+
+  it('allows only the reviewed development-only dependency advisory before it expires', () => {
+    const report = {
+      vulnerabilities: {
+        'brace-expansion': {
+          nodes: ['node_modules/brace-expansion'],
+          via: [{ source: 1124334, name: 'brace-expansion' }]
+        },
+        minimatch: {
+          nodes: ['node_modules/minimatch'],
+          via: ['brace-expansion']
+        }
+      }
+    };
+    const lockfile = {
+      packages: {
+        'node_modules/brace-expansion': { dev: true },
+        'node_modules/minimatch': { dev: true }
+      }
+    };
+
+    expect(reviewDependencyAudit(report, lockfile, Date.parse('2026-07-29T00:00:00.000Z'))).toEqual(
+      {
+        ok: true,
+        blocked: [],
+        reviewedSources: [1124334],
+        vulnerabilityCount: 2
+      }
+    );
+    expect(reviewDependencyAudit(report, lockfile, Date.parse('2026-10-01T00:00:00.000Z')).ok).toBe(
+      false
+    );
+  });
+
+  it('rejects production or unreviewed dependency advisories', () => {
+    const report = {
+      vulnerabilities: {
+        example: {
+          nodes: ['node_modules/example'],
+          via: [{ source: 9999999, name: 'example' }]
+        }
+      }
+    };
+
+    expect(
+      reviewDependencyAudit(report, {
+        packages: { 'node_modules/example': { dev: false } }
+      })
+    ).toMatchObject({ ok: false, blocked: ['example'] });
+    expect(
+      reviewDependencyAudit(report, {
+        packages: { 'node_modules/example': { dev: true } }
+      })
+    ).toMatchObject({ ok: false, blocked: ['example'] });
+  });
+
+  it('handles audit meta-vulnerability cycles only when they reach a reviewed advisory', () => {
+    const report = {
+      vulnerabilities: {
+        'brace-expansion': {
+          nodes: ['node_modules/brace-expansion'],
+          via: [{ source: 1124334, name: 'brace-expansion' }]
+        },
+        'app-builder-lib': {
+          nodes: ['node_modules/app-builder-lib'],
+          via: ['dmg-builder', 'brace-expansion']
+        },
+        'dmg-builder': {
+          nodes: ['node_modules/dmg-builder'],
+          via: ['app-builder-lib']
+        }
+      }
+    };
+    const lockfile = {
+      packages: Object.fromEntries(
+        Object.keys(report.vulnerabilities).map((name) => [`node_modules/${name}`, { dev: true }])
+      )
+    };
+
+    expect(reviewDependencyAudit(report, lockfile)).toMatchObject({
+      ok: true,
+      blocked: [],
+      reviewedSources: [1124334]
+    });
   });
 });

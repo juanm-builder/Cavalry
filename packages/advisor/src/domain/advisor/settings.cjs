@@ -349,6 +349,7 @@ function getDefaultAdvisorServerStatus() {
     running: false,
     healthy: false,
     starting: false,
+    stopping: false,
     manageable: false,
     source: 'unknown',
     pid: 0,
@@ -364,6 +365,7 @@ function normalizeAdvisorServerStatus(status) {
     running: !!source.running,
     healthy: !!source.healthy,
     starting: !!source.starting,
+    stopping: !!source.stopping,
     manageable: !!source.manageable,
     source: String(source.source || 'unknown'),
     pid: pid > 0 ? pid : 0,
@@ -375,7 +377,7 @@ function normalizeAdvisorServerStatus(status) {
 function isAdvisorServerStoppable(status) {
   const normalized = normalizeAdvisorServerStatus(status);
   return (
-    normalized.running &&
+    (normalized.running || normalized.starting) &&
     normalized.manageable &&
     (normalized.source === 'managed' || normalized.source === 'adopted')
   );
@@ -384,6 +386,14 @@ function isAdvisorServerStoppable(status) {
 function getAdvisorServerToggleState(settings, status) {
   const normalizedSettings = normalizeAdvisorPublicSettings(settings);
   const normalizedStatus = normalizeAdvisorServerStatus(status);
+  if (normalizedStatus.stopping) {
+    return {
+      shouldStop: false,
+      disabled: true,
+      label: 'Stopping Model…',
+      icon: 'stop_circle'
+    };
+  }
   const shouldStop = isAdvisorServerStoppable(normalizedStatus);
   if (shouldStop) {
     return {

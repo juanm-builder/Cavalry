@@ -333,6 +333,9 @@ export function createSettingsController(dependencies = {}) {
           }
           return createIntentResult(workbook, advisorIntent, 'provider-change', { provider });
         }
+        if (type === 'clear-mmproj') {
+          return createIntentResult(workbook, advisorIntent, 'vision-projector-clear', {});
+        }
         const advisorOperations = {
           'save-advisor-settings': 'settings-save',
           'toggle-advisor-server': 'server-toggle',

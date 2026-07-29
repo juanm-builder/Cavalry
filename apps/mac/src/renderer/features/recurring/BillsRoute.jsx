@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput, formatFinancialValue } from '../../shared/FinancialValueInput.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
+import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import {
   getReconciliationPayload,
   getReconciliationTone,
@@ -10,6 +11,8 @@ import {
   ReconciliationProof,
   ReconciliationReview
 } from './BillsReconciliation.jsx';
+
+const RECURRING_CATEGORY_TYPES = Object.freeze(['expense', 'debt']);
 
 function Icon({ name, className = '' }) {
   return (
@@ -277,7 +280,10 @@ function EditorModal({ initialValues, options, onAction, onClose }) {
                 <label>Category *</label>
                 <CategorizedSelect
                   aria-label="Recurring category"
+                  createCategoryType="expense"
+                  createCategoryTypes={RECURRING_CATEGORY_TYPES}
                   name="categoryId"
+                  onCreateCategory={(payload) => emit(onAction, CATEGORY_ACTIONS.CREATE, payload)}
                   options={options.categories}
                   placeholder="Select category"
                   value={values.categoryId || ''}

@@ -248,7 +248,8 @@ function inputOptionsForField(workbook, key, value) {
     const options = references.map((item) => ({
       value: asText(item?.id),
       label: referenceLabel(item),
-      type: asText(item?.type)
+      type: asText(item?.type),
+      isActive: item?.isActive !== false
     }));
     if (value && !options.some((option) => option.value === asText(value))) {
       options.unshift({ value: asText(value), label: `Current value (${asText(value)})` });
@@ -272,6 +273,84 @@ function inputOptionsForField(workbook, key, value) {
     ];
   }
   return [];
+}
+
+const CATEGORY_TYPES = new Set(['income', 'expense', 'savings', 'debt']);
+
+function categoryType(value) {
+  const type = asText(value).toLowerCase();
+  return CATEGORY_TYPES.has(type) ? type : '';
+}
+
+function proposedValue(source, ...keys) {
+  const nestedFields =
+    source?.fields && typeof source.fields === 'object' && !Array.isArray(source.fields)
+      ? source.fields
+      : {};
+  for (const key of keys) {
+    const direct = asText(source?.[key]);
+    if (direct) return direct;
+    const nested = asText(nestedFields[key]);
+    if (nested) return nested;
+  }
+  return '';
+}
+
+function transactionCategoryType(source) {
+  const template = proposedValue(source, 'template', 'transactionTemplate').toLowerCase();
+  if (template === 'income_received') return 'income';
+  if (['debt_payment', 'liability_payment'].includes(template)) return 'debt';
+  if (['expense_paid', 'expense_charged'].includes(template)) return 'expense';
+
+  const direction = proposedValue(source, 'direction').toLowerCase();
+  if (direction === 'income') return 'income';
+  if (direction === 'debt') return 'debt';
+  if (['expense', 'refund'].includes(direction)) return 'expense';
+  return '';
+}
+
+function referencedCategoryType(source, workbook) {
+  const categoryId = proposedValue(
+    source,
+    'category_id',
+    'categoryId',
+    'suggested_category_id',
+    'suggestedCategoryId'
+  );
+  const category = asArray(workbook?.categories).find((item) => asText(item?.id) === categoryId);
+  return categoryType(category?.type);
+}
+
+function categoryChangeType(source, workbook) {
+  const transactionId = proposedValue(source, 'transaction_id', 'transactionId');
+  const transaction = asArray(workbook?.transactions).find(
+    (item) => asText(item?.id) === transactionId
+  );
+  if (!transaction) return '';
+  const inferred = transactionCategoryType(transaction);
+  if (inferred) return inferred;
+  const category = asArray(workbook?.categories).find(
+    (item) => asText(item?.id) === asText(transaction?.categoryId)
+  );
+  return categoryType(category?.type);
+}
+
+function categoryTypesForDraft(source, workbook, draftType) {
+  const normalizedDraftType = normalizedFieldKey(draftType);
+  if (normalizedDraftType === 'categorychange') {
+    return [
+      categoryChangeType(source, workbook) || referencedCategoryType(source, workbook)
+    ].filter(Boolean);
+  }
+  if (normalizedDraftType === 'recurringitem') return ['expense', 'debt'];
+  if (normalizedDraftType === 'budgetchange' || normalizedDraftType === 'budget') {
+    return ['expense', 'savings', 'debt'];
+  }
+
+  const inferred = transactionCategoryType(source);
+  if (inferred) return [inferred];
+  const referenced = referencedCategoryType(source, workbook);
+  return referenced ? [referenced] : [];
 }
 
 function displayDraftFieldValue(value, key, source, workbook) {
@@ -373,6 +452,7 @@ export function formatDraftProposedRows(value, options = {}) {
   const rows = [];
   const workbook = options.workbook || {};
   const includeEmpty = options.includeEmpty === true;
+  const expectedCategoryTypes = categoryTypesForDraft(source, workbook, options.draftType);
 
   function addRow(key, nextValue, path, prefix = '') {
     if (rows.length >= 24) return;
@@ -394,6 +474,9 @@ export function formatDraftProposedRows(value, options = {}) {
         ? fieldHelp(key, friendlyFieldLabel(key))
         : 'This grouped change is shown as a summary and is not directly editable.',
       inputOptions: isPrimitive ? inputOptionsForField(workbook, key, nextValue) : [],
+      categoryTypes: normalizedFieldKey(key).includes('categoryid')
+        ? expectedCategoryTypes
+        : undefined,
       itemCount: Array.isArray(nextValue) ? nextValue.length : undefined
     });
   }
@@ -528,6 +611,7 @@ function externalQueueItems(workbook) {
           conflicts: plain(draft.conflicts) || [],
           proposedRows: formatDraftProposedRows(draft.proposedValues, {
             workbook,
+            draftType: draft.type,
             includeEmpty: !ready
           })
         };
@@ -594,6 +678,7 @@ function localQueueItems(workbook, options) {
             conflicts: [],
             proposedRows: formatDraftProposedRows(draft.proposed, {
               workbook,
+              draftType: draft.objectType || card.objectLabel,
               includeEmpty: !card.canConfirm
             })
           }
