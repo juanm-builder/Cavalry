@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTransactionBatchDraftGroup } from '@cavalry/action-review/application/drafts/external-draft-service.js';
 import { buildCheckpointDiff } from '@cavalry/action-review/domain/checkpoints/diff.js';
 import { buildInversePatch } from '@cavalry/action-review/domain/checkpoints/inverse-patch.js';
+import {
+  CATEGORY_ACTIONS,
+  executeCategoryCommand
+} from '../../src/renderer/features/categories/category-controller.js';
 import { DraftReviewRoute } from '../../src/renderer/features/drafts/DraftReviewRoute.jsx';
 
 function makeCreateId() {
@@ -119,12 +123,26 @@ function DraftHarness({ initialWorkbook, onResult, services }) {
     onResult(result);
     if (result.ok) setWorkbook(result.workbook);
   }
+  function handleCreateCategory(payload) {
+    const result = executeCategoryCommand(
+      workbook,
+      { type: CATEGORY_ACTIONS.CREATE, payload },
+      services
+    );
+    if (result.ok) setWorkbook(result.workbook);
+    return result;
+  }
   return (
     <>
       <output aria-label="Draft workbook state">
         {JSON.stringify({ transactions: workbook.transactions, checkpoints: workbook.checkpoints })}
       </output>
-      <DraftReviewRoute workbook={workbook} onCommandResult={handleResult} services={services} />
+      <DraftReviewRoute
+        workbook={workbook}
+        onCommandResult={handleResult}
+        onCreateCategory={handleCreateCategory}
+        services={services}
+      />
     </>
   );
 }
@@ -209,6 +227,96 @@ describe('draft and checkpoint interactions', () => {
     expect(result.events[0]).toMatchObject({ type: 'draft.updated' });
     expect(result.workbook.externalDraftGroups[0].drafts[0].proposed_values.amount).toBe(1000.5);
     expect(workbook.externalDraftGroups[0].drafts[0].proposed_values.amount).toBe(250);
+  });
+
+  it('creates and selects a category while editing a proposed transaction', async () => {
+    const user = userEvent.setup();
+    const workbook = makeWorkbook();
+    workbook.categories.push(
+      {
+        id: 'salary',
+        name: 'Salary',
+        type: 'income',
+        linkedAccountId: 'salary-income',
+        isActive: true
+      },
+      {
+        id: 'archived-travel',
+        name: 'Archived travel',
+        type: 'expense',
+        linkedAccountId: 'archived-travel-expense',
+        isActive: false
+      }
+    );
+    const createId = makeCreateId();
+    addDraft(workbook, createId);
+    const onResult = vi.fn();
+    render(
+      <DraftHarness
+        initialWorkbook={workbook}
+        onResult={onResult}
+        services={{ createId, now: () => '2026-07-01T10:00:00.000Z' }}
+      />
+    );
+
+    await user.dblClick(screen.getByRole('button', { name: /Category: Food/ }));
+    const categorySelect = screen.getByRole('combobox', { name: 'Edit Category' });
+    await user.click(categorySelect);
+    expect(screen.queryByRole('option', { name: 'Salary' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'Archived travel' })).toBeNull();
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+    const dialog = screen.getByRole('dialog', { name: 'Create new category' });
+    expect(within(dialog).queryByLabelText('Category type')).toBeNull();
+    await user.type(within(dialog).getByLabelText('Category name'), 'Trip Fund');
+    await user.click(within(dialog).getByRole('button', { name: 'Create & select' }));
+
+    expect(categorySelect.textContent).toContain('Trip Fund');
+    await user.click(screen.getByRole('button', { name: 'Save Category' }));
+
+    expect(await screen.findByText('Trip Fund')).not.toBeNull();
+    const result = onResult.mock.calls.at(-1)[0];
+    const createdCategory = result.workbook.categories.find(
+      (category) => category.name === 'Trip Fund'
+    );
+    expect(createdCategory).toMatchObject({ type: 'expense', isActive: true });
+    expect(result.workbook.externalDraftGroups[0].drafts[0].proposed_values.amount).toBe(250);
+    expect(result.workbook.externalDraftGroups[0].drafts[0].proposed_values.category_id).toBe(
+      createdCategory.id
+    );
+  });
+
+  it('offers inline category creation when a draft has no existing category options', async () => {
+    const user = userEvent.setup();
+    const workbook = makeWorkbook();
+    workbook.categories = [];
+    const createId = makeCreateId();
+    addDraft(workbook, createId);
+    const onResult = vi.fn();
+    render(
+      <DraftHarness
+        initialWorkbook={workbook}
+        onResult={onResult}
+        services={{ createId, now: () => '2026-07-01T10:00:00.000Z' }}
+      />
+    );
+
+    await user.dblClick(screen.getByRole('button', { name: /Category: Not provided/ }));
+    const categorySelect = screen.getByRole('combobox', { name: 'Edit Category' });
+    await user.click(categorySelect);
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+    const dialog = screen.getByRole('dialog', { name: 'Create new category' });
+    await user.type(within(dialog).getByLabelText('Category name'), 'Unplanned trip');
+    await user.click(within(dialog).getByRole('button', { name: 'Create & select' }));
+    await user.click(screen.getByRole('button', { name: 'Save Category' }));
+
+    const result = onResult.mock.calls.at(-1)[0];
+    const createdCategory = result.workbook.categories.find(
+      (category) => category.name === 'Unplanned trip'
+    );
+    expect(createdCategory).toMatchObject({ type: 'expense', isActive: true });
+    expect(result.workbook.externalDraftGroups[0].drafts[0].proposed_values.category_id).toBe(
+      createdCategory.id
+    );
   });
 
   it('approves and rolls back selected checkpoint changes after preview', async () => {

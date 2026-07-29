@@ -58,7 +58,7 @@ function normalizeDeviceId(value) {
 function isRevisionConflict(error) {
   return !!(
     error &&
-    (String(error.code || '') === '40001' ||
+    (['40001', 'PT412'].includes(String(error.code || '')) ||
       /workbook_revision_conflict|revision conflict/i.test(String(error.message || '')))
   );
 }

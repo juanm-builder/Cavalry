@@ -33,6 +33,24 @@ const {
 } = require('./advisor-ipc-controller.cjs');
 const { sealAdvisorApiKey } = require('./advisor-key-encryption.cjs');
 const {
+  assertGgufCompatibility,
+  inspectGgufCompatibility: inspectGgufCompatibilityDefault
+} = require('./advisor-gguf-compatibility.cjs');
+const {
+  createAdvisorAdoptedProcessLifecycle,
+  createAdvisorLocalProcessLifecycle,
+  createAdvisorStopOperationCoordinator,
+  createLocalAdvisorStartCancelledError,
+  getInactiveLocalAdvisorStatus,
+  getManagedAdvisorProcessStatus
+} = require('./advisor-local-process-lifecycle.cjs');
+const {
+  createAdvisorLlamaServerLaunchSupport,
+  getAdvisorLlamaLaunchFailure,
+  getAdvisorLlamaProcessOutcome,
+  waitForAdvisorLlamaStartupPoll
+} = require('./advisor-llama-server-launch.cjs');
+const {
   ADVISOR_LOG_MAX_BYTES,
   createAdvisorLogLineCollector,
   createAdvisorProcessLog,
@@ -67,6 +85,8 @@ function createAdvisorRuntimeController(dependencies = {}) {
   const assertTrustedSender = dependencies.assertTrustedSender;
   const fetch = dependencies.fetch || globalThis.fetch;
   const process = dependencies.process || global.process;
+  const inspectGgufCompatibility =
+    dependencies.inspectGgufCompatibility || inspectGgufCompatibilityDefault;
 
   const advisorRequestLifecycle = createAdvisorRequestLifecycle({ fetch });
   const {
@@ -91,10 +111,25 @@ function createAdvisorRuntimeController(dependencies = {}) {
   let localAdvisorProcess = null;
   let localAdvisorProcessKey = '';
   let localAdvisorStartPromise = null;
-  let localAdvisorForceKillTimer = null;
-  let localAdvisorAdoptedPid = 0;
-  let localAdvisorAdoptedProcessKey = '';
-  const llamaServerHelpCache = {};
+  let localAdvisorStartOperation = null;
+  let localAdvisorOperationSequence = 0;
+
+  const localProcessLifecycle = createAdvisorLocalProcessLifecycle({ process });
+  const {
+    isChildRunning: isChildProcessRunning,
+    isChildStopping: isLocalAdvisorChildStopping,
+    isPidAlive,
+    markChildExited: markLocalAdvisorChildExited,
+    stopChild: stopLocalAdvisorChild,
+    stopPid: stopLocalAdvisorPidProcess
+  } = localProcessLifecycle;
+  const localAdvisorStopOperations = createAdvisorStopOperationCoordinator();
+  const adoptedProcessLifecycle = createAdvisorAdoptedProcessLifecycle({
+    getBaseUrl: getLocalAdvisorBaseUrlFromKey,
+    inspectProcess,
+    isPidAlive,
+    listListeningPidsOnPort
+  });
 
   function getDefaultAdvisorSettings() {
     return advisorSettingsDomain.getDefaultAdvisorSettings();
@@ -120,6 +155,17 @@ function createAdvisorRuntimeController(dependencies = {}) {
     return advisorSettingsDomain.publicAdvisorSettings(settings);
   }
 
+  const llamaServerLaunchSupport = createAdvisorLlamaServerLaunchSupport({
+    app,
+    defaultModel: CAVALRY_LOCAL_ADVISOR_MODEL,
+    execFileAsync,
+    fs,
+    getVisionArgs: advisorSettingsDomain.getAdvisorLlamaVisionArgs,
+    normalizeContextWindowTokens: normalizeAdvisorContextWindowTokens,
+    path,
+    process
+  });
+
   const advisorSettingsStorage = createAdvisorSettingsStorage({
     fs,
     path,
@@ -139,64 +185,22 @@ function createAdvisorRuntimeController(dependencies = {}) {
     }
   }
 
-  async function findCommandOnPath(commandName) {
-    try {
-      const result = await execFileAsync('which', [commandName], { timeout: 10000 });
-      const firstLine = String(result.stdout || '')
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find(Boolean);
-      return firstLine || '';
-    } catch (_error) {
-      return '';
+  async function assertAdvisorLocalModelCompatibility(settings) {
+    if (!(settings && settings.provider === 'custom')) {
+      return {
+        status: 'compatible',
+        compatible: true,
+        reason: 'not-local-model',
+        message: 'GGUF compatibility validation is not required for this provider.'
+      };
     }
-  }
-
-  async function resolveLlamaServerBinary() {
-    const candidates = [];
-    if (process.env.LLAMA_SERVER_BIN) {
-      candidates.push(process.env.LLAMA_SERVER_BIN);
-    }
-    const fromPath = await findCommandOnPath('llama-server');
-    if (fromPath) {
-      candidates.push(fromPath);
-    }
-    candidates.push('/opt/homebrew/bin/llama-server', '/usr/local/bin/llama-server');
-    for (const candidate of candidates) {
-      if (candidate && (await pathExists(candidate))) {
-        return candidate;
-      }
-    }
-    throw new Error(
-      'Could not find llama-server. Install llama.cpp, or set LLAMA_SERVER_BIN to the llama-server executable.'
+    return assertGgufCompatibility(
+      {
+        modelPath: settings && settings.localModelPath,
+        mmprojPath: settings.mmprojPath
+      },
+      inspectGgufCompatibility
     );
-  }
-
-  async function getLlamaServerHelp(binaryPath) {
-    if (llamaServerHelpCache[binaryPath]) {
-      return llamaServerHelpCache[binaryPath];
-    }
-    try {
-      const result = await execFileAsync(binaryPath, ['--help'], {
-        timeout: 15000,
-        maxBuffer: 1024 * 1024
-      });
-      llamaServerHelpCache[binaryPath] =
-        String(result.stdout || '') + '\n' + String(result.stderr || '');
-    } catch (error) {
-      llamaServerHelpCache[binaryPath] =
-        String((error && error.stdout) || '') +
-        '\n' +
-        String((error && error.stderr) || '') +
-        '\n' +
-        String((error && error.message) || '');
-    }
-    return llamaServerHelpCache[binaryPath];
-  }
-
-  function llamaServerSupportsFlag(helpText, flag) {
-    const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp('(^|\\s)' + escaped + '([,\\s]|$)').test(String(helpText || ''));
   }
 
   function getLocalAdvisorServerInfo(settings) {
@@ -206,16 +210,21 @@ function createAdvisorRuntimeController(dependencies = {}) {
     } catch (_error) {
       parsed = new URL(CAVALRY_LOCAL_ADVISOR_ENDPOINT);
     }
-    const hostname = parsed.hostname === 'localhost' ? '127.0.0.1' : parsed.hostname;
-    const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    const parsedHostname = parsed.hostname.replace(/^\[|\]$/g, '');
+    const hostname = parsedHostname === 'localhost' ? '127.0.0.1' : parsedHostname;
+    const port = parsed.port || '80';
+    if (parsed.protocol !== 'http:') {
+      throw new Error('Cavalry can only auto-start local llama.cpp servers over HTTP.');
+    }
     if (!['127.0.0.1', '::1'].includes(hostname)) {
       throw new Error('Cavalry can only auto-start local llama.cpp servers bound to localhost.');
     }
+    const urlHostname = hostname === '::1' ? '[::1]' : hostname;
     return {
       host: hostname,
       port,
-      baseUrl: `${parsed.protocol}//${hostname}:${port}`,
-      healthUrl: `${parsed.protocol}//${hostname}:${port}/health`
+      baseUrl: `${parsed.protocol}//${urlHostname}:${port}`,
+      healthUrl: `${parsed.protocol}//${urlHostname}:${port}/health`
     };
   }
 
@@ -243,44 +252,29 @@ function createAdvisorRuntimeController(dependencies = {}) {
     return String(key || '').split('|')[0] || '';
   }
 
+  function assertLocalAdvisorStartActive(operation) {
+    if (!operation || operation.cancelled || localAdvisorStartOperation !== operation) {
+      throw createLocalAdvisorStartCancelledError();
+    }
+  }
+
   async function getManagedLocalAdvisorStatusFromProcess() {
-    if (isChildProcessRunning(localAdvisorProcess)) {
-      const baseUrl = getLocalAdvisorBaseUrlFromKey(localAdvisorProcessKey);
-      const healthUrl = baseUrl ? baseUrl.replace(/\/+$/g, '') + '/health' : '';
-      const healthy = healthUrl ? await isLocalAdvisorHealthy({ baseUrl, healthUrl }) : false;
-      return {
-        running: true,
-        healthy,
-        starting: !healthy,
-        manageable: true,
-        source: 'managed',
-        pid: localAdvisorProcess.pid || 0,
-        baseUrl,
-        message:
-          healthy && baseUrl
-            ? `Local model server is running at ${baseUrl}.`
-            : 'Local model server is running.'
-      };
+    let adopted = adoptedProcessLifecycle.snapshot();
+    if (adopted.pid) {
+      await adoptedProcessLifecycle.validate();
+      adopted = adoptedProcessLifecycle.snapshot();
     }
-    if (localAdvisorAdoptedPid && isPidAlive(localAdvisorAdoptedPid)) {
-      const baseUrl = getLocalAdvisorBaseUrlFromKey(localAdvisorAdoptedProcessKey);
-      const healthUrl = baseUrl ? baseUrl.replace(/\/+$/g, '') + '/health' : '';
-      const healthy = healthUrl ? await isLocalAdvisorHealthy({ baseUrl, healthUrl }) : false;
-      return {
-        running: true,
-        healthy,
-        starting: !healthy,
-        manageable: true,
-        source: 'adopted',
-        pid: localAdvisorAdoptedPid,
-        baseUrl,
-        message:
-          healthy && baseUrl
-            ? `Local model server is running at ${baseUrl}.`
-            : 'Local model server is running.'
-      };
-    }
-    return null;
+    return getManagedAdvisorProcessStatus({
+      startOperation: localAdvisorStartOperation,
+      managedChild: localAdvisorProcess,
+      managedProcessKey: localAdvisorProcessKey,
+      adoptedPid: adopted.pid,
+      adoptedProcessKey: adopted.processKey,
+      getBaseUrl: getLocalAdvisorBaseUrlFromKey,
+      isChildRunning: isChildProcessRunning,
+      isPidAlive,
+      isHealthy: isLocalAdvisorHealthy
+    });
   }
 
   function escapeRegExp(value) {
@@ -293,23 +287,6 @@ function createAdvisorRuntimeController(dependencies = {}) {
     return new RegExp('(^|\\s)' + escapedFlag + '(\\s+|=)' + escapedValue + '(\\s|$)').test(
       String(command || '')
     );
-  }
-
-  function isPidAlive(pid) {
-    const numericPid = Number(pid);
-    if (!Number.isFinite(numericPid) || numericPid <= 0) {
-      return false;
-    }
-    try {
-      process.kill(numericPid, 0);
-      return true;
-    } catch (_error) {
-      return false;
-    }
-  }
-
-  function isChildProcessRunning(child) {
-    return !!(child && child.exitCode === null && !child.killed);
   }
 
   async function listListeningPidsOnPort(port) {
@@ -357,7 +334,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
 
   function processMatchesLocalAdvisor(processInfo, settings, serverInfo) {
     const command = String((processInfo && processInfo.command) || '');
-    if (!/(^|[\/\s])llama-server(\s|$)/.test(command)) {
+    if (!/(^|[\\/\s"'])llama-server(?:\.exe)?(["'\s]|$)/i.test(command)) {
       return false;
     }
     if (!commandHasCliValue(command, '--host', serverInfo.host)) {
@@ -393,155 +370,57 @@ function createAdvisorRuntimeController(dependencies = {}) {
     return null;
   }
 
-  function adoptLocalAdvisorProcess(processInfo, serverKey) {
-    if (!(processInfo && processInfo.pid)) {
-      return;
-    }
-    if (localAdvisorProcess && localAdvisorProcess.pid === processInfo.pid) {
-      return;
-    }
-    localAdvisorAdoptedPid = processInfo.pid;
-    localAdvisorAdoptedProcessKey = serverKey;
-  }
-
-  async function waitForPidExit(pid, timeoutMs) {
-    const deadline = Date.now() + Math.max(250, Number(timeoutMs) || 2500);
-    while (Date.now() < deadline) {
-      if (!isPidAlive(pid)) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch (_error) {
-      // The process may already be gone.
-    }
-  }
-
   async function stopLocalAdvisorPid(pid, options) {
     const stopOptions = options || {};
-    if (!isPidAlive(pid)) {
-      return false;
+    const validatesAdoptedIdentity = adoptedProcessLifecycle.hasPid(pid);
+    const stopped = await stopLocalAdvisorPidProcess(pid, {
+      ...stopOptions,
+      ...(validatesAdoptedIdentity
+        ? { validateIdentity: () => adoptedProcessLifecycle.validate() }
+        : {})
+    });
+    if (stopped && stopOptions.wait && adoptedProcessLifecycle.hasPid(pid)) {
+      adoptedProcessLifecycle.clear();
     }
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch (_error) {
-      return false;
-    }
-    if (stopOptions.wait) {
-      await waitForPidExit(pid, stopOptions.forceAfterMs || 2500);
-    } else {
-      const timer = setTimeout(() => {
-        try {
-          if (isPidAlive(pid)) {
-            process.kill(pid, 'SIGKILL');
-          }
-        } catch (_error) {
-          // The process may already be gone.
-        }
-      }, stopOptions.forceAfterMs || 2500);
-      if (typeof timer.unref === 'function') {
-        timer.unref();
-      }
-    }
-    if (localAdvisorAdoptedPid === pid) {
-      localAdvisorAdoptedPid = 0;
-      localAdvisorAdoptedProcessKey = '';
-    }
-    return true;
+    return stopped;
   }
 
-  function waitForProcessExit(child, timeoutMs) {
-    return new Promise((resolve) => {
-      if (!child || child.exitCode !== null || child.signalCode) {
-        resolve();
-        return;
+  async function stopLocalAdvisorProcessOnce(options) {
+    const stopOptions = options || {};
+    const operation = localAdvisorStartOperation;
+    if (operation && stopOptions.cancelStart !== false) {
+      operation.cancelled = true;
+      if (localAdvisorStartOperation === operation) {
+        localAdvisorStartOperation = null;
       }
-      let settled = false;
-      const done = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        child.removeListener('exit', done);
-        resolve();
-      };
-      const timer = setTimeout(
-        () => {
-          try {
-            if (child.pid) {
-              process.kill(child.pid, 'SIGKILL');
-            }
-          } catch (_error) {
-            // The process may already be gone.
-          }
-          done();
-        },
-        Math.max(250, Number(timeoutMs) || 2500)
-      );
-      child.once('exit', done);
-    });
+      if (localAdvisorStartPromise === operation.promise) {
+        localAdvisorStartPromise = null;
+      }
+      if (operation.promise && typeof operation.promise.catch === 'function') {
+        operation.promise.catch(() => {});
+      }
+    }
+    const child = localAdvisorProcess || (operation && operation.child);
+    const stopped = await stopLocalAdvisorChild(child, stopOptions);
+    return { stopped: stopped || !!operation };
   }
 
   function stopLocalAdvisorProcess(options) {
-    const stopOptions = options || {};
-    const child = localAdvisorProcess;
-    if (localAdvisorForceKillTimer) {
-      clearTimeout(localAdvisorForceKillTimer);
-      localAdvisorForceKillTimer = null;
-    }
-    if (localAdvisorStartPromise && typeof localAdvisorStartPromise.catch === 'function') {
-      localAdvisorStartPromise.catch(() => {});
-    }
-    localAdvisorProcess = null;
-    localAdvisorProcessKey = '';
-    localAdvisorStartPromise = null;
-    if (!isChildProcessRunning(child)) {
-      return Promise.resolve();
-    }
-    try {
-      child.kill('SIGTERM');
-    } catch (_error) {
-      return Promise.resolve();
-    }
-    if (stopOptions.wait) {
-      return waitForProcessExit(child, stopOptions.forceAfterMs || 2500);
-    }
-    localAdvisorForceKillTimer = setTimeout(() => {
-      localAdvisorForceKillTimer = null;
-      try {
-        if (child.pid) {
-          process.kill(child.pid, 'SIGKILL');
-        }
-      } catch (_error) {
-        // The process may already be gone.
-      }
-    }, stopOptions.forceAfterMs || 2500);
-    if (typeof localAdvisorForceKillTimer.unref === 'function') {
-      localAdvisorForceKillTimer.unref();
-    }
-    return Promise.resolve();
-  }
-
-  function getInactiveLocalAdvisorStatus(message) {
-    return {
-      running: false,
-      healthy: false,
-      starting: false,
-      manageable: false,
-      source: 'inactive',
-      pid: 0,
-      baseUrl: '',
-      message
-    };
+    return localAdvisorStopOperations.run(() => stopLocalAdvisorProcessOnce(options));
   }
 
   async function getLocalAdvisorServerStatus(settings) {
     const normalized = normalizeAdvisorSettings(settings);
     const managedStatus = await getManagedLocalAdvisorStatusFromProcess();
     if (managedStatus) {
+      if (localAdvisorStopOperations.isStopping()) {
+        return {
+          ...managedStatus,
+          starting: false,
+          stopping: true,
+          message: 'Local model server is stopping.'
+        };
+      }
       return managedStatus;
     }
     if (normalized.provider !== 'custom') {
@@ -571,6 +450,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
         running: false,
         healthy: false,
         starting: true,
+        stopping: false,
         manageable: true,
         source: 'managed',
         pid: localAdvisorProcess && localAdvisorProcess.pid ? localAdvisorProcess.pid : 0,
@@ -584,6 +464,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
         running: true,
         healthy,
         starting: !healthy,
+        stopping: false,
         manageable: true,
         source: 'managed',
         pid: localAdvisorProcess.pid || 0,
@@ -595,12 +476,13 @@ function createAdvisorRuntimeController(dependencies = {}) {
     }
     const matchingProcess = await findMatchingLocalAdvisorProcess(normalized, serverInfo);
     if (matchingProcess) {
-      adoptLocalAdvisorProcess(matchingProcess, serverKey);
+      adoptedProcessLifecycle.adopt(matchingProcess, serverKey);
       const healthy = await isLocalAdvisorHealthy(serverInfo);
       return {
         running: true,
         healthy,
         starting: !healthy,
+        stopping: false,
         manageable: true,
         source: 'adopted',
         pid: matchingProcess.pid,
@@ -610,20 +492,13 @@ function createAdvisorRuntimeController(dependencies = {}) {
           : 'A matching llama-server is listening but not healthy yet.'
       };
     }
-    if (
-      localAdvisorAdoptedPid &&
-      localAdvisorAdoptedProcessKey === serverKey &&
-      !isPidAlive(localAdvisorAdoptedPid)
-    ) {
-      localAdvisorAdoptedPid = 0;
-      localAdvisorAdoptedProcessKey = '';
-    }
     const healthy = await isLocalAdvisorHealthy(serverInfo);
     if (healthy) {
       return {
         running: true,
         healthy: true,
         starting: false,
+        stopping: false,
         manageable: false,
         source: 'external',
         pid: 0,
@@ -635,6 +510,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       running: false,
       healthy: false,
       starting: false,
+      stopping: false,
       manageable: true,
       source: 'stopped',
       pid: 0,
@@ -643,12 +519,19 @@ function createAdvisorRuntimeController(dependencies = {}) {
     };
   }
 
-  async function stopLocalAdvisorServer(settings, event, options) {
+  async function stopLocalAdvisorServerOnce(settings, event, options) {
     const normalized = normalizeAdvisorSettings(settings);
     const stopOptions = Object.assign({ wait: true, forceAfterMs: 2500 }, options || {});
     let serverInfo = null;
     let serverKey = '';
     let stopped = false;
+    const trackedChild = localAdvisorProcess;
+    await adoptedProcessLifecycle.validate();
+    const trackedAdoptedPid = adoptedProcessLifecycle.snapshot().pid;
+    const hadTrackedTarget =
+      !!localAdvisorStartOperation ||
+      isChildProcessRunning(trackedChild) ||
+      (trackedAdoptedPid && isPidAlive(trackedAdoptedPid));
     try {
       if (normalized.provider === 'custom' && normalized.localModelPath) {
         serverInfo = getLocalAdvisorServerInfo(normalized);
@@ -657,24 +540,56 @@ function createAdvisorRuntimeController(dependencies = {}) {
     } catch (_error) {
       serverInfo = null;
     }
-    if (
-      isChildProcessRunning(localAdvisorProcess) &&
-      (!serverKey || localAdvisorProcessKey === serverKey)
-    ) {
-      const childPid = localAdvisorProcess.pid || 0;
-      await stopLocalAdvisorProcess(stopOptions);
-      stopped = !!childPid;
-    } else if (localAdvisorProcess && localAdvisorProcessKey === serverKey) {
-      await stopLocalAdvisorProcess(stopOptions);
+
+    if (hadTrackedTarget) {
+      sendAdvisorStatus(event, {
+        phase: 'stopping',
+        message: 'Stopping local model server.',
+        progressPercent: 0
+      });
     }
-    if (serverInfo && serverKey) {
-      const matchingProcess = await findMatchingLocalAdvisorProcess(normalized, serverInfo);
-      if (
-        matchingProcess &&
-        !(localAdvisorProcess && localAdvisorProcess.pid === matchingProcess.pid)
-      ) {
-        stopped = (await stopLocalAdvisorPid(matchingProcess.pid, stopOptions)) || stopped;
+
+    try {
+      if (localAdvisorStartOperation || isChildProcessRunning(trackedChild)) {
+        const processResult = await stopLocalAdvisorProcessOnce(stopOptions);
+        stopped = !!(processResult && processResult.stopped);
       }
+      if (trackedAdoptedPid && isPidAlive(trackedAdoptedPid)) {
+        stopped = (await stopLocalAdvisorPid(trackedAdoptedPid, stopOptions)) || stopped;
+      }
+      if (!hadTrackedTarget && serverInfo && serverKey) {
+        const matchingProcess = await findMatchingLocalAdvisorProcess(normalized, serverInfo);
+        if (matchingProcess) {
+          adoptedProcessLifecycle.adopt(matchingProcess, serverKey);
+          stopped = (await stopLocalAdvisorPid(matchingProcess.pid, stopOptions)) || stopped;
+        }
+      }
+    } catch (error) {
+      sendAdvisorStatus(event, {
+        phase: 'failed',
+        message: String(
+          (error && error.message) || 'Cavalry could not confirm that the local model stopped.'
+        ),
+        progressPercent: 0
+      });
+      throw error;
+    }
+
+    const status = await getLocalAdvisorServerStatus(normalized);
+    if (status.running || status.healthy || status.starting || status.stopping) {
+      const error = new Error(
+        status.manageable === false
+          ? 'The configured local endpoint is still responding, but Cavalry cannot safely stop its process.'
+          : 'Cavalry could not confirm that the local model server stopped.'
+      );
+      error.code = 'ADVISOR_LOCAL_MODEL_STILL_RUNNING';
+      error.userMessage = error.message;
+      sendAdvisorStatus(event, {
+        phase: 'failed',
+        message: error.message,
+        progressPercent: 0
+      });
+      throw error;
     }
     sendAdvisorStatus(event, {
       phase: 'stopped',
@@ -683,7 +598,6 @@ function createAdvisorRuntimeController(dependencies = {}) {
         : 'No matching local model server was running.',
       progressPercent: 0
     });
-    const status = await getLocalAdvisorServerStatus(normalized);
     return {
       ok: true,
       status,
@@ -693,17 +607,15 @@ function createAdvisorRuntimeController(dependencies = {}) {
     };
   }
 
+  function stopLocalAdvisorServer(settings, event, options) {
+    return localAdvisorStopOperations.run(() =>
+      stopLocalAdvisorServerOnce(settings, event, options)
+    );
+  }
+
   async function stopLocalAdvisorServerForSavedSettings(options) {
     const settings = await loadAdvisorSettings();
     return stopLocalAdvisorServer(settings, null, options || { wait: true, forceAfterMs: 2500 });
-  }
-
-  function tailText(text, maxLines) {
-    const lines = String(text || '')
-      .trim()
-      .split(/\r?\n/)
-      .filter(Boolean);
-    return lines.slice(Math.max(0, lines.length - maxLines)).join('\n');
   }
 
   function clampAdvisorProgressPercent(value) {
@@ -721,58 +633,27 @@ function createAdvisorRuntimeController(dependencies = {}) {
     return clampAdvisorProgressPercent(Number(minPercent) + span * ratio);
   }
 
-  async function startLocalAdvisorServer(settings, serverInfo, serverKey, event) {
+  async function startLocalAdvisorServer(settings, serverInfo, serverKey, event, operation) {
+    assertLocalAdvisorStartActive(operation);
     sendAdvisorStatus(event, {
       phase: 'resolve',
       message: 'Finding llama-server.',
       progressPercent: 5
     });
-    const binaryPath = await resolveLlamaServerBinary();
-    const helpText = await getLlamaServerHelp(binaryPath);
-    const args = ['--host', serverInfo.host, '--port', serverInfo.port];
-    const modelName = settings.model || CAVALRY_LOCAL_ADVISOR_MODEL;
-
-    if (llamaServerSupportsFlag(helpText, '--alias')) {
-      args.push('--alias', modelName);
-    }
-    if (llamaServerSupportsFlag(helpText, '--no-ui')) {
-      args.push('--no-ui');
-    } else if (llamaServerSupportsFlag(helpText, '--no-webui')) {
-      args.push('--no-webui');
-    }
-    args.push('-m', settings.localModelPath);
-    if (settings.mmprojPath) {
-      if (!llamaServerSupportsFlag(helpText, '--mmproj')) {
-        throw new Error(
-          'The installed llama-server does not support --mmproj. Upgrade llama.cpp to use image inputs.'
-        );
-      }
-      args.push('--mmproj', settings.mmprojPath);
-      args.push(...advisorSettingsDomain.getAdvisorLlamaVisionArgs(settings, helpText));
-    }
-    if (llamaServerSupportsFlag(helpText, '--ctx-size')) {
-      args.push(
-        '--ctx-size',
-        String(normalizeAdvisorContextWindowTokens(settings.contextWindowTokens))
-      );
-    }
-    if (llamaServerSupportsFlag(helpText, '--n-gpu-layers')) {
-      args.push('--n-gpu-layers', 'auto');
-    }
-    if (llamaServerSupportsFlag(helpText, '--flash-attn')) {
-      args.push('--flash-attn', 'auto');
-    }
-    if (llamaServerSupportsFlag(helpText, '--jinja')) {
-      args.push('--jinja');
-    }
-    if (llamaServerSupportsFlag(helpText, '--reasoning')) {
-      args.push('--reasoning', 'off');
-    } else if (llamaServerSupportsFlag(helpText, '--reasoning-format')) {
-      args.push('--reasoning-format', 'none');
-    }
+    const { binaryPath, args } = await llamaServerLaunchSupport.resolveLaunchCommand(
+      settings,
+      serverInfo
+    );
+    assertLocalAdvisorStartActive(operation);
 
     const logPath = path.join(app.getPath('userData'), 'cavalry-llama-server.log');
     const advisorProcessLog = await createAdvisorProcessLog({ fs, fsSync, path, logPath });
+    try {
+      assertLocalAdvisorStartActive(operation);
+    } catch (error) {
+      advisorProcessLog.close();
+      throw error;
+    }
     const workingDirectory = path.dirname(logPath);
     sendAdvisorStatus(event, {
       phase: 'launch',
@@ -781,27 +662,62 @@ function createAdvisorRuntimeController(dependencies = {}) {
       progressPercent: 10
     });
 
-    const child = spawn(binaryPath, args, {
-      cwd: workingDirectory,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+    let child = null;
+    try {
+      child = spawn(binaryPath, args, {
+        cwd: workingDirectory,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+    } catch (error) {
+      advisorProcessLog.close(error);
+      throw getAdvisorLlamaLaunchFailure({ error }, advisorProcessLog, logPath);
+    }
+    operation.child = child;
     localAdvisorProcess = child;
     localAdvisorProcessKey = serverKey;
-    localAdvisorAdoptedPid = 0;
-    localAdvisorAdoptedProcessKey = '';
+    adoptedProcessLifecycle.clear();
 
-    advisorProcessLog.attach(child, () => {
-      if (localAdvisorProcess === child) {
-        localAdvisorProcess = null;
-        localAdvisorProcessKey = '';
-        localAdvisorStartPromise = null;
+    let observedProcessOutcome = null;
+    let resolveProcessOutcome = null;
+    const processOutcomePromise = new Promise((resolve) => {
+      resolveProcessOutcome = resolve;
+    });
+    advisorProcessLog.attach(child, (outcome, lifecycle = {}) => {
+      observedProcessOutcome = outcome || {};
+      if (lifecycle.exited === true) {
+        markLocalAdvisorChildExited(child);
+        if (localAdvisorProcess === child) {
+          localAdvisorProcess = null;
+          localAdvisorProcessKey = '';
+        }
+        if (operation.ready && !operation.cancelled && !isLocalAdvisorChildStopping(child)) {
+          sendAdvisorStatus(event, {
+            phase: 'failed',
+            message: 'Local model server stopped unexpectedly.',
+            detail: logPath,
+            progressPercent: 0
+          });
+        }
       }
+      resolveProcessOutcome(observedProcessOutcome);
     });
 
     const startedAt = Date.now();
     while (Date.now() - startedAt < LOCAL_ADVISOR_STARTUP_TIMEOUT_MS) {
-      if (await isLocalAdvisorHealthy(serverInfo)) {
+      assertLocalAdvisorStartActive(operation);
+      const healthy = await isLocalAdvisorHealthy(serverInfo);
+      assertLocalAdvisorStartActive(operation);
+      const processOutcome = getAdvisorLlamaProcessOutcome(child, observedProcessOutcome);
+      if (processOutcome) {
+        if (processOutcome.error && isChildProcessRunning(child)) {
+          await stopLocalAdvisorChild(child, { wait: true, forceAfterMs: 2500 });
+        }
+        throw getAdvisorLlamaLaunchFailure(processOutcome, advisorProcessLog, logPath);
+      }
+      if (healthy) {
+        operation.ready = true;
         sendAdvisorStatus(event, {
           phase: 'ready',
           message: `Local model server is ready at ${serverInfo.baseUrl}.`,
@@ -810,55 +726,63 @@ function createAdvisorRuntimeController(dependencies = {}) {
         });
         return { ok: true, message: `Local model started at ${serverInfo.baseUrl}` };
       }
-      if (child.exitCode !== null) {
-        throw new Error(
-          `llama-server exited before it became ready. Log: ${
-            tailText(advisorProcessLog.getCollectedText(), 12) || logPath
-          }`
-        );
-      }
       sendAdvisorStatus(event, {
         phase: 'loading',
         message: `Loading local model... ${Math.round((Date.now() - startedAt) / 1000)}s`,
         detail: logPath,
         progressPercent: advisorElapsedProgress(startedAt, LOCAL_ADVISOR_STARTUP_TIMEOUT_MS, 10, 60)
       });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await waitForAdvisorLlamaStartupPoll(processOutcomePromise, 1000);
     }
 
-    child.kill();
+    await stopLocalAdvisorChild(child, { wait: true, forceAfterMs: 2500 });
     throw new Error(`Timed out waiting for llama-server to start. Review ${logPath}`);
   }
 
-  async function ensureLocalAdvisorServer(settings, event) {
-    if (settings.provider !== 'custom') {
-      return { ok: true, message: 'No local model server needed.' };
-    }
-    if (!settings.localModelPath) {
-      throw new Error('Choose a local GGUF model file before starting the local advisor.');
-    }
+  async function runLocalAdvisorStartOperation(settings, serverInfo, serverKey, event, operation) {
+    assertLocalAdvisorStartActive(operation);
     if (!(await pathExists(settings.localModelPath))) {
       throw new Error(`The selected local model file does not exist: ${settings.localModelPath}`);
     }
+    assertLocalAdvisorStartActive(operation);
     if (settings.mmprojPath && !(await pathExists(settings.mmprojPath))) {
       throw new Error(
         `The selected multimodal projector file does not exist: ${settings.mmprojPath}`
       );
     }
-    const serverInfo = getLocalAdvisorServerInfo(settings);
-    const serverKey = getLocalAdvisorServerKey(settings, serverInfo);
-    if (localAdvisorStartPromise && localAdvisorProcessKey === serverKey) {
-      sendAdvisorStatus(event, {
-        phase: 'loading',
-        message: 'Local model is already starting.',
-        progressPercent: 25
+    assertLocalAdvisorStartActive(operation);
+    await assertAdvisorLocalModelCompatibility(settings);
+    assertLocalAdvisorStartActive(operation);
+
+    const trackedChild = localAdvisorProcess;
+    if (isChildProcessRunning(trackedChild)) {
+      const sameTrackedServer = localAdvisorProcessKey === serverKey;
+      const trackedHealthy = sameTrackedServer ? await isLocalAdvisorHealthy(serverInfo) : false;
+      assertLocalAdvisorStartActive(operation);
+      if (sameTrackedServer && trackedHealthy) {
+        sendAdvisorStatus(event, {
+          phase: 'ready',
+          message: `Local model server is already running at ${serverInfo.baseUrl}.`,
+          progressPercent: 65
+        });
+        return {
+          ok: true,
+          message: `Local model server is already running at ${serverInfo.baseUrl}`
+        };
+      }
+      await stopLocalAdvisorChild(trackedChild, {
+        wait: true,
+        forceAfterMs: 2500
       });
-      return localAdvisorStartPromise;
+      assertLocalAdvisorStartActive(operation);
     }
+
     const matchingProcess = await findMatchingLocalAdvisorProcess(settings, serverInfo);
+    assertLocalAdvisorStartActive(operation);
     const isHealthy = await isLocalAdvisorHealthy(serverInfo);
+    assertLocalAdvisorStartActive(operation);
     if (matchingProcess && isHealthy) {
-      adoptLocalAdvisorProcess(matchingProcess, serverKey);
+      adoptedProcessLifecycle.adopt(matchingProcess, serverKey);
       sendAdvisorStatus(event, {
         phase: 'ready',
         message: `Local model server is already running at ${serverInfo.baseUrl}.`,
@@ -870,7 +794,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       };
     }
     if (matchingProcess && !isHealthy) {
-      adoptLocalAdvisorProcess(matchingProcess, serverKey);
+      adoptedProcessLifecycle.adopt(matchingProcess, serverKey);
       throw new Error(
         'A matching llama-server is already listening, but it is not healthy yet. Stop it or wait for it to finish loading, then try again.'
       );
@@ -880,18 +804,88 @@ function createAdvisorRuntimeController(dependencies = {}) {
         'A local endpoint is already responding on the configured port, but it does not match this GGUF model. Cavalry will not reuse or stop that process.'
       );
     }
-    if (localAdvisorProcess && localAdvisorProcessKey !== serverKey) {
-      await stopLocalAdvisorProcess({ wait: true, forceAfterMs: 2500 });
+    return startLocalAdvisorServer(settings, serverInfo, serverKey, event, operation);
+  }
+
+  function ensureLocalAdvisorServer(settings, event) {
+    if (settings.provider !== 'custom') {
+      return Promise.resolve({ ok: true, message: 'No local model server needed.' });
     }
-    localAdvisorStartPromise = startLocalAdvisorServer(
-      settings,
-      serverInfo,
+    if (!settings.localModelPath) {
+      return Promise.reject(
+        new Error('Choose a local GGUF model file before starting the local advisor.')
+      );
+    }
+    if (path.extname(settings.localModelPath).toLowerCase() !== '.gguf') {
+      return Promise.reject(new Error('The local advisor requires a GGUF model file.'));
+    }
+    if (localAdvisorStopOperations.isStopping()) {
+      return Promise.reject(
+        new Error('The local model server is being stopped. Wait for it to stop before starting.')
+      );
+    }
+    const serverInfo = getLocalAdvisorServerInfo(settings);
+    const serverKey = getLocalAdvisorServerKey(settings, serverInfo);
+    if (localAdvisorStartOperation) {
+      if (
+        !localAdvisorStartOperation.cancelled &&
+        localAdvisorStartOperation.serverKey === serverKey
+      ) {
+        sendAdvisorStatus(event, {
+          phase: 'loading',
+          message: 'Local model is already starting.',
+          progressPercent: 25
+        });
+        return localAdvisorStartOperation.promise;
+      }
+      return Promise.reject(
+        new Error(
+          localAdvisorStartOperation.cancelled
+            ? 'The local model server is still stopping. Wait for it to stop before starting again.'
+            : 'A different local model is already starting. Stop it before starting this model.'
+        )
+      );
+    }
+
+    const operation = {
+      id: ++localAdvisorOperationSequence,
       serverKey,
-      event
-    ).finally(() => {
-      localAdvisorStartPromise = null;
-    });
-    return localAdvisorStartPromise;
+      child: null,
+      cancelled: false,
+      ready: false,
+      promise: null
+    };
+    localAdvisorStartOperation = operation;
+    let trackedPromise = null;
+    trackedPromise = Promise.resolve()
+      .then(() => runLocalAdvisorStartOperation(settings, serverInfo, serverKey, event, operation))
+      .catch((error) => {
+        const cancelled =
+          operation.cancelled ||
+          !!(
+            error &&
+            (error.cavalryCancelled || error.code === 'ERR_CAVALRY_LOCAL_ADVISOR_START_CANCELLED')
+          );
+        sendAdvisorStatus(event, {
+          phase: cancelled ? 'stopped' : 'failed',
+          message: cancelled
+            ? 'Local model startup stopped.'
+            : String((error && error.message) || 'Local model server failed to start.'),
+          progressPercent: 0
+        });
+        throw error;
+      })
+      .finally(() => {
+        if (localAdvisorStartOperation === operation) {
+          localAdvisorStartOperation = null;
+        }
+        if (localAdvisorStartPromise === trackedPromise) {
+          localAdvisorStartPromise = null;
+        }
+      });
+    operation.promise = trackedPromise;
+    localAdvisorStartPromise = trackedPromise;
+    return trackedPromise;
   }
 
   async function loadAdvisorSettings() {
@@ -930,15 +924,18 @@ function createAdvisorRuntimeController(dependencies = {}) {
       return;
     }
     const status = await getLocalAdvisorServerStatus(previous);
-    if (status && (status.running || status.starting)) {
+    if (status && (status.running || status.starting || status.stopping)) {
       throw new Error('Stop the local model before changing context allocation.');
     }
   }
 
-  async function saveAdvisorSettings(payload) {
+  async function saveAdvisorSettings(payload, options = {}) {
     const existing = await loadAdvisorRuntimeSettings();
     const settings = normalizeAdvisorSettings(payload, existing);
-    await assertAdvisorContextChangeAllowed(settings, existing);
+    await assertAdvisorLocalModelCompatibility(settings);
+    if (!options.allowActiveLocalConfiguration) {
+      await assertAdvisorContextChangeAllowed(settings, existing);
+    }
     await advisorSettingsStorage.persist(getPersistentAdvisorSettings(settings));
     return settings;
   }
@@ -1297,13 +1294,23 @@ function createAdvisorRuntimeController(dependencies = {}) {
     try {
       const dir = path.dirname(modelPath);
       const entries = await fs.readdir(dir);
-      const candidates = entries.filter(
-        (entry) =>
-          /^mmproj.*\.gguf$/i.test(entry) || /(^|[-_.])mmproj([-_.]|$).*\.gguf$/i.test(entry)
+      const candidates = entries
+        .filter(
+          (entry) =>
+            /^mmproj.*\.gguf$/i.test(entry) || /(^|[-_.])mmproj([-_.]|$).*\.gguf$/i.test(entry)
+        )
+        .sort((left, right) => left.localeCompare(right));
+      const outcomes = await Promise.all(
+        candidates.map(async (entry) => {
+          const mmprojPath = path.join(dir, entry);
+          const compatibility = await inspectGgufCompatibility({ modelPath, mmprojPath });
+          return compatibility.status === 'compatible' && compatibility.reason === 'metadata-match'
+            ? mmprojPath
+            : '';
+        })
       );
-      if (candidates.length === 1) {
-        return path.join(dir, candidates[0]);
-      }
+      const compatibleCandidates = outcomes.filter(Boolean);
+      if (compatibleCandidates.length === 1) return compatibleCandidates[0];
     } catch (_error) {
       // Projector selection is optional.
     }
@@ -1324,6 +1331,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       ensureLocalAdvisorServer,
       stopLocalAdvisorServer,
       findAdjacentMmprojPath,
+      assertAdvisorLocalModelCompatibility,
       callAdvisorModel,
       callAdvisorAgentTurn,
       callAdvisorTranscription,
@@ -1350,6 +1358,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
     cancelAdvisorRequest,
     ensureLocalAdvisorServer,
     findAdjacentMmprojPath,
+    assertAdvisorLocalModelCompatibility,
     getAdvisorMicrophoneAccessStatus,
     getAdvisorMediaPermissionTypes,
     getAdvisorTranscriptionEndpoint,

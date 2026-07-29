@@ -94,7 +94,7 @@ describe('Electron packaging manifest', () => {
     expect(releaseConfig.mac.artifactName).toBe('Cavalry-for-Mac-${version}-${arch}.${ext}');
     expect(releaseConfig.directories.output).toBe('out/release/mac');
     expect(packageFileEntries('electron-builder.release.yml')).toEqual(packageFileEntries());
-    expect(manifest.devDependencies['electron-builder']).toBe('26.15.3');
+    expect(manifest.devDependencies['electron-builder']).toBe('26.15.7');
     expect(manifest.scripts['dist:release:mac']).toContain('--arm64 --x64');
     expect(manifest.scripts['dist:release:mac']).toContain('--publish never');
   });

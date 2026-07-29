@@ -9,7 +9,7 @@ import {
 } from './SidebarUpdateStatus.jsx';
 
 const NAVIGATION_GROUPS = Object.freeze([
-  Object.freeze({ id: 'home', label: 'Workspace', routes: ['dashboard'] }),
+  Object.freeze({ id: 'home', label: 'Workspace', routes: ['dashboard', 'notes'] }),
   Object.freeze({
     id: 'money',
     label: 'Money',

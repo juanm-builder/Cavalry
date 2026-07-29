@@ -152,7 +152,7 @@ describe('settings route view-model service', () => {
     });
   });
 
-  it('locks local model context while the server is running', () => {
+  it('locks local model context until the server has fully stopped', () => {
     const advisor = buildSettingsAdvisorViewModel(
       makeSettingsOptions({
         advisorServerStatus: { running: true, starting: false }
@@ -168,6 +168,14 @@ describe('settings route view-model service', () => {
       { value: 32768, label: '32K tokens' }
     ]);
     expect(advisor.statusLine).toBe('');
+
+    expect(
+      buildSettingsAdvisorViewModel(
+        makeSettingsOptions({
+          advisorServerStatus: { running: false, starting: false, stopping: true }
+        })
+      ).contextDisabled
+    ).toBe(true);
   });
 
   it('summarizes health issues and caps rendered issue rows', () => {

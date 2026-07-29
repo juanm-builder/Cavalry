@@ -600,7 +600,7 @@ describe('feature action callbacks', () => {
     });
   });
 
-  it('serializes live Advisor form fields for model lifecycle actions', async () => {
+  it('serializes model-authoritative Advisor fields for lifecycle actions', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
     const { container } = render(
@@ -628,6 +628,11 @@ describe('feature action callbacks', () => {
 
     const provider = container.querySelector('select[name="provider"]');
     await user.click(screen.getByRole('tab', { name: /Assistant/ }));
+    await user.click(screen.getByRole('button', { name: 'Clear vision projector' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'clear-mmproj',
+      payload: {}
+    });
     await user.click(screen.getAllByRole('button', { name: /Browse/ })[0]);
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'choose-local-model',
@@ -642,12 +647,13 @@ describe('feature action callbacks', () => {
       type: 'set-advisor-provider',
       payload: { value: 'openai' }
     });
+    expect(provider.value).toBe('custom');
 
     await user.click(screen.getByRole('button', { name: /Start Model/ }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'toggle-advisor-server',
       payload: expect.objectContaining({
-        provider: 'openai',
+        provider: 'custom',
         localModelPath: '/models/qwen.gguf',
         mmprojPath: '/models/mmproj.gguf',
         contextWindowTokens: '4096'

@@ -453,6 +453,10 @@ describe('Cavalry assistant tool catalog', () => {
     const transactionCreate = definitions.find(
       (definition) => definition.name === 'create_transaction'
     );
+    expect(transactionCreate.parameters.required).toEqual(['amount', 'description']);
+    expect(transactionCreate.parameters.properties.date.description).toMatch(
+      /optional.*current date/i
+    );
     expect(transactionCreate.parameters.properties.allowCurrencyConversion.description).toMatch(
       /user explicitly confirms/i
     );
@@ -1055,6 +1059,755 @@ describe('Cavalry assistant reads', () => {
 });
 
 describe('Cavalry assistant mutations', () => {
+  it('defaults an omitted date and reuses matching transaction history for category and account', async () => {
+    const harness = makeHarness();
+    const result = await executeCavalryAssistantTool(
+      {
+        id: 'call_create_groceries',
+        name: 'create_transaction',
+        arguments: {
+          amount: 125,
+          description: 'Groceries'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'I paid 125 at Market for groceries'
+      }
+    );
+    const transaction = harness.workbook.transactions.find((item) => item.id !== 'txn-groceries');
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          date: '2026-07-10',
+          template: 'expense_paid',
+          description: 'Groceries',
+          categoryId: 'food',
+          counterpartyId: 'market'
+        },
+        inferredFields: {
+          date: { value: '2026-07-10', reason: 'current_date_default' },
+          categoryId: { value: 'food', reason: 'transaction_history' },
+          primaryAccountId: { value: 'cash', reason: 'transaction_history' }
+        }
+      }
+    });
+    expect(transaction.lines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ accountId: 'cash', direction: 'credit' })])
+    );
+    expect(transaction.counterpartyId).toBe('market');
+  });
+
+  it('applies saved category rules before generic semantic categorization', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true,
+      autoCategorizeRules: [{ field: 'description', operator: 'contains', value: 'ride share' }]
+    });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          amount: 240,
+          description: 'Evening ride share',
+          primaryAccount: 'Main Bank'
+        }
+      },
+      harness.context
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          date: '2026-07-10',
+          categoryId: 'transport'
+        },
+        inferredFields: {
+          categoryId: { value: 'transport', reason: 'category_rule' }
+        }
+      }
+    });
+  });
+
+  it('corrects a card-bill request to a debt payment instead of recording a new expense', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'debt-payment-expense',
+      name: 'Debt Payment Expense',
+      group: 'expense',
+      subtype: 'debt',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'credit-card-payment',
+      name: 'Credit Card Payment',
+      type: 'debt',
+      currency: 'PHP',
+      linkedAccountId: 'debt-payment-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_paid',
+          amount: 500,
+          description: 'Credit card bill payment'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'Pay 500 from Main Bank toward my Credit Card bill'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          date: '2026-07-10',
+          template: 'debt_payment',
+          categoryId: 'credit-card-payment'
+        },
+        inferredFields: {
+          template: { value: 'debt_payment', reason: 'finance_intent' },
+          primaryAccountId: { value: 'bank', reason: 'explicit_account_role' },
+          secondaryAccountId: { value: 'card', reason: 'explicit_account_role' }
+        }
+      }
+    });
+  });
+
+  it('isolates each tool call when one request contains mixed transaction intents', async () => {
+    const harness = makeHarness();
+    const question = 'I received salary 500 in Main Bank and spent 500 on groceries from Cash';
+
+    const income = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_paid',
+          amount: 500,
+          description: 'Salary'
+        }
+      },
+      { ...harness.context, question }
+    );
+    const expense = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_paid',
+          amount: 500,
+          description: 'Groceries'
+        }
+      },
+      { ...harness.context, question }
+    );
+
+    expect(income).toMatchObject({
+      ok: true,
+      data: {
+        transaction: {
+          template: 'income_received',
+          categoryId: 'salary'
+        },
+        inferredFields: {
+          template: { value: 'income_received', reason: 'finance_intent' },
+          primaryAccountId: { value: 'bank', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(expense).toMatchObject({
+      ok: true,
+      data: {
+        transaction: {
+          template: 'expense_paid',
+          categoryId: 'food'
+        },
+        inferredFields: {
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
+  });
+
+  it('separates equal-value category items even when the action verb is not repeated', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+    const question = 'I paid 500 for Food and 500 for Transport from Cash';
+
+    const food = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 500, description: 'Food' }
+      },
+      { ...harness.context, question }
+    );
+    const transport = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 500, description: 'Transport' }
+      },
+      { ...harness.context, question }
+    );
+
+    expect(food).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { categoryId: 'food' },
+        inferredFields: {
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(transport).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { categoryId: 'transport' },
+        inferredFields: {
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(
+      harness.workbook.transactions
+        .filter((transaction) => ['Food', 'Transport'].includes(transaction.description))
+        .every((transaction) => !transaction.counterpartyId)
+    ).toBe(true);
+  });
+
+  it('does not carry a posting account across an explicitly different transaction intent', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts = workbook.accounts.filter((account) => account.id !== 'bank');
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+    const question = 'I paid 100 for Food and charged 200 for Transport on Credit Card';
+
+    const paid = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Food' }
+      },
+      { ...harness.context, question }
+    );
+    const charged = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 200, description: 'Transport' }
+      },
+      { ...harness.context, question }
+    );
+
+    expect(paid).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { template: 'expense_paid', categoryId: 'food' },
+        inferredFields: {
+          primaryAccountId: { value: 'cash' }
+        }
+      }
+    });
+    expect(charged).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { template: 'expense_charged', categoryId: 'transport' },
+        inferredFields: {
+          primaryAccountId: { value: 'card', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(
+      harness.workbook.transactions
+        .filter((transaction) => ['Food', 'Transport'].includes(transaction.description))
+        .every((transaction) => !transaction.counterpartyId)
+    ).toBe(true);
+  });
+
+  it('does not parse numeric account suffixes as additional transaction amounts', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts = workbook.accounts
+      .filter((account) => account.id !== 'card')
+      .concat(
+        {
+          id: 'visa-1234',
+          name: 'Visa 1234',
+          group: 'liability',
+          subtype: 'credit_card',
+          currency: 'PHP',
+          openedDate: '2026-01-01',
+          isActive: true
+        },
+        {
+          id: 'visa-5678',
+          name: 'Visa 5678',
+          group: 'liability',
+          subtype: 'credit_card',
+          currency: 'PHP',
+          openedDate: '2026-01-01',
+          isActive: true
+        },
+        {
+          id: 'transport-expense',
+          name: 'Transport Expense',
+          group: 'expense',
+          subtype: 'expense',
+          currency: 'PHP',
+          isActive: true
+        }
+      );
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+    const question =
+      'I charged 100 for Food on Visa 1234 and charged 200 for Transport on Visa 5678';
+
+    const first = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Food' }
+      },
+      { ...harness.context, question }
+    );
+    const second = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 200, description: 'Transport' }
+      },
+      { ...harness.context, question }
+    );
+
+    expect(first).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { template: 'expense_charged' },
+        inferredFields: {
+          primaryAccountId: { value: 'visa-1234', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(second).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { template: 'expense_charged' },
+        inferredFields: {
+          primaryAccountId: { value: 'visa-5678', reason: 'explicit_account_role' }
+        }
+      }
+    });
+  });
+
+  it('fails safely when one transaction explicitly names multiple categories', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Trip supplies' }
+      },
+      {
+        ...harness.context,
+        question: 'I paid 100 for Food and Transport from Cash'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'validation_failed',
+      changed: false,
+      errors: expect.arrayContaining([expect.objectContaining({ field: 'categoryId' })])
+    });
+    expect(harness.workbook.transactions).toHaveLength(1);
+  });
+
+  it('does not substitute a loan when a credit-card purchase has no card account', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts = workbook.accounts
+      .filter((account) => account.id !== 'card')
+      .concat({
+        id: 'car-loan',
+        name: 'Car Loan',
+        group: 'liability',
+        subtype: 'loan',
+        currency: 'PHP',
+        openedDate: '2026-01-01',
+        isActive: true
+      });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_paid',
+          amount: 350,
+          description: 'Groceries',
+          category: 'Food'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'I bought groceries for 350 on my credit card'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'validation_failed',
+      changed: false,
+      errors: expect.arrayContaining([expect.objectContaining({ field: 'primaryAccountId' })])
+    });
+    expect(harness.workbook.transactions).toHaveLength(1);
+  });
+
+  it('uses the grammatical funding account when multiple asset accounts are mentioned', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          amount: 100,
+          description: 'Bank service fee',
+          category: 'Food'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'I paid a 100 fee to Main Bank using Cash'
+      }
+    );
+    const transaction = harness.workbook.transactions.find(
+      (item) => item.description === 'Bank service fee'
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        inferredFields: {
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(transaction.lines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ accountId: 'cash', direction: 'credit' })])
+    );
+    expect(transaction.counterpartyId || '').toBe('');
+
+    const payeeOnlyHarness = makeHarness();
+    const payeeOnly = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          amount: 100,
+          description: 'Bank service fee',
+          category: 'Food'
+        }
+      },
+      {
+        ...payeeOnlyHarness.context,
+        question: 'I paid a 100 fee to Main Bank'
+      }
+    );
+    expect(payeeOnly).toMatchObject({
+      ok: false,
+      status: 'validation_failed',
+      errors: expect.arrayContaining([expect.objectContaining({ field: 'primaryAccountId' })])
+    });
+  });
+
+  it('applies description rules only to the transaction description field', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true,
+      autoCategorizeRules: [{ field: 'description', operator: 'contains', value: 'ride share' }]
+    });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          amount: 240,
+          description: 'Dinner',
+          primaryAccount: 'Cash'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'I paid 240 for Dinner using Cash after checking my Ride Share Wallet'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { categoryId: 'food' },
+        inferredFields: {
+          categoryId: { value: 'food', reason: 'transaction_semantics' }
+        }
+      }
+    });
+  });
+
+  it('distinguishes a date inferred from the request from the current-date default', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          amount: 80,
+          description: 'Yesterday coffee',
+          category: 'Food',
+          primaryAccount: 'Cash'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'Yesterday I paid 80 for coffee from Cash'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { date: '2026-07-09' },
+        inferredFields: {
+          date: { value: '2026-07-09', reason: 'date_from_request' }
+        }
+      }
+    });
+  });
+
+  it('keeps each transaction date attached to its own batch clause', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const relativeHarness = makeHarness(workbook);
+    const relativeQuestion =
+      'Yesterday I paid 100 for Food and today I paid 200 for Transport from Cash';
+
+    const relativeFood = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Food' }
+      },
+      { ...relativeHarness.context, question: relativeQuestion }
+    );
+    const relativeTransport = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 200, description: 'Transport' }
+      },
+      { ...relativeHarness.context, question: relativeQuestion }
+    );
+
+    expect(relativeFood).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { date: '2026-07-09' },
+        inferredFields: {
+          date: { value: '2026-07-09', reason: 'date_from_request' }
+        }
+      }
+    });
+    expect(relativeTransport).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { date: '2026-07-10' },
+        inferredFields: {
+          date: { value: '2026-07-10', reason: 'date_from_request' }
+        }
+      }
+    });
+
+    const explicitHarness = makeHarness(workbook);
+    const explicitQuestion =
+      'On July 8 I paid 100 for Food and on July 9 I paid 200 for Transport from Cash';
+    const explicitFood = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Food' }
+      },
+      { ...explicitHarness.context, question: explicitQuestion }
+    );
+    const explicitTransport = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 200, description: 'Transport' }
+      },
+      { ...explicitHarness.context, question: explicitQuestion }
+    );
+
+    expect(explicitFood.data.transaction.date).toBe('2026-07-08');
+    expect(explicitTransport.data.transaction.date).toBe('2026-07-09');
+  });
+
+  it('does not apply a trailing date to an earlier independently worded transaction', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'transport-expense',
+      name: 'Transport Expense',
+      group: 'expense',
+      subtype: 'expense',
+      currency: 'PHP',
+      isActive: true
+    });
+    workbook.categories.push({
+      id: 'transport',
+      name: 'Transport',
+      type: 'expense',
+      currency: 'PHP',
+      linkedAccountId: 'transport-expense',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+    const question =
+      'I paid 100 for Food from Main Bank and I paid 200 for Transport yesterday from Cash';
+
+    const first = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 100, description: 'Food' }
+      },
+      { ...harness.context, question }
+    );
+    const second = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: { amount: 200, description: 'Transport' }
+      },
+      { ...harness.context, question }
+    );
+
+    expect(first).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { date: '2026-07-10' },
+        inferredFields: {
+          date: { value: '2026-07-10', reason: 'current_date_default' },
+          primaryAccountId: { value: 'bank', reason: 'explicit_account_role' }
+        }
+      }
+    });
+    expect(second).toMatchObject({
+      ok: true,
+      data: {
+        transaction: { date: '2026-07-09' },
+        inferredFields: {
+          date: { value: '2026-07-09', reason: 'date_from_request' },
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
+  });
+
   it('requires host approval before posting a transaction across account currencies', async () => {
     const workbook = makeWorkbook();
     workbook.accounts.push({

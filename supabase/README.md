@@ -32,10 +32,20 @@ feedback, and owner-only Row Level Security (RLS).
 
 The first upload omits `p_expected_revision` (or sends `null`). Every later upload
 must pass the `latest_revision` most recently read by the client. A stale save
-fails with SQL state `40001` and message `workbook_revision_conflict`; the caller
-must fetch the new revision and present a conflict-resolution flow. It must never
-retry with the new revision automatically, because that would silently overwrite
-financial data.
+fails with custom SQL state `PT412` (HTTP 412) and message
+`workbook_revision_conflict`; the caller must fetch the new revision and present
+a conflict-resolution flow. The custom state keeps this deterministic product
+conflict out of PostgreSQL's retryable `serialization_failure` path. The caller
+must never retry with the new revision automatically, because that would silently
+overwrite financial data.
+
+After a conflict, Cavalry refreshes the workbook library. If the Cloud row still
+exists, the current workbook stays conflict-latched across restarts and sign-ins
+until the user saves the local copy and explicitly opens the Cloud copy. Cavalry
+stores only the account/workbook IDs, last acknowledged revision, and conflict
+flag locally for this check—not workbook contents. If the row was deleted,
+Cavalry removes the stale link so the local workbook can be added again
+deliberately.
 
 ## Apply it to the existing Supabase project
 
@@ -48,6 +58,11 @@ supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 ```
+
+For an existing Cavalry Cloud project, `supabase db push` applies
+`20260726000100_fix_workbook_conflict_retry.sql` as a forward-only hotfix. It
+replaces the snapshot function without changing existing workbooks or versions.
+Do not edit or re-run the older applied migration files.
 
 Keep the GitHub Supabase integration rooted at the repository root so it finds
 `supabase/config.toml` and `supabase/migrations/`. Review production deployment

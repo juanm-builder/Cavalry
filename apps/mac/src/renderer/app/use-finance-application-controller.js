@@ -15,14 +15,16 @@ import { useTransactionController } from '../features/transactions/transaction-c
 import { executeCavalryAssistantTool } from '../features/assistant/cavalry-assistant-tools.js';
 import { useCloudWorkbookController } from './use-cloud-workbook-controller.js';
 import {
+  createAdvisorOperationCoordinator,
   createAdvisorRuntimeProvider,
   createAdvisorServices,
   executeAdvisorApplicationIntent,
-  executeAdvisorViewIntent,
-  loadAdvisorRuntimeState
+  executeAdvisorViewIntent
 } from './advisor-application-adapter.js';
 import { useCommandExecutor } from './CommandExecutor.jsx';
 import { useWorkbookSession } from './WorkbookProvider.jsx';
+import { useAdvisorRuntimeState } from './use-advisor-runtime-state.js';
+import { useCategoryAwareRouteActions } from './use-category-aware-route-actions.js';
 import {
   applicationAdvisorIntent,
   applicationCloudIntent,
@@ -66,6 +68,7 @@ export function useFinanceApplicationController({
   const activeRouteId = asString(routeId || state.routeId || 'dashboard');
   const workbookRef = useRef(workbook);
   const transactionActionRef = useRef(null);
+  const [advisorOperations] = useState(() => createAdvisorOperationCoordinator());
   useEffect(() => {
     workbookRef.current = workbook;
   }, [workbook]);
@@ -117,26 +120,7 @@ export function useFinanceApplicationController({
   });
   const executeCloudOperation = cloud.execute;
   const cloudModel = cloud.model;
-  useEffect(() => {
-    let active = true;
-    loadAdvisorRuntimeState(ports.advisor).then((runtimeState) => {
-      if (!active) return;
-      setSettingsViewState((current) => ({
-        ...current,
-        advisorSettings: {
-          ...asObject(current.advisorSettings),
-          ...asObject(runtimeState.advisorSettings)
-        },
-        advisorServerStatus: runtimeState.advisorServerStatus,
-        advisorServerToggleState: runtimeState.advisorServerToggleState,
-        advisorServerDetail: runtimeState.advisorServerDetail,
-        advisorMicrophone: runtimeState.advisorMicrophone
-      }));
-    });
-    return () => {
-      active = false;
-    };
-  }, [ports.advisor]);
+  useAdvisorRuntimeState(ports.advisor, setSettingsViewState);
 
   const dashboardController = useMemo(
     () => createDashboardController({ clock: ports.clock }),
@@ -441,12 +425,13 @@ export function useFinanceApplicationController({
     (payload) =>
       executeAdvisorApplicationIntent(payload, {
         advisor: ports.advisor,
+        advisorOperations,
         navigate,
         reportError,
         setBillsViewState,
         setSettingsViewState
       }),
-    [navigate, ports.advisor, reportError]
+    [advisorOperations, navigate, ports.advisor, reportError]
   );
 
   const transaction = useTransactionController({
@@ -645,7 +630,10 @@ export function useFinanceApplicationController({
           services: featureServices,
           commitCommandResult: commitAssistantCommandResult,
           navigate,
-          saveWorkbook
+          saveWorkbook,
+          question: asString(metadata.question),
+          today: asString(metadata.today),
+          activeRouteId: asString(metadata.activeRouteId)
         }
       );
     },
@@ -681,48 +669,21 @@ export function useFinanceApplicationController({
     [runDashboardAction]
   );
 
-  const handleBudgetAction = useCallback(
-    (action) => {
-      notifyAction(action);
-      if (action && action.type === 'close-budget-editor') {
-        closeOverlay('budget-editor');
-        return { ok: true, handled: true, events: [] };
-      }
-      const result = budgetController.handleAction(action, {
-        workbook: workbookRef.current,
-        viewState: budgetViewState
-      });
-      return processControllerResult(result, 'budget');
-    },
-    [budgetController, budgetViewState, closeOverlay, notifyAction, processControllerResult]
-  );
-
-  const handleBillsAction = useCallback(
-    (action) => {
-      notifyAction(action);
-      if (action && action.type === 'close-modal') {
-        return { ok: true, handled: true, events: [], warnings: [], errors: [] };
-      }
-      const result = billsController.handleAction(workbookRef.current, action, {
-        viewState: billsViewState
-      });
-      if (result && result.ok) {
-        setBillsViewState((current) => ({ ...current, error: '', notice: '' }));
-      } else {
-        setBillsViewState((current) => ({
-          ...current,
-          error: firstErrorMessage(result, 'The recurring action could not be completed.'),
-          notice: ''
-        }));
-      }
-      return processControllerResult({ ...result, handled: true }, 'bills');
-    },
-    [billsController, billsViewState, notifyAction, processControllerResult]
-  );
-
   const handleSettingsAction = useCallback(
     (action) => {
       notifyAction(action);
+      const requestedServerAction = asString(action?.payload?.serverAction);
+      if (
+        action?.type === 'toggle-advisor-server' &&
+        ['start', 'stop'].includes(requestedServerAction)
+      ) {
+        const advisorPayload = { ...asObject(action.payload) };
+        delete advisorPayload.serverAction;
+        return executeAdvisorIntent({
+          ...advisorPayload,
+          operation: requestedServerAction === 'stop' ? 'server-stop' : 'server-start'
+        });
+      }
       const result = settingsController.handleAction(workbookRef.current, action);
       if (result && result.ok) {
         setSettingsViewState((current) => ({ ...current, error: '' }));
@@ -737,7 +698,7 @@ export function useFinanceApplicationController({
       }
       return processControllerResult({ ...result, handled: true }, 'settings');
     },
-    [notifyAction, processControllerResult, settingsController]
+    [executeAdvisorIntent, notifyAction, processControllerResult, settingsController]
   );
 
   const handleDraftCommandResult = useCallback(
@@ -754,6 +715,28 @@ export function useFinanceApplicationController({
     },
     [handleFeatureCommandResult, reportError]
   );
+
+  const {
+    handleBillsAction,
+    handleBudgetAction,
+    handleDraftCategoryCreate,
+    handleTransactionAction
+  } = useCategoryAwareRouteActions({
+    billsController,
+    billsViewState,
+    budgetController,
+    budgetViewState,
+    closeOverlay,
+    featureServices,
+    handleFeatureCommandResult,
+    navigate,
+    notifyAction,
+    processControllerResult,
+    runDashboardAction,
+    setBillsViewState,
+    transaction,
+    workbookRef
+  });
 
   const handleAdvisorCommandResult = useCallback(
     (result) => {
@@ -789,21 +772,6 @@ export function useFinanceApplicationController({
   const handleAccountCreateRequest = useCallback(() => setAccountCreateRequestId(0), []);
 
   const handleCategoryAction = handleAccountAction;
-
-  const handleTransactionAction = useCallback(
-    (action) => {
-      notifyAction(action);
-      if (action && action.type === 'route/navigate') {
-        navigate(action.payload && action.payload.routeId);
-        return { ok: true, handled: true };
-      }
-      if (action && DASHBOARD_ACTIONS.has(action.type)) {
-        return runDashboardAction(action, false);
-      }
-      return transaction.onAction(action);
-    },
-    [navigate, notifyAction, runDashboardAction, transaction]
-  );
 
   const handleFallbackAction = useCallback(
     (action) => {
@@ -1002,6 +970,7 @@ export function useFinanceApplicationController({
         initialSelectedKey: selectedDraftKey,
         initialSelectedCheckpointId: selectedCheckpointId,
         onAction: notifyAction,
+        onCreateCategory: handleDraftCategoryCreate,
         onCommandResult: handleDraftCommandResult
       },
       accounts: {
@@ -1056,6 +1025,7 @@ export function useFinanceApplicationController({
       handleAdvisorCommandResult,
       handleAdvisorIntent,
       handleDraftCommandResult,
+      handleDraftCategoryCreate,
       handleTransactionAction,
       liveRouteModels.advisor,
       liveRouteModels.transactions,

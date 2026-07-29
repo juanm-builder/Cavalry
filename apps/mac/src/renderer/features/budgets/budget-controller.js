@@ -178,12 +178,6 @@ function handleTransactionDetail(payload, context) {
 
 function handleAddBudget(payload, context, buildModel) {
   const routeModel = getRouteModel(buildModel, context);
-  if (!asArray(routeModel.categoryOptions).length) {
-    return failure(
-      'budget.add.category-required',
-      'Create an expense category before adding a budget.'
-    );
-  }
   const sheetId = asString(payload.sheetId || (routeModel.sheet && routeModel.sheet.id));
   const sheet = sheetId ? findById(context.workbook && context.workbook.sheets, sheetId) : null;
   if (sheetId && !sheet) {

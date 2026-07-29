@@ -10,6 +10,7 @@ import { BillsRoute } from '../features/recurring/BillsRoute.jsx';
 import { SettingsRoute } from '../features/settings/SettingsRoute.jsx';
 import { TransactionRoute } from '../features/transactions/TransactionRoute.jsx';
 import { getRouteById } from './routes.js';
+import { NotesRouteContainer } from './NotesRouteContainer.jsx';
 
 export function AppRouter({ routeId, routeModels = {}, routeProps = {}, onAction }) {
   const route = getRouteById(routeId);
@@ -46,6 +47,10 @@ export function AppRouter({ routeId, routeModels = {}, routeProps = {}, onAction
         onAction={props.onAction || onAction}
       />
     );
+  }
+
+  if (route.component === 'notes') {
+    return <NotesRouteContainer onAction={onAction} />;
   }
 
   if (route.component === 'categories') {

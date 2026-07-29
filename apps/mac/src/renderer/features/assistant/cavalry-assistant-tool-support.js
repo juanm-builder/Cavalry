@@ -13,6 +13,7 @@ import {
 
 import { ACCOUNT_ACTIONS, executeAccountCommand } from '../accounts/account-controller.js';
 import { buildTransactionComposerDraft } from '../transactions/transaction-model.js';
+import { inferCavalryAssistantTransactionArguments } from './cavalry-assistant-transaction-inference.js';
 import {
   ACCOUNT_UPDATE_PROPERTIES,
   ACCOUNT_WRITE_PROPERTIES,
@@ -585,14 +586,20 @@ export function recurringItemsWithLabels(workbook, includeArchived, asOfDate = '
 
 export async function createTransaction(environment) {
   const workbook = environment.workbook;
-  const defaults = buildTransactionComposerDraft(workbook, '', {
-    defaultDate: currentDate(workbook, environment.services)
+  const date = currentDate(workbook, environment.services);
+  const inferred = inferCavalryAssistantTransactionArguments(workbook, environment.arguments, {
+    currentDate: date,
+    question: asText(environment.context && environment.context.question)
   });
-  const prepared = transactionArguments(workbook, environment.arguments, defaults);
+  const defaults = buildTransactionComposerDraft(workbook, '', {
+    defaultDate: date
+  });
+  const prepared = transactionArguments(workbook, inferred.arguments, defaults);
   if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
   const result = submitManualTransactionCommand(workbook, prepared.payload, environment.services);
   return commitCommand(environment, result, 'assistant_transaction_created', (_next, command) => ({
     transaction: summarizeTransaction(command.transaction),
+    inferredFields: clonePlain(inferred.inferredFields),
     events: safeEventList(command.events)
   }));
 }

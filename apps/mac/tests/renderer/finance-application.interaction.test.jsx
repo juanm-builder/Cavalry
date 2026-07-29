@@ -147,6 +147,56 @@ describe('finance application composition', () => {
     expect(onAction).toHaveBeenCalledWith({ type: 'open-ledger-composer', payload: {} });
   });
 
+  it('creates and selects a transaction category without resetting entered details', async () => {
+    const user = userEvent.setup();
+    const { ports, save } = makePorts();
+    render(<AppShell initialWorkbook={makeApplicationWorkbook()} ports={ports} routeId="ledger" />);
+
+    await user.click(screen.getByRole('button', { name: 'Create transaction' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add Transaction' })).getByRole('button', {
+        name: /^Expense\b/i
+      })
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add Transaction' });
+    await user.type(within(dialog).getByLabelText('Description'), 'Trip contribution');
+    await user.type(within(dialog).getByLabelText('Amount'), '1500');
+    await user.selectOptions(within(dialog).getByLabelText('Paid with'), 'cash');
+    await user.click(within(dialog).getByRole('combobox', { name: 'Category' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+
+    const createDialog = screen.getByRole('dialog', { name: 'Create new category' });
+    await user.type(within(createDialog).getByLabelText('Category name'), 'Trip savings');
+    await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
+
+    expect(within(dialog).getByLabelText('Description').value).toBe('Trip contribution');
+    expect(within(dialog).getByLabelText('Amount').value).toBe('1,500.00');
+    expect(within(dialog).getByLabelText('Paid from').value).toBe('cash');
+    expect(within(dialog).getByRole('combobox', { name: 'Category' }).textContent).toContain(
+      'Trip savings'
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Next' }));
+    const review = await screen.findByRole('dialog', { name: 'Review Transaction' });
+    expect(within(review).getByText('Trip savings')).not.toBeNull();
+    await user.click(within(review).getByRole('button', { name: 'Add Transaction' }));
+
+    await waitFor(() =>
+      expect(
+        save.mock.calls
+          .at(-1)?.[0]
+          ?.transactions.some((transaction) => transaction.description === 'Trip contribution')
+      ).toBe(true)
+    );
+    const savedWorkbook = save.mock.calls.at(-1)[0];
+    const category = savedWorkbook.categories.find((item) => item.name === 'Trip savings');
+    const transaction = savedWorkbook.transactions.find(
+      (item) => item.description === 'Trip contribution'
+    );
+    expect(category).toMatchObject({ type: 'expense', isActive: true });
+    expect(transaction.categoryId).toBe(category.id);
+  });
+
   it('owns budget editor overlays and persists immutable budget mutations', async () => {
     const user = userEvent.setup();
     const { ports, save } = makePorts();
@@ -167,6 +217,48 @@ describe('finance application composition', () => {
       expect.objectContaining({ categoryId: 'food', planned: 500, createdAt: expect.any(String) })
     );
     expect(screen.getAllByText('₱500.00').length).toBeGreaterThan(0);
+  });
+
+  it('creates the first category from an open budget draft and preserves its progress', async () => {
+    const user = userEvent.setup();
+    const workbook = makeApplicationWorkbook();
+    workbook.categories = [];
+    workbook.accounts = workbook.accounts.filter(
+      (account) => account.group === 'asset' || account.group === 'liability'
+    );
+    const { ports, save } = makePorts();
+    render(<AppShell initialWorkbook={workbook} ports={ports} routeId="budgets" />);
+
+    await user.click(screen.getByRole('button', { name: 'Create budget' }));
+    const editor = await screen.findByRole('dialog', { name: 'Budget editor' });
+    await user.type(within(editor).getByLabelText('Planned amount'), '2400');
+    await user.type(within(editor).getByLabelText('Budget notes'), 'Monthly trip contribution');
+    await user.click(within(editor).getByRole('combobox', { name: 'Budget category' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+
+    const createDialog = screen.getByRole('dialog', { name: 'Create new category' });
+    await user.type(within(createDialog).getByLabelText('Category name'), 'Trip fund');
+    await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
+
+    expect(within(editor).getByLabelText('Planned amount').value).toBe('2,400.00');
+    expect(within(editor).getByLabelText('Budget notes').value).toBe('Monthly trip contribution');
+    expect(within(editor).getByRole('combobox', { name: 'Budget category' }).textContent).toContain(
+      'Trip fund'
+    );
+    await user.click(within(editor).getByRole('button', { name: 'Save Budget' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Budget editor' })).toBeNull());
+    await waitFor(() =>
+      expect(
+        save.mock.calls.at(-1)?.[0]?.sheets[0].budgets.some((budget) => budget.planned === 2400)
+      ).toBe(true)
+    );
+    const savedWorkbook = save.mock.calls.at(-1)[0];
+    const category = savedWorkbook.categories.find((item) => item.name === 'Trip fund');
+    expect(category).toMatchObject({ type: 'expense', isActive: true });
+    expect(savedWorkbook.sheets[0].budgets).toContainEqual(
+      expect.objectContaining({ categoryId: category.id, planned: 2400 })
+    );
   });
 
   it('creates a monthly sheet when budgeting the displayed month', async () => {
@@ -342,14 +434,31 @@ describe('finance application composition', () => {
       target: { value: '2026-07-20' }
     });
     await user.click(within(editor).getByRole('combobox', { name: 'Recurring category' }));
-    await user.click(screen.getByRole('option', { name: 'Food' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+    const categoryDialog = await screen.findByRole('dialog', { name: 'Create new category' });
+    await user.type(within(categoryDialog).getByLabelText('Category name'), 'Trip Fund');
+    await user.click(within(categoryDialog).getByRole('button', { name: 'Create & select' }));
+    expect(within(editor).getByLabelText('Recurring name').value).toBe('Internet');
+    expect(within(editor).getByLabelText('Recurring amount').value).toBe('1,499.00');
+    expect(within(editor).getByLabelText('Recurring due date').value).toBe('2026-07-20');
+    expect(
+      within(editor).getByRole('combobox', { name: 'Recurring category' }).textContent
+    ).toContain('Trip Fund');
     await user.selectOptions(within(editor).getByLabelText('Recurring payment account'), 'cash');
     await user.click(within(editor).getByRole('button', { name: 'Save Bill' }));
 
     expect(screen.queryByRole('dialog', { name: 'Add bill or subscription' })).toBeNull();
     expect(screen.queryAllByRole('alert').map((alert) => alert.textContent)).toEqual([]);
     await waitFor(() => expect(save).toHaveBeenCalled());
-    expect(save.mock.calls.at(-1)[0].recurringItems.at(-1).name).toBe('Internet');
+    const savedWorkbook = save.mock.calls.at(-1)[0];
+    const createdCategory = savedWorkbook.categories.find(
+      (category) => category.name === 'Trip Fund'
+    );
+    expect(createdCategory).toBeTruthy();
+    expect(savedWorkbook.recurringItems.at(-1)).toMatchObject({
+      name: 'Internet',
+      categoryId: createdCategory.id
+    });
     expect((await screen.findAllByText('Internet')).length).toBeGreaterThan(0);
 
     expect(screen.queryByRole('button', { name: /Scan Transactions/ })).toBeNull();

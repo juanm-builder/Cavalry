@@ -10,6 +10,11 @@ const migrationFiles = readdirSync(migrationsDirectory)
 const migrationSource = migrationFiles
   .map((name) => readFileSync(resolve(migrationsDirectory, name), 'utf8'))
   .join('\n');
+const conflictRetryMigrationFile = '20260726000100_fix_workbook_conflict_retry.sql';
+const conflictRetryMigrationSource = readFileSync(
+  resolve(migrationsDirectory, conflictRetryMigrationFile),
+  'utf8'
+);
 
 const cloudTables = [
   'profiles',
@@ -101,7 +106,6 @@ describe('Supabase Cavalry Cloud migration', () => {
     expect(migrationSource).toContain(
       'p_expected_revision is distinct from v_workbook.latest_revision'
     );
-    expect(migrationSource).toContain("errcode = '40001'");
     expect(migrationSource).toContain("message = 'workbook_revision_conflict'");
     expect(migrationSource).toContain('v_next_revision := v_workbook.latest_revision + 1');
     expect(migrationSource).toContain('insert into public.workbook_versions');
@@ -114,6 +118,16 @@ describe('Supabase Cavalry Cloud migration', () => {
     expect(migrationSource).not.toMatch(
       /grant\s+(?:all|insert|update|delete)[^;]*public\.workbooks\s+to authenticated/i
     );
+  });
+
+  it('returns deterministic workbook conflicts without a retryable serialization code', () => {
+    expect(migrationFiles).toContain(conflictRetryMigrationFile);
+    expect(conflictRetryMigrationSource).toContain(
+      'create or replace function public.save_workbook_snapshot('
+    );
+    expect(conflictRetryMigrationSource).toContain("errcode = 'PT412'");
+    expect(conflictRetryMigrationSource).toContain("message = 'workbook_revision_conflict'");
+    expect(conflictRetryMigrationSource).not.toContain("errcode = '40001'");
   });
 
   it('enforces owner storage quotas inside the snapshot transaction', () => {

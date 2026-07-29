@@ -1,6 +1,6 @@
 {
   "name": "@cavalry/mac",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Cavalry local finance tracker for macOS and Windows.",
   "author": "Cavalry",
   "license": "Apache-2.0",
@@ -58,7 +58,7 @@
     "@testing-library/user-event": "^14.0.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "41.10.3",
-    "electron-builder": "26.15.3",
+    "electron-builder": "26.15.7",
     "js-yaml": "^4.1.0",
     "jsdom": "^26.0.0",
     "prettier": "^3.9.6",

@@ -384,6 +384,39 @@ describe('controlled transaction feature', () => {
     expect(screen.queryByText('Coffee beans')).toBeNull();
   });
 
+  it('searches meaningful transaction fields beside the filter and composes with filters', async () => {
+    const user = userEvent.setup();
+    render(<TransactionHarness initialWorkbook={makeTransactionTableWorkbook()} />);
+
+    const search = screen.getByRole('searchbox', { name: 'Search transactions' });
+    const filterButton = screen.getByRole('button', { name: 'Filters' });
+    expect(search.closest('.transaction-search-control').nextElementSibling).toBe(filterButton);
+
+    await user.type(search, 'CrEdIt CaRd');
+    expect(search.value).toBe('CrEdIt CaRd');
+    expect(await screen.findByText('Card groceries')).not.toBeNull();
+    expect(screen.queryByText('Archived card fee')).toBeNull();
+    expect(screen.queryByText('Coffee beans')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Clear transaction search' }));
+    expect(search.value).toBe('');
+    expect(await screen.findByText('Coffee beans')).not.toBeNull();
+
+    await user.type(search, 'card');
+    expect(await screen.findByText('Archived card fee')).not.toBeNull();
+    await user.click(filterButton);
+    await user.click(screen.getByRole('combobox', { name: 'Filter transactions by category' }));
+    await user.click(screen.getByRole('option', { name: 'Shopping', exact: true }));
+
+    expect(search.value).toBe('card');
+    expect(await screen.findByText('Card groceries')).not.toBeNull();
+    expect(screen.queryByText('Archived card fee')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(search.value).toBe('');
+    expect(await screen.findByText('Archived card fee')).not.toBeNull();
+  });
+
   it('filters transactions by type from the filter panel dropdown', async () => {
     const user = userEvent.setup();
     render(<TransactionHarness initialWorkbook={makeTransactionTableWorkbook()} />);

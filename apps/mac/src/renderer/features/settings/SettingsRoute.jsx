@@ -547,6 +547,10 @@ function AssistantPanel({ advisor, feedback, onAction }) {
   const advisorUsesRemoteModel = advisorProvider === 'openai';
   const advisorUsesConfiguredModel = advisorUsesLocalModel || advisorUsesRemoteModel;
   const advisorCanToggleLocalModel = advisorUsesLocalModel || !!advisorToggle.shouldStop;
+  const advisorShouldStop =
+    advisorToggle.shouldStop === true || /stop/i.test(String(advisorToggle.label || ''));
+  const advisorTestPending = advisorToggle.testDisabled === true;
+  const advisorLifecyclePending = advisorToggle.pending === true;
   const advisorApiKeyValue = advisorSettings.hasApiKey
     ? advisorSettings.apiKeyPreview || advisor.apiKeyPlaceholder || ''
     : '';
@@ -612,9 +616,10 @@ function AssistantPanel({ advisor, feedback, onAction }) {
             <div className="field advisor-mode-field">
               <label htmlFor="settings-advisor-provider">Connection</label>
               <select
-                defaultValue={advisorProvider}
+                disabled={advisorLifecyclePending}
                 id="settings-advisor-provider"
                 name="provider"
+                value={advisorProvider}
                 {...actions.change('set-advisor-provider')}
               >
                 <option value="local">Choose a connection…</option>
@@ -688,16 +693,17 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 <label htmlFor="settings-local-model">GGUF Model</label>
                 <div className="advisor-model-location-row">
                   <input
-                    defaultValue={advisorSettings.localModelPath || ''}
                     id="settings-local-model"
                     name="localModelPath"
                     placeholder="Qwen3.5-9B-UD-Q4_K_XL.gguf"
                     readOnly
                     type="text"
+                    value={advisorSettings.localModelPath || ''}
                   />
                   <button
                     aria-label="Browse for GGUF model"
                     className="btn"
+                    disabled={advisorLifecyclePending}
                     type="button"
                     {...actions.action('choose-local-model', {}, { includeForm: true })}
                   >
@@ -712,22 +718,35 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 </label>
                 <div className="advisor-model-location-row">
                   <input
-                    defaultValue={advisorSettings.mmprojPath || ''}
                     id="settings-vision-projector"
                     name="mmprojPath"
                     placeholder="mmproj-*.gguf"
                     readOnly
                     type="text"
+                    value={advisorSettings.mmprojPath || ''}
                   />
                   <button
                     aria-label="Browse for vision projector"
                     className="btn"
+                    disabled={advisorLifecyclePending}
                     type="button"
                     {...actions.action('choose-mmproj', {}, { includeForm: true })}
                   >
                     <Icon name="visibility" />
                     Browse
                   </button>
+                  {advisorSettings.mmprojPath ? (
+                    <button
+                      aria-label="Clear vision projector"
+                      className="btn"
+                      disabled={advisorLifecyclePending}
+                      type="button"
+                      {...actions.action('clear-mmproj')}
+                    >
+                      <Icon name="close" />
+                      Clear
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="field">
@@ -775,17 +794,26 @@ function AssistantPanel({ advisor, feedback, onAction }) {
           {advisorUsesConfiguredModel || advisorCanToggleLocalModel ? (
             <div className="advisor-settings-actions">
               {advisorUsesConfiguredModel ? (
-                <button className="btn btn-primary" type="submit">
+                <button
+                  className="btn btn-primary"
+                  disabled={advisorLifecyclePending}
+                  type="submit"
+                >
                   <Icon name="save" />
                   Save Assistant
                 </button>
               ) : null}
               {advisorCanToggleLocalModel ? (
                 <button
+                  aria-busy={advisorToggle.pending === true}
                   className="btn"
                   disabled={advisorToggle.disabled}
                   type="button"
-                  {...actions.action('toggle-advisor-server', {}, { includeForm: true })}
+                  {...actions.action(
+                    'toggle-advisor-server',
+                    { serverAction: advisorShouldStop ? 'stop' : 'start' },
+                    { includeForm: true }
+                  )}
                 >
                   <Icon name={advisorToggle.icon || 'play_arrow'} />
                   {advisorToggle.label || 'Start Model'}
@@ -793,12 +821,14 @@ function AssistantPanel({ advisor, feedback, onAction }) {
               ) : null}
               {advisorUsesConfiguredModel ? (
                 <button
+                  aria-busy={advisorTestPending}
                   className="btn"
+                  disabled={advisorTestPending}
                   type="button"
                   {...actions.action('test-advisor-connection', {}, { includeForm: true })}
                 >
                   <Icon name="network_check" />
-                  Test Model
+                  {advisorTestPending ? 'Testing Model…' : 'Test Model'}
                 </button>
               ) : null}
             </div>

@@ -14,9 +14,17 @@ const EDITABLE_INLINE_FIELDS = Object.freeze([
   'primaryAccountId',
   'template'
 ]);
+const SEARCH_AMOUNT_FORMATTER = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
 
 function asString(value) {
   return String(value == null ? '' : value).trim();
+}
+
+function asRawString(value) {
+  return String(value == null ? '' : value);
 }
 
 function asArray(value) {
@@ -169,6 +177,12 @@ export function buildTransactionRows(workbook, options = {}) {
       accountId: references.primaryAccountId,
       account: references.primaryAccount,
       accountLabel: references.accountLabel,
+      accountLabels: references.accounts
+        .filter((item) => !item.account || isBalanceAccount(item.account))
+        .map((item) =>
+          item.account ? asString(item.account.name) : item.accountId ? 'Missing account' : ''
+        )
+        .filter(Boolean),
       counterparty: references.counterparty,
       counterpartyLabel: references.counterpartyLabel,
       missingAccountIds: references.missingAccountIds,
@@ -185,49 +199,59 @@ export function buildTransactionRows(workbook, options = {}) {
   });
 }
 
+function normalizeSearchText(value) {
+  return asRawString(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function numberSearchVariants(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return [];
+  return [String(amount), amount.toFixed(2), SEARCH_AMOUNT_FORMATTER.format(amount)];
+}
+
 function buildRowSearchText(row) {
-  return [
-    row.id,
-    row.date,
-    row.description,
-    row.note,
-    row.template,
-    row.templateLabel,
-    row.categoryLabel,
-    row.accountLabel,
-    row.counterpartyLabel,
-    row.currency,
-    String(row.amount),
-    String(row.baseAmount)
-  ]
-    .join(' ')
-    .toLowerCase();
+  return normalizeSearchText(
+    [
+      row.id,
+      row.date,
+      row.monthKey,
+      row.description,
+      row.note,
+      row.template,
+      row.templateLabel,
+      row.type,
+      row.categoryLabel,
+      row.categoryType,
+      row.accountLabel,
+      ...asArray(row.accountLabels),
+      row.counterpartyLabel,
+      row.currency,
+      ...numberSearchVariants(row.amount),
+      ...numberSearchVariants(row.baseAmount)
+    ].join(' ')
+  );
 }
 
-function reverseSearchText(value) {
-  return String(value || '')
-    .split('')
-    .reverse()
-    .join('');
-}
-
-function getSearchTextVariants(query) {
-  const search = lower(query);
-  if (!search) {
-    return [];
-  }
-  const reversed = reverseSearchText(search);
-  return reversed && reversed !== search ? [search, reversed] : [search];
+function getSearchTerms(query) {
+  const search = normalizeSearchText(query);
+  return search ? search.split(' ').filter(Boolean) : [];
 }
 
 export function searchTransactionRows(rows, query) {
-  const searchVariants = getSearchTextVariants(query);
-  if (!searchVariants.length) {
+  const searchTerms = getSearchTerms(query);
+  if (!searchTerms.length) {
     return asArray(rows).slice();
   }
   return asArray(rows).filter((row) => {
-    const searchText = String((row && row.searchText) || buildRowSearchText(row || {}));
-    return searchVariants.some((search) => searchText.includes(search));
+    const searchText = normalizeSearchText(
+      (row && row.searchText) || buildRowSearchText(row || {})
+    );
+    return searchTerms.every((term) => searchText.includes(term));
   });
 }
 
@@ -356,7 +380,9 @@ export function validateTransactionTableViewState(viewState = {}) {
       : 'all',
     accountId: asString(viewState.accountId),
     categoryId: asString(viewState.categoryId),
-    search: asString(viewState.search),
+    // Keep the raw value so a controlled search input does not discard the
+    // space between words while a user is still typing.
+    search: asRawString(viewState.search),
     minAmount: normalizeAmountFilter(viewState.minAmount),
     maxAmount: normalizeAmountFilter(viewState.maxAmount),
     dateRange: normalizeDateRange(viewState),
@@ -407,7 +433,7 @@ export function buildTransactionTableView(workbook, viewState = {}) {
       state.type !== 'all',
       !!state.accountId,
       !!state.categoryId,
-      !!state.search,
+      !!normalizeSearchText(state.search),
       !!state.dateRange.start,
       !!state.dateRange.end,
       !!state.minAmount,

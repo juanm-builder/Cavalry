@@ -3,6 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
+import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
+
+const BUDGET_CATEGORY_TYPES = Object.freeze(['expense', 'savings', 'debt']);
 
 function BudgetEditorForm({ editor, categories }) {
   const actions = useActionBindings();
@@ -78,16 +81,19 @@ function BudgetEditorForm({ editor, categories }) {
             <span>Category</span>
             <CategorizedSelect
               aria-label="Budget category"
+              createCategoryType="expense"
+              createCategoryTypes={BUDGET_CATEGORY_TYPES}
+              onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
               options={categories}
               value={categoryId}
               onChange={(event) => {
                 const nextId = event.target.value;
                 const nextCategory = categories.find((category) => category.id === nextId);
                 setCategoryId(nextId);
-                setPlanned(String((nextCategory && nextCategory.planned) || ''));
-                setCreatedAt(
-                  String((nextCategory && nextCategory.createdAt) || editor.currentDate || '')
-                );
+                if (nextCategory) {
+                  setPlanned(String(nextCategory.planned || ''));
+                  setCreatedAt(String(nextCategory.createdAt || editor.currentDate || ''));
+                }
               }}
             />
           </label>

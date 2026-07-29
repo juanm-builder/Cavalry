@@ -4,6 +4,58 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.24 - 2026-07-29
+
+- Added a **Notes** workspace that turns plain-language entries into a reviewable
+  transaction batch, with deterministic parsing, optional Assistant enrichment,
+  duplicate protection, account and category resolution, currency handling, and
+  all-or-nothing ledger validation.
+- Added **Create new category** directly to category dropdowns across budgets,
+  transactions, recurring items, and draft review. New categories are selected
+  automatically, and budget creation supports expense, savings, and debt types
+  without discarding in-progress work.
+- Added a persistent transaction search beside Filters that composes with the
+  existing date, account, category, type, status, and amount filters and searches
+  descriptions, notes, counterparties, categories, accounts, and amounts.
+- Hardened the local Assistant lifecycle so Start and Test are single-flight,
+  Stop waits for confirmed termination and escalates safely when required, stale
+  process identities are rejected, and failed starts no longer leave misleading
+  running state behind.
+- Added bounded GGUF metadata validation for local text models and optional vision
+  projectors. Cavalry now rejects corrupt, role-swapped, or dimensionally
+  incompatible files before launching `llama-server` and reports concise,
+  actionable errors instead of native backtraces.
+- Improved transaction understanding for both API and local Assistant providers:
+  omitted dates default to today, explicit user wording wins over conflicting
+  model output, saved rules and transaction history improve categorization, and
+  account, counterparty, negation, and incidental-context handling avoid
+  unnecessary follow-up questions and dangling references.
+- Refreshed the release toolchain and patched transitive archive and stylesheet
+  dependencies. The remaining upstream glob-expansion advisory is restricted to
+  development-only tools by a precise, expiring exception while the release gate
+  continues to require zero production dependency advisories.
+- Fixed deterministic workbook revision conflicts being reported as retryable
+  PostgreSQL serialization failures, which could cause PostgREST to generate a
+  sustained database retry storm from a single stale Cloud upload.
+- Cavalry Cloud now refreshes workbook metadata after a revision conflict and
+  rejects overlapping workbook operations. A newer Cloud copy is latched for
+  explicit review across restarts and sign-ins instead of becoming the base for
+  a second upload; a deleted Cloud copy can be added again without automatically
+  overwriting either copy.
+- Migration: deploy `20260726000100_fix_workbook_conflict_retry.sql` to the
+  Cavalry Supabase project.
+- Known limitation: image intake for a local multimodal model still requires a
+  vision projector from the exact same model family and embedding size. Text-only
+  local Assistant use does not require a projector.
+- Validation: formatting, runtime-license notices, lint, type checks, production
+  builds, workspace/unit/renderer/integration tests, Electron smoke, migration
+  checks, release security checks, and release validation are gated before
+  packaging.
+- Signing/notarization status: distribution remains gated on Developer ID
+  signing with a secure timestamp, Apple notarization and stapling, Gatekeeper,
+  architecture checks, updater metadata verification, and manual review of the
+  generated GitHub draft assets.
+
 ## 1.0.23 - 2026-07-24
 
 - Added private, cross-device feedback and bug reports for signed-in Cavalry Cloud users, with an optional PNG or JPEG screenshot and an owner-visible report history in Settings.

@@ -6,6 +6,7 @@ import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
+import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 
 const CONTEXT_KINDS = new Set([
   'bank',
@@ -415,7 +416,9 @@ function TransactionEditModalContent({ modal }) {
                 <label htmlFor="transaction-category">{category.label}</label>
                 <CategorizedSelect
                   aria-label={category.label}
+                  createCategoryType={expectedCategoryType(template) || 'expense'}
                   id="transaction-category"
+                  onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
                   options={categories}
                   placeholder={category.placeholder}
                   value={draft.categoryId || ''}

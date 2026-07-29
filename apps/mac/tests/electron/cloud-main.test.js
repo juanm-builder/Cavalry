@@ -15,7 +15,10 @@ const {
   createCloudProfileController,
   validateProfileName
 } = require('../../src/main/cloud-profile-controller.cjs');
-const { createCloudWorkbookController } = require('../../src/main/cloud-workbook-controller.cjs');
+const {
+  createCloudWorkbookController,
+  isRevisionConflict
+} = require('../../src/main/cloud-workbook-controller.cjs');
 const {
   CLOUD_IPC_CHANNELS,
   createCloudController
@@ -70,6 +73,12 @@ function createSecureStorage() {
 }
 
 describe('Cavalry Cloud main-process boundary', () => {
+  it('recognizes the non-retryable and legacy workbook conflict codes', () => {
+    expect(isRevisionConflict({ code: 'PT412', message: 'Precondition Failed' })).toBe(true);
+    expect(isRevisionConflict({ code: '40001', message: 'Serialization failure' })).toBe(true);
+    expect(isRevisionConflict({ code: 'PT409', message: 'Conflict' })).toBe(false);
+  });
+
   it('persists Supabase values encrypted and fails closed without a real keychain', async () => {
     const fs = createEncryptedMemoryFs();
     const filePath = '/secure/cavalry-cloud-auth.json';
@@ -1058,6 +1067,129 @@ describe('Cavalry Cloud main-process boundary', () => {
       }
     });
     expect(JSON.stringify(result)).not.toMatch(/access_token|refresh_token|provider_token/i);
+  });
+
+  it('refreshes stale metadata after a conflict and rejects a concurrent duplicate upload', async () => {
+    const handlers = new Map();
+    const user = {
+      id: 'user-conflict',
+      email: 'cloud@example.com',
+      user_metadata: {},
+      app_metadata: { provider: 'google' }
+    };
+    const workbook = {
+      id: 'workbook-1',
+      name: 'Cloud Plan',
+      year: 2026,
+      currency: 'PHP',
+      version: 2
+    };
+    let listCount = 0;
+    let resolveRpc;
+    const rpc = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveRpc = resolve;
+        })
+    );
+    const client = {
+      auth: {
+        getSession: vi.fn(async () => ({ data: { session: { user } }, error: null })),
+        getUser: vi.fn(async () => ({ data: { user }, error: null })),
+        onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+        signOut: vi.fn(async () => ({ error: null }))
+      },
+      from(table) {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { display_name: '' }, error: null })
+              })
+            })
+          };
+        }
+        return {
+          select: () => ({
+            is: () => ({
+              order: async () => {
+                listCount += 1;
+                return {
+                  data:
+                    listCount === 1
+                      ? [
+                          {
+                            local_workbook_id: workbook.id,
+                            name: workbook.name,
+                            year: workbook.year,
+                            currency: workbook.currency,
+                            latest_revision: 7,
+                            updated_at: '2026-07-26T13:00:00.000Z'
+                          }
+                        ]
+                      : [],
+                  error: null
+                };
+              }
+            })
+          })
+        };
+      },
+      rpc
+    };
+    const controller = createCloudController({
+      app: { getPath: () => '/secure' },
+      BrowserWindow: { getAllWindows: () => [] },
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      safeStorage: createSecureStorage(),
+      shell: { openExternal: vi.fn() },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      createClient: () => client,
+      createStorage: () => ({
+        isPersistent: () => true,
+        getItem: async () => null,
+        setItem: async () => {},
+        removeItem: async () => {},
+        clear: async () => {}
+      }),
+      getPersistenceService: async () => ({
+        deserializeWorkbookFromFile: () => ({ workbook })
+      }),
+      assertTrustedSender: () => true
+    });
+    await controller.initialize();
+    controller.registerHandlers();
+
+    const upload = handlers.get(CLOUD_IPC_CHANNELS.uploadWorkbook);
+    const payload = {
+      localWorkbookId: workbook.id,
+      portableHtml: '<html>portable</html>',
+      expectedRevision: 7
+    };
+    const firstUpload = upload({ senderFrame: {} }, payload);
+    const duplicateUpload = await upload({ senderFrame: {} }, payload);
+
+    expect(duplicateUpload).toMatchObject({
+      ok: false,
+      code: 'cloud_operation_in_progress',
+      state: { workbooks: [{ id: workbook.id, revision: 7 }] }
+    });
+    await vi.waitFor(() => expect(resolveRpc).toBeTypeOf('function'));
+    expect(rpc).toHaveBeenCalledOnce();
+    resolveRpc({
+      data: null,
+      error: { code: 'PT412', message: 'Precondition Failed' }
+    });
+
+    await expect(firstUpload).resolves.toMatchObject({
+      ok: false,
+      code: 'workbook_revision_conflict',
+      conflict: true,
+      state: { workbooks: [] }
+    });
+    expect(listCount).toBe(2);
+    expect(rpc).toHaveBeenCalledOnce();
   });
 
   it('keeps uploaded workbook metadata coherent when the follow-up list refresh fails', async () => {

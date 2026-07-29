@@ -481,6 +481,47 @@ describe('advisor settings', () => {
       icon: 'hourglass_top',
       shouldStop: false
     });
+
+    expect(
+      getAdvisorServerToggleState(
+        {
+          provider: 'custom',
+          localModelPath: '/models/cavalry.gguf'
+        },
+        {
+          running: false,
+          starting: true,
+          manageable: true,
+          source: 'managed',
+          pid: 123
+        }
+      )
+    ).toMatchObject({
+      disabled: false,
+      label: 'Stop Model',
+      icon: 'stop_circle',
+      shouldStop: true
+    });
+
+    expect(
+      getAdvisorServerToggleState(
+        {
+          provider: 'custom',
+          localModelPath: '/models/cavalry.gguf'
+        },
+        {
+          stopping: true,
+          manageable: true,
+          source: 'managed',
+          pid: 123
+        }
+      )
+    ).toMatchObject({
+      disabled: true,
+      label: 'Stopping Model…',
+      icon: 'stop_circle',
+      shouldStop: false
+    });
   });
 
   it('formats local model server detail when a managed server can be stopped', () => {

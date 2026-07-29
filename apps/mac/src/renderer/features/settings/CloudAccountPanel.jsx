@@ -355,6 +355,7 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
   const current = asObject(cloud.current);
   const pendingOperation = asString(cloud.pendingOperation);
   const linked = current.linked === true || current.isLinked === true;
+  const conflict = current.conflict === true || asString(current.status) === 'conflict';
   const pending = !!pendingOperation;
   const workbookName =
     asString(current.name || current.workbookName || workbook.name) || 'Current workbook';
@@ -369,29 +370,33 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
       <div className="settings-cloud-current-copy">
         <strong>{workbookName}</strong>
         <small>
-          {linked
-            ? lastSyncedAt
-              ? `Last synced ${lastSyncedAt}`
-              : ['syncing', 'uploading'].includes(status)
-                ? 'Syncing changes…'
-                : 'This workbook is in Cavalry Cloud.'
-            : 'This workbook is currently stored only on this Mac.'}
+          {conflict
+            ? 'The Cloud copy changed. Save this local workbook, then review the Cloud copy below.'
+            : linked
+              ? lastSyncedAt
+                ? `Last synced ${lastSyncedAt}`
+                : ['syncing', 'uploading'].includes(status)
+                  ? 'Syncing changes…'
+                  : 'This workbook is in Cavalry Cloud.'
+              : 'This workbook is currently stored only on this Mac.'}
         </small>
       </div>
       <button
         className="btn btn-primary settings-cloud-current-action"
-        disabled={pending}
+        disabled={pending || conflict}
         type="button"
         {...actions.action('upload-current-workbook')}
       >
-        <Icon name={linked ? 'sync' : 'add_to_drive'} />
-        {['upload', 'upload-workbook', 'sync-workbook'].includes(pendingOperation)
-          ? linked
-            ? 'Syncing…'
-            : 'Adding…'
-          : linked
-            ? 'Sync Now'
-            : 'Add to Cloud'}
+        <Icon name={conflict ? 'sync_problem' : linked ? 'sync' : 'add_to_drive'} />
+        {conflict
+          ? 'Cloud copy changed'
+          : ['upload', 'upload-workbook', 'sync-workbook'].includes(pendingOperation)
+            ? linked
+              ? 'Syncing…'
+              : 'Adding…'
+            : linked
+              ? 'Sync Now'
+              : 'Add to Cloud'}
       </button>
     </div>
   );
@@ -399,6 +404,7 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
 
 function CloudWorkbookRow({
   confirmingRemoval,
+  currentWorkbookConflict,
   currentWorkbookId,
   onCancelRemoval,
   onRequestRemoval,
@@ -407,6 +413,7 @@ function CloudWorkbookRow({
 }) {
   const actions = useActionBindings();
   const item = normalizeCloudWorkbook(workbook, currentWorkbookId);
+  const resolvingCurrentConflict = item.isCurrent && currentWorkbookConflict;
   const metadata = [item.year, item.currency, item.updatedAt ? `Updated ${item.updatedAt}` : '']
     .filter(Boolean)
     .join(' • ');
@@ -419,20 +426,24 @@ function CloudWorkbookRow({
       <div className="settings-cloud-workbook-copy">
         <div className="settings-cloud-workbook-title">
           <strong>{item.name}</strong>
-          {item.isCurrent ? <StatusPill tone="good">Current</StatusPill> : null}
+          {item.isCurrent ? (
+            <StatusPill tone={resolvingCurrentConflict ? 'info' : 'good'}>
+              {resolvingCurrentConflict ? 'Cloud changed' : 'Current'}
+            </StatusPill>
+          ) : null}
         </div>
         <small>{metadata || 'Cloud workbook'}</small>
       </div>
       <div className="settings-cloud-workbook-actions">
         <button
-          aria-label={`Open ${item.name} from Cavalry Cloud`}
+          aria-label={`${resolvingCurrentConflict ? 'Review' : 'Open'} ${item.name} from Cavalry Cloud`}
           className="btn"
-          disabled={pending || !item.id || item.isCurrent}
+          disabled={pending || !item.id || (item.isCurrent && !resolvingCurrentConflict)}
           type="button"
           {...actions.action('open-cloud-workbook', { workbookId: item.id })}
         >
           <Icon name="open_in_new" />
-          Open
+          {resolvingCurrentConflict ? 'Review' : 'Open'}
         </button>
         {confirmingRemoval ? (
           <>
@@ -498,6 +509,7 @@ function SignedInCloud({ cloud, workbook }) {
             {workbooks.map((item, index) => (
               <CloudWorkbookRow
                 confirmingRemoval={removalId === asString(item?.id || item?.workbookId)}
+                currentWorkbookConflict={current.conflict === true}
                 currentWorkbookId={currentWorkbookId}
                 key={asString(item?.id || item?.workbookId) || `cloud-workbook-${index}`}
                 onCancelRemoval={() => setRemovalId('')}

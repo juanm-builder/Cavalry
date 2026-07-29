@@ -7,6 +7,10 @@ import {
   makeLine,
   makeTransaction
 } from '@cavalry/finance-core/test-fixtures/core-workbook-fixtures.js';
+import {
+  CATEGORY_ACTIONS,
+  executeCategoryCommand
+} from '../../src/renderer/features/categories/category-controller.js';
 import { TransactionRoute } from '../../src/renderer/features/transactions/TransactionRoute.jsx';
 import { useTransactionController } from '../../src/renderer/features/transactions/transaction-controller.js';
 
@@ -232,11 +236,19 @@ function TransactionHarness({ initialWorkbook, onCommandResult = () => {} }) {
       }
     }
   });
+  const handleAction = (action) => {
+    if (action?.type === CATEGORY_ACTIONS.CREATE) {
+      const result = executeCategoryCommand(workbook, action);
+      if (result.ok && result.workbook) setWorkbook(result.workbook);
+      return result;
+    }
+    return controller.onAction(action);
+  };
 
   return (
     <>
       <output aria-label="transaction-count">{workbook.transactions.length}</output>
-      <TransactionRoute model={controller.model} onAction={controller.onAction} />
+      <TransactionRoute model={controller.model} onAction={handleAction} />
     </>
   );
 }
@@ -350,6 +362,45 @@ describe('contextual transaction editing', () => {
     expect(initialWorkbook.transactions.find((item) => item.id === 'txn-card').description).toBe(
       'Card dinner'
     );
+  });
+
+  it('creates and selects a category while preserving an in-progress transaction edit', async () => {
+    const user = userEvent.setup();
+    const results = [];
+    render(
+      <TransactionHarness
+        initialWorkbook={makeContextualEditWorkbook()}
+        onCommandResult={(result) => results.push(result)}
+      />
+    );
+
+    const dialog = await openEditorFor(user, 'Bank groceries');
+    const description = within(dialog).getByLabelText('Description');
+    await user.clear(description);
+    await user.type(description, 'Trip groceries');
+    await user.click(within(dialog).getByRole('combobox', { name: 'Category' }));
+    await user.click(screen.getByRole('option', { name: 'Create new category' }));
+
+    const createDialog = screen.getByRole('dialog', { name: 'Create new category' });
+    await user.type(within(createDialog).getByLabelText('Category name'), 'Trip meals');
+    await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
+
+    expect(description.value).toBe('Trip groceries');
+    expect(within(dialog).getByLabelText('Paid from bank account').value).toBe('bank');
+    expect(within(dialog).getByRole('combobox', { name: 'Category' }).textContent).toContain(
+      'Trip meals'
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(screen.getByText('Trip groceries')).not.toBeNull());
+    const result = results.at(-1);
+    const category = result.workbook.categories.find((item) => item.name === 'Trip meals');
+    expect(category).toMatchObject({ type: 'expense', isActive: true });
+    expect(result.transaction).toMatchObject({
+      id: 'txn-bank',
+      description: 'Trip groceries',
+      categoryId: category.id
+    });
   });
 
   it('keeps an archived referenced wallet selected while editing its historical transaction', async () => {

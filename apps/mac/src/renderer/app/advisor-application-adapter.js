@@ -22,6 +22,13 @@ function asString(value) {
   return String(value == null ? '' : value);
 }
 
+function advisorOperationErrorMessage(value, fallback = 'Assistant operation failed.') {
+  const source = asObject(value);
+  return asString(source.userMessage || source.error || source.message || value || fallback)
+    .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i, '')
+    .trim();
+}
+
 function shouldShowLocalServer(settings, status) {
   const provider = asString(settings && settings.provider);
   return provider === 'custom' || (status && status.running === true && status.manageable === true);
@@ -50,11 +57,88 @@ function isAdvisorWriteRequest(prompt) {
   );
 }
 
-export function advisorServerToggle(status = {}) {
+export function advisorServerToggle(status = {}, operation = {}) {
+  operation = asObject(operation);
+  const operationType = asString(operation.type);
+  const operationPending = operation.pending === true;
+  const localOperation = operation.local === true;
+  const stopping =
+    status.stopping === true || (operationPending && operationType === 'server-stop');
+  const lifecyclePending = operationPending || status.starting === true || status.stopping === true;
+  const shouldStop =
+    status.running === true ||
+    status.starting === true ||
+    (operationPending &&
+      localOperation &&
+      ['connection-test', 'server-start', 'server-toggle'].includes(operationType));
   return {
-    disabled: status.starting === true,
-    label: status.running || status.starting ? 'Stop Model' : 'Start Model',
-    icon: status.running || status.starting ? 'stop' : 'play_arrow'
+    disabled: stopping,
+    label: stopping ? 'Stopping Model…' : shouldStop ? 'Stop Model' : 'Start Model',
+    icon: shouldStop || stopping ? 'stop' : 'play_arrow',
+    shouldStop,
+    pending: lifecyclePending,
+    testDisabled: lifecyclePending
+  };
+}
+
+export function advisorServerStatePatch(settings, status, operation = {}) {
+  const serverStatus = asObject(status);
+  const showLocalServer = shouldShowLocalServer(settings, serverStatus);
+  return {
+    advisorServerStatus: serverStatus,
+    advisorServerToggleState: advisorServerToggle(serverStatus, operation),
+    advisorServerDetail: showLocalServer
+      ? asString(serverStatus.message || serverStatus.detail)
+      : ''
+  };
+}
+
+export function createAdvisorOperationCoordinator() {
+  let lifecycleGeneration = 0;
+  let generalGeneration = 0;
+  let activeLifecycleOperation = null;
+  const lifecycleOperations = new Set([
+    'connection-test',
+    'server-start',
+    'server-stop',
+    'server-toggle'
+  ]);
+
+  return {
+    begin(operation) {
+      const operationType = asString(operation);
+      const lifecycle = lifecycleOperations.has(operationType);
+      if (activeLifecycleOperation) {
+        const canSupersedeWithStop =
+          operationType === 'server-stop' && activeLifecycleOperation.type !== 'server-stop';
+        if (!canSupersedeWithStop) {
+          return {
+            busy: true,
+            active: { ...activeLifecycleOperation }
+          };
+        }
+      }
+      const token = lifecycle
+        ? { id: (lifecycleGeneration += 1), type: operationType, scope: 'lifecycle' }
+        : { id: (generalGeneration += 1), type: operationType, scope: 'general' };
+      if (lifecycle) {
+        activeLifecycleOperation = token;
+      }
+      return token;
+    },
+    finish(token) {
+      if (activeLifecycleOperation && activeLifecycleOperation.id === token?.id) {
+        activeLifecycleOperation = null;
+      }
+    },
+    isCurrent(token) {
+      return (
+        !!token &&
+        (token.scope === 'lifecycle'
+          ? token.id === lifecycleGeneration
+          : token.id === generalGeneration)
+      );
+    }
   };
 }
 
@@ -98,14 +182,9 @@ export async function loadAdvisorRuntimeState(advisor) {
     microphoneResult.status === 'fulfilled' ? asObject(microphoneResult.value) : {};
   const serverStatus = asObject(serverPayload.status || serverPayload);
   const advisorSettings = asObject(settingsPayload.settings);
-  const showLocalServer = shouldShowLocalServer(advisorSettings, serverStatus);
   return {
     advisorSettings,
-    advisorServerStatus: serverStatus,
-    advisorServerToggleState: advisorServerToggle(serverStatus),
-    advisorServerDetail: showLocalServer
-      ? asString(serverStatus.message || serverStatus.detail)
-      : '',
+    ...advisorServerStatePatch(advisorSettings, serverStatus),
     advisorMicrophone: advisorMicrophoneModel(microphonePayload)
   };
 }
@@ -178,9 +257,49 @@ export function createAdvisorServices(featureServices, provider) {
 }
 
 export async function executeAdvisorApplicationIntent(payload, context) {
-  const { advisor, navigate, reportError, setBillsViewState, setSettingsViewState } = context;
+  const {
+    advisor,
+    advisorOperations,
+    navigate,
+    reportError,
+    setBillsViewState,
+    setSettingsViewState
+  } = context;
   const operation = asString(payload && payload.operation);
   const isRecurringScan = operation === 'recurring-scan';
+  const operationToken = advisorOperations?.begin(operation);
+  if (operationToken?.busy) {
+    return {
+      ok: false,
+      busy: true,
+      error: `Assistant ${operationToken.active?.type || 'operation'} is already in progress.`
+    };
+  }
+  const isCurrentOperation = () =>
+    !advisorOperations || advisorOperations.isCurrent(operationToken);
+  const updateSettingsForCurrentOperation = (update) => {
+    setSettingsViewState((current) =>
+      isCurrentOperation() ? (typeof update === 'function' ? update(current) : update) : current
+    );
+  };
+  const localLifecycleOperation =
+    operation.startsWith('server-') ||
+    (operation === 'connection-test' && payload.provider === 'custom');
+  const lifecycleOperation = [
+    'connection-test',
+    'server-start',
+    'server-stop',
+    'server-toggle'
+  ].includes(operation);
+  const operationState = lifecycleOperation
+    ? {
+        id: operationToken?.id || 0,
+        type: operation,
+        pending: true,
+        local: localLifecycleOperation
+      }
+    : null;
+  let operationSucceeded = false;
   if (isRecurringScan) {
     setBillsViewState((current) => ({
       ...current,
@@ -196,7 +315,7 @@ export async function executeAdvisorApplicationIntent(payload, context) {
   try {
     if (operation === 'provider-change') {
       const provider = asString(payload.provider) || 'local';
-      setSettingsViewState((current) => ({
+      updateSettingsForCurrentOperation((current) => ({
         ...current,
         advisorSettings: {
           ...asObject(current.advisorSettings),
@@ -221,11 +340,28 @@ export async function executeAdvisorApplicationIntent(payload, context) {
         feedbackSection: 'settings-advisor',
         notice: 'Assistant connection updated. Save Assistant to persist it.'
       }));
+      operationSucceeded = true;
       return { ok: true };
     }
     if (operation === 'summary-open') {
       navigate('dashboard');
+      operationSucceeded = true;
       return { ok: true };
+    }
+    if (operation === 'vision-projector-clear') {
+      updateSettingsForCurrentOperation((current) => ({
+        ...current,
+        advisorSettings: {
+          ...asObject(current.advisorSettings),
+          mmprojPath: ''
+        },
+        advisorConnection: '',
+        error: '',
+        feedbackSection: 'settings-advisor',
+        notice: 'Vision projector cleared. Save Assistant to persist this change.'
+      }));
+      operationSucceeded = true;
+      return { ok: true, mmprojPath: '' };
     }
     if (isRecurringScan) {
       setBillsViewState((current) => ({
@@ -238,6 +374,7 @@ export async function executeAdvisorApplicationIntent(payload, context) {
           error: ''
         }
       }));
+      operationSucceeded = true;
       return {
         ok: true,
         candidates: [],
@@ -247,6 +384,32 @@ export async function executeAdvisorApplicationIntent(payload, context) {
 
     let method = ADVISOR_RUNTIME_METHODS[operation];
     let result;
+    if (operation === 'server-start') method = 'startServer';
+    if (operation === 'server-stop') method = 'stopServer';
+    if (lifecycleOperation) {
+      updateSettingsForCurrentOperation((current) => ({
+        ...current,
+        advisorOperation: operationState,
+        advisorServerToggleState: advisorServerToggle(
+          asObject(current.advisorServerStatus),
+          operationState
+        ),
+        advisorConnection:
+          operation === 'connection-test'
+            ? payload.provider === 'custom'
+              ? 'Testing local model…'
+              : 'Testing OpenAI…'
+            : current.advisorConnection,
+        error: '',
+        feedbackSection: 'settings-advisor',
+        notice:
+          operation === 'connection-test'
+            ? 'Running a live model test…'
+            : operation === 'server-stop'
+              ? 'Stopping the local model…'
+              : 'Starting the local model…'
+      }));
+    }
     if (operation === 'server-toggle') {
       const currentStatusResult = await advisor.invoke('getServerStatus', payload);
       const currentStatus = asObject(
@@ -257,36 +420,34 @@ export async function executeAdvisorApplicationIntent(payload, context) {
     if (!method) {
       throw new Error(`Assistant operation ${operation || 'unknown'} is unavailable.`);
     }
-    if (operation === 'connection-test') {
-      setSettingsViewState((current) => ({
-        ...current,
-        advisorConnection:
-          payload.provider === 'custom' ? 'Testing local model…' : 'Testing OpenAI…',
-        error: '',
-        feedbackSection: 'settings-advisor',
-        notice: 'Running a live model test…'
-      }));
-    }
     result = await advisor.invoke(method, payload);
+    if (result && (result.canceled === true || result.cancelled === true)) {
+      return result;
+    }
     if (!result || result.ok === false || result.error) {
-      const message = asString(
-        (result && result.error) || `Assistant ${operation || 'request'} is unavailable.`
+      const message = advisorOperationErrorMessage(
+        result,
+        `Assistant ${operation || 'request'} is unavailable.`
       );
-      setSettingsViewState((current) => ({
+      updateSettingsForCurrentOperation((current) => ({
         ...current,
+        advisorConnection: operation === 'connection-test' ? '' : current.advisorConnection,
         error: message,
         feedbackSection: 'settings-advisor',
         notice: ''
       }));
-      reportError('advisor-intent', message, `advisor-intent.${operation || 'unknown'}-failed`);
+      if (isCurrentOperation()) {
+        reportError('advisor-intent', message, `advisor-intent.${operation || 'unknown'}-failed`);
+      }
       return result || { ok: false, error: message };
     }
     const safeSettings = { ...asObject(payload), ...asObject(result.settings) };
     delete safeSettings.operation;
     delete safeSettings.apiKey;
-    if (operation === 'model-choose' && result.path) safeSettings.localModelPath = result.path;
-    if (operation === 'model-choose' && result.mmprojPath)
-      safeSettings.mmprojPath = result.mmprojPath;
+    if (operation === 'model-choose' && result.path) {
+      safeSettings.localModelPath = result.path;
+      safeSettings.mmprojPath = asString(result.mmprojPath);
+    }
     if (operation === 'vision-projector-choose' && result.path)
       safeSettings.mmprojPath = result.path;
     const serverStatus = asObject(result.status);
@@ -294,22 +455,15 @@ export async function executeAdvisorApplicationIntent(payload, context) {
       ...asObject(payload),
       ...asObject(result.settings)
     };
-    const showLocalServer = shouldShowLocalServer(effectiveSettings, serverStatus);
     const microphoneOperation = operation.startsWith('microphone-');
-    setSettingsViewState((current) => ({
+    updateSettingsForCurrentOperation((current) => ({
       ...current,
       advisorSettings: {
         ...asObject(current.advisorSettings),
         ...safeSettings
       },
       ...(Object.keys(serverStatus).length
-        ? {
-            advisorServerStatus: serverStatus,
-            advisorServerToggleState: advisorServerToggle(serverStatus),
-            advisorServerDetail: showLocalServer
-              ? asString(serverStatus.message || serverStatus.detail)
-              : ''
-          }
+        ? advisorServerStatePatch(effectiveSettings, serverStatus, operationState)
         : {}),
       ...(microphoneOperation ? { advisorMicrophone: advisorMicrophoneModel(result) } : {}),
       advisorConnection:
@@ -318,9 +472,10 @@ export async function executeAdvisorApplicationIntent(payload, context) {
       feedbackSection: 'settings-advisor',
       notice: asString(result.message) || `Assistant ${operation || 'request'} completed.`
     }));
+    operationSucceeded = true;
     return result;
   } catch (error) {
-    const message = error && error.message ? error.message : String(error);
+    const message = advisorOperationErrorMessage(error);
     if (isRecurringScan) {
       setBillsViewState((current) => ({
         ...current,
@@ -331,15 +486,68 @@ export async function executeAdvisorApplicationIntent(payload, context) {
         }
       }));
     } else {
-      setSettingsViewState((current) => ({
+      updateSettingsForCurrentOperation((current) => ({
         ...current,
+        advisorConnection: operation === 'connection-test' ? '' : current.advisorConnection,
         error: message,
         feedbackSection: 'settings-advisor',
         notice: ''
       }));
     }
-    reportError('advisor-intent', message, `advisor-intent.${operation || 'unknown'}-failed`);
+    if (isCurrentOperation()) {
+      reportError('advisor-intent', message, `advisor-intent.${operation || 'unknown'}-failed`);
+    }
     return { ok: false, error: message };
+  } finally {
+    if (lifecycleOperation) {
+      let status = null;
+      let statusError = '';
+      if (isCurrentOperation()) {
+        try {
+          const statusResult = await advisor.invoke('getServerStatus', payload);
+          if (!statusResult || statusResult.ok === false) {
+            throw new Error(
+              advisorOperationErrorMessage(
+                statusResult,
+                'Unable to confirm local model server status.'
+              )
+            );
+          }
+          status = asObject(statusResult && (statusResult.status || statusResult));
+        } catch (error) {
+          statusError = advisorOperationErrorMessage(
+            error,
+            'Unable to confirm local model server status.'
+          );
+        }
+      }
+      advisorOperations?.finish(operationToken);
+      if (isCurrentOperation()) {
+        updateSettingsForCurrentOperation((current) => {
+          const serverPatch = status
+            ? advisorServerStatePatch(
+                {
+                  ...asObject(current.advisorSettings),
+                  ...asObject(payload)
+                },
+                status
+              )
+            : {
+                advisorServerToggleState: advisorServerToggle(asObject(current.advisorServerStatus))
+              };
+          return {
+            ...current,
+            advisorOperation: null,
+            ...serverPatch,
+            ...(statusError && !current.error ? { error: statusError } : {}),
+            advisorConnection:
+              operation === 'connection-test' && !operationSucceeded
+                ? ''
+                : current.advisorConnection
+          };
+        });
+      }
+    }
   }
 }
 

@@ -460,7 +460,7 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
         ? advisorReference ||
           'advisor:' + advisorThreadId + ':' + advisorMessageId + ':' + advisorActionId
         : '',
-      source: advisorActionId ? 'advisor' : 'manual'
+      source: advisorActionId ? 'advisor' : sourceRoute === 'notes' ? 'notes' : 'manual'
     },
     advisor: {
       threadId: advisorThreadId,

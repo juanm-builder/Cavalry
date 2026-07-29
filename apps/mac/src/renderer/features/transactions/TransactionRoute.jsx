@@ -5,6 +5,7 @@ import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { ImportPreviewModal } from '../import-export/ImportPreviewModal.jsx';
+import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { TransactionEditModal } from './TransactionEditModal.jsx';
 import { FilterSidePanel, InlineFilterToolbar } from './TransactionFilters.jsx';
@@ -26,6 +27,12 @@ function asArray(value) {
 
 function asObject(value) {
   return value && typeof value === 'object' ? value : {};
+}
+
+function categoryTypeForTemplate(template) {
+  if (template === 'income_received') return 'income';
+  if (template === 'debt_payment' || template === 'liability_payment') return 'debt';
+  return 'expense';
 }
 
 function PageHeader({ title, subtitle, children }) {
@@ -408,7 +415,9 @@ function LegacyComposerModal({ modal }) {
               <label htmlFor="transaction-category">Category</label>
               <CategorizedSelect
                 aria-label="Category"
+                createCategoryType={categoryTypeForTemplate(draft.template)}
                 id="transaction-category"
+                onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
                 options={options.categories}
                 placeholder="Choose category"
                 value={draft.categoryId || ''}
@@ -719,7 +728,9 @@ function TransactionDetailsStep({ modal }) {
             <label htmlFor="transaction-category">{isIncome ? 'Source' : 'Category'}</label>
             <CategorizedSelect
               aria-label={isIncome ? 'Source' : 'Category'}
+              createCategoryType={isIncome ? 'income' : 'expense'}
               id="transaction-category"
+              onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
               options={options.categories}
               placeholder={isIncome ? 'Choose source' : 'Choose category'}
               value={draft.categoryId || ''}

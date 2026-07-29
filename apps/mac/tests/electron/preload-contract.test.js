@@ -60,4 +60,17 @@ describe('preload contract', () => {
     expect(cloudBlock).toContain("'cavalry-cloud:submit-feedback-report'");
     expect(cloudBlock).toContain("'cavalry-cloud:get-feedback-attachment'");
   });
+
+  it('forwards current form settings through both local-model pickers', () => {
+    const source = readFileSync(preloadPath, 'utf8');
+    const advisorStart = source.indexOf("exposeInMainWorld('cavalryAdvisor'");
+    const advisorBlock = source.slice(advisorStart);
+
+    expect(advisorBlock).toMatch(
+      /chooseLocalModel:\s*\(payload\)\s*=>[\s\S]*?invokeAdvisorCommand\('cavalry-advisor:choose-local-model', payload\)/
+    );
+    expect(advisorBlock).toMatch(
+      /chooseMmproj:\s*\(payload\)\s*=>\s*invokeAdvisorCommand\('cavalry-advisor:choose-mmproj', payload\)/
+    );
+  });
 });

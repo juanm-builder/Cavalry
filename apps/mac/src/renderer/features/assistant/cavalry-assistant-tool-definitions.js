@@ -97,7 +97,9 @@ const TRANSACTION_WRITE_PROPERTIES = Object.freeze({
   template: stringProperty('The Cavalry transaction type.', { enum: TRANSACTION_TEMPLATES }),
   amount: numberProperty('A positive transaction amount.'),
   currency: stringProperty('ISO currency code, such as PHP or USD.'),
-  date: stringProperty('Transaction date in YYYY-MM-DD format.'),
+  date: stringProperty(
+    'Optional transaction date in YYYY-MM-DD format. When omitted, Cavalry uses the app-provided current date.'
+  ),
   fxRateToBase: numberProperty('Optional exchange rate from the transaction currency to base.'),
   description: stringProperty('Plain-language transaction description.'),
   category: stringProperty('Category ID or exact category name, matched case-insensitively.'),
@@ -274,9 +276,9 @@ export const CAVALRY_ASSISTANT_TOOLS = Object.freeze([
   }),
   tool(
     'create_transaction',
-    'Create a validated transaction. Possible duplicates are returned for confirmation before posting.',
+    'Create a validated transaction. Omit date when the user did not specify one; Cavalry defaults it to the current date. Category and compatible accounts may be inferred from explicit wording, saved category rules, matching transaction history, and transaction semantics. Possible duplicates are returned for confirmation before posting.',
     TRANSACTION_WRITE_PROPERTIES,
-    ['amount', 'date', 'description']
+    ['amount', 'description']
   ),
   tool('update_transaction', 'Partially update a transaction, preserving fields not supplied.', {
     transaction: stringProperty('Transaction ID or exact description, matched case-insensitively.'),
