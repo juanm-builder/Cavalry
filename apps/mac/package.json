@@ -48,7 +48,7 @@
     "@cavalry/companion-api": "1.0.15",
     "@cavalry/finance-core": "1.0.15",
     "@cavalry/sync-foundation": "1.0.15",
-    "@supabase/supabase-js": "^2.110.8",
+    "@supabase/supabase-js": "^2.111.0",
     "electron-updater": "6.8.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
