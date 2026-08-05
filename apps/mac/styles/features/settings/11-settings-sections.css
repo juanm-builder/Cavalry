@@ -514,10 +514,57 @@
   line-height: 1.55;
 }
 
+.settings-cloud-provider-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 176px;
+}
+
 .settings-google-sign-in {
-  width: auto;
+  width: 100%;
   min-height: 42px;
   white-space: nowrap;
+}
+
+.apple-oauth-button {
+  width: 176px;
+  height: 42px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.apple-oauth-button img {
+  display: block;
+  width: 176px;
+  height: 42px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.apple-oauth-button-light-surface {
+  display: none !important;
+}
+
+html[data-color-scheme='light'] .apple-oauth-button-dark-surface {
+  display: none;
+}
+
+html[data-color-scheme='light'] .apple-oauth-button-light-surface {
+  display: block !important;
+}
+
+.apple-oauth-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 3px;
+}
+
+.apple-oauth-button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .settings-google-mark {
@@ -738,6 +785,22 @@
   justify-content: space-between;
 }
 
+.landing-cloud-provider-actions {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  min-width: 11rem;
+}
+
+.landing-cloud-provider-actions .btn,
+.landing-cloud-provider-actions .apple-oauth-button {
+  width: 100%;
+}
+
+.landing-cloud-provider-actions .apple-oauth-button img {
+  width: 100%;
+}
+
 .landing-cloud-signed-out p,
 .landing-cloud-empty {
   margin: 0;
@@ -785,6 +848,10 @@
   .landing-cloud-signed-out {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .landing-cloud-provider-actions {
+    width: 100%;
   }
 }
 
@@ -1545,7 +1612,7 @@ html[data-density='compact'] .settings-setting-row {
     grid-template-columns: 52px minmax(0, 1fr);
   }
 
-  .settings-google-sign-in {
+  .settings-cloud-provider-actions {
     grid-column: 2;
     justify-self: start;
   }
@@ -1638,7 +1705,7 @@ html[data-density='compact'] .settings-setting-row {
     justify-self: start;
   }
 
-  .settings-google-sign-in,
+  .settings-cloud-provider-actions,
   .settings-cloud-identity-actions,
   .settings-cloud-current-action,
   .settings-cloud-workbook-actions {

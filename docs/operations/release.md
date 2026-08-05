@@ -50,8 +50,8 @@ Add these GitHub Actions repository variables:
 
 The release workflow validates these values with the same rules as the desktop
 runtime before building. Never use a Supabase secret or `service_role` key. See
-the [Cavalry Cloud setup guide](../features/cavalry-cloud.md) for Google OAuth,
-redirect, migration, and RLS setup.
+the [Cavalry Cloud setup guide](../features/cavalry-cloud.md) for Apple and Google
+OAuth, identity linking, redirects, account deletion, migrations, and RLS setup.
 
 ### macOS signing and notarization
 

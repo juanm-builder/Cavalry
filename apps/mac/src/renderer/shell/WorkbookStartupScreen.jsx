@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import cavalryMark from '../assets/cavalry-mark.png';
+import { AppleOAuthButton } from '../shared/AppleOAuthButton.jsx';
 import { formatUiDateTime } from '../shared/date-format.js';
 
 export const WORKBOOK_STARTUP_STATUS = Object.freeze({
@@ -118,6 +119,8 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
   const signedIn = cloud.status === 'signed_in' && !!user;
   const pending = !!cloudText(cloud.pendingOperation) || cloud.status === 'initializing';
   const connecting = cloud.status === 'signing_in';
+  const busy = pending || connecting;
+  const openingApple = cloudText(cloud.pendingOperation) === 'sign-in-apple';
   const run = (operation, payload) => {
     if (typeof onCloudAction === 'function') void onCloudAction(operation, payload || {});
   };
@@ -147,18 +150,30 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
       ) : null}
       {!signedIn ? (
         <div className="landing-cloud-signed-out">
-          <p>Sign in with Google to see and open the workbooks in your private Cloud library.</p>
-          <button
-            className="btn btn-primary"
-            disabled={pending || cloud.status === 'unavailable'}
-            onClick={() => run('sign-in')}
-            type="button"
-          >
-            <span aria-hidden="true" className="landing-google-mark">
-              G
-            </span>
-            {pending ? 'Opening Google…' : connecting ? 'Try Google Again' : 'Continue with Google'}
-          </button>
+          <p>Sign in with Apple or Google to see your private Cloud library on this Mac.</p>
+          <p>
+            If you already used Google for Cavalry Cloud, continue with Google first and connect
+            Apple later in Settings.
+          </p>
+          <div className="landing-cloud-provider-actions">
+            <AppleOAuthButton
+              className="landing-apple-sign-in"
+              disabled={busy || cloud.status === 'unavailable'}
+              onClick={() => run('sign-in-apple')}
+              pending={openingApple}
+            />
+            <button
+              className="btn btn-primary"
+              disabled={busy || cloud.status === 'unavailable'}
+              onClick={() => run('sign-in')}
+              type="button"
+            >
+              <span aria-hidden="true" className="landing-google-mark">
+                G
+              </span>
+              {!openingApple && pending ? 'Opening Google…' : 'Continue with Google'}
+            </button>
+          </div>
         </div>
       ) : (
         <>

@@ -61,6 +61,20 @@ describe('preload contract', () => {
     expect(cloudBlock).toContain("'cavalry-cloud:get-feedback-attachment'");
   });
 
+  it('exposes only named Apple and Google Cloud sign-in commands', () => {
+    const source = readFileSync(preloadPath, 'utf8');
+    const cloudStart = source.indexOf("exposeInMainWorld('cavalryCloud'");
+    const updateStart = source.indexOf("exposeInMainWorld('cavalryUpdates'");
+    const cloudBlock = source.slice(cloudStart, updateStart);
+
+    expect(cloudBlock).toContain('linkAppleIdentity');
+    expect(cloudBlock).toContain("'cavalry-cloud:link-apple'");
+    expect(cloudBlock).toContain('signInWithApple');
+    expect(cloudBlock).toContain("'cavalry-cloud:sign-in-apple'");
+    expect(cloudBlock).toContain('signInWithGoogle');
+    expect(cloudBlock).toContain("'cavalry-cloud:sign-in-google'");
+  });
+
   it('forwards current form settings through both local-model pickers', () => {
     const source = readFileSync(preloadPath, 'utf8');
     const advisorStart = source.indexOf("exposeInMainWorld('cavalryAdvisor'");

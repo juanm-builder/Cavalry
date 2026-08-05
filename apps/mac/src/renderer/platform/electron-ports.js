@@ -230,6 +230,8 @@ function createCompanionPort(bridge) {
 
 const CLOUD_BRIDGE_METHODS = Object.freeze({
   getState: 'getState',
+  linkAppleIdentity: 'linkAppleIdentity',
+  signInWithApple: 'signInWithApple',
   signInWithGoogle: 'signInWithGoogle',
   signOut: 'signOut',
   updateProfile: 'updateProfile',

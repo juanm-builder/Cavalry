@@ -11,6 +11,53 @@ const CALLBACK_URL = 'cavalry://auth/callback';
 const CLOUD_SESSION_FILE = 'cavalry-cloud-auth.json';
 const OAUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const OAUTH_PENDING_STORAGE_KEY = 'cavalry-cloud-oauth-pending-until';
+const OAUTH_PROVIDERS = Object.freeze({
+  apple: Object.freeze({ id: 'apple', label: 'Apple' }),
+  google: Object.freeze({
+    id: 'google',
+    label: 'Google',
+    queryParams: Object.freeze({ prompt: 'select_account' })
+  })
+});
+
+function oauthProvider(value) {
+  return OAUTH_PROVIDERS[asString(value, 32).toLowerCase()] || null;
+}
+
+function hasOAuthProvider(user, providerId) {
+  const provider = asString(providerId, 32).toLowerCase();
+  return !!(provider && user && Array.isArray(user.providers) && user.providers.includes(provider));
+}
+
+function parsePendingOAuthAttempt(value) {
+  const raw = asString(value, 1024);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const provider = oauthProvider(parsed.provider);
+      const expiresAt = Number(parsed.expiresAt);
+      const operation = parsed.operation === 'link_identity' ? 'link_identity' : 'sign_in';
+      const expectedUserId = asString(parsed.expectedUserId, 128);
+      return provider &&
+        Number.isSafeInteger(expiresAt) &&
+        (operation !== 'link_identity' || expectedUserId)
+        ? { expiresAt, expectedUserId, operation, provider }
+        : null;
+    }
+  } catch (_error) {
+    // Versions before Apple sign-in stored only the expiry. Preserve that Google attempt.
+  }
+  const expiresAt = Number(raw);
+  return Number.isSafeInteger(expiresAt)
+    ? {
+        expiresAt,
+        expectedUserId: '',
+        operation: 'sign_in',
+        provider: OAUTH_PROVIDERS.google
+      }
+    : null;
+}
 
 function safeHttpsUrl(value, maximum = 2048) {
   try {
@@ -28,6 +75,19 @@ function projectCloudUser(user) {
   const appMetadata =
     user.app_metadata && typeof user.app_metadata === 'object' ? user.app_metadata : {};
   const firstIdentity = Array.isArray(user.identities) ? user.identities[0] : null;
+  const providers = Array.from(
+    new Set(
+      [
+        appMetadata.provider,
+        ...(Array.isArray(appMetadata.providers) ? appMetadata.providers : []),
+        ...(Array.isArray(user.identities)
+          ? user.identities.map((identity) => identity && identity.provider)
+          : [])
+      ]
+        .map((provider) => asString(provider, 32).toLowerCase())
+        .filter(Boolean)
+    )
+  );
   const email = asString(user.email, 320);
   return {
     id: asString(user.id, 128),
@@ -40,18 +100,19 @@ function projectCloudUser(user) {
     provider: asString(
       appMetadata.provider || (firstIdentity && firstIdentity.provider) || 'google',
       32
-    )
+    ),
+    providers
   };
 }
 
-function isAllowedAuthorizationUrl(value, config) {
+function isAllowedAuthorizationUrl(value, config, expectedPath = '/auth/v1/authorize') {
   try {
     const parsed = new URL(asString(value, 4096));
     return (
       config.configured &&
       parsed.protocol === 'https:' &&
       parsed.origin === config.origin &&
-      parsed.pathname === '/auth/v1/authorize' &&
+      parsed.pathname === expectedPath &&
       !parsed.username &&
       !parsed.password
     );
@@ -108,10 +169,13 @@ function createCloudAuthController(dependencies = {}) {
   let restoreExistingSessionStarted = false;
   let pendingCallback = null;
   let oauthAttemptTimeout = null;
+  let authOperationQueue = Promise.resolve();
   let state = {
     configured: config.configured,
     status: config.configured ? 'initializing' : 'unconfigured',
     sessionPersistence: config.configured ? 'pending' : 'none',
+    pendingOAuthOperation: '',
+    pendingOAuthProvider: '',
     user: null,
     error: config.configured
       ? null
@@ -123,6 +187,8 @@ function createCloudAuthController(dependencies = {}) {
       configured: state.configured === true,
       status: asString(state.status, 32),
       sessionPersistence: asString(state.sessionPersistence, 32),
+      pendingOAuthOperation: asString(state.pendingOAuthOperation, 32),
+      pendingOAuthProvider: asString(state.pendingOAuthProvider, 32),
       user: state.user ? { ...state.user } : null,
       error: state.error ? { ...state.error } : null
     };
@@ -140,8 +206,11 @@ function createCloudAuthController(dependencies = {}) {
   }
 
   async function clearPendingOAuthAttempt() {
-    clearOAuthAttemptTimer();
     if (storage) await storage.removeItem(OAUTH_PENDING_STORAGE_KEY);
+    clearOAuthAttemptTimer();
+    if (state.pendingOAuthOperation || state.pendingOAuthProvider) {
+      setState({ pendingOAuthOperation: '', pendingOAuthProvider: '' });
+    }
   }
 
   async function clearInvalidSession() {
@@ -153,20 +222,53 @@ function createCloudAuthController(dependencies = {}) {
     try {
       if (storage) await storage.clear();
       clearOAuthAttemptTimer();
+      setState({ pendingOAuthOperation: '', pendingOAuthProvider: '' });
       return true;
     } catch (_error) {
       return false;
     }
   }
 
-  async function expirePendingOAuthAttempt(expectedExpiry) {
+  async function expirePendingOAuthAttempt(expectedAttempt) {
     let cleared = false;
     try {
-      const storedExpiry = Number(await storage.getItem(OAUTH_PENDING_STORAGE_KEY));
-      if (storedExpiry !== expectedExpiry) return;
-      cleared = await clearInvalidSession();
+      const storedAttempt = parsePendingOAuthAttempt(
+        await storage.getItem(OAUTH_PENDING_STORAGE_KEY)
+      );
+      if (
+        !storedAttempt ||
+        storedAttempt.expiresAt !== expectedAttempt.expiresAt ||
+        storedAttempt.provider.id !== expectedAttempt.provider.id ||
+        storedAttempt.operation !== expectedAttempt.operation ||
+        storedAttempt.expectedUserId !== expectedAttempt.expectedUserId
+      ) {
+        return;
+      }
+      if (expectedAttempt.operation === 'link_identity') {
+        await clearPendingOAuthAttempt();
+        cleared = true;
+      } else {
+        cleared = await clearInvalidSession();
+      }
     } catch (_error) {
       cleared = false;
+    }
+    if (expectedAttempt.operation === 'link_identity') {
+      if (
+        state.status === 'signed_in' &&
+        state.user &&
+        state.user.id === expectedAttempt.expectedUserId
+      ) {
+        setState({
+          error: publicError(
+            cleared ? 'identity_link_timeout' : 'secure_storage_clear_failed',
+            cleared
+              ? `${expectedAttempt.provider.label} connection expired. You can try again.`
+              : 'Cavalry could not securely clear the expired connection attempt.'
+          )
+        });
+      }
+      return;
     }
     if (state.status !== 'signing_in') return;
     setState({
@@ -175,17 +277,17 @@ function createCloudAuthController(dependencies = {}) {
       error: publicError(
         cleared ? 'oauth_timeout' : 'secure_storage_clear_failed',
         cleared
-          ? 'Google sign-in expired. You can try again.'
+          ? `${expectedAttempt.provider.label} sign-in expired. You can try again.`
           : 'Cavalry could not securely clear the expired sign-in attempt.'
       )
     });
   }
 
-  function scheduleOAuthAttemptExpiry(expiresAt) {
+  function scheduleOAuthAttemptExpiry(attempt) {
     clearOAuthAttemptTimer();
-    const delay = Math.max(0, expiresAt - now());
+    const delay = Math.max(0, attempt.expiresAt - now());
     oauthAttemptTimeout = scheduleTimeout(() => {
-      void expirePendingOAuthAttempt(expiresAt);
+      void expirePendingOAuthAttempt(attempt);
     }, delay);
     if (oauthAttemptTimeout && typeof oauthAttemptTimeout.unref === 'function') {
       oauthAttemptTimeout.unref();
@@ -193,24 +295,52 @@ function createCloudAuthController(dependencies = {}) {
   }
 
   async function readPendingOAuthAttempt() {
-    if (!storage) return 0;
-    const expiresAt = Number(await storage.getItem(OAUTH_PENDING_STORAGE_KEY));
+    if (!storage) return null;
+    const stored = await storage.getItem(OAUTH_PENDING_STORAGE_KEY);
+    const attempt = parsePendingOAuthAttempt(stored);
+    const currentTime = now();
     if (
-      Number.isSafeInteger(expiresAt) &&
-      expiresAt > now() &&
-      expiresAt <= now() + OAUTH_ATTEMPT_TTL_MS
+      attempt &&
+      attempt.expiresAt > currentTime &&
+      attempt.expiresAt <= currentTime + OAUTH_ATTEMPT_TTL_MS
     ) {
-      return expiresAt;
+      return attempt;
     }
-    if (expiresAt) await storage.removeItem(OAUTH_PENDING_STORAGE_KEY);
-    return 0;
+    if (stored) await storage.removeItem(OAUTH_PENDING_STORAGE_KEY);
+    return null;
   }
 
-  async function startPendingOAuthAttempt() {
-    const expiresAt = now() + OAUTH_ATTEMPT_TTL_MS;
-    await storage.setItem(OAUTH_PENDING_STORAGE_KEY, String(expiresAt));
-    scheduleOAuthAttemptExpiry(expiresAt);
-    return expiresAt;
+  async function startPendingOAuthAttempt(provider, operation = 'sign_in', expectedUserId = '') {
+    const attempt = {
+      expiresAt: now() + OAUTH_ATTEMPT_TTL_MS,
+      expectedUserId: asString(expectedUserId, 128),
+      operation,
+      provider
+    };
+    await storage.setItem(
+      OAUTH_PENDING_STORAGE_KEY,
+      JSON.stringify({
+        expiresAt: attempt.expiresAt,
+        expectedUserId: attempt.expectedUserId,
+        operation: attempt.operation,
+        provider: provider.id
+      })
+    );
+    scheduleOAuthAttemptExpiry(attempt);
+    setState({
+      pendingOAuthOperation: attempt.operation,
+      pendingOAuthProvider: provider.id
+    });
+    return attempt;
+  }
+
+  function serializeAuthOperation(operation) {
+    const result = authOperationQueue.then(operation, operation);
+    authOperationQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
   }
 
   function getClient() {
@@ -338,11 +468,24 @@ function createCloudAuthController(dependencies = {}) {
         const callback = pendingCallback;
         pendingCallback = null;
         await processAuthCallback(callback);
-      } else if (!isSignedIn()) {
-        const pendingExpiry = await readPendingOAuthAttempt();
-        if (pendingExpiry) {
-          scheduleOAuthAttemptExpiry(pendingExpiry);
-          setState({ status: 'signing_in', user: null, error: null });
+      } else {
+        const pendingAttempt = await readPendingOAuthAttempt();
+        if (pendingAttempt) {
+          const validSignIn = pendingAttempt.operation === 'sign_in' && !isSignedIn();
+          const validLink =
+            pendingAttempt.operation === 'link_identity' &&
+            isSignedIn() &&
+            state.user.id === pendingAttempt.expectedUserId;
+          if (validSignIn || validLink) {
+            scheduleOAuthAttemptExpiry(pendingAttempt);
+            setState({
+              ...(validSignIn ? { status: 'signing_in', user: null, error: null } : {}),
+              pendingOAuthOperation: pendingAttempt.operation,
+              pendingOAuthProvider: pendingAttempt.provider.id
+            });
+          } else {
+            await clearPendingOAuthAttempt();
+          }
         }
       }
       return getState();
@@ -388,7 +531,9 @@ function createCloudAuthController(dependencies = {}) {
     return restoreExistingSessionPromise;
   }
 
-  async function signInWithGoogle() {
+  async function signInWithProvider(providerId) {
+    const provider = oauthProvider(providerId);
+    if (!provider) return { ok: false, state: getState() };
     await initialize();
     if (!client || state.status === 'unavailable' || state.status === 'unconfigured') {
       return { ok: false, state: getState() };
@@ -396,7 +541,20 @@ function createCloudAuthController(dependencies = {}) {
     if (isSignedIn() || state.user) {
       return {
         ok: false,
-        error: 'Sign out before choosing a different Google account.',
+        error: `Sign out before choosing a different ${provider.label} account.`,
+        state: getState()
+      };
+    }
+    const pendingAttempt = await readPendingOAuthAttempt();
+    if (pendingAttempt) {
+      scheduleOAuthAttemptExpiry(pendingAttempt);
+      setState({
+        pendingOAuthOperation: pendingAttempt.operation,
+        pendingOAuthProvider: pendingAttempt.provider.id
+      });
+      return {
+        ok: false,
+        error: `${pendingAttempt.provider.label} authentication is already in progress.`,
         state: getState()
       };
     }
@@ -404,18 +562,18 @@ function createCloudAuthController(dependencies = {}) {
     let attemptStarted = false;
     try {
       const result = await client.auth.signInWithOAuth({
-        provider: 'google',
+        provider: provider.id,
         options: {
           redirectTo: CALLBACK_URL,
           skipBrowserRedirect: true,
-          queryParams: { prompt: 'select_account' }
+          ...(provider.queryParams ? { queryParams: provider.queryParams } : {})
         }
       });
       const authorizationUrl = result && result.data && result.data.url;
       if (result.error || !isAllowedAuthorizationUrl(authorizationUrl, config)) {
         throw new Error('authorization_failed');
       }
-      await startPendingOAuthAttempt();
+      await startPendingOAuthAttempt(provider);
       attemptStarted = true;
       await shell.openExternal(authorizationUrl);
       return { ok: true, state: getState() };
@@ -424,10 +582,86 @@ function createCloudAuthController(dependencies = {}) {
       setState({
         status: 'signed_out',
         user: null,
-        error: publicError('google_sign_in_failed', 'Google sign-in could not be started.')
+        error: publicError(
+          `${provider.id}_sign_in_failed`,
+          `${provider.label} sign-in could not be started.`
+        )
       });
       return { ok: false, state: getState() };
     }
+  }
+
+  function signInWithApple() {
+    return serializeAuthOperation(() => signInWithProvider('apple'));
+  }
+
+  function signInWithGoogle() {
+    return serializeAuthOperation(() => signInWithProvider('google'));
+  }
+
+  async function linkIdentityWithProvider(providerId) {
+    const provider = oauthProvider(providerId);
+    if (!provider) return { ok: false, state: getState() };
+    await initialize();
+    if (!client || !isSignedIn() || !state.user) {
+      return {
+        ok: false,
+        error: `Sign in before connecting ${provider.label}.`,
+        state: getState()
+      };
+    }
+    if (hasOAuthProvider(state.user, provider.id)) {
+      return { ok: true, alreadyLinked: true, state: getState() };
+    }
+    const pendingAttempt = await readPendingOAuthAttempt();
+    if (pendingAttempt) {
+      scheduleOAuthAttemptExpiry(pendingAttempt);
+      setState({
+        pendingOAuthOperation: pendingAttempt.operation,
+        pendingOAuthProvider: pendingAttempt.provider.id
+      });
+      return {
+        ok: false,
+        error: `${pendingAttempt.provider.label} authentication is already in progress.`,
+        state: getState()
+      };
+    }
+    const expectedUserId = state.user.id;
+    let attemptStarted = false;
+    try {
+      const result = await client.auth.linkIdentity({
+        provider: provider.id,
+        options: {
+          redirectTo: CALLBACK_URL,
+          skipBrowserRedirect: true
+        }
+      });
+      const authorizationUrl = result && result.data && result.data.url;
+      if (
+        result.error ||
+        !isAllowedAuthorizationUrl(authorizationUrl, config, '/auth/v1/user/identities/authorize')
+      ) {
+        throw new Error('authorization_failed');
+      }
+      await startPendingOAuthAttempt(provider, 'link_identity', expectedUserId);
+      attemptStarted = true;
+      await shell.openExternal(authorizationUrl);
+      setState({ error: null });
+      return { ok: true, state: getState() };
+    } catch (_error) {
+      if (attemptStarted) await clearPendingOAuthAttempt().catch(() => undefined);
+      setState({
+        error: publicError(
+          `${provider.id}_link_failed`,
+          `${provider.label} could not be connected to this Cavalry Cloud account.`
+        )
+      });
+      return { ok: false, state: getState() };
+    }
+  }
+
+  function linkAppleIdentity() {
+    return serializeAuthOperation(() => linkIdentityWithProvider('apple'));
   }
 
   function rejectUnexpectedOAuthCallback() {
@@ -438,7 +672,7 @@ function createCloudAuthController(dependencies = {}) {
           : 'signed_out',
       error: publicError(
         'oauth_callback_unexpected',
-        'Cavalry ignored a Google callback that did not match a pending sign-in.'
+        'Cavalry ignored a sign-in callback that did not match a pending request.'
       )
     });
     return { ok: false, error: rejectedState.error.message, state: rejectedState };
@@ -446,23 +680,48 @@ function createCloudAuthController(dependencies = {}) {
 
   async function processAuthCallback(callback) {
     if (!client) return { ok: false, state: getState() };
-    let pendingExpiry = 0;
+    let pendingAttempt = null;
     try {
-      pendingExpiry = await readPendingOAuthAttempt();
+      pendingAttempt = await readPendingOAuthAttempt();
     } catch (_error) {
       setState({
-        status: 'error',
+        status: isSignedIn() ? 'signed_in' : 'error',
         error: publicError(
           'secure_storage_unavailable',
-          'Cavalry could not verify the pending Google sign-in securely.'
+          'Cavalry could not verify the pending sign-in securely.'
         )
       });
       return { ok: false, error: state.error.message, state: getState() };
     }
-    if (!pendingExpiry) {
+    if (!pendingAttempt) {
       return rejectUnexpectedOAuthCallback();
     }
+    const linkingIdentity = pendingAttempt.operation === 'link_identity';
     if (!(callback && callback.ok && callback.code)) {
+      if (linkingIdentity) {
+        let cleared = false;
+        try {
+          await clearPendingOAuthAttempt();
+          cleared = true;
+        } catch (_error) {
+          cleared = false;
+        }
+        const sameUser =
+          state.status === 'signed_in' &&
+          state.user &&
+          state.user.id === pendingAttempt.expectedUserId;
+        setState({
+          status: sameUser ? 'signed_in' : 'error',
+          user: sameUser ? state.user : null,
+          error: publicError(
+            cleared ? 'identity_link_cancelled' : 'secure_storage_clear_failed',
+            cleared
+              ? `${pendingAttempt.provider.label} was not connected.`
+              : 'Cavalry could not securely clear the cancelled connection attempt.'
+          )
+        });
+        return { ok: false, error: state.error.message, state: getState() };
+      }
       const cleared = await clearInvalidSession();
       setState({
         status: cleared ? 'signed_out' : 'error',
@@ -474,23 +733,58 @@ function createCloudAuthController(dependencies = {}) {
               : 'oauth_cancelled'
             : 'secure_storage_clear_failed',
           cleared
-            ? 'Google sign-in was cancelled or denied.'
+            ? `${pendingAttempt.provider.label} sign-in was cancelled or denied.`
             : 'Cavalry could not securely clear the cancelled sign-in attempt.'
         )
       });
       return { ok: false, error: state.error.message, state: getState() };
     }
-    setState({ status: 'signing_in', user: null, error: null });
+    if (linkingIdentity) setState({ error: null });
+    else setState({ status: 'signing_in', user: null, error: null });
     try {
       const exchanged = await client.auth.exchangeCodeForSession(callback.code);
       if (exchanged.error || !(exchanged.data && exchanged.data.session))
         throw new Error('exchange');
       const verified = await client.auth.getUser();
       if (verified.error || !(verified.data && verified.data.user)) throw new Error('verify');
+      const projectedUser = projectCloudUser(verified.data.user);
+      if (
+        !projectedUser ||
+        !hasOAuthProvider(projectedUser, pendingAttempt.provider.id) ||
+        (linkingIdentity && projectedUser.id !== pendingAttempt.expectedUserId)
+      ) {
+        throw new Error(linkingIdentity ? 'identity_link_mismatch' : 'oauth_provider_mismatch');
+      }
       await clearPendingOAuthAttempt();
-      setState({ status: 'signed_in', user: projectCloudUser(verified.data.user), error: null });
+      setState({ status: 'signed_in', user: projectedUser, error: null });
       return { ok: true, state: getState() };
     } catch (_error) {
+      if (linkingIdentity) {
+        const sameUser =
+          state.status === 'signed_in' &&
+          state.user &&
+          state.user.id === pendingAttempt.expectedUserId;
+        let cleared = false;
+        try {
+          await clearPendingOAuthAttempt();
+          cleared = true;
+        } catch (_clearError) {
+          cleared = false;
+        }
+        if (sameUser) {
+          setState({
+            status: 'signed_in',
+            user: state.user,
+            error: publicError(
+              cleared ? 'identity_link_failed' : 'secure_storage_clear_failed',
+              cleared
+                ? `${pendingAttempt.provider.label} could not be connected. Try again.`
+                : 'Cavalry could not securely clear the failed connection attempt.'
+            )
+          });
+          return { ok: false, error: state.error.message, state: getState() };
+        }
+      }
       const cleared = await clearInvalidSession();
       setState({
         status: cleared ? 'signed_out' : 'error',
@@ -498,7 +792,7 @@ function createCloudAuthController(dependencies = {}) {
         error: publicError(
           cleared ? 'oauth_exchange_failed' : 'secure_storage_clear_failed',
           cleared
-            ? 'Google sign-in could not be completed. Try again.'
+            ? `${pendingAttempt.provider.label} sign-in could not be completed. Try again.`
             : 'Cavalry could not securely clear the failed sign-in attempt.'
         )
       });
@@ -506,7 +800,7 @@ function createCloudAuthController(dependencies = {}) {
     }
   }
 
-  async function handleAuthCallback(callback) {
+  async function handleAuthCallbackInternal(callback) {
     if (!initializePromise && !restoreExistingSessionStarted) {
       pendingCallback = callback;
       return { ok: true, pending: true, state: getState() };
@@ -519,7 +813,11 @@ function createCloudAuthController(dependencies = {}) {
     return processAuthCallback(callback);
   }
 
-  async function signOut() {
+  function handleAuthCallback(callback) {
+    return serializeAuthOperation(() => handleAuthCallbackInternal(callback));
+  }
+
+  async function signOutInternal() {
     await initialize();
     const previousUser = state.user;
     try {
@@ -541,8 +839,18 @@ function createCloudAuthController(dependencies = {}) {
       });
       return { ok: false, error: state.error.message, state: getState() };
     }
-    setState({ status: 'signed_out', user: null, error: null });
+    setState({
+      status: 'signed_out',
+      pendingOAuthOperation: '',
+      pendingOAuthProvider: '',
+      user: null,
+      error: null
+    });
     return { ok: true, state: getState() };
+  }
+
+  function signOut() {
+    return serializeAuthOperation(signOutInternal);
   }
 
   function dispose() {
@@ -564,7 +872,9 @@ function createCloudAuthController(dependencies = {}) {
     handleAuthCallback,
     initialize,
     isSignedIn,
+    linkAppleIdentity,
     restoreExistingSession,
+    signInWithApple,
     signInWithGoogle,
     signOut
   };
@@ -578,5 +888,6 @@ module.exports = {
   isPublishableSupabaseKey,
   isAllowedAuthorizationUrl,
   normalizeCloudConfig,
+  parsePendingOAuthAttempt,
   projectCloudUser
 };

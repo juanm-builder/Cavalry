@@ -147,7 +147,7 @@ describe('SettingsRoute', () => {
     expect(html).not.toContain('Continue with Google');
   });
 
-  it('renders the private Google sign-in state without exposing the local email form', () => {
+  it('renders private Apple and Google sign-in without exposing the local email form', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: true,
@@ -158,13 +158,37 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
+    expect(html).toContain('Continue with Apple');
     expect(html).toContain('Continue with Google');
+    expect(html).toContain('Already have a Google-backed Cloud library?');
     expect(html).toContain('Signed out');
     expect(html).toContain('Nothing is uploaded until you choose Add to Cloud.');
-    expect(html).toContain('Cavalry opens Google sign-in in your browser.');
+    expect(html).toContain('Cavalry opens provider sign-in in your browser.');
     expect(html).toContain('Cavalry never receives your Mac password.');
     expect(html).not.toContain('id="account-profile-form"');
     expect(html).not.toContain('settings-account-email');
+  });
+
+  it('renders Apple as the verified Cloud identity provider', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: {
+        id: 'apple-user',
+        name: 'Private User',
+        email: 'relay@privaterelay.appleid.com',
+        provider: 'apple'
+      },
+      current: {},
+      workbooks: []
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('Signed in to Cavalry Cloud');
+    expect(html).toContain('relay@privaterelay.appleid.com · Connected: Apple');
+    expect(html).not.toContain('aria-label="Continue with Apple"');
   });
 
   it('renders a verified account and accessible actions for every cloud workbook', () => {
@@ -204,13 +228,14 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('Signed in with Google');
+    expect(html).toContain('Signed in to Cavalry Cloud');
     expect(html).toContain('Alex Example');
     expect(html).toContain('alex@example.com');
     expect(html).toContain('id="settings-cloud-profile-name"');
     expect(html).toContain('value="Alex Example"');
     expect(html).toContain('Save Name');
-    expect(html).toContain('Google account: alex@example.com');
+    expect(html).toContain('aria-label="Continue with Apple"');
+    expect(html).toContain('Hide My Email');
     expect(html).toContain('Add to Cloud');
     expect(html).toContain('Refresh');
     expect(html).toContain('Sign Out');

@@ -61,7 +61,7 @@ function getCavalryAuthCallback(rawUrl) {
         errorCode,
         errorMessage:
           boundedPrintable(parsed.searchParams.get('error_description'), 240) ||
-          'Google sign-in was cancelled.'
+          'Cloud sign-in was cancelled.'
       };
     }
     const code = boundedPrintable(parsed.searchParams.get('code'), 4096);

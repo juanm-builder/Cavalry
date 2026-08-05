@@ -38,7 +38,8 @@ describe('cloud workbook controller model', () => {
         email: 'alex@example.com',
         name: 'Alex Example',
         avatarUrl: '',
-        provider: 'google'
+        provider: 'google',
+        providers: []
       },
       workbooks: [
         {
@@ -52,6 +53,8 @@ describe('cloud workbook controller model', () => {
       ],
       sessionGeneration: 0,
       sessionPersistence: false,
+      pendingOAuthOperation: '',
+      pendingOAuthProvider: '',
       error: ''
     });
     expect(JSON.stringify(state)).not.toContain('must-not-cross');

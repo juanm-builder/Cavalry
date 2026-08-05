@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('cavalryAdvisor', {
 
 contextBridge.exposeInMainWorld('cavalryCloud', {
   getState: () => invokeCloudCommand('cavalry-cloud:get-state'),
+  linkAppleIdentity: () => invokeCloudCommand('cavalry-cloud:link-apple'),
+  signInWithApple: () => invokeCloudCommand('cavalry-cloud:sign-in-apple'),
   signInWithGoogle: () => invokeCloudCommand('cavalry-cloud:sign-in-google'),
   signOut: () => invokeCloudCommand('cavalry-cloud:sign-out'),
   updateProfile: (payload) => invokeCloudCommand('cavalry-cloud:update-profile', payload),

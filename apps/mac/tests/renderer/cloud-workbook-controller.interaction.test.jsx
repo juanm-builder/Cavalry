@@ -183,6 +183,47 @@ describe('cloud workbook controller interactions', () => {
     expect(result.current.model.error).toBe('Google sign-in could not be started.');
   });
 
+  it('routes Apple sign-in through the named Cloud bridge method', async () => {
+    const signedOut = { configured: true, status: 'signed_out', user: null, workbooks: [] };
+    const cloud = {
+      invoke: vi.fn(async () => ({ ok: true, state: signedOut })),
+      subscribe: () => () => {}
+    };
+    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
+    await waitFor(() => expect(result.current.model.status).toBe('signed_out'));
+
+    await act(async () => {
+      await result.current.execute('sign-in-apple');
+    });
+
+    expect(cloud.invoke).toHaveBeenCalledWith('signInWithApple', {});
+  });
+
+  it('routes Apple identity linking through the named Cloud bridge method', async () => {
+    const cloud = {
+      invoke: vi.fn(async (command) => ({
+        ok: true,
+        state:
+          command === 'getState'
+            ? signedInState()
+            : {
+                ...signedInState(),
+                user: { ...signedInState().user, providers: ['google', 'apple'] }
+              }
+      })),
+      subscribe: () => () => {}
+    };
+    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    await act(async () => {
+      await result.current.execute('link-apple');
+    });
+
+    expect(cloud.invoke).toHaveBeenCalledWith('linkAppleIdentity', {});
+    expect(result.current.model.user.providers).toContain('apple');
+  });
+
   it('updates the Cavalry profile name and publishes the returned Cloud state', async () => {
     const updatedState = {
       ...signedInState(),
