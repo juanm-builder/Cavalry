@@ -4,6 +4,11 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+- Updated Electron to 41.10.4 to pick up the current 41.x security patch, and
+  resolved the outstanding development-only advisories in `brace-expansion`,
+  `fast-uri`, and `undici`. Production dependencies were unaffected and no
+  runtime behavior changed.
+
 ## 1.0.24 - 2026-07-29
 
 - Added a **Notes** workspace that turns plain-language entries into a reviewable
