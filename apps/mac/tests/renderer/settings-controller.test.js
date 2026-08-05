@@ -223,6 +223,8 @@ describe('settings controller', () => {
 
     const cloudActions = [
       ['sign-in-with-google', 'sign-in'],
+      ['sign-in-with-apple', 'sign-in-apple'],
+      ['link-apple-cloud', 'link-apple'],
       ['sign-out-cloud', 'sign-out'],
       ['refresh-cloud-workbooks', 'refresh'],
       ['upload-current-workbook', 'upload'],

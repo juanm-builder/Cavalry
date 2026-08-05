@@ -8,7 +8,7 @@ feedback, and owner-only Row Level Security (RLS).
 ## What the migration provides
 
 - `profiles`: one private profile for each Supabase Auth user. A signup trigger
-  copies the Google display name and avatar metadata, and the migration backfills
+  copies available provider display name and avatar metadata, and the migration backfills
   users that already exist.
 - `devices`: installations owned by a user. Set `revoked_at` instead of deleting a
   device that has saved workbook history.
@@ -72,6 +72,36 @@ default branch.
 Deploy feedback migrations before publishing a desktop version that exposes the
 feedback UI. The desktop release workflow does not run `supabase db push`.
 
+Deploy the authenticated account-deletion function before distributing the iOS
+app through TestFlight:
+
+```sh
+supabase secrets set APPLE_NATIVE_CLIENT_ID=YOUR_IOS_BUNDLE_ID
+supabase secrets set APPLE_NATIVE_CLIENT_SECRET=YOUR_ROTATING_CLIENT_SECRET_JWT
+supabase functions deploy delete-cavalry-account
+```
+
+Generate `APPLE_NATIVE_CLIENT_SECRET` for the native iOS client ID and rotate it
+before Apple's six-month maximum. Keep the `.p8` signing key and generated JWT
+outside both repositories and installed apps. This is not the Apple secret used
+by Supabase web OAuth: the deletion JWT's `sub` is the native App ID (the iOS
+bundle ID), while the web OAuth JWT's `sub` is the Services ID. Generate and
+rotate them separately; neither can replace the other.
+
+The function prefers the new `SUPABASE_SECRET_KEYS["default"]` credential that
+Supabase injects as a JSON environment value and temporarily falls back to the
+legacy `SUPABASE_SERVICE_ROLE_KEY` while existing projects migrate. Neither
+admin credential may enter an `EXPO_PUBLIC_*` variable, a desktop build
+variable, or an installed app. See [Supabase's API-key migration
+guide](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys).
+
+Apple token revocation is best-effort and never blocks an authenticated,
+confirmed Cavalry Cloud deletion. If Apple credentials are unavailable or Apple
+rejects the fresh code, the function still deletes Cavalry data and Auth, then
+returns `manualAppleRevocationRequired: true`; the client must direct the user
+to revoke Cavalry manually in Apple Account settings. This follows [Apple
+TN3194](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple).
+
 The project reference is an identifier, not a database password. Do not commit
 the database password, access or refresh tokens, OAuth secrets, the legacy
 `service_role` key, or a Supabase secret key. Local environment files are already
@@ -79,13 +109,16 @@ ignored by the repository.
 
 In the Supabase Dashboard:
 
-1. Enable the Google provider under Authentication > Providers.
-2. Configure Google's client ID and secret in Supabase, not in the desktop app.
-3. Add the exact Cavalry desktop callback URL, `cavalry://auth/callback`, to
+1. Enable the Apple and Google providers under Authentication > Providers.
+2. Put the Apple Services ID first in Apple Client IDs, followed by every native
+   iOS bundle ID that can issue a token, and enable manual identity linking.
+3. Configure both provider secrets in Supabase, not in either app. Leave Apple's
+   server-to-server notification URL blank because Supabase Auth does not support it.
+4. Add the exact Cavalry desktop callback URL, `cavalry://auth/callback`, to
    Supabase's redirect allow list.
-4. Add the Supabase callback URL shown by the Dashboard to the Google OAuth
+5. Add the Supabase callback URL shown by the Dashboard to the Google OAuth
    client's authorized redirect URIs.
-5. Keep email confirmation and account-lifecycle settings aligned with the
+6. Keep email confirmation and account-lifecycle settings aligned with the
    product's support and deletion policy.
 
 The desktop app needs only the project URL and Supabase publishable key (or the
@@ -152,9 +185,13 @@ privacy deletion and cascades all versions and audit rows for that workbook.
 - The desktop main process validates attachment size, declared MIME type, and
   PNG/JPEG file signatures before upload and after download. Renderer code
   never receives a Supabase session token, storage path, or signed URL.
-- Administrative deletion remains possible for lawful account deletion and data
-  retention. Delete Cavalry rows before deleting an Auth user if an operational
-  workflow adds additional restrictive references later.
+- `delete-cavalry-account` verifies the signed-in user, attempts Apple token
+  revocation when a fresh native authorization code is available, removes
+  private feedback objects, and then deletes the Auth user. Missing or failed
+  Apple revocation is reported for manual follow-up but never blocks confirmed
+  Cavalry deletion. Current Cavalry rows cascade from that user; review this
+  ordering if a future migration adds a restrictive reference or a new storage
+  bucket.
 - Supabase backups are not a user-facing version restore feature. Recovery UI
   should use `workbook_versions`, and restoring an old snapshot should append a
   new version through the same concurrency RPC.

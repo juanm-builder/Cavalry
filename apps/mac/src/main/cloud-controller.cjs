@@ -9,6 +9,8 @@ const { createCloudWorkbookController } = require('./cloud-workbook-controller.c
 
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
+  linkAppleIdentity: 'cavalry-cloud:link-apple',
+  signInWithApple: 'cavalry-cloud:sign-in-apple',
   signInWithGoogle: 'cavalry-cloud:sign-in-google',
   signOut: 'cavalry-cloud:sign-out',
   updateProfile: 'cavalry-cloud:update-profile',
@@ -139,6 +141,16 @@ function createCloudController(dependencies = {}) {
     return { ...result, state: broadcastState() };
   }
 
+  async function signInWithApple() {
+    const result = await auth.signInWithApple();
+    return { ...result, state: broadcastState() };
+  }
+
+  async function linkAppleIdentity() {
+    const result = await auth.linkAppleIdentity();
+    return { ...result, state: broadcastState() };
+  }
+
   async function handleAuthCallback(callback) {
     const result = await auth.handleAuthCallback(callback);
     if (result.ok && !result.pending) await Promise.all([refreshProfile(), refreshWorkbooks()]);
@@ -219,6 +231,8 @@ function createCloudController(dependencies = {}) {
       CLOUD_IPC_CHANNELS.getState,
       trusted(async () => ({ ok: true, state: getState() }))
     );
+    ipcMain.handle(CLOUD_IPC_CHANNELS.linkAppleIdentity, trusted(linkAppleIdentity));
+    ipcMain.handle(CLOUD_IPC_CHANNELS.signInWithApple, trusted(signInWithApple));
     ipcMain.handle(CLOUD_IPC_CHANNELS.signInWithGoogle, trusted(signInWithGoogle));
     ipcMain.handle(CLOUD_IPC_CHANNELS.signOut, trusted(signOut));
     ipcMain.handle(CLOUD_IPC_CHANNELS.updateProfile, trusted(updateProfile));

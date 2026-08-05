@@ -307,6 +307,8 @@ export function createSettingsController(dependencies = {}) {
 
         const cloudOperations = {
           'sign-in-with-google': 'sign-in',
+          'sign-in-with-apple': 'sign-in-apple',
+          'link-apple-cloud': 'link-apple',
           'sign-out-cloud': 'sign-out',
           'update-cloud-profile': 'profile-update',
           'refresh-cloud-workbooks': 'refresh',

@@ -24,7 +24,9 @@ const EMPTY_CLOUD_STATE = Object.freeze({
   user: null,
   workbooks: [],
   sessionGeneration: 0,
-  sessionPersistence: false
+  sessionPersistence: false,
+  pendingOAuthOperation: '',
+  pendingOAuthProvider: ''
 });
 
 function asObject(value) {
@@ -49,7 +51,14 @@ function normalizeCloudUser(value) {
     email: asString(source.email),
     name: asString(source.name),
     avatarUrl: asString(source.avatarUrl),
-    provider: asString(source.provider || 'google')
+    provider: asString(source.provider || 'google'),
+    providers: Array.from(
+      new Set(
+        (Array.isArray(source.providers) ? source.providers : [])
+          .map((provider) => asString(provider).toLowerCase())
+          .filter(Boolean)
+      )
+    )
   };
 }
 
@@ -79,6 +88,8 @@ export function normalizeCloudState(value) {
     configured,
     status,
     user: normalizeCloudUser(source.user),
+    pendingOAuthOperation: asString(source.pendingOAuthOperation),
+    pendingOAuthProvider: asString(source.pendingOAuthProvider).toLowerCase(),
     sessionGeneration: Math.max(0, Number(source.sessionGeneration) || 0),
     workbooks: (Array.isArray(source.workbooks) ? source.workbooks : [])
       .map(normalizeCloudWorkbook)
@@ -107,7 +118,15 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
   const state = normalizeCloudState(cloudState);
   const workbookId = asString(workbook && workbook.id);
   const remote = state.workbooks.find((item) => item.id === workbookId) || null;
-  const pendingOperation = asString(uiState.pendingOperation);
+  const pendingOAuthOperation =
+    state.pendingOAuthOperation === 'link_identity'
+      ? `link-${state.pendingOAuthProvider}`
+      : state.pendingOAuthOperation === 'sign_in'
+        ? state.pendingOAuthProvider === 'google'
+          ? 'sign-in'
+          : `sign-in-${state.pendingOAuthProvider}`
+        : '';
+  const pendingOperation = asString(uiState.pendingOperation) || pendingOAuthOperation;
   const conflict = uiState.conflict === true;
   return {
     ...state,
@@ -293,6 +312,10 @@ export function useCloudWorkbookController({
       try {
         if (operationName === 'sign-in') {
           result = await invoke('signInWithGoogle');
+        } else if (operationName === 'sign-in-apple') {
+          result = await invoke('signInWithApple');
+        } else if (operationName === 'link-apple') {
+          result = await invoke('linkAppleIdentity');
         } else if (operationName === 'sign-out') {
           result = await invoke('signOut');
         } else if (operationName === 'profile-update') {
@@ -548,6 +571,8 @@ export function useCloudWorkbookController({
 
         const notices = {
           'sign-in': 'Finish signing in with Google in your browser.',
+          'sign-in-apple': 'Finish signing in with Apple in your browser.',
+          'link-apple': 'Finish connecting Apple in your browser.',
           'sign-out': 'Signed out of Cavalry Cloud on this device.',
           'profile-update': 'Profile name updated.',
           refresh: 'Cloud workbooks refreshed.',

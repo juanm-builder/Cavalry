@@ -4,6 +4,12 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+- Added Sign in with Apple to Cavalry Cloud on Mac, including encrypted PKCE
+  browser authentication, explicit Apple identity linking, provider-aware OAuth
+  state, official Apple button artwork, and shared iPhone/iPad account setup.
+- Added an authenticated Cloud account-deletion function that revokes a freshly
+  confirmed Apple token, removes private feedback objects, and deletes the
+  owner-scoped Supabase account data required by the iOS deletion flow.
 - Updated Electron to 41.10.4 to pick up the current 41.x security patch, and
   resolved the outstanding development-only advisories in `brace-expansion`,
   `fast-uri`, and `undici`. Production dependencies were unaffected and no

@@ -291,6 +291,232 @@ describe('Cavalry Cloud main-process boundary', () => {
     );
   });
 
+  it('starts Apple OAuth in the system browser and encrypts a provider-aware PKCE marker', async () => {
+    const values = new Map();
+    const openExternal = vi.fn(async () => {});
+    const auth = {
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signInWithOAuth: vi.fn(async () => ({
+        data: { url: 'https://project.supabase.co/auth/v1/authorize?provider=apple' },
+        error: null
+      }))
+    };
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage: createSecureStorage(),
+      shell: { openExternal },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      createClient: vi.fn(() => ({ auth })),
+      createStorage: () => ({
+        isPersistent: () => true,
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      })
+    });
+
+    await expect(controller.signInWithApple()).resolves.toMatchObject({ ok: true });
+
+    expect(auth.signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'apple',
+      options: {
+        redirectTo: 'cavalry://auth/callback',
+        skipBrowserRedirect: true
+      }
+    });
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://project.supabase.co/auth/v1/authorize?provider=apple'
+    );
+    expect(JSON.parse(values.get(OAUTH_PENDING_STORAGE_KEY))).toMatchObject({
+      provider: 'apple',
+      expiresAt: expect.any(Number)
+    });
+  });
+
+  it('serializes provider starts so a second request cannot replace the PKCE verifier', async () => {
+    let releaseBrowser = () => {};
+    const browserOpening = new Promise((resolve) => {
+      releaseBrowser = resolve;
+    });
+    const values = new Map();
+    const auth = {
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signInWithOAuth: vi.fn(async ({ provider }) => ({
+        data: { url: `https://project.supabase.co/auth/v1/authorize?provider=${provider}` },
+        error: null
+      }))
+    };
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage: createSecureStorage(),
+      shell: { openExternal: vi.fn(() => browserOpening) },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      createClient: vi.fn(() => ({ auth })),
+      createStorage: () => ({
+        isPersistent: () => true,
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      })
+    });
+
+    const apple = controller.signInWithApple();
+    const google = controller.signInWithGoogle();
+    await vi.waitFor(() => expect(auth.signInWithOAuth).toHaveBeenCalledTimes(1));
+    releaseBrowser();
+
+    await expect(apple).resolves.toMatchObject({ ok: true });
+    await expect(google).resolves.toMatchObject({
+      ok: false,
+      error: 'Apple authentication is already in progress.'
+    });
+    expect(auth.signInWithOAuth).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(values.get(OAUTH_PENDING_STORAGE_KEY))).toMatchObject({ provider: 'apple' });
+  });
+
+  it('rejects a callback whose verified identity does not match the provider that was started', async () => {
+    const googleUser = {
+      id: 'wrong-provider-user',
+      email: 'owner@example.com',
+      user_metadata: {},
+      app_metadata: { provider: 'google', providers: ['google'] },
+      identities: [{ provider: 'google' }]
+    };
+    const values = new Map();
+    const auth = {
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+      getUser: vi.fn(async () => ({ data: { user: googleUser }, error: null })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signInWithOAuth: vi.fn(async () => ({
+        data: { url: 'https://project.supabase.co/auth/v1/authorize?provider=apple' },
+        error: null
+      })),
+      exchangeCodeForSession: vi.fn(async () => ({
+        data: { session: { user: googleUser } },
+        error: null
+      })),
+      signOut: vi.fn(async () => ({ error: null }))
+    };
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage: createSecureStorage(),
+      shell: { openExternal: vi.fn(async () => {}) },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      createClient: vi.fn(() => ({ auth })),
+      createStorage: () => ({
+        isPersistent: () => true,
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      })
+    });
+
+    await controller.initialize();
+    await controller.signInWithApple();
+    const result = await controller.handleAuthCallback({ ok: true, code: 'wrong-provider-code' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      state: {
+        status: 'signed_out',
+        user: null,
+        error: { code: 'oauth_exchange_failed' }
+      }
+    });
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('links Apple to the current Cloud owner without replacing that signed-in account', async () => {
+    const googleUser = {
+      id: 'existing-owner',
+      email: 'owner@example.com',
+      user_metadata: { full_name: 'Existing Owner' },
+      app_metadata: { provider: 'google', providers: ['google'] },
+      identities: [{ provider: 'google' }]
+    };
+    const linkedUser = {
+      ...googleUser,
+      app_metadata: { provider: 'google', providers: ['google', 'apple'] },
+      identities: [{ provider: 'google' }, { provider: 'apple' }]
+    };
+    let linked = false;
+    const values = new Map();
+    const signOut = vi.fn(async () => ({ error: null }));
+    const auth = {
+      getSession: vi.fn(async () => ({
+        data: { session: { user: linked ? linkedUser : googleUser } },
+        error: null
+      })),
+      getUser: vi.fn(async () => ({
+        data: { user: linked ? linkedUser : googleUser },
+        error: null
+      })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      linkIdentity: vi.fn(async () => ({
+        data: {
+          url: 'https://project.supabase.co/auth/v1/user/identities/authorize?provider=apple'
+        },
+        error: null
+      })),
+      exchangeCodeForSession: vi.fn(async () => {
+        linked = true;
+        return { data: { session: { user: linkedUser } }, error: null };
+      }),
+      signOut
+    };
+    const openExternal = vi.fn(async () => {});
+    const controller = createCloudAuthController({
+      app: { getPath: () => '/secure' },
+      safeStorage: createSecureStorage(),
+      shell: { openExternal },
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key',
+      createClient: vi.fn(() => ({ auth })),
+      createStorage: () => ({
+        isPersistent: () => true,
+        getItem: async (key) => values.get(key) || null,
+        setItem: async (key, value) => values.set(key, value),
+        removeItem: async (key) => values.delete(key),
+        clear: async () => values.clear()
+      })
+    });
+
+    await controller.initialize();
+    await expect(controller.linkAppleIdentity()).resolves.toMatchObject({ ok: true });
+    expect(JSON.parse(values.get(OAUTH_PENDING_STORAGE_KEY))).toMatchObject({
+      operation: 'link_identity',
+      provider: 'apple',
+      expectedUserId: 'existing-owner'
+    });
+    expect(auth.linkIdentity).toHaveBeenCalledWith({
+      provider: 'apple',
+      options: {
+        redirectTo: 'cavalry://auth/callback',
+        skipBrowserRedirect: true
+      }
+    });
+
+    await expect(
+      controller.handleAuthCallback({ ok: true, code: 'link-code' })
+    ).resolves.toMatchObject({
+      ok: true,
+      state: {
+        status: 'signed_in',
+        user: { id: 'existing-owner', providers: ['google', 'apple'] }
+      }
+    });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(values.has(OAUTH_PENDING_STORAGE_KEY)).toBe(false);
+  });
+
   it('rejects an unsolicited post-startup auth callback without touching secure storage', async () => {
     const safeStorage = {
       isEncryptionAvailable: vi.fn(() => true),
@@ -389,6 +615,12 @@ describe('Cavalry Cloud main-process boundary', () => {
       type: 'auth-callback',
       ok: true,
       code: 'abc_123-XYZ'
+    });
+    expect(getCavalryAuthCallback('cavalry://auth/callback?error=access_denied')).toEqual({
+      type: 'auth-callback',
+      ok: false,
+      errorCode: 'access_denied',
+      errorMessage: 'Cloud sign-in was cancelled.'
     });
     expect(getCavalryAuthCallback('cavalry://auth/callback#access_token=secret')).toBe(null);
     expect(getCavalryAuthCallback('cavalry://auth/callback?code=abc&access_token=secret')).toBe(

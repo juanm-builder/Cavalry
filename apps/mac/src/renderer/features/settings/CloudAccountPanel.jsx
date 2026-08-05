@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { useActionBindings } from '../../shared/action-binding.jsx';
+import { AppleOAuthButton } from '../../shared/AppleOAuthButton.jsx';
 import { readAccountProfile, writeAccountProfile } from './account-preferences.js';
 
 function asObject(value) {
@@ -216,6 +217,8 @@ function SignedOutCloud({ cloud }) {
   const unavailable = cloud.status === 'unavailable';
   const connecting = cloud.status === 'signing_in';
   const pending = !!asString(cloud.pendingOperation) || cloud.status === 'initializing';
+  const busy = pending || connecting;
+  const openingApple = asString(cloud.pendingOperation) === 'sign-in-apple';
 
   return (
     <SettingsCard
@@ -225,10 +228,10 @@ function SignedOutCloud({ cloud }) {
       title="Cavalry Cloud"
       trailing={
         <StatusPill
-          icon={pending || connecting ? 'progress_activity' : unavailable ? 'cloud_off' : 'logout'}
+          icon={busy ? 'progress_activity' : unavailable ? 'cloud_off' : 'logout'}
           tone="info"
         >
-          {pending || connecting ? 'Connecting' : unavailable ? 'Unavailable' : 'Signed out'}
+          {busy ? 'Connecting' : unavailable ? 'Unavailable' : 'Signed out'}
         </StatusPill>
       }
     >
@@ -239,25 +242,37 @@ function SignedOutCloud({ cloud }) {
         <div className="settings-cloud-welcome-copy">
           <strong>Your workbooks, available across your devices</strong>
           <p>
-            Sign in with Google to add selected Cavalry workbooks to your private cloud library.
-            Nothing is uploaded until you choose Add to Cloud.
+            Sign in with Apple or Google to add selected Cavalry workbooks to your private cloud
+            library. Nothing is uploaded until you choose Add to Cloud.
+          </p>
+          <p>
+            Already have a Google-backed Cloud library? Continue with Google first, then connect
+            Apple from this Account section to keep one owner.
           </p>
         </div>
-        <button
-          className="btn btn-primary settings-google-sign-in"
-          disabled={pending || unavailable}
-          type="button"
-          {...actions.action('sign-in-with-google')}
-        >
-          <span aria-hidden="true" className="settings-google-mark">
-            G
-          </span>
-          {pending ? 'Opening Google…' : connecting ? 'Try Google Again' : 'Continue with Google'}
-        </button>
+        <div className="settings-cloud-provider-actions">
+          <AppleOAuthButton
+            className="settings-apple-sign-in"
+            disabled={busy || unavailable}
+            pending={openingApple}
+            {...actions.action('sign-in-with-apple')}
+          />
+          <button
+            className="btn btn-primary settings-google-sign-in"
+            disabled={busy || unavailable}
+            type="button"
+            {...actions.action('sign-in-with-google')}
+          >
+            <span aria-hidden="true" className="settings-google-mark">
+              G
+            </span>
+            {!openingApple && pending ? 'Opening Google…' : 'Continue with Google'}
+          </button>
+        </div>
       </div>
       <div className="settings-inline-message" role="note">
         <Icon name="shield_lock" />
-        Cavalry opens Google sign-in in your browser. macOS Keychain protects your sign-in and may
+        Cavalry opens provider sign-in in your browser. macOS Keychain protects your session and may
         ask you to approve access; Cavalry never receives your Mac password. Your local workbook
         stays on this Mac until you explicitly add it to Cloud.
       </div>
@@ -271,9 +286,21 @@ function CloudIdentity({ cloud }) {
   const name = asString(user.name || user.displayName || user.fullName) || 'Cavalry user';
   const email = asString(user.email);
   const avatarUrl = asString(user.avatarUrl || user.avatar_url || user.picture);
+  const linkedProviders = new Set([
+    asString(user.provider).toLowerCase(),
+    ...asArray(user.providers).map((provider) => asString(provider).toLowerCase())
+  ]);
+  const appleLinked = linkedProviders.has('apple');
+  const connectedProviderLabel = Array.from(linkedProviders)
+    .filter(Boolean)
+    .map((provider) =>
+      provider === 'apple' ? 'Apple' : provider === 'google' ? 'Google' : provider
+    )
+    .join(' and ');
   const pendingOperation = asString(cloud.pendingOperation);
   const pending = !!pendingOperation;
   const updatingProfile = pendingOperation === 'profile-update';
+  const linkingApple = pendingOperation === 'link-apple';
 
   return (
     <SettingsCard
@@ -282,7 +309,7 @@ function CloudIdentity({ cloud }) {
       title="Profile"
       trailing={
         <StatusPill icon="verified_user" tone="good">
-          Signed in with Google
+          Signed in to Cavalry Cloud
         </StatusPill>
       }
     >
@@ -312,10 +339,19 @@ function CloudIdentity({ cloud }) {
             type="text"
           />
           <small id="settings-cloud-profile-email">
-            {email ? `Google account: ${email}` : 'Signed in with Google'}
+            {email || name}
+            {connectedProviderLabel ? ` · Connected: ${connectedProviderLabel}` : ''}
           </small>
         </form>
         <div className="settings-cloud-identity-actions">
+          {!appleLinked ? (
+            <AppleOAuthButton
+              className="settings-apple-sign-in"
+              disabled={pending}
+              pending={linkingApple}
+              {...actions.action('link-apple-cloud')}
+            />
+          ) : null}
           <button
             className="btn btn-primary"
             disabled={pending}
@@ -346,6 +382,13 @@ function CloudIdentity({ cloud }) {
           </button>
         </div>
       </div>
+      {!appleLinked ? (
+        <div className="settings-inline-message" role="note">
+          <Icon name="link" />
+          Connect Apple while you are signed in to keep one Cloud library even if you choose Hide My
+          Email. Manual identity linking must be enabled in the Cavalry Supabase project.
+        </div>
+      ) : null}
     </SettingsCard>
   );
 }
