@@ -4,6 +4,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.25 - 2026-08-13
+
 - Reworked the in-app Assistant so it converses openly instead of answering from a
   fixed script. Every turn now carries a compact workspace snapshot (position,
   balances, current-month cash flow, top spending categories, budget status, and
@@ -39,6 +41,17 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - Updated Electron to 41.10.5 to pick up the current 41.x security patch, and
   resolved the outstanding advisories in `brace-expansion`, `fast-uri`,
   `js-yaml`, `nanoid`, and `undici`. No application behavior changed.
+- Known limitation: Assistant streaming is covered by transport and runtime tests
+  but has not yet been exercised against every supported live API or local-model
+  endpoint. Endpoints that reject streaming fall back to buffered responses.
+- Validation: formatting, runtime-license notices, lint, type checks, production
+  builds, 1,870 workspace/unit/renderer tests, 252 integration tests, Electron
+  smoke, release security checks, and release validation are gated before
+  packaging.
+- Signing/notarization status: distribution remains gated on Developer ID
+  signing with a secure timestamp, Apple notarization and stapling, Gatekeeper,
+  architecture checks, updater metadata verification, and manual review of the
+  generated GitHub draft assets.
 
 ## 1.0.24 - 2026-07-29
 
