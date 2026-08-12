@@ -5,11 +5,11 @@
 function createAdvisorRequestLifecycle({ fetch: fetchImpl } = {}) {
   const activeRequests = new Map();
 
-  async function fetchWithTimeout(url, options, timeoutMs, externalSignal) {
+  function beginTimedFetch(timeoutMs, externalSignal) {
     const controller = new AbortController();
-    let timedOut = false;
+    const state = { timedOut: false, released: false };
     const timer = setTimeout(() => {
-      timedOut = true;
+      state.timedOut = true;
       controller.abort();
     }, timeoutMs);
     const abortFromExternal = () => controller.abort();
@@ -20,23 +20,55 @@ function createAdvisorRequestLifecycle({ fetch: fetchImpl } = {}) {
         externalSignal.addEventListener('abort', abortFromExternal, { once: true });
       }
     }
-    try {
-      return await fetchImpl(url, Object.assign({}, options || {}, { signal: controller.signal }));
-    } catch (error) {
+    state.signal = controller.signal;
+    state.decorate = (error) => {
       if (error && error.name === 'AbortError') {
-        if (timedOut) {
+        if (state.timedOut) {
           error.cavalryTimeout = true;
         } else if (externalSignal && externalSignal.aborted) {
           error.cavalryCancelled = true;
         }
       }
-      throw error;
-    } finally {
+      return error;
+    };
+    state.release = () => {
+      if (state.released) return;
+      state.released = true;
       clearTimeout(timer);
       if (externalSignal && typeof externalSignal.removeEventListener === 'function') {
         externalSignal.removeEventListener('abort', abortFromExternal);
       }
+    };
+    return state;
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs, externalSignal) {
+    const state = beginTimedFetch(timeoutMs, externalSignal);
+    try {
+      return await fetchImpl(url, Object.assign({}, options || {}, { signal: state.signal }));
+    } catch (error) {
+      throw state.decorate(error);
+    } finally {
+      state.release();
     }
+  }
+
+  // Streaming responses must keep the timeout and cancellation wiring attached until the
+  // body is fully consumed; fetchWithTimeout releases both as soon as headers arrive.
+  async function fetchStreamedWithTimeout(url, options, timeoutMs, externalSignal) {
+    const state = beginTimedFetch(timeoutMs, externalSignal);
+    let response;
+    try {
+      response = await fetchImpl(url, Object.assign({}, options || {}, { signal: state.signal }));
+    } catch (error) {
+      state.release();
+      throw state.decorate(error);
+    }
+    return {
+      response,
+      decorate: state.decorate,
+      release: state.release
+    };
   }
 
   function sendStatus(event, status) {
@@ -135,6 +167,7 @@ function createAdvisorRequestLifecycle({ fetch: fetchImpl } = {}) {
     assertNotCancelled,
     cancelRequest,
     createRequestState,
+    fetchStreamedWithTimeout,
     fetchWithTimeout,
     finishRequestState,
     getRequestSignal,

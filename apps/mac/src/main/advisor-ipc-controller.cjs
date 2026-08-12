@@ -343,7 +343,8 @@ function createAdvisorIpcController({
           return scrubAdvisorSecretsForRenderer({
             ok: true,
             text: String(result.text == null ? '' : result.text),
-            ...(result.message ? { message: result.message } : {})
+            ...(result.message ? { message: result.message } : {}),
+            ...(result.usage ? { usage: result.usage } : {})
           });
         }
         return { ok: true, text: result };
@@ -362,7 +363,7 @@ function createAdvisorIpcController({
             timeout: true,
             requestId: runtime.normalizeAdvisorRequestId(payload && payload.requestId),
             error:
-              'The local model did not answer within 5 minutes. Cavalry used the verified workbook calculation instead.'
+              'The model did not answer within 5 minutes. Try again, or check the model connection in Settings.'
           };
         }
         throw error;

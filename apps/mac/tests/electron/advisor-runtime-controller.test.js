@@ -1268,6 +1268,47 @@ describe('Advisor runtime controller', () => {
     ).rejects.toThrow('The model response did not include a message.');
   });
 
+  it('preserves legacy top-level response payloads in plain and structured results', async () => {
+    const providerResponses = [
+      { response: 'Legacy top-level response.' },
+      { response: 'Structured legacy response.' }
+    ];
+    const { controller } = createController({
+      fetch: async () => ({
+        ok: true,
+        text: async () => JSON.stringify(providerResponses.shift())
+      })
+    });
+    const settings = {
+      provider: 'openai',
+      endpoint: 'https://example.invalid/v1/chat/completions',
+      model: 'local-model',
+      apiKey: 'sk-controller-secret'
+    };
+
+    await expect(
+      controller.callAdvisorModel(settings, {
+        requestId: 'chat_legacy_top_level',
+        messages: [{ role: 'user', content: 'Hello.' }]
+      })
+    ).resolves.toBe('Legacy top-level response.');
+    await expect(
+      controller.callAdvisorModel(settings, {
+        requestId: 'chat_legacy_top_level_structured',
+        messages: [{ role: 'user', content: 'Hello again.' }],
+        returnMessage: true
+      })
+    ).resolves.toEqual({
+      text: 'Structured legacy response.',
+      message: {
+        role: 'assistant',
+        content: 'Structured legacy response.',
+        tool_calls: []
+      },
+      usage: null
+    });
+  });
+
   it('keeps model-selection dialogs inside the controller IPC adapter', async () => {
     const ipcMain = createIpcMain();
     const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: [] }));

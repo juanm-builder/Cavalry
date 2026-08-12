@@ -5,3 +5,4 @@
 **/test-artifacts/**
 package-lock.json
 *.min.js
+**/supabase/.temp/**

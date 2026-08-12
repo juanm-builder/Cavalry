@@ -8,7 +8,7 @@ Electron and Chromium notices are shipped as separate files. Cavalry project cod
 is covered by Cavalry-LICENSE.txt.
 
 PACKAGE COUNT: 28
-INVENTORY SHA-256: b517908621e96254031fb15a93a5863caabef2bc4ec70bee653658c557c41981
+INVENTORY SHA-256: 3261db1e751ac598f6842279702d1baec83fdf1599e689ad2750cebc5b52a729
 
 ================================================================================
 PACKAGE: @supabase/auth-js@2.110.8
@@ -693,10 +693,10 @@ SOFTWARE.
 ----- END LICENSE -----
 
 ================================================================================
-PACKAGE: js-yaml@4.3.0
+PACKAGE: js-yaml@4.3.1
 DECLARED LICENSE: MIT
 SOURCE: https://github.com/nodeca/js-yaml
-LOCK IDENTITY: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==
+LOCK IDENTITY: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==
 LOCK PATHS: node_modules/js-yaml
 LEGAL FILES: LICENSE
 ================================================================================

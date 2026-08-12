@@ -241,6 +241,25 @@ export const CAVALRY_ASSISTANT_TOOLS = Object.freeze([
     sortDirection: stringProperty('Sort direction.', { enum: ['asc', 'desc'] })
   }),
   tool(
+    'summarize_spending',
+    'Aggregate the full filtered transaction set into base-currency totals grouped by category, counterparty, account, or month, with counts, shares, and a citable evidence set. Prefer this over paginating raw transaction rows for totals, breakdowns, and questions like where the money is going.',
+    {
+      groupBy: stringProperty('How to group the aggregation.', {
+        enum: ['category', 'counterparty', 'account', 'month']
+      }),
+      type: stringProperty('Transaction flow filter. Defaults to expense.', {
+        enum: ['all', 'income', 'expense', 'transfer', 'opening', 'other']
+      }),
+      account: stringProperty('Optional account ID or exact name filter.'),
+      accountId: stringProperty('Optional account ID or exact name filter.'),
+      category: stringProperty('Optional category ID or exact name filter.'),
+      categoryId: stringProperty('Optional category ID or exact name filter.'),
+      ...DATE_RANGE_PROPERTIES,
+      limit: numberProperty('Maximum number of groups to return, from 1 to 50. Default 20.')
+    },
+    ['groupBy']
+  ),
+  tool(
     'list_accounts',
     'List accounts with native balance/currency, baseBalance/baseCurrency valuation, status, and usage counts.',
     {
