@@ -4,6 +4,31 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+- Reworked the in-app Assistant so it converses openly instead of answering from a
+  fixed script. Every turn now carries a compact workspace snapshot (position,
+  balances, current-month cash flow, top spending categories, budget status, and
+  upcoming bills), so questions like "how am I doing?" are answered from real
+  workbook data instead of spending tool calls rediscovering it.
+- Rewrote the Assistant instructions around a plain-spoken advisor persona that
+  states a reasonable assumption and continues rather than stopping to interrogate.
+  Clarification is now reserved for genuine blockers and can accompany a partial
+  answer instead of ending the turn.
+- Assistant replies now stream as the model writes them, for both API and local
+  models. A stream that an endpoint rejects transparently falls back to a buffered
+  request, and transient rate-limit or server errors are retried before surfacing.
+- Confirmed actions are now described by the model using the real amounts, names,
+  and dates from the tool result, falling back to the previous fixed confirmation
+  text if that summary cannot be produced. Everyday replies such as "sure" or
+  "sounds good" confirm a pending action, and declines cancel it cleanly.
+- Added a `summarize_spending` Assistant tool that aggregates the full filtered
+  transaction set by category, counterparty, account, or month with citable
+  evidence, replacing page-by-page row crawling for spending questions.
+- Unrecognized account, category, or counterparty names now return the closest
+  matching records instead of a dead end, and conversations carry forward what
+  earlier turns actually looked up.
+- Replaced a misleading model-timeout message that claimed Cavalry had substituted
+  a verified workbook calculation; timeouts now say plainly that the model did not
+  answer and point to the connection settings.
 - Added Sign in with Apple to Cavalry Cloud on Mac, including encrypted PKCE
   browser authentication, explicit Apple identity linking, provider-aware OAuth
   state, official Apple button artwork, and shared iPhone/iPad account setup.

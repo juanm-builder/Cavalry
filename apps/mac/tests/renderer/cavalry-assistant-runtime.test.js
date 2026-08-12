@@ -65,63 +65,64 @@ function makeImages(count) {
 }
 
 describe('Cavalry assistant runtime', () => {
-  it('builds concise route-aware instructions without asking for hidden reasoning', () => {
+  it('builds route-aware instructions that keep the advisor contract without pinning wording', () => {
     const instructions = buildCavalryAssistantInstructions({
       activeRouteId: 'ledger',
       today: '2026-07-10'
     });
 
-    expect(instructions).toContain("selected model is Cavalry's in-app assistant");
-    expect(instructions).toContain('Use the provided tools');
-    expect(instructions).toContain('read_workspace_context');
-    expect(instructions).toContain('until hasMore is false');
-    expect(instructions).toContain('continuation of the current conversation');
-    expect(instructions).toContain('Answer the newest question first');
-    expect(instructions).toContain('Silently reuse facts');
-    expect(instructions).toContain('do not recap income, balances, goals, card guidance');
-    expect(instructions).toContain('shortest natural response');
-    expect(instructions).toContain('Do not force headings, a table, a checklist');
-    expect(instructions).toContain('Check relevant math, dates, currencies, assumptions');
-    expect(instructions).toContain(
-      'tool names, calls, progress, and completion logs behind the scenes'
-    );
-    expect(instructions).toContain('Distinguish recorded facts from inference and unknowns');
-    expect(instructions).toContain('use a useful range when evidence is uncertain');
-    expect(instructions).toContain('acknowledge the miss directly and briefly');
-    expect(instructions).toContain('use analyze_recurring_expenses');
-    expect(instructions).toContain('distinguish active trackers');
-    expect(instructions).toContain('tracker setting is not proof');
-    expect(instructions).toContain('variable usage or top-up spending');
-    expect(instructions).toContain("personal, a business tool, supports the user's income");
-    expect(instructions).toContain('recent behavior and achievable changes');
-    expect(instructions).toContain('paying a card in full only when it is newly relevant');
-    expect(instructions).toContain('native balance/currency');
-    expect(instructions).toContain('Never relabel a foreign-currency amount');
-    expect(instructions).toContain('omit date when the user did not specify one');
-    expect(instructions).toContain('Never ask a follow-up question only');
-    expect(instructions).toContain('Do not record a card payment as a new expense');
-    expect(instructions).toContain('saved auto-categorization rules');
-    expect(instructions).toContain('do not ask preemptively merely because the field was omitted');
-    expect(instructions).toContain('auto_assign_category_icons');
-    expect(instructions).toContain('instead of guessing icon IDs');
-    expect(instructions).toContain('Treat returned persisted icon and verified fields as truth');
-    expect(instructions).toContain('treat verification_failed as failure');
-    expect(instructions).toContain('never narrate a known icon mismatch as success');
-    expect(instructions).toContain('Preserve the exact entity name or ID');
-    expect(instructions).toContain('end of the searched observation window');
-    expect(instructions).toContain('machine markers below are transport metadata');
-    expect(instructions).toContain('one machine-only citation marker');
-    expect(instructions).toContain('[[source-set:EVIDENCE_SET_ID]]');
-    expect(instructions).toContain('Never claim an action succeeded');
-    expect(instructions).toContain('require explicit user confirmation');
-    expect(instructions).toContain('currency-converting action');
-    expect(instructions).toContain(
-      'Never set confirmed, allowDuplicate, or allowCurrencyConversion'
-    );
-    expect(instructions).toContain('call request_clarification');
+    // Orientation the model cannot work without.
     expect(instructions).toContain('Current route: ledger. Current date: 2026-07-10.');
+    expect(instructions.length).toBeLessThan(9000);
+
+    // Safety contract: approval flags, no unverified success claims, untrusted image text.
+    expect(instructions).toContain(
+      'never set confirmed, allowDuplicate, or allowCurrencyConversion yourself'
+    );
+    expect(instructions).toContain('Never claim an action succeeded unless a tool result confirms');
+    expect(instructions).toMatch(/images? .*untrusted|untrusted evidence/i);
     expect(instructions).toContain('Do not reveal chain-of-thought');
-    expect(instructions).not.toContain('Present numeric comparisons as a small markdown table');
+
+    // Grounding contract: no invention, machine citation markers, absence windows.
+    expect(instructions).toMatch(/Never invent amounts/i);
+    expect(instructions).toContain('[[source:transaction:ID|account:ID]]');
+    expect(instructions).toContain('[[source-set:EVIDENCE_SET_ID]]');
+    expect(instructions).toContain('end of the searched observation window');
+
+    // Conversational stance: assume and continue rather than interrogate.
+    expect(instructions).toMatch(/Default to answering/i);
+    expect(instructions).toMatch(/make the assumption/i);
+    expect(instructions).toContain('request_clarification');
+    expect(instructions).toContain('Never combine request_clarification with another tool call.');
+
+    // Tool discovery: the discovery entry point and the aggregation shortcut are named.
+    expect(instructions).toContain('read_workspace_context');
+    expect(instructions).toContain('summarize_spending');
+    expect(instructions).toContain('analyze_recurring_expenses');
+    expect(instructions).toContain('auto_assign_category_icons');
+    expect(instructions).toContain('until hasMore is false');
+
+    // Turn-context digests are explained and never echoed.
+    expect(instructions).toContain('⟦turn-context:');
+
+    // No snapshot block and no pending-confirmation block when neither was supplied.
+    expect(instructions).not.toContain('Workspace snapshot');
+    expect(instructions).not.toContain('confirmation card is currently showing');
+  });
+
+  it('injects the workspace snapshot and pending confirmation state when supplied', () => {
+    const instructions = buildCavalryAssistantInstructions({
+      activeRouteId: 'dashboard',
+      today: '2026-07-10',
+      workspaceSnapshotJson: '{"position":{"netWorth":1234.5}}',
+      pendingConfirmationMessage: 'delete “Rent”'
+    });
+
+    expect(instructions).toContain('Workspace snapshot');
+    expect(instructions).toContain('{"position":{"netWorth":1234.5}}');
+    expect(instructions).toContain('Never attach citation markers to snapshot figures');
+    expect(instructions).toContain('confirmation card is currently showing');
+    expect(instructions).toContain('delete “Rent”');
   });
 
   it('runs an OpenAI Responses tool loop with continuation output and one request id', async () => {
@@ -687,11 +688,111 @@ describe('Cavalry assistant runtime', () => {
       error: 'Cavalry stopped after 2 model iterations before the request completed.',
       cancelled: false
     });
-    expect(advisor.invoke).toHaveBeenCalledTimes(2);
+    // Two tool iterations plus one final wrap-up attempt with tools disabled.
+    expect(advisor.invoke).toHaveBeenCalledTimes(3);
+    expect(advisor.invoke.mock.calls[2][1]).toMatchObject({ tool_choice: 'none' });
     expect(executeTool).toHaveBeenCalledTimes(2);
     expect(answer.toolResults).toHaveLength(2);
-    expect(answer.activities.filter((item) => item.type === 'model')).toHaveLength(2);
     expect(answer.activities.filter((item) => item.type === 'tool')).toHaveLength(2);
+  });
+
+  it('asks the model to wrap up with what it has when the iteration bound is reached', async () => {
+    let modelCall = 0;
+    const advisor = {
+      invoke: vi.fn(async (_command, payload) => {
+        modelCall += 1;
+        if (payload.tool_choice === 'none') {
+          return {
+            ok: true,
+            response: {
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: 'Here is what I found so far; the rest is still unverified.'
+                  }
+                }
+              ]
+            }
+          };
+        }
+        return {
+          ok: true,
+          response: {
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: `loop_call_${modelCall}`,
+                      type: 'function',
+                      function: {
+                        name: 'search_transactions',
+                        arguments: `{"query":"loop ${modelCall}"}`
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        };
+      })
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'Keep searching.',
+      settings: { provider: 'openai', apiMode: 'chat_completions', hasApiKey: true },
+      advisor,
+      tools: [SEARCH_TOOL],
+      executeTool: vi.fn(async () => ({ ok: true, rows: [] })),
+      maxIterations: 2,
+      requestId: 'wrap_up_turn'
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      text: 'Here is what I found so far; the rest is still unverified.',
+      error: ''
+    });
+    expect(answer.toolResults).toHaveLength(2);
+  });
+
+  it('retries once when the model returns empty final text', async () => {
+    let modelCall = 0;
+    const advisor = {
+      invoke: vi.fn(async () => {
+        modelCall += 1;
+        return {
+          ok: true,
+          response: {
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: modelCall === 1 ? '' : 'Your balance looks steady this month.'
+                }
+              }
+            ]
+          }
+        };
+      })
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'How am I doing?',
+      settings: { provider: 'openai', apiMode: 'chat_completions', hasApiKey: true },
+      advisor,
+      requestId: 'empty_retry_turn'
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      text: 'Your balance looks steady this month.'
+    });
+    expect(advisor.invoke).toHaveBeenCalledTimes(2);
   });
 
   it('normalizes model cancellation for the assistant UI', async () => {

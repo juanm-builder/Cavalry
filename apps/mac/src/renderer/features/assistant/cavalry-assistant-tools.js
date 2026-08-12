@@ -54,6 +54,7 @@ import {
   updateTransaction
 } from './cavalry-assistant-tool-support.js';
 import { payBill } from './cavalry-assistant-pay-bill.js';
+import { summarizeSpending } from './cavalry-assistant-spending-tool.js';
 
 async function readPersistedWorkbook(environment, fallbackWorkbook) {
   try {
@@ -752,6 +753,7 @@ const TOOL_HANDLERS = Object.freeze({
   read_workspace_context: readWorkspaceContext,
   read_workspace_summary: readWorkspaceSummary,
   search_transactions: searchTransactions,
+  summarize_spending: summarizeSpending,
   list_accounts: listAccounts,
   list_categories: listCategories,
   read_budgets: readBudgets,

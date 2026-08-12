@@ -36,6 +36,12 @@ import {
   transactionRow
 } from './cavalry-assistant-tool-presenters.js';
 import { createRecurringAnalysisTools } from './cavalry-assistant-recurring-analysis.js';
+import {
+  entitySuggestionLabel,
+  fuzzyEntitySuggestions
+} from './cavalry-assistant-entity-matching.js';
+
+export { fuzzyEntitySuggestions } from './cavalry-assistant-entity-matching.js';
 
 const EVIDENCE_RECORD_PREVIEW_LIMIT = 50;
 
@@ -191,23 +197,27 @@ export function resolveEntity(items, reference, options = {}) {
     return names.some((name) => textKey(item && item[name]) === key);
   });
   if (!matches.length) {
+    const suggestions = fuzzyEntitySuggestions(items, ref, names);
     return {
       ok: false,
       status: 'not_found',
       error: errorItem(
         'reference_not_found',
-        `${options.label || 'Entity'} “${ref}” was not found.`,
+        `${options.label || 'Entity'} “${ref}” was not found.${
+          suggestions ? ` Closest matches: ${suggestions}. Retry with the intended ID.` : ''
+        }`,
         options.field
       )
     };
   }
   if (matches.length > 1) {
+    const matchList = matches.slice(0, 5).map(entitySuggestionLabel).join(', ');
     return {
       ok: false,
       status: 'ambiguous_reference',
       error: errorItem(
         'ambiguous_reference',
-        `${options.label || 'Entity'} “${ref}” matches more than one record. Use its ID.`,
+        `${options.label || 'Entity'} “${ref}” matches more than one record: ${matchList}. Use its ID.`,
         options.field
       )
     };

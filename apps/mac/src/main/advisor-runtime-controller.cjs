@@ -22,6 +22,16 @@ const advisorMicrophoneHelpers = require('./advisor-microphone.cjs');
 const { assertCompanionMultimodalInput } = require('./advisor-multimodal-input.cjs');
 const { createAdvisorRequestLifecycle } = require('./advisor-request-lifecycle.cjs');
 const {
+  buildChatRequestBody,
+  createAdvisorStreamRunners,
+  createRequestFailureRethrower,
+  createRetryingPost,
+  finalizeChatResult: finalizeAdvisorChatResult,
+  openAiUnreachableError,
+  parseJsonSafe: parseAdvisorResponseText,
+  responseErrorMessage: getAdvisorResponseErrorMessage
+} = require('./advisor-stream-transport.cjs');
+const {
   ADVISOR_TRANSCRIPTION_MODEL,
   ADVISOR_TRANSCRIPTION_PROMPT,
   buildAdvisorTranscriptionFormData,
@@ -69,6 +79,7 @@ const {
 
 const LOCAL_ADVISOR_STARTUP_TIMEOUT_MS = 300000;
 const ADVISOR_REQUEST_TIMEOUT_MS = 300000;
+const ADVISOR_RETRY_DELAYS_MS = [1000, 3000];
 
 function createAdvisorRuntimeController(dependencies = {}) {
   const app = dependencies.app;
@@ -88,11 +99,17 @@ function createAdvisorRuntimeController(dependencies = {}) {
   const inspectGgufCompatibility =
     dependencies.inspectGgufCompatibility || inspectGgufCompatibilityDefault;
 
+  const retryDelaysMs = Array.isArray(dependencies.advisorRetryDelaysMs)
+    ? dependencies.advisorRetryDelaysMs
+    : ADVISOR_RETRY_DELAYS_MS;
+  const delay = dependencies.delay || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+
   const advisorRequestLifecycle = createAdvisorRequestLifecycle({ fetch });
   const {
     assertNotCancelled: assertAdvisorRequestNotCancelled,
     cancelRequest: cancelAdvisorRequest,
     createRequestState: createAdvisorRequestState,
+    fetchStreamedWithTimeout,
     fetchWithTimeout,
     finishRequestState: finishAdvisorRequestState,
     getRequestSignal: getAdvisorRequestSignal,
@@ -101,6 +118,12 @@ function createAdvisorRuntimeController(dependencies = {}) {
     normalizeRequestId: normalizeAdvisorRequestId,
     sendStatus: sendAdvisorStatus
   } = advisorRequestLifecycle;
+  const postAdvisorRequestWithRetry = createRetryingPost({ delay, retryDelaysMs });
+  const { streamAgentTurn, streamChatCompletion } = createAdvisorStreamRunners({
+    fetchStreamedWithTimeout,
+    sendStatus: sendAdvisorStatus,
+    timeoutMs: ADVISOR_REQUEST_TIMEOUT_MS
+  });
   const { callAdvisorTranscription } = createAdvisorTranscriptionRuntime({
     getTranscriptionEndpoint: getAdvisorTranscriptionEndpoint,
     normalizeSettings: normalizeAdvisorSettings,
@@ -961,38 +984,6 @@ function createAdvisorRuntimeController(dependencies = {}) {
     );
   }
 
-  function isOpenAIChatCompletionsEndpoint(endpoint) {
-    try {
-      const parsed = new URL(String(endpoint || ''));
-      return (
-        /(^|\.)openai\.com$/i.test(parsed.hostname) &&
-        /\/v1\/chat\/completions\/?$/i.test(parsed.pathname)
-      );
-    } catch (_error) {
-      return false;
-    }
-  }
-
-  function applyAdvisorOutputTokenLimit(body, settings, payload, endpoint) {
-    const explicitCompletionLimit = Number(payload && payload.max_completion_tokens);
-    const legacyCompletionLimit = Number(payload && payload.max_tokens);
-    const limit =
-      Number.isFinite(explicitCompletionLimit) && explicitCompletionLimit > 0
-        ? Math.round(explicitCompletionLimit)
-        : Number.isFinite(legacyCompletionLimit) && legacyCompletionLimit > 0
-          ? Math.round(legacyCompletionLimit)
-          : 0;
-    if (!limit) {
-      return body;
-    }
-    if (settings.provider === 'openai' && isOpenAIChatCompletionsEndpoint(endpoint)) {
-      body.max_completion_tokens = limit;
-    } else {
-      body.max_tokens = limit;
-    }
-    return body;
-  }
-
   async function callAdvisorModel(settings, payload, event) {
     const requestState = createAdvisorRequestState(payload && payload.requestId, event);
     try {
@@ -1030,51 +1021,49 @@ function createAdvisorRuntimeController(dependencies = {}) {
       if (settings.provider === 'openai' && settings.apiKey) {
         headers.Authorization = `Bearer ${settings.apiKey}`;
       }
-      const messages = payload.messages || [];
-      assertCompanionMultimodalInput(messages);
-      const body = {
-        model,
-        messages,
-        temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.1
-      };
-      if (typeof payload.top_p === 'number') {
-        body.top_p = payload.top_p;
-      }
-      applyAdvisorOutputTokenLimit(body, settings, payload, endpoint);
-      if (payload.response_format) {
-        body.response_format = payload.response_format;
-      }
-      if (Array.isArray(payload.tools)) {
-        body.tools = payload.tools;
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'tool_choice')) {
-        body.tool_choice = payload.tool_choice;
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'parallel_tool_calls')) {
-        body.parallel_tool_calls = payload.parallel_tool_calls;
-      }
+      assertCompanionMultimodalInput(payload.messages || []);
+      const wantsStream = payload.stream === true;
+      const body = buildChatRequestBody({ endpoint, model, payload, settings, wantsStream });
+      const requestInit = (requestBody) => ({
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      });
       const postAdvisorRequest = (requestBody) =>
-        fetchWithTimeout(
-          endpoint,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(requestBody)
-          },
-          ADVISOR_REQUEST_TIMEOUT_MS,
-          getAdvisorRequestSignal(requestState)
+        postAdvisorRequestWithRetry(() =>
+          fetchWithTimeout(
+            endpoint,
+            requestInit(requestBody),
+            ADVISOR_REQUEST_TIMEOUT_MS,
+            getAdvisorRequestSignal(requestState)
+          )
         );
-      const parseAdvisorResponseText = (value) => {
-        try {
-          return value ? JSON.parse(value) : null;
-        } catch (_error) {
-          return null;
+      const rethrowRequestFailure = createRequestFailureRethrower(requestState);
+
+      if (wantsStream) {
+        const streamed = await streamChatCompletion({
+          body,
+          endpoint,
+          event,
+          requestInit,
+          requestSignal: getAdvisorRequestSignal(requestState),
+          requestState,
+          rethrowRequestFailure
+        });
+        if (streamed.handled) {
+          sendAdvisorStatus(event, {
+            phase: 'response',
+            requestId: requestState ? requestState.requestId : '',
+            message: 'Cavalry finished.',
+            progressPercent: 100
+          });
+          return finalizeAdvisorChatResult(streamed.message, streamed.usage, payload);
         }
-      };
-      const getAdvisorResponseErrorMessage = (responseText, parsedBody, status) =>
-        parsedBody && parsedBody.error && parsedBody.error.message
-          ? parsedBody.error.message
-          : responseText || `Model request failed with HTTP ${status}.`;
+        // The endpoint ignored or rejected streaming; fall through to the buffered request.
+        delete body.stream;
+        delete body.stream_options;
+      }
+
       let response = null;
       let generationStatusTimer = null;
       try {
@@ -1090,18 +1079,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
         }
         response = await postAdvisorRequest(body);
       } catch (error) {
-        if (error && error.name === 'AbortError') {
-          if (
-            error.cavalryCancelled ||
-            (requestState && requestState.controller && requestState.controller.signal.aborted)
-          ) {
-            throw error;
-          }
-          throw new Error(
-            'The local model did not answer within 5 minutes. Cavalry used the verified workbook calculation instead.'
-          );
-        }
-        throw error;
+        rethrowRequestFailure(error);
       } finally {
         if (generationStatusTimer) {
           clearInterval(generationStatusTimer);
@@ -1162,26 +1140,18 @@ function createAdvisorRuntimeController(dependencies = {}) {
           : parsed && Object.prototype.hasOwnProperty.call(parsed, 'response')
             ? parsed.response
             : '';
-      const answer = responseContent == null ? '' : String(responseContent);
-      const toolCalls =
-        responseMessage && Array.isArray(responseMessage.tool_calls)
-          ? responseMessage.tool_calls
-          : [];
-      const returnMessage = payload && payload.returnMessage === true;
-      if (!answer && !(returnMessage && toolCalls.length)) {
-        throw new Error('The model response did not include a message.');
-      }
-      if (returnMessage) {
-        return {
-          text: answer,
-          message: {
-            role: String((responseMessage && responseMessage.role) || 'assistant'),
-            content: responseMessage ? responseContent : answer,
-            tool_calls: toolCalls
-          }
-        };
-      }
-      return answer;
+      return finalizeAdvisorChatResult(
+        {
+          role: String((responseMessage && responseMessage.role) || 'assistant'),
+          content: responseMessage ? responseContent : '',
+          tool_calls:
+            responseMessage && Array.isArray(responseMessage.tool_calls)
+              ? responseMessage.tool_calls
+              : []
+        },
+        (parsed && parsed.usage) || null,
+        payload
+      );
     } finally {
       finishAdvisorRequestState(requestState);
     }
@@ -1243,27 +1213,49 @@ function createAdvisorRuntimeController(dependencies = {}) {
           body[key] = payload[key];
         }
       });
+      const agentRequestInit = () => ({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${settings.apiKey}`
+        },
+        body: JSON.stringify(body)
+      });
+      const unreachable = openAiUnreachableError;
+
+      if (payload && payload.stream === true && !(dependencies && dependencies.fetchWithTimeout)) {
+        body.stream = true;
+        const streamedTurn = await streamAgentTurn({
+          endpoint,
+          event,
+          requestInit: agentRequestInit,
+          requestSignal: getAdvisorRequestSignal(requestState),
+          requestState,
+          unreachable
+        });
+        if (streamedTurn.handled) {
+          sendAdvisorStatus(event, {
+            phase: 'response',
+            requestId: requestState ? requestState.requestId : '',
+            message: 'Cavalry finished.',
+            progressPercent: 100
+          });
+          return streamedTurn.response;
+        }
+        delete body.stream;
+      }
+
       let response;
       try {
         response = await transport(
           endpoint,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${settings.apiKey}`
-            },
-            body: JSON.stringify(body)
-          },
+          agentRequestInit(),
           ADVISOR_REQUEST_TIMEOUT_MS,
           getAdvisorRequestSignal(requestState)
         );
       } catch (error) {
         if (error && error.name === 'AbortError') throw error;
-        const reason = String((error && (error.cause?.message || error.message)) || '').trim();
-        throw new Error(
-          `Could not reach the OpenAI API. Check your internet connection and try again${reason ? ` (${reason}).` : '.'}`
-        );
+        throw unreachable(error);
       }
       const text = await response.text();
       let parsed = null;

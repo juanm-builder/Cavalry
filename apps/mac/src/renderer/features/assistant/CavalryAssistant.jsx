@@ -20,6 +20,19 @@ import {
   updateActiveCavalryAssistantConversation
 } from './cavalry-assistant-conversations.js';
 import { runCavalryAssistantTurn } from './cavalry-assistant-runtime.js';
+import { buildCavalryAssistantWorkspaceSnapshot } from './cavalry-assistant-workspace-snapshot.js';
+import {
+  chainedPendingConfirmation,
+  committedToolResults,
+  confirmedActionMessage,
+  isConfirmationDecline,
+  isConfirmationReply,
+  narrateConfirmedAction,
+  pendingConfirmationFromResult,
+  readableToolName,
+  toolFailureMessage,
+  turnContextDigest
+} from './cavalry-assistant-confirmations.js';
 import { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
 import {
   AssistantHeaderMenu,
@@ -73,152 +86,6 @@ function providerPresentation(settings = {}) {
     icon: 'link_off',
     connected: false
   };
-}
-
-function readableToolName(toolName) {
-  return asText(toolName)
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-const CONFIRMED_ACTION_VERBS = Object.freeze({
-  create_transaction: 'Recorded',
-  update_transaction: 'Updated',
-  delete_transaction: 'Deleted',
-  create_account: 'Created',
-  update_account: 'Updated',
-  archive_account: 'Archived',
-  restore_account: 'Restored',
-  retire_account: 'Retired',
-  delete_account: 'Deleted',
-  create_category: 'Created',
-  update_category: 'Updated',
-  rename_category: 'Renamed',
-  update_category_linked_account: 'Updated',
-  archive_category: 'Archived',
-  restore_category: 'Restored',
-  delete_category: 'Deleted',
-  set_budget: 'Saved',
-  archive_budget: 'Removed',
-  create_bill: 'Created',
-  update_bill: 'Updated',
-  pay_bill: 'Recorded payment for',
-  archive_bill: 'Archived',
-  create_counterparty: 'Created',
-  archive_counterparty: 'Archived',
-  set_exchange_rate: 'Updated'
-});
-
-function confirmedActionEntity(toolResult) {
-  const data = asObject(toolResult?.data);
-  return asObject(
-    data.transaction ||
-      data.deletedTransaction ||
-      data.account ||
-      data.category ||
-      data.recurringItem ||
-      data.counterparty ||
-      data.budget
-  );
-}
-
-function confirmedActionMessage(toolName, toolResult, argumentsValue = {}) {
-  const verb = CONFIRMED_ACTION_VERBS[asText(toolName)];
-  const entity = confirmedActionEntity(toolResult);
-  const argumentsSource = asObject(argumentsValue);
-  const label = asText(
-    entity.description ||
-      entity.name ||
-      entity.categoryName ||
-      entity.sheetName ||
-      entity.id ||
-      entity.categoryId ||
-      argumentsSource.description ||
-      argumentsSource.transaction ||
-      argumentsSource.account ||
-      argumentsSource.category ||
-      argumentsSource.bill ||
-      argumentsSource.counterparty
-  );
-  if (verb && label) return `${verb} “${label}”.`;
-  if (asText(toolName) === 'save_workbook') return 'Saved.';
-  return 'Done—the change was saved.';
-}
-
-const CONFIRMATION_APPROVAL_FIELDS = Object.freeze([
-  'confirmed',
-  'allowDuplicate',
-  'allowCurrencyConversion'
-]);
-
-function confirmationApprovalField(confirmation) {
-  const field = asText(confirmation?.field);
-  return CONFIRMATION_APPROVAL_FIELDS.includes(field) ? field : 'confirmed';
-}
-
-function confirmationMessage(confirmation) {
-  return (
-    asText(confirmation?.message) ||
-    `Confirm that you want Cavalry to ${asText(confirmation?.action) || 'continue'}.`
-  );
-}
-
-function pendingConfirmationFromResult(turnResult) {
-  const toolResults = asArray(turnResult?.toolResults);
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
-    const toolResult = asObject(toolResults[index]);
-    const result = asObject(toolResult.result);
-    const confirmation = asObject(result.confirmation);
-    if (confirmation.required !== true) continue;
-    const argumentsWithoutApproval = { ...asObject(toolResult.arguments) };
-    CONFIRMATION_APPROVAL_FIELDS.forEach((field) => delete argumentsWithoutApproval[field]);
-    return {
-      id: toolResult.callId || `${toolResult.toolName}-${index}`,
-      toolName: asText(toolResult.toolName),
-      arguments: argumentsWithoutApproval,
-      approvalField: confirmationApprovalField(confirmation),
-      message: confirmationMessage(confirmation)
-    };
-  }
-  return null;
-}
-
-function chainedPendingConfirmation(toolResult, currentConfirmation, approvedArguments) {
-  const result = asObject(toolResult);
-  const confirmation = asObject(result.confirmation);
-  if (confirmation.required !== true) return null;
-  const approvalField = confirmationApprovalField(confirmation);
-  if (
-    approvalField === currentConfirmation.approvalField &&
-    approvedArguments[approvalField] === true
-  ) {
-    return null;
-  }
-  const replayArguments = { ...approvedArguments };
-  delete replayArguments[approvalField];
-  return {
-    id: asText(result.toolCallId) || currentConfirmation.id,
-    toolName: currentConfirmation.toolName,
-    arguments: replayArguments,
-    approvalField,
-    message: confirmationMessage(confirmation)
-  };
-}
-
-function committedToolResults(turnResult) {
-  return asArray(turnResult?.toolResults).filter(
-    (toolResult) => toolResult?.ok === true && toolResult?.result?.changed === true
-  );
-}
-
-function toolFailureMessage(toolResult, fallback) {
-  const source = asObject(toolResult);
-  const firstError = asObject(asArray(source.errors)[0]);
-  return asText(source.error || firstError.message) || fallback;
-}
-
-function isConfirmationReply(value) {
-  return /^(yes|y|confirm|confirmed|go ahead|do it|proceed|approve)(?:[.!])?$/i.test(asText(value));
 }
 
 const ROUTE_PROMPTS = Object.freeze({
@@ -283,6 +150,7 @@ export function CavalryAssistant({
   const [pendingClarification, setPendingClarification] = useState(null);
   const [error, setError] = useState('');
   const [liveStatus, setLiveStatus] = useState('');
+  const [streamingText, setStreamingText] = useState('');
   const {
     applyPanelWidth,
     beginPanelResize,
@@ -341,11 +209,14 @@ export function CavalryAssistant({
   const cancelVoice = voice.cancel;
   const history = useMemo(
     () =>
-      messages.map(({ role, text, attachments: messageAttachments }) => ({
-        role,
-        content: text,
-        images: asArray(messageAttachments)
-      })),
+      messages.map(({ role, text, attachments: messageAttachments, activities }) => {
+        const digest = role === 'assistant' ? turnContextDigest(activities) : '';
+        return {
+          role,
+          content: digest ? `${asText(text)}\n\n${digest}` : text,
+          images: asArray(messageAttachments)
+        };
+      }),
     [messages]
   );
 
@@ -420,7 +291,13 @@ export function CavalryAssistant({
     return advisor.subscribe((status) => {
       const requestId = asText(status?.requestId);
       if (requestId && requestIdRef.current && requestId !== requestIdRef.current) return;
+      if (asText(status?.phase) === 'stream') {
+        const delta = String(status?.delta ?? '');
+        if (delta) setStreamingText((current) => (current + delta).slice(-8000));
+        return;
+      }
       setLiveStatus(asText(status?.message));
+      setStreamingText('');
     });
   }, [advisor]);
 
@@ -493,17 +370,34 @@ export function CavalryAssistant({
     const question = asText(questionOverride || composer);
     const selectedAttachments = attachments.slice();
     if ((!question && !selectedAttachments.length) || pending || processingImages) return;
-    if (
-      !questionOverride &&
-      !selectedAttachments.length &&
-      pendingConfirmation &&
-      isConfirmationReply(question)
-    ) {
-      setComposer('');
-      await confirmPendingAction();
-      return;
+    if (!questionOverride && !selectedAttachments.length && pendingConfirmation) {
+      if (isConfirmationReply(question)) {
+        setComposer('');
+        await confirmPendingAction();
+        return;
+      }
+      if (isConfirmationDecline(question)) {
+        setComposer('');
+        setPendingConfirmation(null);
+        setMessages((current) =>
+          current.concat(
+            {
+              id: makeId('assistant_message'),
+              role: 'user',
+              text: question,
+              createdAt: now()
+            },
+            {
+              id: makeId('assistant_message'),
+              role: 'assistant',
+              text: 'Okay — I left it alone. Nothing changed.',
+              createdAt: now()
+            }
+          )
+        );
+        return;
+      }
     }
-    setPendingConfirmation(null);
     setPendingClarification(null);
     const version = ++requestVersionRef.current;
     const requestId = makeId('assistant_request');
@@ -525,25 +419,32 @@ export function CavalryAssistant({
     setAttachmentNotice('');
     setError('');
     setPending(true);
+    setStreamingText('');
     setLiveStatus(provider.connected ? 'Thinking…' : 'A model connection is required.');
     try {
+      const todayValue = typeof today === 'function' ? today() : today;
+      const workspaceSnapshot = buildCavalryAssistantWorkspaceSnapshot(workbook, {
+        today: todayValue
+      });
       const result = await runCavalryAssistantTurn({
         activeRouteId: route.id,
         advisor,
         createId: makeId,
         executeTool,
         history,
-        maxIterations: 10,
+        maxIterations: 16,
+        pendingConfirmationMessage: pendingConfirmation ? pendingConfirmation.message : '',
         question,
         images: selectedAttachments,
         requestId,
         signal: abortController.signal,
         settings,
-        today: typeof today === 'function' ? today() : today,
+        today: todayValue,
         tools:
           typeof getCavalryAssistantToolDefinitions === 'function'
             ? getCavalryAssistantToolDefinitions()
-            : CAVALRY_ASSISTANT_TOOLS
+            : CAVALRY_ASSISTANT_TOOLS,
+        workspaceSnapshot
       });
       if (version !== requestVersionRef.current) return;
       const confirmation = pendingConfirmationFromResult(result);
@@ -599,6 +500,7 @@ export function CavalryAssistant({
       if (version === requestVersionRef.current) {
         setPending(false);
         setLiveStatus('');
+        setStreamingText('');
         requestIdRef.current = '';
         if (requestAbortRef.current === abortController) requestAbortRef.current = null;
       }
@@ -655,11 +557,22 @@ export function CavalryAssistant({
         return;
       }
       setPendingConfirmation(null);
+      setLiveStatus('Saved. Summarizing…');
+      const narrated = await narrateConfirmedAction({
+        advisor,
+        settings,
+        confirmation,
+        toolResult,
+        requestId
+      });
+      if (version !== requestVersionRef.current) return;
       setMessages((current) =>
         current.concat({
           id: makeId('assistant_message'),
           role: 'assistant',
-          text: confirmedActionMessage(confirmation.toolName, toolResult, approvedArguments),
+          text:
+            asText(narrated) ||
+            confirmedActionMessage(confirmation.toolName, toolResult, approvedArguments),
           createdAt: now()
         })
       );
@@ -923,6 +836,11 @@ export function CavalryAssistant({
                 </div>
               </section>
             ) : null}
+            {pending && streamingText ? (
+              <div className="cavalry-assistant-message assistant cavalry-assistant-streaming">
+                <p>{streamingText}</p>
+              </div>
+            ) : null}
             {pending ? (
               <div className="cavalry-assistant-live-status" role="status">
                 <span aria-hidden="true" className="cavalry-assistant-thinking-dots">
@@ -930,7 +848,7 @@ export function CavalryAssistant({
                   <i />
                   <i />
                 </span>
-                <span>{liveStatus || 'Working…'}</span>
+                <span>{streamingText ? 'Writing…' : liveStatus || 'Working…'}</span>
               </div>
             ) : null}
           </div>
@@ -1079,8 +997,8 @@ export function CavalryAssistant({
             </form>
             <small>
               {pendingClarification
-                ? 'Answer the question so Cavalry can continue without guessing.'
-                : 'Cavalry checks tool results before reporting a change.'}
+                ? 'Pick an option or keep typing — Cavalry continues either way.'
+                : 'Cavalry verifies tool results and asks before changing anything.'}
             </small>
           </footer>
         </aside>
