@@ -111,3 +111,6 @@ tools/llama-cpp-launcher/**/*.onnx
 tools/llama-cpp-launcher/**/*.pt
 tools/llama-cpp-launcher/**/*.pth
 tools/llama-cpp-launcher/**/*.mlmodel
+
+# Supabase CLI machine-local link state
+supabase/.temp/
