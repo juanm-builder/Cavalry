@@ -1143,7 +1143,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       return finalizeAdvisorChatResult(
         {
           role: String((responseMessage && responseMessage.role) || 'assistant'),
-          content: responseMessage ? responseContent : '',
+          content: responseContent,
           tool_calls:
             responseMessage && Array.isArray(responseMessage.tool_calls)
               ? responseMessage.tool_calls

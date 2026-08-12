@@ -15,7 +15,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
   answer instead of ending the turn.
 - Assistant replies now stream as the model writes them, for both API and local
   models. A stream that an endpoint rejects transparently falls back to a buffered
-  request, and transient rate-limit or server errors are retried before surfacing.
+  request, legacy top-level response payloads remain supported, and transient
+  rate-limit or server errors are retried before surfacing.
 - Confirmed actions are now described by the model using the real amounts, names,
   and dates from the tool result, falling back to the previous fixed confirmation
   text if that summary cannot be produced. Everyday replies such as "sure" or
@@ -35,10 +36,9 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - Added an authenticated Cloud account-deletion function that revokes a freshly
   confirmed Apple token, removes private feedback objects, and deletes the
   owner-scoped Supabase account data required by the iOS deletion flow.
-- Updated Electron to 41.10.4 to pick up the current 41.x security patch, and
-  resolved the outstanding development-only advisories in `brace-expansion`,
-  `fast-uri`, and `undici`. Production dependencies were unaffected and no
-  runtime behavior changed.
+- Updated Electron to 41.10.5 to pick up the current 41.x security patch, and
+  resolved the outstanding advisories in `brace-expansion`, `fast-uri`,
+  `js-yaml`, `nanoid`, and `undici`. No application behavior changed.
 
 ## 1.0.24 - 2026-07-29
 
