@@ -838,7 +838,10 @@ export function CavalryAssistant({
             ) : null}
             {pending && streamingText ? (
               <div className="cavalry-assistant-message assistant cavalry-assistant-streaming">
-                <p>{streamingText}</p>
+                <CavalryAssistantMark className="cavalry-assistant-message-avatar" working />
+                <div className="cavalry-assistant-message-content">
+                  <p>{streamingText}</p>
+                </div>
               </div>
             ) : null}
             {pending ? (

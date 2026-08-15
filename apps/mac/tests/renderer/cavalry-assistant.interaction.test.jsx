@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -155,6 +155,63 @@ describe('Cavalry assistant', () => {
     expect(screen.getByRole('heading', { name: 'What do you want to do?' })).not.toBeNull();
     expect(screen.queryByText('AI Drafts')).toBeNull();
     expect(screen.queryByText('Sources')).toBeNull();
+  });
+
+  it('keeps streamed replies in the assistant message content column', async () => {
+    const user = userEvent.setup();
+    let publishStatus = () => {};
+    let finishRequest = () => {};
+    const advisor = {
+      subscribe: vi.fn((listener) => {
+        publishStatus = listener;
+        return () => {};
+      }),
+      invoke: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishRequest = resolve;
+          })
+      )
+    };
+
+    render(
+      <AssistantHarness
+        advisor={advisor}
+        executeTool={vi.fn()}
+        settings={{ provider: 'custom', model: 'Qwen' }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
+    await user.type(screen.getByRole('textbox', { name: 'Message Cavalry' }), 'Review August');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(advisor.invoke).toHaveBeenCalled());
+
+    act(() => {
+      publishStatus({
+        phase: 'stream',
+        delta: "You're right — August has had several unusual transactions."
+      });
+    });
+
+    const streamedText = await screen.findByText(/You're right — August/);
+    const streamingMessage = streamedText.closest('.cavalry-assistant-streaming');
+    expect(streamingMessage?.children[0].classList).toContain('cavalry-assistant-message-avatar');
+    expect(streamingMessage?.children[1].classList).toContain('cavalry-assistant-message-content');
+    expect(streamedText.closest('.cavalry-assistant-message-content')).not.toBeNull();
+
+    await act(async () => {
+      finishRequest({
+        ok: true,
+        text: 'August review complete.',
+        message: {
+          role: 'assistant',
+          content: 'August review complete.',
+          tool_calls: []
+        }
+      });
+    });
+    expect(await screen.findByText('August review complete.')).not.toBeNull();
   });
 
   it('submits a route-scoped Cloud report from the assistant overflow without invoking a model', async () => {
