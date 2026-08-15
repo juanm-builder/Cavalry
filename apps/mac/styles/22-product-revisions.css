@@ -58,7 +58,7 @@
 
 .categorized-select-menu {
   position: fixed;
-  z-index: 1000;
+  z-index: 1200;
   overflow: auto;
   padding: 8px;
   border: 1px solid var(--line);
@@ -141,7 +141,7 @@
 
 .categorized-select-create-backdrop {
   position: fixed;
-  z-index: 1200;
+  z-index: 1300;
   inset: 0;
   display: grid;
   place-items: center;
