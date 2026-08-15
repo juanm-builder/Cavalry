@@ -19,6 +19,7 @@ const TEMPLATE_OPTIONS = Object.freeze([
   { value: 'expense_paid', label: 'Expense paid' },
   { value: 'expense_charged', label: 'Expense charged' },
   { value: 'income_received', label: 'Income received' },
+  { value: 'merchant_refund', label: 'Merchant refund' },
   { value: 'transfer', label: 'Transfer' },
   { value: 'debt_payment', label: 'Debt payment' },
   { value: 'liability_payment', label: 'Liability payment' },
@@ -180,6 +181,7 @@ function contextualAccountLabel(template, definition, field) {
   if (template === 'income_received') return `Received into ${definition.fieldLabel}`;
   if (template === 'expense_charged') return `Charged to ${definition.fieldLabel}`;
   if (template === 'expense_paid') return `Paid from ${definition.fieldLabel}`;
+  if (template === 'merchant_refund') return `Refunded to ${definition.fieldLabel}`;
   if (template === 'debt_payment' || template === 'liability_payment') return 'Payment from';
   if (template === 'transfer') return 'From account';
   return definition.label;
@@ -192,6 +194,7 @@ function contextualAmountLabel(template, definition) {
   if (template === 'debt_payment' || template === 'liability_payment') return 'Payment amount';
   if (template === 'income_received') return 'Amount received';
   if (template === 'expense_paid') return 'Amount paid';
+  if (template === 'merchant_refund') return 'Refund amount';
   if (template === 'transfer') return 'Transfer amount';
   return 'Transaction amount';
 }
@@ -246,6 +249,15 @@ function getTransactionAccountDraft(workbook, transaction) {
     primaryAccountId = asString(findLine(lines, accounts, 'asset', 'credit')?.accountId);
   } else if (template === 'expense_charged') {
     primaryAccountId = asString(findLine(lines, accounts, 'liability', 'credit')?.accountId);
+  } else if (template === 'merchant_refund') {
+    primaryAccountId = asString(
+      lines.find(
+        (line) =>
+          line &&
+          line.direction === 'debit' &&
+          isBalanceAccount(accounts.get(asString(line.accountId)))
+      )?.accountId
+    );
   } else if (template === 'transfer') {
     primaryAccountId = asString(
       lines.find(
@@ -497,6 +509,20 @@ function buildCreateReviewRows(kind, draft, selection) {
       { label: 'Note', value: asString(draft.note) || '—' }
     ];
   }
+  if (kind.kind === 'refund') {
+    return [
+      {
+        label: 'Refunded to',
+        value: primaryAccount?.name || '—',
+        detail: primaryAccount?.balanceLabel || ''
+      },
+      { label: 'Refund amount', value: amount, tone: 'good' },
+      { label: 'Date', value: date },
+      { label: 'Original category', value: category?.label || '—', icon: 'category' },
+      { label: 'Description', value: asString(draft.description) || '—' },
+      { label: 'Note', value: asString(draft.note) || '—' }
+    ];
+  }
   if (kind.kind === 'expense') {
     return [
       {
@@ -553,6 +579,15 @@ function buildCreateImpact(kind, draft, selection) {
       amount
     };
   }
+  if (kind.kind === 'refund') {
+    return {
+      tone: 'good',
+      icon: 'undo',
+      prefix: `This will reduce spending in the original category and credit ${accountName} by`,
+      amount,
+      suffix: '. It will not be counted as new income.'
+    };
+  }
   if (kind.kind === 'expense') {
     if (isCreditCardExpense) {
       return {
@@ -599,9 +634,11 @@ function buildCreateComposerModel(workbook, modal) {
         ? options.accounts.filter(
             (account) => account.group === 'asset' || isCreateCreditCard(account)
           )
-        : options.accounts;
+        : kind.kind === 'refund'
+          ? options.accounts.filter((account) => ['asset', 'liability'].includes(account.group))
+          : options.accounts;
   const categories = kind
-    ? options.categories.filter((category) => category.type === kind.kind)
+    ? options.categories.filter((category) => category.type === (kind.categoryType || kind.kind))
     : [];
   const selection = {
     primaryAccount: options.accounts.find(
@@ -628,7 +665,9 @@ function buildCreateComposerModel(workbook, modal) {
   );
   const showFxRate =
     needsAccountCurrencyConversion ||
-    (kind?.kind === 'expense' && transactionCurrency === 'USD' && workbookCurrency !== 'USD');
+    (['expense', 'refund'].includes(kind?.kind) &&
+      transactionCurrency === 'USD' &&
+      workbookCurrency !== 'USD');
   const step = ['type', 'details', 'review'].includes(modal.step)
     ? modal.step
     : kind
@@ -652,23 +691,32 @@ function buildCreateComposerModel(workbook, modal) {
     primaryAccountLabel:
       kind?.kind === 'income'
         ? 'To account'
-        : kind?.kind === 'expense'
-          ? isCreditCardExpense
-            ? 'Charged to'
-            : selection.primaryAccount
-              ? 'Paid from'
-              : 'Paid with'
-          : isCardPayment
-            ? 'Payment from'
-            : 'From account',
+        : kind?.kind === 'refund'
+          ? 'Refunded to'
+          : kind?.kind === 'expense'
+            ? isCreditCardExpense
+              ? 'Charged to'
+              : selection.primaryAccount
+                ? 'Paid from'
+                : 'Paid with'
+            : isCardPayment
+              ? 'Payment from'
+              : 'From account',
     secondaryAccountLabel: isCardPayment ? 'Credit card to pay' : 'To account',
     primaryAccountPlaceholder:
-      kind?.kind === 'expense' ? 'Choose cash, bank, e-wallet, or credit card' : 'Choose account',
-    amountLabel: isCreditCardExpense
-      ? 'Purchase amount'
-      : isCardPayment
-        ? 'Payment amount'
-        : 'Amount',
+      kind?.kind === 'expense'
+        ? 'Choose cash, bank, e-wallet, or credit card'
+        : kind?.kind === 'refund'
+          ? 'Choose where the refund landed'
+          : 'Choose account',
+    amountLabel:
+      kind?.kind === 'refund'
+        ? 'Refund amount'
+        : isCreditCardExpense
+          ? 'Purchase amount'
+          : isCardPayment
+            ? 'Payment amount'
+            : 'Amount',
     guidance: isCreditCardExpense
       ? {
           tone: 'card',
@@ -677,14 +725,22 @@ function buildCreateComposerModel(workbook, modal) {
           message:
             'This records the expense now and increases the amount owed. Pay the card later with a transfer.'
         }
-      : isCardPayment
+      : kind?.kind === 'refund'
         ? {
-            tone: 'card',
-            icon: 'payments',
-            title: 'Credit card payment',
-            message: 'This reduces the card balance and will not be counted as another expense.'
+            tone: 'good',
+            icon: 'undo',
+            title: 'Merchant refund',
+            message:
+              'Choose the original expense category. Cavalry will subtract this amount from that category instead of treating it as income.'
           }
-        : null,
+        : isCardPayment
+          ? {
+              tone: 'card',
+              icon: 'payments',
+              title: 'Credit card payment',
+              message: 'This reduces the card balance and will not be counted as another expense.'
+            }
+          : null,
     showCurrency:
       accountCurrencies.size > 1 || asString(draft.currency).toUpperCase() !== workbookCurrency,
     showFxRate,
@@ -846,6 +902,14 @@ function buildTransactionDetailContext(transaction, account) {
       afterLabel: 'Balance owed after'
     };
   }
+  if (template === 'merchant_refund') {
+    return {
+      accountLabel: 'Refunded to',
+      movementLabel: `Refunded to ${accountName}`,
+      beforeLabel: `${balanceLabel} before`,
+      afterLabel: `${balanceLabel} after`
+    };
+  }
   if (template === 'income_received') {
     return {
       accountLabel: 'Received in',
@@ -904,12 +968,13 @@ function buildTransactionModalModel(workbook, state) {
     : null;
   const account = isBalanceAccount(filteredAccount) ? filteredAccount : references.primaryAccount;
   const category = references.category;
+  const template = asString(transaction.template);
+  const isRefund = template === 'merchant_refund' || template === 'refund';
   const isExpense =
-    category?.type === 'expense' ||
-    ['expense_paid', 'expense_charged', 'debt_payment', 'liability_payment'].includes(
-      asString(transaction.template)
-    );
-  const tone = isExpense ? 'bad' : transaction.template === 'income_received' ? 'good' : 'info';
+    !isRefund &&
+    (category?.type === 'expense' ||
+      ['expense_paid', 'expense_charged', 'debt_payment', 'liability_payment'].includes(template));
+  const tone = isRefund || template === 'income_received' ? 'good' : isExpense ? 'bad' : 'info';
   const signedAmount = (isExpense ? -1 : 1) * (Number(transaction.amount) || 0);
   const detailAmount = formatTransactionMoney(
     signedAmount,

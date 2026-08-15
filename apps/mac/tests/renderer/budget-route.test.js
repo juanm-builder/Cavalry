@@ -49,48 +49,45 @@ function renderBudgetRoute(model = makeRouteModel()) {
 }
 
 describe('BudgetRoute', () => {
-  it('renders one actionable budget status story', () => {
+  it('renders a calm at-a-glance Monthly Plan story', () => {
     const html = renderBudgetRoute();
 
     expect(html).toContain('data-react-route="budgets"');
-    expect(html).toContain('Budget');
-    expect(html).toContain('Budget status');
-    expect(html).toMatch(/On Track|Over Budget/);
-    expect(html).toContain('Spent');
-    expect(html).toContain('Safe to spend today');
-    expect(html).toContain('Days elapsed');
-    expect(html).toContain('Remaining today');
-    expect(html).not.toContain('Add Budget');
-    expect(html).not.toContain('Daily Average');
+    expect(html).toContain('Monthly Plan');
+    expect(html).toContain('Monthly Plan overview');
+    expect(html).toContain('Income plan');
+    expect(html).toContain('Spending plan');
+    expect(html).toContain('Recurring');
+    expect(html).toContain('Unallocated');
+    expect(html).toMatch(/On track|Over plan/);
+    expect(html).toContain('Spent this month');
+    expect(html).toContain('Safe today');
+    expect(html).toContain('Daily plan');
+    expect(html).not.toContain('Budget Usage');
     expect(html).not.toContain('data-action=');
   });
 
-  it('renders an impact-ordered, health-colored usage bar', () => {
+  it('shows one plan section at a time instead of a duplicate usage dashboard', () => {
     const html = renderBudgetRoute();
 
-    expect(html).toContain('Budget Usage');
+    expect(html).toContain('Your plan');
+    expect(html).toContain('Monthly Plan sections');
     expect(html).toContain('Food');
     expect(html).toContain('Subscriptions');
-    expect(html).toContain('budget-usage-key');
-    expect(html).not.toContain('Sort budget usage');
-    expect(html).not.toContain('Review Overspending');
-    expect(html).toContain('Categories');
     expect(html).toContain('aria-label="Create budget"');
+    expect(html).not.toContain('budget-usage-key');
     expect(html).not.toContain('Insights from Cavalry');
-    expect(html).not.toContain('Budget by Category');
     expect(html).not.toContain('Spending Breakdown');
   });
 
-  it('renders budget usage empty states', () => {
-    const html = renderBudgetRoute();
-    expect(html).toContain('Budget Usage');
-
+  it('renders a focused empty state with a single create action', () => {
     const emptyModel = makeRouteModel();
     emptyModel.categoryRows = [];
     emptyModel.spendingRows = [];
-    const emptyHtml = renderBudgetRoute(emptyModel);
+    const html = renderBudgetRoute(emptyModel);
 
-    expect(emptyHtml).toContain('No category budgets yet.');
-    expect(emptyHtml).toContain('aria-label="Create budget"');
+    expect(html).toContain('No plan entries yet.');
+    expect(html).toContain('Add your first amount to build this month’s plan.');
+    expect(html).toContain('aria-label="Create budget"');
   });
 });

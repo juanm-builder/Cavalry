@@ -1,6 +1,6 @@
 {
   "name": "cavalry-workspace",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "Cavalry local-first desktop finance app and supporting workspaces.",
   "license": "Apache-2.0",
   "repository": {
@@ -27,6 +27,7 @@
     "test": "vitest run --config vitest.config.mjs && npm test --workspace @cavalry/finance-core && npm test --workspace @cavalry/action-review && npm test --workspace @cavalry/advisor && npm test --workspace @cavalry/companion-api && npm test --workspace @cavalry/sync-foundation && npm test --workspace @cavalry/mac",
     "test:integration": "npm run test:integration --workspace @cavalry/companion-api && npm run test:integration --workspace @cavalry/mac",
     "test:e2e": "npm run test:e2e --workspace @cavalry/mac",
+    "verify:trust": "node tools/verify-v1.0.26.mjs",
     "check": "prettier --check . && npm run licenses:runtime:check && npm run lint && npm run typecheck && npm run build && npm run test && npm run openapi:validate --workspace @cavalry/companion-api && npm run openapi:action-sanity --workspace @cavalry/companion-api && npm run gpt-instructions:check --workspace @cavalry/companion-api && npm run gpt-checkpointed-instructions:check --workspace @cavalry/companion-api",
     "package:mac": "npm run dist:mac --workspace @cavalry/mac",
     "package:mac:intel": "npm run dist:mac:intel --workspace @cavalry/mac",

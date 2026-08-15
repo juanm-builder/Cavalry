@@ -9,11 +9,21 @@ export const CREATE_TYPE_OPTIONS = Object.freeze([
     tone: 'bad'
   },
   {
+    template: 'merchant_refund',
+    kind: 'refund',
+    categoryType: 'expense',
+    label: 'Refund',
+    description: 'Reverse an earlier purchase',
+    example: 'e.g. returned item or card reversal',
+    icon: 'undo',
+    tone: 'good'
+  },
+  {
     template: 'income_received',
     kind: 'income',
     label: 'Income',
     description: 'Money coming in',
-    example: 'e.g. salary, refund, gift',
+    example: 'e.g. salary, client payment, gift',
     icon: 'arrow_upward',
     tone: 'good'
   },

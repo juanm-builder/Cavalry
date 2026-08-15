@@ -1,0 +1,153 @@
+CAVALRY v1.0.26 SOURCE HANDOFF
+================================
+
+Base
+----
+Repository: juanm-builder/Cavalry
+Base version: 1.0.25
+Base commit: 162913b06fc98fbaa2154f41385c8228d296d800
+Handoff version: 1.0.26
+Handoff date: 2026-08-15
+
+Scope
+-----
+This handoff keeps the trust-critical finance work from the first v1.0.26
+package and adds the requested interface refinement without advancing the
+version number.
+
+Financial behavior:
+- First-class merchant refunds that reduce the original expense category.
+- A central transaction-contribution model and calculation receipts.
+- Monthly Plan separation for spending limits, recurring commitments, savings,
+  debt, and expected income.
+- Explicit unresolved-FX handling instead of guessed totals.
+- Visible repair states for missing or archived plan categories.
+- Bills headline totals that do not change when the table is searched or
+  filtered.
+- Normalized monthly equivalents for weekly, biweekly, monthly, quarterly, and
+  yearly recurrence.
+- Occurrence-first bill details, inactive-item restore access, per-item currency
+  preservation, and zero-remaining fixes.
+- Durable YYYY-MM sheet identities and cross-year month creation.
+
+Interface refinement:
+- Four primary Monthly Plan overview cards: Income plan, Spending plan,
+  Recurring, and Unallocated. Savings and debt appear only when targeted.
+- One tabbed Your plan list instead of the previous Budget Usage wall and
+  multiple simultaneous plan sections.
+- A compact monthly status and shorter default explanations, with deeper
+  definitions behind More details.
+- Wide, centered Monthly Plan detail dialogs rendered at document level so route
+  transforms cannot collapse them into a thin rail.
+- A viewport-centered Add to Plan editor with internal scrolling and persistent
+  actions, so it does not open below the current page position.
+- A Find recurring charges action that surfaces review-first suggestions from
+  existing transaction-pattern analysis and opens a prefilled editor only after
+  the user chooses Review. Nothing is created without an explicit Save.
+
+AI boundary
+-----------
+No source files were changed under the Assistant, advisor runtime, Action Review,
+Companion API, or local-model tooling directories. The v1.0.25 AI component is
+intentionally preserved.
+
+Because Action Review was left untouched, refunds created through the Assistant
+or AI review path still use its legacy transaction assembly. Enter merchant
+refunds through the standard transaction editor in this release.
+
+The recurring-charge finder uses Cavalry's existing deterministic recurring
+analysis. It does not change Assistant prompts, model calls, conversational
+behavior, confirmation gates, or AI transaction assembly.
+
+Compatibility and migration
+---------------------------
+- No workbook schema-version bump.
+- Legacy month-index sheets receive a durable YYYY-MM monthKey during
+  normalization and persist it on a later save.
+- Historical refunds already stored as ordinary income cannot be inferred safely
+  and require manual review.
+- Recurring-charge detection is pattern-based and may need correction or miss
+  irregular bills.
+- Test first with a duplicate of the real workbook.
+
+Validation completed in the packaging environment
+--------------------------------------------------
+PASS: npm run verify:trust (10 trust-critical behavior checks)
+PASS: recurring-charge candidates are reviewable and do not auto-create items
+PASS: release metadata validation for v1.0.26 against v1.0.25
+PASS: full workspace ESLint
+PASS: Prettier on every changed supported source/document file
+PASS: Babel parsing on every changed JavaScript, JSX, and MJS file
+PASS: Node syntax parsing on every changed non-JSX JavaScript/MJS file
+PASS: workspace secret, privacy, filename, and workflow-hardening checks
+PASS: workspace and renderer architecture boundaries (0 violations)
+PASS: tracked generated-file check (0 findings)
+PASS: package versions consistently remain 1.0.26
+PASS: AI-related changed paths: 0
+
+Environment-limited gates
+-------------------------
+The complete Vitest suite and Vite production build could not start in the Linux
+packaging environment because the dependency tree supplied with the original Mac
+archive contains the macOS Rollup binary and does not contain
+@rollup/rollup-linux-x64-gnu.
+
+The TypeScript gate could not start because the supplied dependency tree does not
+contain @typescript/typescript-linux-x64.
+
+The full Git-history security scan is unavailable from the source archive because
+it intentionally contains no .git directory. The live npm dependency audit is
+also unavailable because the packaging environment has no registry access. Run a
+clean npm ci on macOS, then npm run check, npm run test:integration, and npm run
+test:e2e before treating this source handoff as a release candidate.
+
+This ZIP is source code, not a signed or notarized DMG.
+
+Changed and added paths (46)
+----------------------------
+- CAVALRY-CHANGE-MANIFEST.txt
+- CAVALRY-TEST-GUIDE.md
+- CHANGELOG.md
+- apps/mac/package.json
+- apps/mac/src/renderer/features/budgets/BudgetEditorModal.jsx
+- apps/mac/src/renderer/features/budgets/BudgetRoute.jsx
+- apps/mac/src/renderer/features/budgets/budget-controller.js
+- apps/mac/src/renderer/features/budgets/budget-route-model.js
+- apps/mac/src/renderer/features/recurring/BillsRoute.jsx
+- apps/mac/src/renderer/features/recurring/bills-controller.js
+- apps/mac/src/renderer/features/recurring/bills-route-model.js
+- apps/mac/src/renderer/features/transactions/TransactionEditModal.jsx
+- apps/mac/src/renderer/features/transactions/transaction-controller.js
+- apps/mac/src/renderer/features/transactions/transaction-model-options.js
+- apps/mac/src/renderer/features/transactions/transaction-model.js
+- apps/mac/styles/28-finance-friendly.css
+- apps/mac/styles/app.css
+- apps/mac/styles/features/budgets/07-budget-redesign.css
+- apps/mac/tests/renderer/bills-route.test.js
+- apps/mac/tests/renderer/budget-editor.interaction.test.jsx
+- apps/mac/tests/renderer/budget-route-controller.test.js
+- apps/mac/tests/renderer/budget-route.test.js
+- apps/mac/tests/renderer/feature-actions.interaction.test.jsx
+- apps/mac/tests/renderer/finance-application.interaction.test.jsx
+- apps/mac/tests/renderer/transaction-controller.test.js
+- package-lock.json
+- package.json
+- packages/finance-core/src/application/budgets/budget-route-view-model-service.js
+- packages/finance-core/src/application/budgets/budget-service.js
+- packages/finance-core/src/application/dashboard/dashboard-route-view-model-service.js
+- packages/finance-core/src/application/recurring/bills-route-view-model-service.js
+- packages/finance-core/src/application/recurring/recurring-analysis-service.js
+- packages/finance-core/src/application/workbook/workbook-persistence-service.js
+- packages/finance-core/src/domain/ledger/invariants.js
+- packages/finance-core/src/domain/ledger/summaries.js
+- packages/finance-core/src/domain/ledger/transaction-contributions.js
+- packages/finance-core/src/domain/ledger/transactions.js
+- packages/finance-core/src/index.js
+- packages/finance-core/tests/application/bills-route-view-model-service.test.js
+- packages/finance-core/tests/application/budget-route-view-model-service.test.js
+- packages/finance-core/tests/application/dashboard-route-view-model-service.test.js
+- packages/finance-core/tests/domain/ledger-balances.test.js
+- packages/finance-core/tests/domain/ledger-invariants.test.js
+- packages/finance-core/tests/domain/manual-transaction-create.test.js
+- packages/finance-core/tests/fixtures/core-workbook-fixtures.js
+- tools/verify-v1.0.26.mjs

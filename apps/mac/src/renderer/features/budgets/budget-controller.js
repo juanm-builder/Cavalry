@@ -186,6 +186,7 @@ function handleAddBudget(payload, context, buildModel) {
   const existingBudget = asArray(sheet && sheet.budgets).find(
     (budget) => asString(budget && budget.categoryId) === asString(payload.categoryId)
   );
+  const note = asString(payload.note || (existingBudget && existingBudget.note));
   return success({
     type: BUDGET_EVENT_TYPES.addBudget,
     payload: {
@@ -195,6 +196,7 @@ function handleAddBudget(payload, context, buildModel) {
       categoryId: asString(payload.categoryId),
       planned: Number(payload.planned) || '',
       createdAt: asString(existingBudget && existingBudget.createdAt) || routeModel.currentDate,
+      ...(note ? { note } : {}),
       currentDate: routeModel.currentDate,
       sheet: sheet ? cloneSerializable(sheet) : null
     }
@@ -242,6 +244,7 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   const categoryId = asString(payload.categoryId);
   const planned = Number(payload.planned);
   const createdAt = asString(payload.createdAt);
+  const note = asString(payload.note);
   if (!sheetId && !/^\d{4}-\d{2}-\d{2}$/.test(rangeStart)) {
     return failure('budget.save.month-required', 'Choose the month this budget applies to.');
   }
@@ -264,19 +267,19 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   if (!sheet) {
     const year = Number(rangeStart.slice(0, 4));
     const month = Number(rangeStart.slice(5, 7));
-    const workbookYear = Number(workbook.year);
-    if (!(month >= 1 && month <= 12) || year !== workbookYear) {
-      return failure(
-        'budget.save.month-outside-workbook',
-        'The budget month must be inside the current workbook year.'
-      );
+    if (!(year >= 1000 && year <= 9999 && month >= 1 && month <= 12)) {
+      return failure('budget.save.month-invalid', 'Choose a valid budget month.');
     }
     const monthIndex = month - 1;
-    sheet = asArray(workbook.sheets).find(
-      (candidate) => Number(candidate && candidate.monthIndex) === monthIndex
-    );
+    const monthKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+    sheet = asArray(workbook.sheets).find((candidate) => {
+      const candidateMonthKey = asString(candidate && candidate.monthKey);
+      if (candidateMonthKey) return candidateMonthKey === monthKey;
+      return (
+        Number(workbook.year) === year && Number(candidate && candidate.monthIndex) === monthIndex
+      );
+    });
     if (!sheet) {
-      const monthKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
       const requestedId =
         typeof dependencies.createId === 'function'
           ? asString(dependencies.createId('sheet'))
@@ -297,6 +300,15 @@ function handleSaveBudget(payload, context, dependencies = {}) {
         entries: []
       };
       workbook.sheets.push(sheet);
+      workbook.sheets.sort((left, right) => {
+        const leftKey =
+          asString(left && left.monthKey) ||
+          `${workbook.year}-${String((Number(left && left.monthIndex) || 0) + 1).padStart(2, '0')}`;
+        const rightKey =
+          asString(right && right.monthKey) ||
+          `${workbook.year}-${String((Number(right && right.monthIndex) || 0) + 1).padStart(2, '0')}`;
+        return leftKey.localeCompare(rightKey);
+      });
     }
   }
   const resolvedSheetId = asString(sheet.id);
@@ -304,12 +316,11 @@ function handleSaveBudget(payload, context, dependencies = {}) {
     (budget) => asString(budget && budget.categoryId) === categoryId
   );
   const budget = existing
-    ? editCoreBudget(workbook, resolvedSheetId, categoryId, { planned })
-    : createCoreBudget(workbook, resolvedSheetId, { categoryId, planned });
+    ? editCoreBudget(workbook, resolvedSheetId, categoryId, { planned, createdAt, note })
+    : createCoreBudget(workbook, resolvedSheetId, { categoryId, planned, createdAt, note });
   const savedBudget = asArray(sheet.budgets).find(
     (item) => asString(item && item.categoryId) === categoryId
   );
-  if (savedBudget) savedBudget.createdAt = createdAt;
   return mutationSuccess(workbook, {
     type: BUDGET_EVENT_TYPES.budgetSaved,
     payload: {

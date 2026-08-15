@@ -122,31 +122,34 @@ describe('manual transaction creation model', () => {
     expect(workbook).toEqual(before);
   });
 
-  it('documents duplicate detection and refund creation as future core decisions', () => {
+  it('creates merchant refunds that reduce the original expense category', () => {
     const workbook = makeIncomeAndExpenseWorkbook();
 
     expect(workbook.transactions.some((transaction) => transaction.description === 'Lunch')).toBe(
       true
     );
-    expect(() =>
-      buildManualLedgerTransaction(workbook, {
-        template: 'refund',
-        description: 'Refund candidate',
-        amount: 50,
-        date: '2026-06-19',
-        categoryId: 'food',
-        primaryAccountId: 'cash'
-      })
-    ).not.toThrow();
-    expect(
-      buildManualLedgerTransaction(workbook, {
-        template: 'refund',
-        description: 'Refund candidate',
-        amount: 50,
-        date: '2026-06-19',
-        categoryId: 'food',
-        primaryAccountId: 'cash'
-      }).template
-    ).toBe('expense_paid');
+    const refund = buildManualLedgerTransaction(workbook, {
+      template: 'refund',
+      description: 'Refund candidate',
+      amount: 50,
+      date: '2026-06-19',
+      categoryId: 'food',
+      primaryAccountId: 'cash'
+    });
+
+    expect(refund).toMatchObject({
+      template: 'merchant_refund',
+      eventKind: 'merchant_refund',
+      amount: 50,
+      categoryId: 'food'
+    });
+    expect(refund.lines[0]).toMatchObject({ accountId: 'cash', direction: 'debit' });
+    expect(refund.lines[1]).toMatchObject({ accountId: 'food-expense', direction: 'credit' });
+    expect(isTransactionBalanced(refund)).toBe(true);
+
+    workbook.transactions.push(refund);
+    const summary = summarizeLedgerActivity(workbook);
+    expect(summary.expense).toBe(1979);
+    expect(summary.categoryTotals.food).toBe(200);
   });
 });

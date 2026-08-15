@@ -267,13 +267,22 @@ export function getRecurringScheduleSummary(item, asOfDate) {
   return summary;
 }
 
-function convertRecurringAmountToBase(workbook, amount, currency) {
+export function getRecurringAmountConversion(workbook, amount, currency) {
   const base = asString(workbook && workbook.currency).toUpperCase() || 'PHP';
   const source = asString(currency).toUpperCase() || base;
-  const numeric = Number(amount) || 0;
+  const nativeAmount = roundMoney(Number(amount) || 0);
   if (source === base) {
-    return roundMoney(numeric);
+    return {
+      resolved: true,
+      amount: nativeAmount,
+      nativeAmount,
+      sourceCurrency: source,
+      baseCurrency: base,
+      rate: 1,
+      status: 'same_currency'
+    };
   }
+
   const rates = asArray(workbook && workbook.fxRates);
   const exact = rates.find(
     (rate) =>
@@ -282,8 +291,18 @@ function convertRecurringAmountToBase(workbook, amount, currency) {
       Number(rate && rate.rate) > 0
   );
   if (exact) {
-    return roundMoney(numeric * Number(exact.rate));
+    const rate = Number(exact.rate);
+    return {
+      resolved: true,
+      amount: roundMoney(nativeAmount * rate),
+      nativeAmount,
+      sourceCurrency: source,
+      baseCurrency: base,
+      rate,
+      status: 'converted'
+    };
   }
+
   const inverse = rates.find(
     (rate) =>
       asString(rate && rate.fromCurrency).toUpperCase() === base &&
@@ -291,33 +310,51 @@ function convertRecurringAmountToBase(workbook, amount, currency) {
       Number(rate && rate.rate) > 0
   );
   if (inverse) {
-    return roundMoney(numeric / Number(inverse.rate));
+    const rate = 1 / Number(inverse.rate);
+    return {
+      resolved: true,
+      amount: roundMoney(nativeAmount * rate),
+      nativeAmount,
+      sourceCurrency: source,
+      baseCurrency: base,
+      rate,
+      status: 'converted_inverse'
+    };
   }
+
   const usdToBaseRate =
     Number(workbook && workbook.settings && workbook.settings.usdToBaseRate) || 0;
   if (source === 'USD' && usdToBaseRate > 0) {
-    return roundMoney(numeric * usdToBaseRate);
+    return {
+      resolved: true,
+      amount: roundMoney(nativeAmount * usdToBaseRate),
+      nativeAmount,
+      sourceCurrency: source,
+      baseCurrency: base,
+      rate: usdToBaseRate,
+      status: 'converted_settings'
+    };
   }
-  return roundMoney(numeric);
+
+  return {
+    resolved: false,
+    amount: null,
+    nativeAmount,
+    sourceCurrency: source,
+    baseCurrency: base,
+    rate: null,
+    status: 'missing_fx_rate',
+    warning: `Add a ${source} to ${base} FX rate before this commitment can be included in totals.`
+  };
+}
+
+function convertRecurringAmountToBase(workbook, amount, currency) {
+  const conversion = getRecurringAmountConversion(workbook, amount, currency);
+  return conversion.resolved ? conversion.amount : null;
 }
 
 function canConvertRecurringAmountToBase(workbook, currency) {
-  const base = baseCurrency(workbook);
-  const source = asString(currency).toUpperCase() || base;
-  if (source === base) return true;
-  const rates = asArray(workbook && workbook.fxRates);
-  const hasRate = rates.some((rate) => {
-    const from = asString(rate && rate.fromCurrency).toUpperCase();
-    const to = asString(rate && rate.toCurrency).toUpperCase();
-    return (
-      Number(rate && rate.rate) > 0 &&
-      ((from === source && to === base) || (from === base && to === source))
-    );
-  });
-  if (hasRate) return true;
-  return (
-    source === 'USD' && Number(workbook && workbook.settings && workbook.settings.usdToBaseRate) > 0
-  );
+  return getRecurringAmountConversion(workbook, 1, currency).resolved;
 }
 
 export function getRecurringOccurrencesForSheet(workbook, sheet) {
@@ -337,6 +374,11 @@ export function getRecurringOccurrencesForSheet(workbook, sheet) {
             : account && account.group === 'liability'
               ? 'card_charge'
               : 'direct_payment';
+        const conversion = getRecurringAmountConversion(
+          workbook,
+          item.amount,
+          item.currency || (workbook && workbook.currency)
+        );
         return {
           id: `${asString(item.id)}:${dueDate}:${String(index)}`,
           recurringItemId: asString(item.id),
@@ -347,16 +389,17 @@ export function getRecurringOccurrencesForSheet(workbook, sheet) {
           categoryName: category.name,
           categoryType: category.type,
           dueDate,
-          amount: convertRecurringAmountToBase(
-            workbook,
-            item.amount,
-            item.currency || (workbook && workbook.currency)
-          ),
-          originalAmount: roundMoney(Number(item.amount) || 0),
-          currency:
-            asString(item.currency).toUpperCase() ||
-            asString(workbook && workbook.currency).toUpperCase() ||
-            'PHP',
+          amount: conversion.resolved ? conversion.amount : 0,
+          baseAmount: conversion.amount,
+          baseCurrency: conversion.baseCurrency,
+          baseAmountVerified: conversion.resolved,
+          baseConversionStatus: conversion.status,
+          fxRateToBase: conversion.rate,
+          fxWarning: conversion.warning || '',
+          originalAmount: conversion.nativeAmount,
+          nativeAmount: conversion.nativeAmount,
+          currency: conversion.sourceCurrency,
+          nativeCurrency: conversion.sourceCurrency,
           frequency: normalizeRecurringFrequency(item.frequency),
           accountId: asString(item.accountId),
           paymentMethod: account ? account.name : 'Not set',
@@ -367,12 +410,36 @@ export function getRecurringOccurrencesForSheet(workbook, sheet) {
     });
 }
 
+export function getRecurringCommitmentSummaryByCategory(workbook, sheet) {
+  const rows = getRecurringOccurrencesForSheet(workbook, sheet).filter(
+    (row) => row.categoryType === 'expense'
+  );
+  const totalsByCategory = {};
+  const unresolvedByCategory = {};
+  rows.forEach((row) => {
+    if (!row.baseAmountVerified) {
+      if (!unresolvedByCategory[row.categoryId]) unresolvedByCategory[row.categoryId] = [];
+      unresolvedByCategory[row.categoryId].push(row);
+      return;
+    }
+    totalsByCategory[row.categoryId] = roundMoney(
+      (totalsByCategory[row.categoryId] || 0) + row.amount
+    );
+  });
+  return {
+    rows,
+    totalsByCategory,
+    unresolvedByCategory,
+    total: roundMoney(Object.values(totalsByCategory).reduce((sum, amount) => sum + amount, 0)),
+    unresolvedCount: Object.values(unresolvedByCategory).reduce(
+      (sum, categoryRows) => sum + categoryRows.length,
+      0
+    )
+  };
+}
+
 export function getRecurringProjectionTotalsByCategory(workbook, sheet) {
-  return getRecurringOccurrencesForSheet(workbook, sheet).reduce((totals, row) => {
-    if (row.categoryType !== 'expense') return totals;
-    totals[row.categoryId] = roundMoney((totals[row.categoryId] || 0) + row.amount);
-    return totals;
-  }, {});
+  return getRecurringCommitmentSummaryByCategory(workbook, sheet).totalsByCategory;
 }
 
 function getCounterpartyById(workbook, counterpartyId) {

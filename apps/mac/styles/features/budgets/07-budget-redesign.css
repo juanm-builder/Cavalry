@@ -1805,3 +1805,270 @@
 .budget-category-list-row .budget-usage-category-icon .material-symbols-rounded {
   font-size: 19px;
 }
+
+/* v1.0.26 Monthly Plan: simple at a glance, explainable on demand. */
+.monthly-plan-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.monthly-plan-overview-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 20px;
+  gap: 12px;
+  align-items: center;
+  min-height: 108px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.monthly-plan-overview-card:hover,
+.monthly-plan-overview-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
+  outline: none;
+}
+
+.monthly-plan-overview-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+}
+
+.monthly-plan-overview-card.good .monthly-plan-overview-icon {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+}
+
+.monthly-plan-overview-card.warn .monthly-plan-overview-icon {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.monthly-plan-overview-card.bad .monthly-plan-overview-icon {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+}
+
+.monthly-plan-overview-copy,
+.monthly-plan-overview-copy small,
+.monthly-plan-overview-copy strong,
+.monthly-plan-overview-copy em {
+  display: block;
+  min-width: 0;
+}
+
+.monthly-plan-overview-copy small {
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.monthly-plan-overview-copy strong {
+  margin-top: 7px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monthly-plan-overview-copy em {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monthly-plan-overview-chevron {
+  color: var(--text-dim);
+  font-size: 18px;
+}
+
+.monthly-plan-trust {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--good) 22%, var(--line));
+  border-radius: 14px;
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 5%, var(--panel));
+}
+
+.monthly-plan-trust.warn {
+  border-color: color-mix(in srgb, var(--warn) 28%, var(--line));
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 5%, var(--panel));
+}
+
+.monthly-plan-trust > .material-symbols-rounded {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.monthly-plan-trust strong,
+.monthly-plan-trust small {
+  display: block;
+}
+
+.monthly-plan-trust strong {
+  font-size: 11px;
+}
+
+.monthly-plan-trust small {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.monthly-plan-section-heading .material-symbols-rounded {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.budget-category-list-copy {
+  min-width: 0;
+}
+
+.budget-category-list-copy strong,
+.budget-category-list-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-category-list-copy strong {
+  font-size: 11px;
+}
+
+.budget-category-list-copy small {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.warn-text {
+  color: var(--warn);
+}
+
+.monthly-plan-metric-drawer .budget-drawer-header h2 {
+  margin-top: 8px;
+}
+
+.monthly-plan-formula-copy {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.monthly-plan-formula-list {
+  margin-top: 14px;
+}
+
+.monthly-plan-formula-list > div:last-child {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-weight: 800;
+}
+
+.monthly-plan-metric-rows {
+  margin-top: 10px;
+}
+
+.monthly-plan-commitment-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.monthly-plan-commitment-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.monthly-plan-commitment-list strong,
+.monthly-plan-commitment-list small {
+  display: block;
+}
+
+.monthly-plan-commitment-list strong,
+.monthly-plan-commitment-list b {
+  font-size: 10px;
+}
+
+.monthly-plan-commitment-list small {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.monthly-plan-attention-card {
+  border-color: color-mix(in srgb, var(--warn) 30%, var(--line));
+  background: color-mix(in srgb, var(--warn) 4%, var(--panel));
+}
+
+.monthly-plan-attention-card .budget-detail-card-heading .material-symbols-rounded {
+  color: var(--warn);
+}
+
+.monthly-plan-attention-card p {
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.budget-transaction-row.unresolved {
+  cursor: default;
+  color: var(--warn);
+}
+
+@media (max-width: 1120px) {
+  .monthly-plan-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .monthly-plan-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monthly-plan-overview-card {
+    min-height: 92px;
+  }
+}

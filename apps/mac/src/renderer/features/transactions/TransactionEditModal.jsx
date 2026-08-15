@@ -24,24 +24,28 @@ const DEBT_TEMPLATES = new Set(['debt_payment', 'liability_payment']);
 const TEMPLATE_LABELS = Object.freeze({
   bank: {
     expense_paid: 'Payment / withdrawal',
+    merchant_refund: 'Refund received',
     income_received: 'Deposit / income',
     transfer: 'Bank transfer',
     opening_balance: 'Balance adjustment'
   },
   cash: {
     expense_paid: 'Cash spent',
+    merchant_refund: 'Cash refund',
     income_received: 'Cash received',
     transfer: 'Cash transfer',
     opening_balance: 'Balance adjustment'
   },
   wallet: {
     expense_paid: 'Wallet payment',
+    merchant_refund: 'Wallet refund',
     income_received: 'Money received',
     transfer: 'Wallet transfer',
     opening_balance: 'Balance adjustment'
   },
   credit_card: {
     expense_charged: 'Card purchase',
+    merchant_refund: 'Card refund',
     debt_payment: 'Card payment',
     liability_payment: 'Card payment',
     transfer: 'Balance transfer',
@@ -49,12 +53,14 @@ const TEMPLATE_LABELS = Object.freeze({
   },
   investment: {
     expense_paid: 'Fee / withdrawal',
+    merchant_refund: 'Fee reversal',
     income_received: 'Distribution / income',
     transfer: 'Contribution / transfer',
     opening_balance: 'Valuation adjustment'
   },
   liability: {
     expense_charged: 'New charge / borrowing',
+    merchant_refund: 'Charge reversal',
     debt_payment: 'Liability payment',
     liability_payment: 'Liability payment',
     opening_balance: 'Balance adjustment'
@@ -90,7 +96,12 @@ function templateLabel(option, contextKind) {
 
 function expectedCategoryType(template) {
   if (template === 'income_received') return 'income';
-  if (template === 'expense_paid' || template === 'expense_charged') return 'expense';
+  if (
+    template === 'expense_paid' ||
+    template === 'expense_charged' ||
+    template === 'merchant_refund'
+  )
+    return 'expense';
   if (DEBT_TEMPLATES.has(template)) return 'debt';
   return '';
 }
@@ -103,6 +114,7 @@ function compatibleWithField(account, template, field) {
   }
   if (template === 'income_received' || template === 'expense_paid') return group === 'asset';
   if (template === 'expense_charged') return group === 'liability';
+  if (template === 'merchant_refund') return group === 'asset' || group === 'liability';
   if (DEBT_TEMPLATES.has(template)) return group === 'asset';
   return group === 'asset' || group === 'liability';
 }
@@ -280,9 +292,11 @@ function TransactionEditModalContent({ modal }) {
     context.primaryLabel ||
     (template === 'income_received'
       ? 'To account'
-      : DEBT_TEMPLATES.has(template)
-        ? 'Pay from'
-        : 'From account');
+      : template === 'merchant_refund'
+        ? 'Refunded to'
+        : DEBT_TEMPLATES.has(template)
+          ? 'Pay from'
+          : 'From account');
   const secondaryLabel =
     context.secondaryLabel || (DEBT_TEMPLATES.has(template) ? 'Liability account' : 'To account');
 

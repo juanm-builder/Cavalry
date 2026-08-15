@@ -58,10 +58,16 @@ describe('budget route view-model service', () => {
       currentDate: '2026-06-15'
     });
 
-    expect(model.summary).toEqual({
+    expect(model.summary).toMatchObject({
       totalBudget: 0,
+      plannedSpending: 0,
+      committedSpending: 0,
       spent: 0,
       leftToSpend: 0,
+      plannedSavings: 0,
+      plannedDebt: 0,
+      plannedIncome: 0,
+      unallocated: 0,
       spentPercent: 0,
       dailyAverage: 0,
       periodDays: 30,
@@ -96,15 +102,29 @@ describe('budget route view-model service', () => {
       end: '2026-06-30'
     });
 
-    expect(ids(rows)).toEqual(['subscriptions', 'food']);
-    expect(rows[0]).toMatchObject({
+    expect(ids(rows)).toEqual(['missing-category', 'archived-shopping', 'subscriptions', 'food']);
+    expect(rows.find((row) => row.category.id === 'missing-category')).toMatchObject({
+      planned: 50,
+      trustedPlanned: 0,
+      actual: 0,
+      isMissing: true,
+      includedInPlanTotals: false
+    });
+    expect(rows.find((row) => row.category.id === 'archived-shopping')).toMatchObject({
+      planned: 100,
+      trustedPlanned: 0,
+      actual: 0,
+      isArchived: true,
+      includedInPlanTotals: false
+    });
+    expect(rows.find((row) => row.category.id === 'subscriptions')).toMatchObject({
       planned: 600,
       actual: 0,
       remaining: 600,
       percent: 0,
       progressPercent: 0
     });
-    expect(rows[1]).toMatchObject({
+    expect(rows.find((row) => row.category.id === 'food')).toMatchObject({
       planned: 200,
       actual: 0,
       remaining: 200
@@ -124,14 +144,14 @@ describe('budget route view-model service', () => {
     expect(model.planVsActual).toMatchObject({
       plannedByType: {
         income: 0,
-        expense: 900,
+        expense: 800,
         savings: 0,
         debt: 0
       },
-      plannedOutflow: 900,
-      plannedNet: -900,
+      plannedOutflow: 800,
+      plannedNet: -800,
       actualNet: 47971,
-      variance: 48871
+      variance: 48771
     });
     expect(model.periodSummary).toMatchObject({
       income: 50000,
@@ -139,18 +159,24 @@ describe('budget route view-model service', () => {
       outflow: 2029,
       net: 47971
     });
-    expect(model.summary).toEqual({
-      totalBudget: 900,
+    expect(model.summary).toMatchObject({
+      totalBudget: 800,
+      plannedSpending: 800,
+      committedSpending: 0,
       spent: 2029,
-      leftToSpend: -1129,
-      spentPercent: 225,
+      leftToSpend: -1229,
+      spentPercent: 254,
+      plannedOutflow: 800,
+      income: 50000,
+      incomePlanBasis: 50000,
+      unallocated: 49200,
       dailyAverage: 135.27,
       periodDays: 30,
       daysElapsed: 15,
       remainingDays: 16,
-      dailyBudget: 30,
+      dailyBudget: 26.67,
       todaySpent: 0,
-      remainingToday: 30,
+      remainingToday: 26.67,
       safeToSpendToday: 0,
       leftTone: 'bad',
       leftCopy: 'You are over budget'
@@ -168,9 +194,9 @@ describe('budget route view-model service', () => {
       periodDays: 30,
       daysElapsed: 2,
       remainingDays: 29,
-      dailyBudget: 30,
+      dailyBudget: 26.67,
       todaySpent: 80,
-      remainingToday: -50,
+      remainingToday: -53.33,
       safeToSpendToday: 0
     });
 
@@ -182,10 +208,10 @@ describe('budget route view-model service', () => {
     expect(underBudget.summary).toMatchObject({
       daysElapsed: 15,
       remainingDays: 16,
-      dailyBudget: 30,
+      dailyBudget: 26.67,
       todaySpent: 0,
-      remainingToday: 30,
-      safeToSpendToday: 56.25
+      remainingToday: 26.67,
+      safeToSpendToday: 50
     });
 
     const upcoming = buildBudgetRouteViewModel(workbook, {
@@ -213,7 +239,7 @@ describe('budget route view-model service', () => {
     });
   });
 
-  it('preserves existing date-range filtering while keeping overlapping sheet budgets', () => {
+  it('uses exact actual dates and excludes a full-month plan from a partial-month range', () => {
     const workbook = makeBudgetWorkbook();
     const planVsActual = buildBudgetPlanVsActualViewModel(workbook, {
       start: '2026-06-02',
@@ -230,7 +256,14 @@ describe('budget route view-model service', () => {
       'txn-transport-cash',
       'txn-card-shopping'
     ]);
-    expect(planVsActual.plannedByType.expense).toBe(900);
+    expect(planVsActual.plannedByType.expense).toBe(0);
+    expect(planVsActual.planScope).toEqual({
+      includedMonthKeys: [],
+      excludedPartialMonthKeys: ['2026-06']
+    });
+    expect(planVsActual.attention).toEqual([
+      expect.objectContaining({ code: 'partial_month_plan_excluded', monthKey: '2026-06' })
+    ]);
   });
 
   it('orders category rows with overspent categories first, then largest activity or plan', () => {
@@ -240,7 +273,7 @@ describe('budget route view-model service', () => {
       end: '2026-06-03'
     });
 
-    expect(ids(rows)).toEqual(['shopping', 'transport', 'subscriptions', 'food']);
+    expect(ids(rows)).toEqual(['shopping', 'transport']);
     expect(rows.find((row) => row.category.id === 'shopping')).toMatchObject({
       planned: 0,
       actual: 1200,
@@ -250,7 +283,7 @@ describe('budget route view-model service', () => {
     });
   });
 
-  it('preserves current missing and archived category route behavior', () => {
+  it('surfaces missing and archived category plans for repair but excludes them from trusted totals', () => {
     const workbook = makeBudgetWorkbook();
     workbook.transactions.push(
       makeTransaction({
@@ -273,10 +306,29 @@ describe('budget route view-model service', () => {
     });
 
     expect(model.planVsActual.plannedByCategory['archived-shopping']).toBe(100);
-    expect(model.planVsActual.plannedByCategory['missing-category']).toBeUndefined();
-    expect(ids(model.categoryRows)).not.toContain('archived-shopping');
+    expect(model.planVsActual.plannedByCategory['missing-category']).toBe(50);
+    expect(model.planVsActual.trustedPlannedByCategory).toEqual({
+      food: 200,
+      subscriptions: 600
+    });
+    expect(model.summary.totalBudget).toBe(800);
+    expect(model.categoryRows.find((row) => row.category.id === 'archived-shopping')).toMatchObject(
+      {
+        planned: 100,
+        actual: 75,
+        isArchived: true,
+        includedInPlanTotals: false
+      }
+    );
+    expect(model.categoryRows.find((row) => row.category.id === 'missing-category')).toMatchObject({
+      planned: 50,
+      isMissing: true,
+      includedInPlanTotals: false
+    });
     expect(model.spendingRows.find((row) => row.category.id === 'archived-shopping')).toMatchObject(
-      { total: 75 }
+      {
+        total: 75
+      }
     );
   });
 

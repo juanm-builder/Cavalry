@@ -77,10 +77,12 @@ describe('ledger invariants', () => {
     expect(result.summary.categoryTotals.food).toBe(250);
   });
 
-  it('documents current refund uncertainty as a warning instead of inventing behavior', () => {
+  it('recognizes merchant refunds as deliberate expense reversals', () => {
     const result = validateLedgerInvariants(makeRefundWorkbook());
 
     expect(result.ok).toBe(true);
-    expect(codes(result.warnings)).toContain('transaction_unknown_template');
+    expect(codes(result.warnings)).not.toContain('transaction_unknown_template');
+    expect(result.summary.expense).toBe(1979);
+    expect(result.summary.categoryTotals.food).toBe(200);
   });
 });

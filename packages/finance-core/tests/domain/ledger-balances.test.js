@@ -86,15 +86,16 @@ describe('ledger balances and summaries', () => {
     expect(getLedgerHistoricalBalances(workbook).cash).toBe(-580);
   });
 
-  it('current refund candidates remain a documented decision rather than a summary rule', () => {
+  it('merchant refunds reverse the original expense instead of inflating spending', () => {
     const workbook = makeRefundWorkbook();
     const result = validateLedgerInvariants(workbook);
     const summary = summarizeLedgerActivity(workbook);
 
-    expect(result.warnings.map((warning) => warning.code)).toContain(
+    expect(result.warnings.map((warning) => warning.code)).not.toContain(
       'transaction_unknown_template'
     );
-    expect(summary.expense).toBe(2079);
+    expect(summary.expense).toBe(1979);
+    expect(summary.categoryTotals.food).toBe(200);
   });
 
   it('flags malformed negative rows through invariants', () => {

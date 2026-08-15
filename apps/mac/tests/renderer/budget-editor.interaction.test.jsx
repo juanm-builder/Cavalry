@@ -31,13 +31,13 @@ describe('budget editor interactions', () => {
   it('closes when Escape is pressed or the backdrop is clicked', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    const { container } = render(<BudgetRoute model={model()} onAction={onAction} />);
+    render(<BudgetRoute model={model()} onAction={onAction} />);
 
     await user.keyboard('{Escape}');
     expect(onAction).toHaveBeenLastCalledWith({ type: 'close-budget-editor', payload: {} });
 
     onAction.mockClear();
-    await user.click(container.querySelector('.budget-editor-backdrop'));
+    await user.click(document.querySelector('.budget-editor-backdrop'));
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenLastCalledWith({ type: 'close-budget-editor', payload: {} });
 
@@ -65,8 +65,10 @@ describe('budget editor interactions', () => {
         rangeEnd: '2026-07-31'
       }
     });
-    expect(screen.getByLabelText('Budget month').value).toBe('July 2026');
-    expect(screen.getByLabelText('Budget date created').readOnly).toBe(true);
+    expect(
+      within(screen.getByRole('dialog', { name: 'Budget editor' })).getByText('July 2026')
+    ).not.toBeNull();
+    expect(screen.queryByLabelText('Budget date created')).toBeNull();
     expect(
       within(screen.getByRole('dialog', { name: 'Budget editor' })).queryByLabelText(
         'Budget period'
@@ -120,7 +122,7 @@ describe('budget editor interactions', () => {
       within(createDialog)
         .getAllByRole('option')
         .map((option) => option.textContent)
-    ).toEqual(['Expense', 'Savings', 'Debt']);
+    ).toEqual(['Expense', 'Savings', 'Debt', 'Income']);
     await user.selectOptions(within(createDialog).getByLabelText('Category type'), 'savings');
     await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
 
@@ -146,6 +148,7 @@ describe('budget editor interactions', () => {
         categoryId: 'trip',
         planned: 850,
         createdAt: '2026-07-11',
+        note: 'Monthly trip contribution',
         rangeStart: '2026-07-01',
         rangeEnd: '2026-07-31'
       }
@@ -209,7 +212,7 @@ describe('budget editor interactions', () => {
     expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe(
       'true'
     );
-    expect(screen.getByText('Budget vs Actual')).not.toBeNull();
+    expect(screen.getByText('Spending plan vs actual')).not.toBeNull();
     expect(screen.queryByText('Coffee beans')).toBeNull();
     await user.click(screen.getByRole('tab', { name: 'Transactions' }));
     expect(screen.getByText('Coffee beans')).not.toBeNull();

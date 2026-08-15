@@ -100,7 +100,12 @@ describe('budget route model', () => {
       { currentDate: FIXED_DATE }
     );
 
-    expect(june.sheet).toEqual({ id: 'sheet-june', name: 'June', monthIndex: 5 });
+    expect(june.sheet).toEqual({
+      id: 'sheet-june',
+      name: 'June',
+      monthKey: '2026-06',
+      monthIndex: 5
+    });
     expect(june.range).toEqual({ start: '2026-06-01', end: '2026-06-30' });
     expect(june.summary.totalBudget).toBe(800);
     expect(june.categoryOptions).toEqual(
@@ -114,10 +119,21 @@ describe('budget route model', () => {
       'shopping',
       'food',
       'transport',
+      'salary',
       'subscriptions'
     ]);
-    expect(july.sheet).toEqual({ id: 'sheet-july', name: 'July', monthIndex: 6 });
-    expect(julyFromRange.sheet).toEqual({ id: 'sheet-july', name: 'July', monthIndex: 6 });
+    expect(july.sheet).toEqual({
+      id: 'sheet-july',
+      name: 'July',
+      monthKey: '2026-07',
+      monthIndex: 6
+    });
+    expect(julyFromRange.sheet).toEqual({
+      id: 'sheet-july',
+      name: 'July',
+      monthKey: '2026-07',
+      monthIndex: 6
+    });
     expect(july.range).toEqual({ start: '2026-07-01', end: '2026-07-31' });
     expect(workbook).toEqual(original);
     expectSerializable(june);
@@ -305,6 +321,46 @@ describe('budget controller', () => {
       budgets: [{ categoryId: 'food', planned: 700, createdAt: FIXED_DATE }]
     });
     expect(workbook.sheets).toHaveLength(2);
+  });
+
+  it('creates and selects plan months beyond the workbook legacy year', () => {
+    const workbook = makeBudgetWorkbook();
+    const controller = createBudgetController({
+      currentDate: FIXED_DATE,
+      createId: () => 'sheet-january-2027'
+    });
+
+    const saved = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          sheetId: '',
+          categoryId: 'food',
+          planned: 900,
+          createdAt: FIXED_DATE,
+          rangeStart: '2027-01-01',
+          rangeEnd: '2027-01-31'
+        }
+      },
+      { workbook }
+    );
+
+    expect(saved.ok).toBe(true);
+    expect(saved.workbook.sheets.at(-1)).toMatchObject({
+      id: 'sheet-january-2027',
+      name: '2027-01',
+      monthKey: '2027-01',
+      monthIndex: 0,
+      budgets: [{ categoryId: 'food', planned: 900, createdAt: FIXED_DATE }]
+    });
+
+    const model = buildBudgetRouteModel(
+      saved.workbook,
+      { range: { start: '2027-01-01', end: '2027-01-31' } },
+      { currentDate: FIXED_DATE }
+    );
+    expect(model.sheet).toMatchObject({ id: 'sheet-january-2027', monthKey: '2027-01' });
+    expect(model.summary.totalBudget).toBe(900);
   });
 
   it('creates, edits, and archives budgets with new workbook identity', () => {

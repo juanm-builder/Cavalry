@@ -10,16 +10,14 @@ function asArray(value) {
 
 function parseISODate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asString(value));
-  if (!match) {
-    return null;
-  }
+  if (!match) return null;
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function normalizeFilterKind(value) {
   const kind = asString(value) || 'all';
-  return ['all', 'bill', 'subscription'].indexOf(kind) >= 0 ? kind : 'all';
+  return ['all', 'bill', 'subscription'].includes(kind) ? kind : 'all';
 }
 
 function normalizeStatus(value) {
@@ -34,14 +32,14 @@ function normalizeStatus(value) {
     'review',
     'partial',
     'attention'
-  ].indexOf(status) >= 0
+  ].includes(status)
     ? status
     : 'all';
 }
 
 function normalizeSort(value) {
   const sort = asString(value) || 'dueDate';
-  return ['dueDate', 'name', 'amount', 'status', 'category'].indexOf(sort) >= 0 ? sort : 'dueDate';
+  return ['dueDate', 'name', 'amount', 'status', 'category'].includes(sort) ? sort : 'dueDate';
 }
 
 function getCategoryName(row) {
@@ -49,9 +47,7 @@ function getCategoryName(row) {
 }
 
 function getFilteredKindRows(rows, filterKind) {
-  if (filterKind === 'bill') {
-    return rows.filter((row) => row && row.kind !== 'subscription');
-  }
+  if (filterKind === 'bill') return rows.filter((row) => row && row.kind !== 'subscription');
   if (filterKind === 'subscription') {
     return rows.filter((row) => row && row.kind === 'subscription');
   }
@@ -67,21 +63,107 @@ function getDueWeekRows(rows, today) {
       const diff = Math.round((date.getTime() - todayDate.getTime()) / 86400000);
       return diff >= 0 && diff <= 7;
     })
-    .sort((a, b) => {
-      return asString(a && a.dueDate).localeCompare(asString(b && b.dueDate));
-    });
+    .sort((a, b) => asString(a && a.dueDate).localeCompare(asString(b && b.dueDate)));
+}
+
+function numericAmount(row) {
+  if (row && row.baseAmountVerified === false) return 0;
+  const amount = Number(row && row.amount);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function remainingAmount(row) {
+  if (row && row.baseAmountVerified === false) return 0;
+  if (row && row.remainingAmount !== null && row.remainingAmount !== undefined) {
+    const remaining = Number(row.remainingAmount);
+    if (Number.isFinite(remaining)) return remaining;
+  }
+  return numericAmount(row);
 }
 
 function sumRows(rows) {
-  return rows.reduce((sum, row) => roundMoney(sum + (Number(row && row.amount) || 0)), 0);
+  return roundMoney(asArray(rows).reduce((sum, row) => sum + numericAmount(row), 0));
 }
 
 function sumRemainingRows(rows) {
-  return rows.reduce(
-    (sum, row) =>
-      roundMoney(sum + (Number(row && row.remainingAmount) || Number(row && row.amount) || 0)),
-    0
+  return roundMoney(asArray(rows).reduce((sum, row) => sum + remainingAmount(row), 0));
+}
+
+function frequencyMonthlyFactor(frequency) {
+  const normalized = asString(frequency).toLowerCase();
+  if (normalized === 'weekly') return 52 / 12;
+  if (normalized === 'every 2 weeks' || normalized === 'biweekly') return 26 / 12;
+  if (normalized === 'monthly') return 1;
+  if (normalized === 'quarterly') return 1 / 3;
+  if (normalized === 'yearly' || normalized === 'annual') return 1 / 12;
+  return 0;
+}
+
+function getRecurringTemplateKey(row) {
+  return (
+    asString(row && row.recurringItemId) ||
+    [
+      asString(row && row.name).toLowerCase(),
+      asString(row && row.frequency).toLowerCase(),
+      asString(row && row.categoryId),
+      asString(row && row.accountId),
+      String(Number(row && (row.originalAmount ?? row.amount)) || 0)
+    ].join('|')
   );
+}
+
+function buildMonthlyEquivalent(rows) {
+  const templates = new Map();
+  asArray(rows).forEach((row) => {
+    const categoryType = asString(
+      row && (row.categoryType || (row.category && row.category.type))
+    ).toLowerCase();
+    if (categoryType === 'debt') return;
+    const key = getRecurringTemplateKey(row);
+    if (!key || templates.has(key)) return;
+    templates.set(key, row);
+  });
+  let total = 0;
+  let unresolvedCount = 0;
+  templates.forEach((row) => {
+    if (row && row.baseAmountVerified === false) {
+      unresolvedCount += 1;
+      return;
+    }
+    total += numericAmount(row) * frequencyMonthlyFactor(row && row.frequency);
+  });
+  return {
+    count: templates.size,
+    total: roundMoney(total),
+    unresolvedCount
+  };
+}
+
+function buildSummary(rows, today) {
+  const paidRows = rows.filter((row) => row && row.status === 'Paid');
+  const upcomingRows = rows.filter((row) => row && row.status === 'Upcoming');
+  const overdueRows = rows.filter((row) => row && row.status === 'Overdue');
+  const reviewRows = rows.filter((row) => row && row.status === 'Review match');
+  const partialRows = rows.filter((row) => row && row.status === 'Partial');
+  const unrecordedRows = rows.filter((row) => row && row.status === 'Expected charge not recorded');
+  const dueRows = upcomingRows.concat(overdueRows, partialRows, unrecordedRows);
+  const dueWeekRows = getDueWeekRows(dueRows, today);
+  return {
+    paidCount: paidRows.length,
+    upcomingCount: upcomingRows.length,
+    overdueCount: overdueRows.length,
+    unrecordedCount: unrecordedRows.length,
+    reviewCount: reviewRows.length,
+    partialCount: partialRows.length,
+    dueWeekCount: dueWeekRows.length,
+    totalPaid: sumRows(paidRows),
+    totalDueWeek: sumRows(dueWeekRows),
+    totalOverdue: sumRows(overdueRows),
+    totalUnrecorded: sumRows(unrecordedRows),
+    totalReview: sumRows(reviewRows),
+    totalPartial: sumRemainingRows(partialRows),
+    unresolvedFxCount: rows.filter((row) => row && row.baseAmountVerified === false).length
+  };
 }
 
 export function applyBillsFiltersAndSort(rows, options = {}) {
@@ -100,24 +182,16 @@ export function applyBillsFiltersAndSort(rows, options = {}) {
     Paid: 5
   };
   const filtered = asArray(rows).filter((row) => {
-    if (accountId && row.accountId !== accountId) {
-      return false;
-    }
-    if (categoryId && row.categoryId !== categoryId) {
-      return false;
-    }
+    if (accountId && row.accountId !== accountId) return false;
+    if (categoryId && row.categoryId !== categoryId) return false;
     if (options.ignoreStatus !== true && status !== 'all') {
       if (
         status === 'due' &&
-        row.status !== 'Upcoming' &&
-        row.status !== 'Overdue' &&
-        row.status !== 'Partial'
+        !['Upcoming', 'Overdue', 'Partial', 'Expected charge not recorded'].includes(row.status)
       ) {
-        if (row.status !== 'Expected charge not recorded') return false;
-      }
-      if (status === 'unrecorded' && row.status !== 'Expected charge not recorded') {
         return false;
       }
+      if (status === 'unrecorded' && row.status !== 'Expected charge not recorded') return false;
       if (status === 'review' && row.status !== 'Review match') return false;
       if (status === 'partial' && row.status !== 'Partial') return false;
       if (
@@ -127,19 +201,13 @@ export function applyBillsFiltersAndSort(rows, options = {}) {
         return false;
       }
       if (
-        status !== 'due' &&
-        status !== 'unrecorded' &&
-        status !== 'review' &&
-        status !== 'partial' &&
-        status !== 'attention' &&
+        !['due', 'unrecorded', 'review', 'partial', 'attention'].includes(status) &&
         asString(row.status).toLowerCase() !== status
       ) {
         return false;
       }
     }
-    if (options.ignoreDate !== true && dateValue && row.dueDate !== dateValue) {
-      return false;
-    }
+    if (options.ignoreDate !== true && dateValue && row.dueDate !== dateValue) return false;
     if (search) {
       const haystack = [
         row.name,
@@ -152,19 +220,13 @@ export function applyBillsFiltersAndSort(rows, options = {}) {
       ]
         .join(' ')
         .toLowerCase();
-      if (haystack.indexOf(search) < 0) {
-        return false;
-      }
+      if (!haystack.includes(search)) return false;
     }
     return true;
   });
   return filtered.sort((a, b) => {
-    if (sort === 'name') {
-      return asString(a && a.name).localeCompare(asString(b && b.name));
-    }
-    if (sort === 'amount') {
-      return (Number(b && b.amount) || 0) - (Number(a && a.amount) || 0);
-    }
+    if (sort === 'name') return asString(a && a.name).localeCompare(asString(b && b.name));
+    if (sort === 'amount') return numericAmount(b) - numericAmount(a);
     if (sort === 'status') {
       return (
         (statusRank[a && a.status] ?? 4) - (statusRank[b && b.status] ?? 4) ||
@@ -187,6 +249,10 @@ export function applyBillsFiltersAndSort(rows, options = {}) {
 export function buildBillsRouteViewModel(rows, options = {}) {
   const filterKind = normalizeFilterKind(options.filterKind);
   const kindRows = getFilteredKindRows(asArray(rows), filterKind);
+  const recurringScopeRows = getFilteredKindRows(
+    Array.isArray(options.recurringRows) ? options.recurringRows : kindRows,
+    filterKind
+  );
   const billRows = applyBillsFiltersAndSort(kindRows, {
     accountId: options.accountId,
     categoryId: options.categoryId,
@@ -195,28 +261,19 @@ export function buildBillsRouteViewModel(rows, options = {}) {
     search: options.search,
     sort: options.sort
   });
-  const paidRows = billRows.filter((row) => row && row.status === 'Paid');
-  const upcomingRows = billRows.filter((row) => row && row.status === 'Upcoming');
-  const overdueRows = billRows.filter((row) => row && row.status === 'Overdue');
-  const reviewRows = billRows.filter((row) => row && row.status === 'Review match');
-  const partialRows = billRows.filter((row) => row && row.status === 'Partial');
-  const unrecordedRows = billRows.filter(
-    (row) => row && row.status === 'Expected charge not recorded'
+
+  // Headline cards describe the selected Bills/Subscriptions scope, not the
+  // transient table search/filter subset. viewSummary is returned separately.
+  const summary = buildSummary(kindRows, options.today);
+  const viewSummary = buildSummary(billRows, options.today);
+  const dueRows = billRows.filter((row) =>
+    ['Upcoming', 'Overdue', 'Partial', 'Expected charge not recorded'].includes(row && row.status)
   );
-  const dueRows = upcomingRows.concat(overdueRows, partialRows, unrecordedRows);
   const dueNextRows = dueRows
     .slice()
-    .sort((a, b) => {
-      return asString(a && a.dueDate).localeCompare(asString(b && b.dueDate));
-    })
+    .sort((a, b) => asString(a && a.dueDate).localeCompare(asString(b && b.dueDate)))
     .slice(0, 8);
-  const dueWeekRows = getDueWeekRows(dueRows, options.today);
-  const monthlyRecurringRows = billRows.filter((row) => {
-    return (
-      asString(row && row.frequency).toLowerCase() === 'monthly' &&
-      asString(row && row.category && row.category.type).toLowerCase() !== 'debt'
-    );
-  });
+  const monthlyEquivalent = buildMonthlyEquivalent(recurringScopeRows);
   const rowsPerPage = Math.max(5, Number(options.rowsPerPage) || 10);
   const totalPages = Math.max(1, Math.ceil(billRows.length / rowsPerPage));
   const currentPage = Math.max(1, Math.min(totalPages, Number(options.page) || 1));
@@ -233,28 +290,20 @@ export function buildBillsRouteViewModel(rows, options = {}) {
       search: asString(options.search),
       sort: normalizeSort(options.sort)
     },
+    summaryScope: 'kind',
     rowCount: billRows.length,
     rows: billRows,
     pageRows,
     dueNextRows,
-    summary: {
-      paidCount: paidRows.length,
-      upcomingCount: upcomingRows.length,
-      overdueCount: overdueRows.length,
-      unrecordedCount: unrecordedRows.length,
-      reviewCount: reviewRows.length,
-      partialCount: partialRows.length,
-      dueWeekCount: dueWeekRows.length,
-      totalPaid: sumRows(paidRows),
-      totalDueWeek: sumRows(dueWeekRows),
-      totalOverdue: sumRows(overdueRows),
-      totalUnrecorded: sumRows(unrecordedRows),
-      totalReview: sumRows(reviewRows),
-      totalPartial: sumRemainingRows(partialRows)
-    },
+    summary,
+    viewSummary,
     recurring: {
-      monthlyCount: monthlyRecurringRows.length,
-      monthlyTotal: sumRows(monthlyRecurringRows)
+      // Compatibility aliases now represent a normalized monthly equivalent.
+      monthlyCount: monthlyEquivalent.count,
+      monthlyTotal: monthlyEquivalent.total,
+      monthlyEquivalentCount: monthlyEquivalent.count,
+      monthlyEquivalentTotal: monthlyEquivalent.total,
+      unresolvedFxCount: monthlyEquivalent.unresolvedCount
     },
     pagination: {
       rowsPerPage,

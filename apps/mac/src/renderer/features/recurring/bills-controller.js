@@ -13,6 +13,7 @@ import {
 export const BILLS_ACTIONS = Object.freeze({
   saveRecurring: 'save-recurring-item',
   archiveRecurring: 'archive-recurring-item',
+  restoreRecurring: 'restore-recurring-item',
   scan: 'scan-subscription-review',
   confirmMatch: 'confirm-recurring-transaction-match',
   rejectMatch: 'reject-recurring-transaction-match',
@@ -212,6 +213,22 @@ function archiveRecurringItem(workbook, payload) {
   ]);
 }
 
+function restoreRecurringItem(workbook, payload) {
+  const recurringItemId = asString(payload.recurringItemId);
+  const current = asArray(workbook.recurringItems).find(
+    (item) => item && item.id === recurringItemId
+  );
+  if (!current) return fail(workbook, 'recurring.not-found', 'Choose an existing recurring item.');
+  const nextWorkbook = cloneSerializable(workbook);
+  const item = nextWorkbook.recurringItems.find((entry) => entry.id === recurringItemId);
+  item.isActive = true;
+  return ok(nextWorkbook, [
+    { type: 'recurring/item-restored', payload: { recurringItemId } },
+    { type: 'schedule-save' },
+    { type: 'render' }
+  ]);
+}
+
 function decideRecurringMatch(workbook, payload, decision, dependencies) {
   const services = {
     createId: getIdFactory(dependencies) || undefined,
@@ -318,6 +335,9 @@ export function createBillsController(dependencies = {}) {
         }
         if ([BILLS_ACTIONS.archiveRecurring, 'recurring/archive'].includes(type)) {
           return archiveRecurringItem(workbook, payload);
+        }
+        if ([BILLS_ACTIONS.restoreRecurring, 'recurring/restore'].includes(type)) {
+          return restoreRecurringItem(workbook, payload);
         }
         if (type === BILLS_ACTIONS.confirmMatch) {
           return decideRecurringMatch(workbook, payload, 'matched', dependencies);

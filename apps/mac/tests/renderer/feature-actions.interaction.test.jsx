@@ -46,7 +46,7 @@ function makeBillsModel(overrides = {}) {
         { value: 'sheet-june', label: 'June 2026' },
         { value: 'sheet-july', label: 'July 2026' }
       ],
-      scanLabel: 'Scan Transactions',
+      scanLabel: 'Find recurring charges',
       scanDisabled: false
     },
     filters: {
@@ -663,7 +663,7 @@ describe('feature action callbacks', () => {
     expect(onAction.mock.calls.at(-1)[0].payload).not.toHaveProperty('model');
   });
 
-  it('removes the retired subscription scan and distinguishes import outcomes', async () => {
+  it('shows the recurring-charge finder and distinguishes import outcomes', async () => {
     const user = userEvent.setup();
     const billsAction = vi.fn();
     const { unmount } = render(
@@ -672,7 +672,8 @@ describe('feature action callbacks', () => {
         model={makeBillsModel({ header: { ...makeBillsModel().header, scanDisabled: true } })}
       />
     );
-    expect(screen.queryByRole('button', { name: /Scan Transactions/ })).toBeNull();
+    const scanButton = screen.getByRole('button', { name: /Find recurring charges/ });
+    expect(scanButton.disabled).toBe(true);
     expect(billsAction).not.toHaveBeenCalled();
     unmount();
 

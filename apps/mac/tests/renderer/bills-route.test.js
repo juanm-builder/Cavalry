@@ -50,7 +50,7 @@ function makeBillsModel(overrides = {}) {
       ],
       sheetId: 'sheet-july',
       scanIcon: 'manage_search',
-      scanLabel: 'Scan Transactions'
+      scanLabel: 'Find recurring charges'
     },
     currency: 'PHP',
     today: '2026-07-15',
@@ -141,7 +141,7 @@ describe('BillsRoute', () => {
     expect(html).toContain('Netflix');
     expect(html).toContain('Post linked transaction');
     expect(html).toContain('bill-due-next-card');
-    expect(html).toContain('PHP 5,748.00 expected monthly.');
+    expect(html).toContain('PHP 5,748.00 monthly equivalent.');
     expect(html).not.toContain('Add Bill / Subscription');
     expect(html).not.toContain('data-action=');
     expect(html).not.toContain('dangerouslySetInnerHTML');
@@ -175,7 +175,7 @@ describe('BillsRoute', () => {
     expect(html).not.toContain('bills-table-footer');
   });
 
-  it('does not render the retired subscription scanner', () => {
+  it('renders a visible, stateful recurring-charge finder', () => {
     const html = renderBillsRoute(
       makeBillsModel({
         header: {
@@ -183,13 +183,41 @@ describe('BillsRoute', () => {
           sheetId: 'sheet-july',
           scanDisabled: true,
           scanIcon: 'hourglass_top',
-          scanLabel: 'Model Reviewing 40%'
+          scanLabel: 'Looking · 40%'
         }
       })
     );
 
-    expect(html).not.toContain('Model Reviewing 40%');
-    expect(html).not.toContain('Scan Transactions');
+    expect(html).toContain('Looking · 40%');
+    expect(html).toContain('bills-scan-button');
+    expect(html).toContain('disabled');
+  });
+
+  it('renders recurring suggestions as review-first cards', () => {
+    const html = renderBillsRoute(
+      makeBillsModel({
+        subscriptionReview: {
+          status: 'complete',
+          candidates: [
+            {
+              id: 'candidate-chatgpt',
+              name: 'ChatGPT Pro',
+              kind: 'subscription',
+              amountCopy: 'PHP 6,490.00',
+              frequency: 'Monthly',
+              transactionCount: 3,
+              confidenceLabel: 'Strong pattern'
+            }
+          ]
+        }
+      })
+    );
+
+    expect(html).toContain('Possible recurring charges');
+    expect(html).toContain('ChatGPT Pro');
+    expect(html).toContain('Strong pattern');
+    expect(html).toContain('>Review</button>');
+    expect(html).toContain('Review each suggestion before Cavalry adds anything.');
   });
 
   it('renders a possible transaction match for review without presenting the item as paid', () => {

@@ -271,7 +271,7 @@ describe('finance application composition', () => {
     await user.click(screen.getByRole('button', { name: 'Next month' }));
     await user.click(screen.getByRole('button', { name: 'Create budget' }));
     const editor = await screen.findByRole('dialog', { name: 'Budget editor' });
-    expect(within(editor).getByLabelText('Budget month').value).toBe('August 2026');
+    expect(within(editor).getByText('August 2026')).not.toBeNull();
     await user.click(within(editor).getByRole('combobox', { name: 'Budget category' }));
     await user.click(screen.getByRole('option', { name: 'Food' }));
     await user.type(within(editor).getByLabelText('Planned amount'), '650');
@@ -461,6 +461,6 @@ describe('finance application composition', () => {
     });
     expect((await screen.findAllByText('Internet')).length).toBeGreaterThan(0);
 
-    expect(screen.queryByRole('button', { name: /Scan Transactions/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Find recurring charges/ })).not.toBeNull();
   });
 });

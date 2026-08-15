@@ -35,6 +35,17 @@ const CREATE_CASES = [
     }
   },
   {
+    label: 'refund',
+    template: 'merchant_refund',
+    expectedIssues: ['invalid_amount', 'invalid_refund_account', 'invalid_refund_category'],
+    fields: {
+      amount: '500',
+      description: 'Store refund',
+      categoryId: 'food',
+      primaryAccountId: 'cash'
+    }
+  },
+  {
     label: 'transfer',
     template: 'transfer',
     expectedIssues: ['invalid_amount', 'invalid_transfer_accounts'],
@@ -211,7 +222,7 @@ describe('transaction create wizard controller', () => {
         {
           code: 'invalid_transaction_type',
           field: 'template',
-          message: 'Choose Income, Expense, or Transfer.'
+          message: 'Choose Income, Expense, Refund, or Transfer.'
         }
       ]
     });

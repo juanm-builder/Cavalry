@@ -400,7 +400,7 @@ export function buildDashboardBudgetSummaryViewModel(workbook, options = {}) {
   return {
     range: budgetRoute.range,
     summary: clonePlain(budgetRoute.summary),
-    rows: clonePlain(budgetRoute.categoryRows),
+    rows: clonePlain(budgetRoute.categoryRows.filter((row) => row && row.includedInPlanTotals)),
     planVsActual: clonePlain(budgetRoute.planVsActual)
   };
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput, formatFinancialValue } from '../../shared/FinancialValueInput.jsx';
@@ -24,6 +25,10 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function renderInBody(content) {
+  return typeof document === 'undefined' ? content : createPortal(content, document.body);
+}
+
 function asText(value) {
   return String(value == null ? '' : value).trim();
 }
@@ -32,11 +37,12 @@ function emit(onAction, type, payload = {}) {
   return typeof onAction === 'function' ? onAction({ type, payload }) : undefined;
 }
 
-function PageHeader({ title, children }) {
+function PageHeader({ title, subtitle, children }) {
   return (
-    <section className="page-header">
+    <section className="page-header bills-page-header">
       <div>
         <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
       </div>
       <div className="page-actions">{children}</div>
     </section>
@@ -162,7 +168,7 @@ function EditorModal({ initialValues, options, onAction, onClose }) {
     onClose(false);
   }
 
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
       <div
         className="modal-card modal-card-wide bill-form-modal"
@@ -347,7 +353,7 @@ function EditorModal({ initialValues, options, onAction, onClose }) {
               <div className="bill-preview-details">
                 <span>{values.dueDate || 'Due date'}</span>
                 <b className="amount">
-                  {formatFinancialValue(values.amount || 0)} {options.currency}
+                  {formatFinancialValue(values.amount || 0)} {values.currency || options.currency}
                 </b>
               </div>
               <div className="bill-preview-footer">
@@ -400,7 +406,7 @@ function ArchiveModal({ row, onAction, onClose }) {
     }
     onClose(false);
   }
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
       <div
         className="modal-card"
@@ -447,7 +453,7 @@ function ArchiveModal({ row, onAction, onClose }) {
   );
 }
 
-function BillRow({ row, sheetId, onAction, onEdit, onArchive }) {
+function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
   const reconciliation = getRowReconciliation(row);
   const reconciliationTransaction = reconciliation.transaction;
   const linkedTransaction =
@@ -466,9 +472,7 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive }) {
       : row.relativeDateLabel;
   const reconciliationPayload = getReconciliationPayload(row, reconciliation);
   const openMain = () => {
-    if (linkedTransaction)
-      emit(onAction, 'open-transaction-detail', { transactionId: linkedTransaction.id });
-    else if (row.actions && row.actions.canEdit) onEdit(row);
+    if (typeof onSelect === 'function') onSelect(row);
   };
   return (
     <div
@@ -785,7 +789,140 @@ function FilterPanel({ filters, options, onAction }) {
   );
 }
 
-function DueNext({ groups, onEdit }) {
+function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
+  const dismiss = useModalDismiss(() => onClose(true));
+  if (!row) return null;
+  const reconciliation = getRowReconciliation(row);
+  const linkedTransaction =
+    row.transaction ||
+    (['matched', 'partial'].includes(reconciliation.state) ? reconciliation.transaction : null);
+  return renderInBody(
+    <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
+      <div
+        aria-label={`${row.name} occurrence details`}
+        aria-modal="true"
+        className="modal-card modal-card-wide bill-form-modal"
+        role="dialog"
+      >
+        <div className="bill-form-header">
+          <div>
+            <h3>{row.name}</h3>
+            <p>This occurrence is separate from the recurring rule behind it.</p>
+          </div>
+          <button
+            aria-label="Close occurrence details"
+            className="btn btn-icon"
+            onClick={() => onClose(true)}
+            type="button"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <div className="bill-form-body">
+          <div className="budget-detail-card">
+            <dl className="budget-detail-list">
+              <div>
+                <dt>Status</dt>
+                <dd>{row.status}</dd>
+              </div>
+              <div>
+                <dt>Expected date</dt>
+                <dd>{row.dueDateCopy || row.dueDate}</dd>
+              </div>
+              <div>
+                <dt>Expected amount</dt>
+                <dd>{row.dueAmountCopy || row.amountCopy}</dd>
+              </div>
+              <div>
+                <dt>Category</dt>
+                <dd>{row.categoryName || 'Uncategorized'}</dd>
+              </div>
+              <div>
+                <dt>Payment method</dt>
+                <dd>{row.paymentMethod || 'Not set'}</dd>
+              </div>
+              <div>
+                <dt>Frequency</dt>
+                <dd>{row.frequency || 'Not set'}</dd>
+              </div>
+              <div>
+                <dt>Matching evidence</dt>
+                <dd>
+                  {reconciliation.explanation ||
+                    reconciliation.detail ||
+                    'No transaction has been linked yet.'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          {['candidate'].includes(reconciliation.state) ? (
+            <ReconciliationReview row={row} reconciliation={reconciliation} onAction={onAction} />
+          ) : null}
+          {['matched', 'partial'].includes(reconciliation.state) ? (
+            <ReconciliationProof reconciliation={reconciliation} />
+          ) : null}
+        </div>
+        <div className="modal-actions bill-form-actions">
+          {linkedTransaction ? (
+            <button
+              className="btn"
+              onClick={() =>
+                emit(onAction, 'open-transaction-detail', { transactionId: linkedTransaction.id })
+              }
+              type="button"
+            >
+              <Icon name="receipt_long" /> View transaction
+            </button>
+          ) : null}
+          <button className="btn" onClick={() => onEdit(row)} type="button">
+            <Icon name="edit" /> Edit recurring rule
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InactiveRecurring({ items, onAction }) {
+  if (!asArray(items).length) return null;
+  return (
+    <article className="reference-card bill-month-note-card">
+      <div className="reference-card-title">
+        <h3>Inactive</h3>
+        <span className="tag">{String(items.length)}</span>
+      </div>
+      <div className="bill-due-queue">
+        {items.map((item) => (
+          <div className="bill-due-row" key={item.id}>
+            <Icon
+              className="mini-icon info"
+              name={item.kind === 'subscription' ? 'sync' : 'archive'}
+            />
+            <span>
+              <strong>{item.name}</strong>
+              <small>
+                {item.frequency} • {item.categoryName}
+              </small>
+            </span>
+            <b className="amount">{item.amountCopy}</b>
+            <button
+              aria-label={`Restore ${item.name}`}
+              className="btn btn-icon"
+              onClick={() =>
+                emit(onAction, 'restore-recurring-item', { recurringItemId: item.recurringItemId })
+              }
+              type="button"
+            >
+              <Icon name="restore" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function DueNext({ groups, onSelect }) {
   return (
     <article className="reference-card bill-due-card bill-due-next-card">
       <div className="reference-card-title">
@@ -807,7 +944,7 @@ function DueNext({ groups, onEdit }) {
                   className="bill-due-row"
                   type="button"
                   key={row.id}
-                  onClick={() => onEdit(row)}
+                  onClick={() => onSelect(row)}
                 >
                   <Icon
                     className={`mini-icon ${row.tone || ''}`}
@@ -833,6 +970,67 @@ function DueNext({ groups, onEdit }) {
   );
 }
 
+function SubscriptionSuggestions({ review, onReview }) {
+  const candidates = asArray(review && review.candidates);
+  if (!candidates.length) {
+    if (review && review.status === 'complete' && !review.error) {
+      return (
+        <aside className="subscription-suggestion-empty" role="status">
+          <Icon name="check_circle" />
+          <span>
+            <strong>No new recurring charges found</strong>
+            <small>
+              Your existing bills and subscriptions already cover the patterns Cavalry found.
+            </small>
+          </span>
+        </aside>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <section className="reference-card subscription-suggestion-panel">
+      <div className="subscription-suggestion-heading">
+        <div>
+          <span className="subscription-suggestion-kicker">
+            <Icon name="auto_awesome" /> Suggestions
+          </span>
+          <h3>Possible recurring charges</h3>
+          <p>Review each suggestion before Cavalry adds anything.</p>
+        </div>
+        <span className="tag">{candidates.length}</span>
+      </div>
+      <div className="subscription-suggestion-list">
+        {candidates.map((candidate) => (
+          <article className="subscription-suggestion-row" key={candidate.id}>
+            <span className="subscription-suggestion-icon">
+              <Icon name={candidate.kind === 'subscription' ? 'subscriptions' : 'receipt_long'} />
+            </span>
+            <span className="subscription-suggestion-copy">
+              <strong>{candidate.name}</strong>
+              <small>
+                {candidate.frequency || 'Monthly'} · {candidate.transactionCount} similar charge
+                {candidate.transactionCount === 1 ? '' : 's'}
+              </small>
+              <em>{candidate.confidenceLabel || 'Possible recurring'}</em>
+            </span>
+            <b className="amount">{candidate.amountCopy}</b>
+            <button
+              aria-label={`Review ${candidate.name} recurring suggestion`}
+              className="btn subscription-suggestion-review"
+              onClick={() => onReview(candidate)}
+              type="button"
+            >
+              Review
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function BillsRoute({
   model,
   onAction,
@@ -852,6 +1050,7 @@ export function BillsRoute({
   const [editor, setEditor] = useState(null);
   const [editorInstanceKey, setEditorInstanceKey] = useState(0);
   const [archiveRow, setArchiveRow] = useState(null);
+  const [detailRow, setDetailRow] = useState(null);
 
   useEffect(() => {
     if (!targetRequestKey || !initialTargetRecurringItem?.recurringItemId) return;
@@ -869,6 +1068,7 @@ export function BillsRoute({
   }, [initialTargetRecurringItem, onTargetHandled, targetRequestKey]);
 
   function openEditor(row) {
+    setDetailRow(null);
     const values =
       row && row.editorValues
         ? row.editorValues
@@ -894,6 +1094,38 @@ export function BillsRoute({
     });
   }
 
+  function openCandidate(candidate) {
+    const editorOptions = data.editorOptions || {};
+    const categoryIds = new Set(asArray(editorOptions.categories).map((option) => option.value));
+    const accountIds = new Set(asArray(editorOptions.accounts).map((option) => option.value));
+    const values = {
+      recurringItemId: '',
+      kind: candidate.kind === 'subscription' ? 'subscription' : 'bill',
+      name: candidate.name || '',
+      categoryId: categoryIds.has(candidate.categoryId) ? candidate.categoryId : '',
+      accountId: accountIds.has(candidate.accountId) ? candidate.accountId : '',
+      amount: candidate.amount || '',
+      currency: candidate.currency || data.currency || 'PHP',
+      frequency: candidate.frequency || 'Monthly',
+      dueDate: candidate.nextDueDate || data.today || '',
+      autoRenew: candidate.kind === 'subscription',
+      isActive: true,
+      note: candidate.reason
+        ? `Suggested from your transaction history: ${candidate.reason}`
+        : `Suggested from ${candidate.transactionCount || 0} similar transactions. Review before saving.`
+    };
+    setDetailRow(null);
+    setArchiveRow(null);
+    setEditor(values);
+    setEditorInstanceKey((current) => current + 1);
+    emit(onAction, 'open-bill-subscription', {
+      sheetId: header.sheetId || '',
+      recurringItemId: '',
+      source: 'recurring-suggestion',
+      candidateId: candidate.id || ''
+    });
+  }
+
   function closeEditor(notify) {
     setEditor(null);
     if (notify) emit(onAction, 'close-modal');
@@ -904,9 +1136,28 @@ export function BillsRoute({
     if (notify) emit(onAction, 'close-modal');
   }
 
+  function closeDetail(notify) {
+    setDetailRow(null);
+    if (notify) emit(onAction, 'close-modal');
+  }
+
   return (
     <section data-react-route="bills">
-      <PageHeader title="Bills & Subscriptions">
+      <PageHeader
+        title="Bills & Subscriptions"
+        subtitle="See what is due, what was charged, and recurring patterns Cavalry notices."
+      >
+        <button
+          className="btn bills-scan-button"
+          disabled={!header.sheetId || header.scanDisabled}
+          onClick={() =>
+            emit(onAction, 'scan-subscription-review', { sheetId: header.sheetId || '' })
+          }
+          type="button"
+        >
+          <Icon name={header.scanIcon || 'manage_search'} />
+          {header.scanLabel || 'Find recurring charges'}
+        </button>
         <ControlSelect
           icon="calendar_month"
           label="Bills month"
@@ -926,25 +1177,7 @@ export function BillsRoute({
           {data.subscriptionReview.error}
         </div>
       ) : null}
-      {data.subscriptionReview && asArray(data.subscriptionReview.candidates).length ? (
-        <section className="subscription-review-panel">
-          <div className="reference-card-title">
-            <h3>Subscription Review</h3>
-            <span className="tag">{data.subscriptionReview.candidates.length}</span>
-          </div>
-          <div className="subscription-review-candidates">
-            {data.subscriptionReview.candidates.map((candidate) => (
-              <article className="subscription-review-candidate" key={candidate.id}>
-                <strong>{candidate.name}</strong>
-                <small>
-                  {candidate.frequency} • {candidate.transactionCount} transactions
-                </small>
-                <b className="amount">{candidate.amountCopy}</b>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <SubscriptionSuggestions review={data.subscriptionReview} onReview={openCandidate} />
       <section className="bills-simple-summary">
         {asArray(data.summaryPills).map((pill) => (
           <SummaryPill key={pill.status} {...pill} onAction={onAction} />
@@ -1006,6 +1239,7 @@ export function BillsRoute({
                   onAction={onAction}
                   onEdit={openEditor}
                   onArchive={setArchiveRow}
+                  onSelect={setDetailRow}
                 />
               ))}
             </div>
@@ -1020,7 +1254,7 @@ export function BillsRoute({
           <Pagination pagination={data.pagination} onAction={onAction} />
         </article>
         <aside className="bills-side-stack bills-simple-side">
-          <DueNext groups={data.dueNextGroups} onEdit={openEditor} />
+          <DueNext groups={data.dueNextGroups} onSelect={setDetailRow} />
           <article className="reference-card bill-month-note-card">
             <div className="reference-card-title">
               <h3>Recurring</h3>
@@ -1028,10 +1262,19 @@ export function BillsRoute({
                 {String((data.recurring && data.recurring.monthlyCount) || 0)}
               </span>
             </div>
-            <p>{(data.recurring && data.recurring.monthlyTotalCopy) || '0'} expected monthly.</p>
+            <p>{(data.recurring && data.recurring.monthlyTotalCopy) || '0'} monthly equivalent.</p>
           </article>
+          <InactiveRecurring items={data.inactiveItems} onAction={onAction} />
         </aside>
       </section>
+      {detailRow ? (
+        <BillOccurrenceModal
+          row={detailRow}
+          onAction={onAction}
+          onEdit={openEditor}
+          onClose={closeDetail}
+        />
+      ) : null}
       {editor ? (
         <EditorModal
           key={`${editor.recurringItemId || 'new'}:${editorInstanceKey}`}

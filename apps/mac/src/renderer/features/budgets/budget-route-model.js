@@ -21,9 +21,7 @@ function isLeapYear(year) {
 }
 
 function getDaysInMonth(year, month) {
-  if (month === 2) {
-    return isLeapYear(year) ? 29 : 28;
-  }
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
@@ -37,24 +35,19 @@ function normalizeDateKey(value) {
     }
   }
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(asString(rawValue));
-  if (!match) {
-    return '';
-  }
+  if (!match) return '';
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > getDaysInMonth(year, month)) {
-    return '';
-  }
+  if (month < 1 || month > 12 || day < 1 || day > getDaysInMonth(year, month)) return '';
   return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function readCurrentDate(dependencies) {
   const source = asObject(dependencies);
   let value = source.currentDate;
-  if (!value && typeof source.clock === 'function') {
-    value = source.clock();
-  } else if (!value && source.clock && typeof source.clock.today === 'function') {
+  if (!value && typeof source.clock === 'function') value = source.clock();
+  else if (!value && source.clock && typeof source.clock.today === 'function') {
     value = source.clock.today();
   } else if (!value && source.clock && typeof source.clock.now === 'function') {
     value = source.clock.now();
@@ -66,11 +59,6 @@ function readCurrentDate(dependencies) {
   return currentDate;
 }
 
-function getWorkbookYear(workbook, currentDate) {
-  const candidate = Math.trunc(Number(workbook && workbook.year));
-  return candidate >= 1000 && candidate <= 9999 ? candidate : Number(currentDate.slice(0, 4));
-}
-
 function normalizeRange(value) {
   const source = asObject(value);
   const start = normalizeDateKey(source.start || source.startDate);
@@ -78,27 +66,30 @@ function normalizeRange(value) {
   return start && end && start <= end ? { start, end } : null;
 }
 
-function getMonthRange(year, monthIndex) {
-  const normalizedMonthIndex = Math.max(0, Math.min(11, Math.trunc(Number(monthIndex)) || 0));
-  const month = normalizedMonthIndex + 1;
-  const yearKey = String(year).padStart(4, '0');
-  const monthKey = String(month).padStart(2, '0');
+function normalizeMonthKey(value) {
+  const match = /^(\d{4})-(\d{2})/.exec(asString(value));
+  if (!match) return '';
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12 ? `${match[1]}-${match[2]}` : '';
+}
+
+function getMonthRangeFromKey(value) {
+  const monthKey = normalizeMonthKey(value);
+  if (!monthKey) return null;
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
   return {
-    start: `${yearKey}-${monthKey}-01`,
-    end: `${yearKey}-${monthKey}-${String(getDaysInMonth(year, month)).padStart(2, '0')}`
+    start: `${monthKey}-01`,
+    end: `${monthKey}-${String(getDaysInMonth(year, month)).padStart(2, '0')}`
   };
 }
 
-function getCurrentWorkbookMonthIndex(workbook, currentDate) {
-  const workbookYear = getWorkbookYear(workbook, currentDate);
-  const currentYear = Number(currentDate.slice(0, 4));
-  if (currentYear < workbookYear) {
-    return 0;
-  }
-  if (currentYear > workbookYear) {
-    return 11;
-  }
-  return Number(currentDate.slice(5, 7)) - 1;
+function getSheetMonthKey(workbook, sheet) {
+  const direct = normalizeMonthKey(sheet && sheet.monthKey);
+  if (direct) return direct;
+  const year = Math.trunc(Number(workbook && workbook.year)) || new Date().getFullYear();
+  const monthIndex = Math.max(0, Math.min(11, Math.trunc(Number(sheet && sheet.monthIndex)) || 0));
+  return `${String(year).padStart(4, '0')}-${String(monthIndex + 1).padStart(2, '0')}`;
 }
 
 function selectSheet(workbook, viewState, currentDate) {
@@ -106,46 +97,34 @@ function selectSheet(workbook, viewState, currentDate) {
   const requestedId = asString(viewState.sheetId || viewState.activeSheetId);
   if (requestedId) {
     const requested = sheets.find((sheet) => asString(sheet && sheet.id) === requestedId);
-    if (requested) {
-      return requested;
-    }
+    if (requested) return requested;
   }
 
   const requestedRange = normalizeRange(viewState.range);
-  if (requestedRange) {
-    const rangeYear = Number(requestedRange.start.slice(0, 4));
-    const rangeMonthIndex = Number(requestedRange.start.slice(5, 7)) - 1;
-    if (rangeYear === getWorkbookYear(workbook, currentDate)) {
-      const rangeSheet = sheets.find(
-        (sheet) => Number(sheet && sheet.monthIndex) === rangeMonthIndex
-      );
-      if (rangeSheet) return rangeSheet;
-    }
-    return null;
-  }
+  const requestedMonthKey = requestedRange
+    ? requestedRange.start.slice(0, 7)
+    : currentDate.slice(0, 7);
+  const matching = sheets.find((sheet) => getSheetMonthKey(workbook, sheet) === requestedMonthKey);
+  if (matching) return matching;
+  if (requestedRange) return null;
 
-  const workbookYear = getWorkbookYear(workbook, currentDate);
-  const currentYear = Number(currentDate.slice(0, 4));
-  if (workbookYear === currentYear) {
-    const currentMonthIndex = Number(currentDate.slice(5, 7)) - 1;
-    const currentMonthSheet = sheets.find(
-      (sheet) => Number(sheet && sheet.monthIndex) === currentMonthIndex
-    );
-    if (currentMonthSheet) {
-      return currentMonthSheet;
-    }
-  }
-  return sheets[0] || null;
+  return (
+    sheets
+      .slice()
+      .sort((left, right) =>
+        getSheetMonthKey(workbook, right).localeCompare(getSheetMonthKey(workbook, left))
+      )[0] || null
+  );
 }
 
-function toSheetModel(sheet) {
-  if (!sheet) {
-    return null;
-  }
+function toSheetModel(workbook, sheet) {
+  if (!sheet) return null;
+  const monthKey = getSheetMonthKey(workbook, sheet);
   return {
     id: asString(sheet.id),
     name: asString(sheet.name),
-    monthIndex: Math.max(0, Math.min(11, Math.trunc(Number(sheet.monthIndex)) || 0))
+    monthKey,
+    monthIndex: Math.max(0, Number(monthKey.slice(5, 7)) - 1)
   };
 }
 
@@ -186,6 +165,12 @@ function buildCategoryOptions(workbook, sheet) {
       asString(budget && budget.createdAt)
     ])
   );
+  const noteMap = new Map(
+    asArray(sheet && sheet.budgets).map((budget) => [
+      asString(budget && budget.categoryId),
+      asString(budget && budget.note)
+    ])
+  );
   const deletableCategoryIds = new Set([
     ...asArray(sheet && sheet.budgets)
       .filter((budget) => Number(budget && budget.planned) > 0)
@@ -196,7 +181,6 @@ function buildCategoryOptions(workbook, sheet) {
   ]);
   return asArray(workbook && workbook.categories)
     .filter((category) => category && category.isActive !== false)
-    .filter((category) => category.type !== 'income')
     .map((category) => ({
       id: asString(category.id),
       name: asString(category.name),
@@ -205,37 +189,11 @@ function buildCategoryOptions(workbook, sheet) {
       color: asString(category.color),
       planned: budgetMap.get(asString(category.id)) || 0,
       createdAt: createdAtMap.get(asString(category.id)) || '',
+      note: noteMap.get(asString(category.id)) || '',
       canDelete: deletableCategoryIds.has(asString(category.id))
     }))
     .filter((category) => category.id)
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function attachCategoryTransactions(workbook, rows, range) {
-  return asArray(rows).map((row) => ({
-    ...row,
-    transactions: asArray(workbook && workbook.transactions)
-      .filter((transaction) => {
-        const date = normalizeDateKey(transaction && transaction.date);
-        return (
-          asString(transaction && transaction.categoryId) ===
-            asString(row.category && row.category.id) &&
-          date &&
-          date >= range.start &&
-          date <= range.end
-        );
-      })
-      .map((transaction) => ({
-        id: asString(transaction.id),
-        description: asString(transaction.description) || 'Untitled transaction',
-        date: normalizeDateKey(transaction.date),
-        amount: Math.abs(Number(transaction.amount) || 0),
-        currency: asString(
-          transaction.originalCurrency || transaction.currency || workbook.currency
-        )
-      }))
-      .sort((left, right) => right.date.localeCompare(left.date))
-  }));
 }
 
 export function buildBudgetRouteModel(workbook, viewState = {}, dependencies = {}) {
@@ -245,31 +203,27 @@ export function buildBudgetRouteModel(workbook, viewState = {}, dependencies = {
 
   const sourceViewState = asObject(viewState);
   const currentDate = readCurrentDate(dependencies);
-  const workbookYear = getWorkbookYear(workbook, currentDate);
   const selectedSheet = selectSheet(workbook, sourceViewState, currentDate);
+  const requestedRange = normalizeRange(sourceViewState.range);
   const range =
-    normalizeRange(sourceViewState.range) ||
+    requestedRange ||
     (selectedSheet
-      ? getMonthRange(workbookYear, selectedSheet.monthIndex)
-      : getMonthRange(workbookYear, getCurrentWorkbookMonthIndex(workbook, currentDate)));
-  const sheet = toSheetModel(selectedSheet);
+      ? getMonthRangeFromKey(getSheetMonthKey(workbook, selectedSheet))
+      : getMonthRangeFromKey(currentDate.slice(0, 7)));
+  const sheet = toSheetModel(workbook, selectedSheet);
   const coreModel = buildBudgetRouteViewModel(workbook, { range, currentDate });
   const categoryOptions = buildCategoryOptions(workbook, selectedSheet);
-  const resolvedViewState = {
-    sheetId: sheet ? sheet.id : '',
-    range
-  };
 
   return cloneSerializable({
     ...coreModel,
-    categoryRows: attachCategoryTransactions(workbook, coreModel.categoryRows, range),
     currency: asString(workbook.currency).toUpperCase() || 'PHP',
     currentDate,
     periodLabel: formatVisibleDateRangeLabel(range),
+    monthKey: range.start.slice(0, 7),
     sheet,
     categoryOptions,
     canAddBudget: categoryOptions.length > 0,
-    viewState: resolvedViewState,
+    viewState: { sheetId: sheet ? sheet.id : '', range },
     emptyState: getEmptyState(workbook, selectedSheet, coreModel)
   });
 }

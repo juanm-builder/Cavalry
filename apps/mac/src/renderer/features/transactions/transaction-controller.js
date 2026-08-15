@@ -34,6 +34,7 @@ function asArray(value) {
 const CREATE_TRANSACTION_TYPE_CHOICES = Object.freeze([
   'expense_paid',
   'income_received',
+  'merchant_refund',
   'transfer'
 ]);
 const CREATE_TRANSACTION_TEMPLATES = Object.freeze([
@@ -44,6 +45,7 @@ const CREATE_TRANSACTION_TEMPLATES = Object.freeze([
 function createTransactionKind(template) {
   if (template === 'expense_paid' || template === 'expense_charged') return 'expense';
   if (template === 'income_received') return 'income';
+  if (template === 'merchant_refund') return 'refund';
   if (template === 'transfer') return 'transfer';
   return '';
 }
@@ -80,7 +82,11 @@ function validateCreateComposerDetails(workbook, draft) {
   const issues = [];
   if (!CREATE_TRANSACTION_TEMPLATES.includes(template)) {
     return [
-      composerIssue('invalid_transaction_type', 'template', 'Choose Income, Expense, or Transfer.')
+      composerIssue(
+        'invalid_transaction_type',
+        'template',
+        'Choose Income, Expense, Refund, or Transfer.'
+      )
     ];
   }
 
@@ -115,6 +121,40 @@ function validateCreateComposerDetails(workbook, draft) {
     }
     if (!(category && category.type === 'income')) {
       issues.push(composerIssue('invalid_income_category', 'categoryId', 'Pick an income source.'));
+    }
+  }
+
+  if (template === 'merchant_refund') {
+    if (!(primaryAccount && ['asset', 'liability'].includes(primaryAccount.group))) {
+      issues.push(
+        composerIssue(
+          'invalid_refund_account',
+          'primaryAccountId',
+          'Choose the cash account, bank account, e-wallet, or credit card that received the refund.'
+        )
+      );
+    }
+    if (!(category && category.type === 'expense')) {
+      issues.push(
+        composerIssue(
+          'invalid_refund_category',
+          'categoryId',
+          'Pick the original expense category so the refund reduces the correct spending total.'
+        )
+      );
+    }
+    if (
+      asString(workbook && workbook.currency).toUpperCase() === 'PHP' &&
+      asString(draft && draft.currency).toUpperCase() === 'USD' &&
+      !(parseAmount(draft && draft.fxRateToBase) > 0)
+    ) {
+      issues.push(
+        composerIssue(
+          'missing_usd_refund_rate',
+          'fxRateToBase',
+          'Set the USD to PHP rate used for this refund.'
+        )
+      );
     }
   }
 
@@ -334,7 +374,7 @@ function chooseCreateTransactionType(state, template) {
           composerIssue(
             'invalid_transaction_type',
             'template',
-            'Choose Income, Expense, or Transfer.'
+            'Choose Income, Expense, Refund, or Transfer.'
           )
         ],
         warnings: []

@@ -1,6 +1,7 @@
 import {
   buildBillsRouteViewModel,
   buildRecurringCandidates,
+  getRecurringAmountConversion,
   getRecurringOccurrencesForSheet,
   RECURRING_RECONCILIATION_DEFAULTS,
   reconcileRecurringOccurrences
@@ -35,6 +36,26 @@ function asString(value) {
 
 function cloneSerializable(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function inferReviewCandidateKind(candidate) {
+  const text = `${asString(candidate && (candidate.suggestedName || candidate.name))} ${asString(
+    candidate && candidate.categoryName
+  )}`.toLowerCase();
+  if (
+    /(rent|mortgage|loan|insurance|electric|water|internet|phone|mobile|utility|tuition)/.test(text)
+  ) {
+    return 'bill';
+  }
+  if (
+    asString(candidate && candidate.classification) === 'likely_subscription' ||
+    /(subscription|membership|netflix|spotify|chatgpt|openai|apple|icloud|google|youtube|adobe|canva|notion|dropbox|figma|zoom|prime|gym)/.test(
+      text
+    )
+  ) {
+    return 'subscription';
+  }
+  return 'bill';
 }
 
 function isLeapYear(year) {
@@ -95,6 +116,72 @@ function dateOrdinal(value) {
   return total + day;
 }
 
+function addDaysToDate(value, amount) {
+  const date = normalizeDateKey(value);
+  if (!date) return '';
+  const next = new Date(
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)))
+  );
+  next.setUTCDate(next.getUTCDate() + Number(amount || 0));
+  return next.toISOString().slice(0, 10);
+}
+
+function addMonthsToDate(value, amount) {
+  const date = normalizeDateKey(value);
+  if (!date) return '';
+  const sourceYear = Number(date.slice(0, 4));
+  const sourceMonth = Number(date.slice(5, 7));
+  const sourceDay = Number(date.slice(8, 10));
+  const target = new Date(Date.UTC(sourceYear, sourceMonth - 1 + Number(amount || 0), 1));
+  const targetYear = target.getUTCFullYear();
+  const targetMonth = target.getUTCMonth() + 1;
+  const targetDay = Math.min(sourceDay, daysInMonth(targetYear, targetMonth));
+  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth).padStart(2, '0')}-${String(
+    targetDay
+  ).padStart(2, '0')}`;
+}
+
+function getNextCandidateDueDate(lastSeenDate, frequency, today) {
+  const anchorDate = normalizeDateKey(lastSeenDate);
+  const currentDate = normalizeDateKey(today);
+  if (!anchorDate) return currentDate;
+  if (!currentDate || anchorDate >= currentDate) return anchorDate;
+
+  const normalizedFrequency = asString(frequency).toLowerCase();
+  const dayInterval =
+    normalizedFrequency === 'weekly'
+      ? 7
+      : ['every 2 weeks', 'biweekly', 'every two weeks'].includes(normalizedFrequency)
+        ? 14
+        : 0;
+  if (dayInterval) {
+    const elapsedDays = Math.max(0, dateOrdinal(currentDate) - dateOrdinal(anchorDate));
+    const intervals = Math.max(1, Math.ceil(elapsedDays / dayInterval));
+    return addDaysToDate(anchorDate, intervals * dayInterval);
+  }
+
+  const monthInterval =
+    normalizedFrequency === 'quarterly'
+      ? 3
+      : ['yearly', 'annual', 'annually'].includes(normalizedFrequency)
+        ? 12
+        : normalizedFrequency === 'one-time' || normalizedFrequency === 'one time'
+          ? 0
+          : 1;
+  if (!monthInterval) return currentDate;
+
+  const monthDifference =
+    (Number(currentDate.slice(0, 4)) - Number(anchorDate.slice(0, 4))) * 12 +
+    (Number(currentDate.slice(5, 7)) - Number(anchorDate.slice(5, 7)));
+  let intervals = Math.max(1, Math.floor(monthDifference / monthInterval));
+  let candidate = addMonthsToDate(anchorDate, intervals * monthInterval);
+  if (candidate < currentDate) {
+    intervals += 1;
+    candidate = addMonthsToDate(anchorDate, intervals * monthInterval);
+  }
+  return candidate || currentDate;
+}
+
 function formatMoney(value, currency) {
   const code = asString(currency).toUpperCase() || 'PHP';
   try {
@@ -149,29 +236,123 @@ function getWorkbookYear(workbook, today) {
   return candidate >= 1000 && candidate <= 9999 ? candidate : Number(today.slice(0, 4));
 }
 
+function getSheetMonthKey(workbook, sheet, today = '') {
+  const direct = asString(sheet && sheet.monthKey);
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(direct)) return direct;
+  const year = getWorkbookYear(workbook, today || `${new Date().getFullYear()}-01-01`);
+  const monthIndex = Math.max(0, Math.min(11, Number(sheet && sheet.monthIndex) || 0));
+  return `${String(year).padStart(4, '0')}-${String(monthIndex + 1).padStart(2, '0')}`;
+}
+
 function selectSheet(workbook, viewState, today) {
   const sheets = asArray(workbook && workbook.sheets)
     .slice()
-    .sort((left, right) => {
-      return (Number(left && left.monthIndex) || 0) - (Number(right && right.monthIndex) || 0);
-    });
+    .sort((left, right) =>
+      getSheetMonthKey(workbook, left, today).localeCompare(
+        getSheetMonthKey(workbook, right, today)
+      )
+    );
   const requestedId = asString(viewState.sheetId);
   const requested = requestedId
     ? sheets.find((sheet) => asString(sheet && sheet.id) === requestedId)
     : null;
   if (requested) return requested;
-  if (getWorkbookYear(workbook, today) === Number(today.slice(0, 4))) {
-    const monthIndex = Number(today.slice(5, 7)) - 1;
-    const current = sheets.find((sheet) => Number(sheet && sheet.monthIndex) === monthIndex);
-    if (current) return current;
-  }
-  return sheets[0] || null;
+  const currentMonthKey = today.slice(0, 7);
+  const current = sheets.find(
+    (sheet) => getSheetMonthKey(workbook, sheet, today) === currentMonthKey
+  );
+  if (current) return current;
+  return sheets[sheets.length - 1] || null;
 }
 
-function getSheetLabel(workbook, sheet) {
+function getSheetLabel(workbook, sheet, today = '') {
   if (!sheet) return 'No billing month';
-  const monthIndex = Math.max(0, Math.min(11, Number(sheet.monthIndex) || 0));
-  return `${MONTH_NAMES[monthIndex]} ${getWorkbookYear(workbook, `${workbook.year || 1970}-01-01`)}`;
+  const monthKey = getSheetMonthKey(workbook, sheet, today);
+  const monthIndex = Number(monthKey.slice(5, 7)) - 1;
+  return `${MONTH_NAMES[monthIndex]} ${monthKey.slice(0, 4)}`;
+}
+
+function getRecurringItemPresentation(workbook, item) {
+  const category = asArray(workbook && workbook.categories).find(
+    (candidate) => candidate && candidate.id === item.categoryId
+  );
+  const account = asArray(workbook && workbook.accounts).find(
+    (candidate) => candidate && candidate.id === item.accountId
+  );
+  const conversion = getRecurringAmountConversion(
+    workbook,
+    item.amount,
+    item.currency || workbook.currency
+  );
+  const currency = conversion.sourceCurrency;
+  const kind = asString(item.kind) === 'subscription' ? 'subscription' : 'bill';
+  const categoryName = category ? asString(category.name) : 'Missing category';
+  const categoryIsUsable = !!category && category.isActive !== false;
+  const categoryWarning = !category
+    ? 'This recurring item has no matching category and is excluded from trusted totals.'
+    : category.isActive === false
+      ? 'This recurring item uses an archived category and is excluded from trusted totals.'
+      : '';
+  const baseAmountVerified = conversion.resolved && categoryIsUsable;
+  return {
+    id: asString(item.id),
+    recurringItemId: asString(item.id),
+    kind,
+    name: asString(item.name) || 'Untitled recurring item',
+    categoryId: asString(item.categoryId),
+    category: category
+      ? { id: asString(category.id), name: categoryName, type: asString(category.type) }
+      : null,
+    categoryName,
+    categoryType: asString(category && category.type),
+    categoryIsActive: category ? category.isActive !== false : false,
+    accountId: asString(item.accountId),
+    paymentMethod: account ? asString(account.name) : 'Not set',
+    amount: baseAmountVerified ? conversion.amount : 0,
+    baseAmountVerified,
+    baseConversionStatus: !categoryIsUsable ? 'category-unresolved' : conversion.status,
+    fxWarning: categoryWarning || conversion.warning || '',
+    originalAmount: conversion.nativeAmount,
+    nativeAmount: conversion.nativeAmount,
+    currency,
+    nativeCurrency: currency,
+    amountCopy: formatMoney(conversion.nativeAmount, currency),
+    baseAmountCopy: baseAmountVerified
+      ? formatMoney(conversion.amount, conversion.baseCurrency)
+      : 'Not included in totals',
+    frequency: asString(item.frequency) || 'Monthly',
+    dueDate: asString(item.anchorDate || item.dueDate),
+    dueDateCopy: formatDate(item.anchorDate || item.dueDate),
+    note: asString(item.note),
+    autoRenew: item.autoRenew === true,
+    isActive: item.isActive !== false,
+    icon: getBillIcon({ ...item, kind, categoryName }),
+    editorValues: {
+      recurringItemId: asString(item.id),
+      kind,
+      name: asString(item.name),
+      categoryId: asString(item.categoryId),
+      accountId: asString(item.accountId),
+      amount: String(Number(item.amount) || 0),
+      currency,
+      frequency: asString(item.frequency) || 'Monthly',
+      dueDate: asString(item.anchorDate || item.dueDate),
+      autoRenew: item.autoRenew === true,
+      isActive: item.isActive !== false,
+      note: asString(item.note)
+    }
+  };
+}
+
+function buildRecurringTemplateRows(workbook, { active } = {}) {
+  return asArray(workbook && workbook.recurringItems)
+    .filter((item) => item && (active === undefined || (item.isActive !== false) === active))
+    .map((item) => getRecurringItemPresentation(workbook, item))
+    .sort(
+      (left, right) =>
+        asString(left.name).localeCompare(asString(right.name)) ||
+        asString(left.recurringItemId).localeCompare(asString(right.recurringItemId))
+    );
 }
 
 function getTransactionAccountName(workbook, occurrence, transaction) {
@@ -444,11 +625,17 @@ function buildOccurrenceRows(workbook, sheet, today) {
     };
     row.tone = getStatusTone(status);
     row.icon = getBillIcon(row);
-    row.amountCopy = formatMoney(row.amount, workbook.currency);
-    row.dueAmountCopy = formatMoney(
-      row.status === 'Partial' ? row.remainingAmount : row.amount,
-      workbook.currency
-    );
+    row.amountCopy =
+      row.baseAmountVerified === false
+        ? formatMoney(row.nativeAmount, row.nativeCurrency)
+        : formatMoney(row.amount, workbook.currency);
+    row.dueAmountCopy =
+      row.baseAmountVerified === false
+        ? row.amountCopy
+        : formatMoney(
+            row.status === 'Partial' ? row.remainingAmount : row.amount,
+            workbook.currency
+          );
     row.dueDateCopy = formatDate(row.dueDate);
     row.relativeDateLabel = getRelativeDateLabel(row, today);
     row.metaLabel = [
@@ -688,21 +875,30 @@ export function buildBillsRouteBaseModel(workbook, viewState = {}, dependencies 
   const today = readToday(dependencies);
   const sheet = selectSheet(workbook, state, today);
   const rows = buildOccurrenceRows(workbook, sheet, today);
+  const recurringRows = buildRecurringTemplateRows(workbook, { active: true });
   const filterOptions = getFilterOptions(workbook);
   const currency = asString(workbook.currency).toUpperCase() || 'PHP';
   return {
     today,
     sheet,
     rows,
+    recurringRows,
     filterOptions,
     currency,
-    periodLabel: getSheetLabel(workbook, sheet),
+    periodLabel: getSheetLabel(workbook, sheet, today),
     sheetOptions: asArray(workbook.sheets)
       .slice()
-      .sort((left, right) => {
-        return (Number(left && left.monthIndex) || 0) - (Number(right && right.monthIndex) || 0);
-      })
-      .map((item) => ({ value: asString(item.id), label: getSheetLabel(workbook, item) }))
+      .sort((left, right) =>
+        getSheetMonthKey(workbook, left, today).localeCompare(
+          getSheetMonthKey(workbook, right, today)
+        )
+      )
+      .map((item) => ({
+        value: asString(item.id),
+        label: getSheetLabel(workbook, item, today),
+        monthKey: getSheetMonthKey(workbook, item, today)
+      })),
+    inactiveItems: buildRecurringTemplateRows(workbook, { active: false })
   };
 }
 
@@ -716,6 +912,7 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
   const sheet = base.sheet || null;
   const rows = asArray(base.rows);
   const coreModel = buildBillsRouteViewModel(rows, {
+    recurringRows: asArray(base.recurringRows),
     filterKind: state.filterKind,
     accountId: state.accountId,
     categoryId: state.categoryId,
@@ -729,10 +926,18 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
   });
   const filterOptions = asObject(base.filterOptions);
   const review = asObject(state.subscriptionReview);
-  const reviewCandidates =
+  const reviewCandidates = (
     review.status === 'complete'
-      ? buildRecurringCandidates(workbook, { includeIgnored: review.includeIgnored === true })
-      : asArray(review.candidates);
+      ? buildRecurringCandidates(workbook, {
+          includeIgnored: review.includeIgnored === true,
+          asOfDate: today
+        })
+      : asArray(review.candidates)
+  )
+    .filter(
+      (candidate) => !(candidate && (candidate.alreadyTracked || candidate.existingRecurringItemId))
+    )
+    .slice(0, 12);
   const currency = asString(base.currency).toUpperCase() || 'PHP';
   return cloneSerializable({
     header: {
@@ -742,8 +947,8 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
       scanIcon: review.status === 'modeling' ? 'hourglass_top' : 'manage_search',
       scanLabel:
         review.status === 'modeling'
-          ? `Model Reviewing${review.progressPercent ? ` ${Math.round(Number(review.progressPercent))}%` : ''}`
-          : 'Scan Transactions'
+          ? `Looking${review.progressPercent ? ` · ${Math.round(Number(review.progressPercent))}%` : '…'}`
+          : 'Find recurring charges'
     },
     currency,
     today,
@@ -752,7 +957,8 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
       ? {
           id: asString(sheet.id),
           name: asString(sheet.name),
-          monthIndex: Number(sheet.monthIndex) || 0
+          monthKey: getSheetMonthKey(workbook, sheet, today),
+          monthIndex: Number(getSheetMonthKey(workbook, sheet, today).slice(5, 7)) - 1
         }
       : null,
     filters: coreModel.filters,
@@ -803,15 +1009,21 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
     ],
     pagination: {
       ...coreModel.pagination,
-      visible: coreModel.rowCount > 0,
+      visible: coreModel.pagination.totalPages > 1,
       rowCount: coreModel.rowCount
     },
     dueNextGroups: getDueGroups(coreModel.dueNextRows, today),
     recurring: {
-      monthlyCount: coreModel.recurring.monthlyCount,
-      monthlyTotal: coreModel.recurring.monthlyTotal,
-      monthlyTotalCopy: formatMoney(coreModel.recurring.monthlyTotal, currency)
+      monthlyCount: coreModel.recurring.monthlyEquivalentCount,
+      monthlyTotal: coreModel.recurring.monthlyEquivalentTotal,
+      monthlyEquivalentCount: coreModel.recurring.monthlyEquivalentCount,
+      monthlyEquivalentTotal: coreModel.recurring.monthlyEquivalentTotal,
+      monthlyTotalCopy: formatMoney(coreModel.recurring.monthlyEquivalentTotal, currency),
+      unresolvedFxCount: coreModel.recurring.unresolvedFxCount,
+      explanation:
+        'Monthly equivalent across all active recurring items. Weekly, biweekly, quarterly, and yearly schedules are normalized.'
     },
+    inactiveItems: cloneSerializable(asArray(base.inactiveItems)),
     editorOptions: {
       currency,
       categories: filterOptions.categories.filter((item) => item.value),
@@ -825,11 +1037,35 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
       candidates: reviewCandidates.map((candidate) => ({
         id: asString(candidate.id),
         name: asString(candidate.suggestedName || candidate.name),
+        kind: inferReviewCandidateKind(candidate),
         classification: asString(candidate.classification),
         confidence: Number(candidate.confidence) || 0,
-        amountCopy: formatMoney(candidate.amount, currency),
-        frequency: asString(candidate.suggestedFrequency),
-        transactionCount: Number(candidate.transactionCount) || 0
+        confidenceLabel:
+          Number(candidate.confidence) >= 0.75
+            ? 'Strong pattern'
+            : Number(candidate.confidence) >= 0.5
+              ? 'Likely recurring'
+              : 'Possible recurring',
+        amount: Number(candidate.amount) || 0,
+        amountCopy: formatMoney(
+          candidate.amount,
+          asString(candidate.currency).toUpperCase() || currency
+        ),
+        currency: asString(candidate.currency).toUpperCase() || currency,
+        frequency: asString(candidate.suggestedFrequency) || 'Monthly',
+        transactionCount: Number(candidate.transactionCount) || 0,
+        categoryId: asString(candidate.categoryId),
+        categoryName: asString(candidate.categoryName),
+        accountId: asString(candidate.accountId),
+        accountName: asString(candidate.accountName),
+        firstSeenDate: normalizeDateKey(candidate.firstSeenDate || candidate.firstDate),
+        lastSeenDate: normalizeDateKey(candidate.lastSeenDate || candidate.lastDate),
+        nextDueDate: getNextCandidateDueDate(
+          candidate.lastSeenDate || candidate.lastDate,
+          candidate.suggestedFrequency,
+          today
+        ),
+        reason: asString(candidate.reason)
       }))
     },
     feedback: {

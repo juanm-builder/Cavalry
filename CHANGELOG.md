@@ -4,6 +4,64 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
+## 1.0.26 - 2026-08-15
+
+- Rebuilt Budget as **Monthly Plan**, keeping manual spending limits, recurring
+  commitments, savings targets, debt-paydown targets, and expected income as
+  separate concepts instead of silently merging them into one number.
+- Refined Monthly Plan after real-workbook testing: reduced the overview to four
+  primary cards, shows savings and debt only when relevant, replaces the large
+  Budget Usage wall with a compact status, and presents one Spending, Income,
+  Savings, or Debt plan list at a time.
+- Moved Monthly Plan details and the Add to Plan editor into document-level,
+  viewport-safe dialogs. Overview and category drilldowns now open as wide,
+  centered detail views, while the editor appears immediately without requiring
+  the underlying Budget page to be scrolled into position.
+- Reduced explanatory clutter by keeping the essential labels in the main view
+  and placing secondary definitions under optional calculation details.
+- Added calculation receipts and drilldowns for Monthly Plan totals and category
+  actuals. Headline figures, category rows, and transaction details now use the
+  same contribution records, date range, and base-currency rules.
+- Added a central transaction-contribution model for purchases, income, merchant
+  refunds, reimbursements, transfers, savings contributions, debt principal,
+  debt interest or fees, opening balances, and adjustments. Merchant refunds now
+  subtract from the original expense category rather than increasing spending.
+- Excluded unresolved foreign-currency activity from trusted totals until an FX
+  rate is available, while retaining a visible warning instead of guessing.
+- Kept missing and archived Monthly Plan categories visible for repair, but
+  excluded them from trusted headline totals. Partial-month custom ranges now
+  exclude full-month plans and explain the scope difference.
+- Reworked Bills & Subscriptions so search and table filters no longer redefine
+  the headline cards. Recurring values are shown as a normalized monthly
+  equivalent across weekly, biweekly, monthly, quarterly, and yearly schedules.
+- Added a review-first **Find recurring charges** workflow backed by Cavalry's
+  existing transaction-pattern analysis. Suggestions do not create records
+  automatically; Review opens a prefilled recurring-item editor with the next
+  expected due date.
+- Added occurrence-first bill details, separate access to the recurring rule,
+  restoration for inactive recurring items, correct per-item currency labels,
+  and correct handling of a partial item whose remaining amount is exactly zero.
+- Added durable `YYYY-MM` sheet identities and cross-year month creation so one
+  workbook can continue beyond its original calendar year.
+- Updated regression expectations for the refund, Monthly Plan, recurring,
+  modal-layout, and multi-year behavior. The Assistant/AI component source was
+  intentionally left unchanged.
+- Migration: no workbook schema-version bump. Legacy month-index sheets receive a
+  durable month key during normalization and persist it on a later save. Test
+  first with a duplicate workbook.
+- Known limitations: historical refunds previously recorded as ordinary income
+  cannot be inferred safely and must be reviewed manually. The Assistant and
+  Action Review were intentionally left unchanged, so merchant refunds should be
+  entered through the standard transaction editor in this tranche. Recurring
+  detection is pattern-based and may require correction. This handoff is
+  source-only; it is not a signed or notarized desktop release.
+- Validation for this source handoff: ten-check trust-critical finance verifier,
+  JavaScript/JSX syntax parsing, Prettier, ESLint, release metadata validation,
+  and source-package integrity checks pass. The complete Vitest, TypeScript,
+  Vite, and Electron gates must be rerun after a clean `npm ci` on macOS because
+  the uploaded dependency tree contained macOS-native optional packages that
+  cannot execute in the Linux packaging environment.
+
 ## 1.0.25 - 2026-08-13
 
 - Reworked the in-app Assistant so it converses openly instead of answering from a
