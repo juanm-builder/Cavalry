@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 
@@ -99,7 +100,7 @@ function BudgetEditorForm({ editor, categories }) {
         <div className="panel-header budget-editor-header">
           <div>
             <div className="badge">
-              <span className="material-symbols-rounded">calendar_month</span>
+              <CavalryIcon name="calendar_month" />
               {budgetMonth}
             </div>
             <h3>{canArchive ? 'Edit Monthly Plan' : 'Add to Monthly Plan'}</h3>
@@ -111,7 +112,7 @@ function BudgetEditorForm({ editor, categories }) {
             aria-label="Close budget editor"
             {...closeEditor}
           >
-            <span className="material-symbols-rounded">close</span>
+            <CavalryIcon name="close" />
           </button>
         </div>
 

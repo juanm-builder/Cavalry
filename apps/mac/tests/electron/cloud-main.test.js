@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 const require = createRequire(import.meta.url);
 const {
   createCloudAuthController,
+  isAllowedIdentityAuthorizationUrl,
   isPublishableSupabaseKey,
   normalizeCloudConfig,
   OAUTH_ATTEMPT_TTL_MS,
@@ -462,7 +463,7 @@ describe('Cavalry Cloud main-process boundary', () => {
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       linkIdentity: vi.fn(async () => ({
         data: {
-          url: 'https://project.supabase.co/auth/v1/user/identities/authorize?provider=apple'
+          url: 'https://appleid.apple.com/auth/authorize?client_id=cavalry&response_type=code'
         },
         error: null
       })),
@@ -503,6 +504,9 @@ describe('Cavalry Cloud main-process boundary', () => {
         skipBrowserRedirect: true
       }
     });
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://appleid.apple.com/auth/authorize?client_id=cavalry&response_type=code'
+    );
 
     await expect(
       controller.handleAuthCallback({ ok: true, code: 'link-code' })
@@ -611,6 +615,31 @@ describe('Cavalry Cloud main-process boundary', () => {
   });
 
   it('accepts only strict PKCE callback links and locates cold-start protocol arguments', () => {
+    const cloudConfig = normalizeCloudConfig({
+      supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_test-key'
+    });
+    expect(
+      isAllowedIdentityAuthorizationUrl(
+        'https://appleid.apple.com/auth/authorize?client_id=cavalry',
+        cloudConfig,
+        'apple'
+      )
+    ).toBe(true);
+    expect(
+      isAllowedIdentityAuthorizationUrl(
+        'https://appleid.apple.com.evil.example/auth/authorize?client_id=cavalry',
+        cloudConfig,
+        'apple'
+      )
+    ).toBe(false);
+    expect(
+      isAllowedIdentityAuthorizationUrl(
+        'https://appleid.apple.com/auth/token?client_id=cavalry',
+        cloudConfig,
+        'apple'
+      )
+    ).toBe(false);
     expect(getCavalryAuthCallback('cavalry://auth/callback?code=abc_123-XYZ')).toEqual({
       type: 'auth-callback',
       ok: true,

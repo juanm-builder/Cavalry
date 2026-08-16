@@ -52,7 +52,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.budget-status-eyebrow .material-symbols-rounded {
+.budget-status-eyebrow .cavalry-glyph {
   font-size: 17px;
 }
 .budget-status-primary h2 {
@@ -135,7 +135,7 @@
   color: var(--text-soft);
   font-size: 11px;
 }
-.budget-status-insight > .material-symbols-rounded {
+.budget-status-insight > .cavalry-glyph {
   color: var(--accent);
   font-size: 18px;
 }
@@ -291,7 +291,7 @@
   min-width: 34px;
 }
 
-.budget-category-avatar .material-symbols-rounded {
+.budget-category-avatar .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -525,7 +525,7 @@
   font-weight: 700;
 }
 
-.budget-insight-link .material-symbols-rounded {
+.budget-insight-link .cavalry-glyph {
   font-size: 15px;
 }
 
@@ -1054,7 +1054,7 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.budget-attention-card > .material-symbols-rounded {
+.budget-attention-card > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }
@@ -1151,7 +1151,7 @@
 .budget-transaction-row:focus-visible {
   background: color-mix(in srgb, var(--category-color, var(--accent)) 7%, transparent);
 }
-.budget-transaction-row > .material-symbols-rounded {
+.budget-transaction-row > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }
@@ -1287,7 +1287,7 @@
     inset 0 1px rgba(255, 255, 255, 0.25),
     0 3px 9px color-mix(in srgb, var(--category-color) 22%, transparent);
 }
-.budget-usage-legend .budget-usage-category-icon .material-symbols-rounded {
+.budget-usage-legend .budget-usage-category-icon .cavalry-glyph {
   font-size: 22px;
 }
 .budget-usage-category-copy {
@@ -1329,7 +1329,7 @@
   color: var(--bad);
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
-.budget-usage-category > .material-symbols-rounded {
+.budget-usage-category > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 19px;
 }
@@ -1660,7 +1660,7 @@
 .budget-category-status.bad b {
   color: var(--bad);
 }
-.budget-category-list-row > .material-symbols-rounded {
+.budget-category-list-row > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }
@@ -1719,7 +1719,7 @@
   color: var(--accent);
   font-size: 9px;
 }
-.budget-insight-tile small .material-symbols-rounded {
+.budget-insight-tile small .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -1768,7 +1768,7 @@
   .budget-category-status {
     grid-column: 2;
   }
-  .budget-category-list-row > .material-symbols-rounded {
+  .budget-category-list-row > .cavalry-glyph {
     grid-column: 3;
     grid-row: 1;
   }
@@ -1802,7 +1802,7 @@
   color: var(--category-color);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--category-color) 18%, transparent);
 }
-.budget-category-list-row .budget-usage-category-icon .material-symbols-rounded {
+.budget-category-list-row .budget-usage-category-icon .cavalry-glyph {
   font-size: 19px;
 }
 
@@ -1925,7 +1925,7 @@
   background: color-mix(in srgb, var(--warn) 5%, var(--panel));
 }
 
-.monthly-plan-trust > .material-symbols-rounded {
+.monthly-plan-trust > .cavalry-glyph {
   width: 34px;
   height: 34px;
   display: grid;
@@ -1950,7 +1950,7 @@
   line-height: 1.45;
 }
 
-.monthly-plan-section-heading .material-symbols-rounded {
+.monthly-plan-section-heading .cavalry-glyph {
   color: var(--accent);
   font-size: 18px;
 }
@@ -2042,7 +2042,7 @@
   background: color-mix(in srgb, var(--warn) 4%, var(--panel));
 }
 
-.monthly-plan-attention-card .budget-detail-card-heading .material-symbols-rounded {
+.monthly-plan-attention-card .budget-detail-card-heading .cavalry-glyph {
   color: var(--warn);
 }
 

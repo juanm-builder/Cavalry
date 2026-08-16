@@ -3,6 +3,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { makeTransactionTableWorkbook } from '@cavalry/finance-core/test-fixtures/transaction-table-scenarios.js';
+import {
+  makeLine,
+  makeTransaction
+} from '@cavalry/finance-core/test-fixtures/core-workbook-fixtures.js';
 import { TransactionRoute } from '../../src/renderer/features/transactions/TransactionRoute.jsx';
 import { createTransactionControllerState } from '../../src/renderer/features/transactions/transaction-controller.js';
 import { buildTransactionFeatureModel } from '../../src/renderer/features/transactions/transaction-model.js';
@@ -60,8 +64,53 @@ describe('TransactionRoute', () => {
   it('keeps income and expense summaries populated when a type tab is active', () => {
     const html = renderTransactionRoute(makeTransactionModel({ type: 'income' }));
 
-    expect(html).toContain('<label>Total Income</label><b>₱50,000.00</b>');
-    expect(html).toContain('<label>Total Expenses</label><b>₱1,850.00</b>');
+    expect(html).toContain('<label>Total Income</label><b>+₱50,000.00</b>');
+    expect(html).toContain('<label>Total Expenses</label><b>−₱1,850.00</b>');
+  });
+
+  it('uses canonical refund semantics and presents refund-dominant expense as favorable', () => {
+    const workbook = makeTransactionTableWorkbook();
+    workbook.transactions = [
+      makeTransaction({
+        id: 'txn-coffee',
+        date: '2026-06-07',
+        template: 'expense_paid',
+        description: 'Coffee beans',
+        categoryId: 'food',
+        amount: 40,
+        lines: [makeLine('food-expense', 'debit', 40), makeLine('cash', 'credit', 40)]
+      }),
+      {
+        ...makeTransaction({
+          id: 'txn-refund',
+          date: '2026-06-08',
+          description: 'Coffee refund',
+          categoryId: 'food',
+          amount: 75,
+          lines: [makeLine('cash', 'debit', 75), makeLine('food-expense', 'credit', 75)]
+        }),
+        template: '',
+        eventKind: 'merchant_refund'
+      }
+    ];
+    const model = buildTransactionFeatureModel(
+      workbook,
+      createTransactionControllerState({
+        view: { type: 'expense', page: 1, pageSize: 20, sort: { key: 'date', direction: 'asc' } }
+      })
+    );
+    const refund = model.rows.find((row) => row.id === 'txn-refund');
+
+    expect(refund).toBeDefined();
+    expect(refund.cells.find((cell) => cell.field === 'amount')).toMatchObject({
+      value: '+₱75.00',
+      tone: 'good',
+      className: 'amount good transaction-cell'
+    });
+    expect(model.stats.find((stat) => stat.id === 'expense')).toMatchObject({
+      value: '+₱35.00',
+      tone: 'good'
+    });
   });
 
   it('uses the funding account rather than the category posting account in expense details', () => {

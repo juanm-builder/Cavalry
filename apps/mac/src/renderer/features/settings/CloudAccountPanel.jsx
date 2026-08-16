@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { AppleOAuthButton } from '../../shared/AppleOAuthButton.jsx';
 import { readAccountProfile, writeAccountProfile } from './account-preferences.js';
@@ -25,12 +27,8 @@ function formPayload(form) {
   return payload;
 }
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function StatusPill({ children, icon, tone = 'neutral' }) {

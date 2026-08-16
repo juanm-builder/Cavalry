@@ -76,7 +76,7 @@
   gap: 9px;
 }
 
-.nav-copy .material-symbols-rounded {
+.nav-copy .cavalry-glyph {
   width: 24px;
   min-width: 24px;
   font-size: 18px;
@@ -113,7 +113,7 @@
   border-radius: 14px;
 }
 
-.sidebar-profile > .material-symbols-rounded {
+.sidebar-profile > .cavalry-glyph {
   width: 32px;
   height: 32px;
   font-size: 18px;
@@ -450,7 +450,7 @@ tbody td {
   border-radius: 12px;
 }
 
-.selected-account-mark .material-symbols-rounded {
+.selected-account-mark .cavalry-glyph {
   font-size: 22px;
 }
 

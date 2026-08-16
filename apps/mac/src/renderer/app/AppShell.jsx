@@ -13,6 +13,7 @@ import { DEFAULT_ROUTE_ID } from './routes.js';
 import { HYDRATION_STATUS } from './workbook-session-reducer.js';
 import { AppearanceProvider } from './AppearanceProvider.jsx';
 import { CavalryAssistant } from '../features/assistant/CavalryAssistant.jsx';
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
 import { GuidedTourModal } from '../features/onboarding/GuidedTourModal.jsx';
 import { SetupChecklistPanel } from '../features/onboarding/SetupChecklist.jsx';
 import { WelcomeModal } from '../features/onboarding/WelcomeModal.jsx';
@@ -34,17 +35,13 @@ function NoticeStack({ errors = [], onDismissError }) {
     <div className="notice-stack" aria-label="Workbook notices">
       {errors.map((error, index) => (
         <section className="app-notice bad" key={`error-${error.code || index}`} role="alert">
-          <span aria-hidden="true" className="material-symbols-rounded">
-            error
-          </span>
+          <CavalryIcon name="error" />
           <div>
             <strong>Something went wrong</strong>
             <p>{error.message || String(error)}</p>
           </div>
           <button aria-label="Dismiss error" onClick={() => onDismissError?.(index)} type="button">
-            <span aria-hidden="true" className="material-symbols-rounded">
-              close
-            </span>
+            <CavalryIcon name="close" />
           </button>
         </section>
       ))}

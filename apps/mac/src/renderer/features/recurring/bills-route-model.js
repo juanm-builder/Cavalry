@@ -939,6 +939,13 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
     )
     .slice(0, 12);
   const currency = asString(base.currency).toUpperCase() || 'PHP';
+  const attentionTotal =
+    coreModel.summary.totalUnrecorded +
+    coreModel.summary.totalReview +
+    coreModel.summary.totalPartial;
+  const overdueTotal = Number(coreModel.summary.totalOverdue) || 0;
+  const dueWeekTotal = Number(coreModel.summary.totalDueWeek) || 0;
+  const paidTotal = Number(coreModel.summary.totalPaid) || 0;
   return cloneSerializable({
     header: {
       sheetId: sheet ? asString(sheet.id) : '',
@@ -970,15 +977,10 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
     rowCount: coreModel.rowCount,
     summaryPills: [
       {
-        tone: 'warn',
+        tone: attentionTotal > 0 ? 'warn' : 'neutral',
         status: 'attention',
         label: 'Needs Attention',
-        value: formatMoney(
-          coreModel.summary.totalUnrecorded +
-            coreModel.summary.totalReview +
-            coreModel.summary.totalPartial,
-          currency
-        ),
+        value: formatMoney(attentionTotal, currency),
         detail: `${
           coreModel.summary.unrecordedCount +
           coreModel.summary.reviewCount +
@@ -986,24 +988,24 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
         } items`
       },
       {
-        tone: 'bad',
+        tone: overdueTotal > 0 ? 'bad' : 'neutral',
         status: 'overdue',
         label: 'Overdue',
-        value: formatMoney(coreModel.summary.totalOverdue, currency),
+        value: formatMoney(overdueTotal, currency),
         detail: `${coreModel.summary.overdueCount} items`
       },
       {
-        tone: 'warn',
+        tone: dueWeekTotal > 0 ? 'warn' : 'neutral',
         status: 'due',
         label: 'Due Soon',
-        value: formatMoney(coreModel.summary.totalDueWeek, currency),
+        value: formatMoney(dueWeekTotal, currency),
         detail: `${coreModel.summary.dueWeekCount} this week`
       },
       {
-        tone: 'good',
+        tone: paidTotal > 0 ? 'good' : 'neutral',
         status: 'paid',
         label: 'Completed',
-        value: formatMoney(coreModel.summary.totalPaid, currency),
+        value: formatMoney(paidTotal, currency),
         detail: `${coreModel.summary.paidCount} reconciled`
       }
     ],

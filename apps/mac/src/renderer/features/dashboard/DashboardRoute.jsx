@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 
 function Icon({ name, className = '' }) {
-  return (
-    <span className={`material-symbols-rounded${className ? ` ${className}` : ''}`}>{name}</span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {
@@ -60,6 +60,18 @@ function formatCompactMoney(value, currency = 'PHP') {
   return `${Number(value) < 0 ? '-' : ''}${prefix}${display}`;
 }
 
+function getMoneyTone(value) {
+  const amount = Number(value) || 0;
+  if (amount > 0) return 'good';
+  if (amount < 0) return 'bad';
+  return 'neutral';
+}
+
+function getFlowTone(flowType, value) {
+  if ((Number(value) || 0) === 0) return 'neutral';
+  return flowType === 'inflow' ? 'good' : flowType === 'outflow' ? 'bad' : 'neutral';
+}
+
 function getRangePayload(range) {
   const nextRange = asObject(range);
   return nextRange.start && nextRange.end
@@ -70,11 +82,13 @@ function getRangePayload(range) {
     : {};
 }
 
-function PageHeader({ title, center, children }) {
+function PageHeader({ title, subtitle, eyebrow, center, children }) {
   return (
     <section className={`page-header${center ? ' dashboard-page-header' : ''}`}>
       <div>
+        {eyebrow ? <span className="page-eyebrow">{eyebrow}</span> : null}
         <h1>{title}</h1>
+        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
       </div>
       {center ? <div className="dashboard-page-header-center">{center}</div> : null}
       <div className="page-actions">{children}</div>
@@ -125,8 +139,11 @@ function CommandModule({ model }) {
   const inflows = cards.find((card) => card && card.id === 'total_inflows') || {};
   const outflows = cards.find((card) => card && card.id === 'total_outflows') || {};
   const netFlow = cards.find((card) => card && card.id === 'net_flow') || {};
+  const netWorthValue = Number(netWorth.value) || 0;
   const inflowValue = Number(inflows.value) || 0;
   const outflowValue = Number(outflows.value) || 0;
+  const netFlowValue = Number(netFlow.value) || 0;
+  const netFlowDirection = netFlowValue > 0 ? 'positive' : netFlowValue < 0 ? 'negative' : 'zero';
   const flowScale = Math.max(inflowValue, outflowValue, 1);
   const rangePayload = getRangePayload(model.range);
   return (
@@ -137,7 +154,9 @@ function CommandModule({ model }) {
         {...actions.action('open-dashboard-account-group', { accountGroup: 'net-worth' })}
       >
         <span className="dashboard-kicker">Net Worth</span>
-        <strong>{formatMoney(netWorth.value, model.currency)}</strong>
+        <strong className={getMoneyTone(netWorthValue)}>
+          {formatMoney(netWorthValue, model.currency)}
+        </strong>
         <span className="dashboard-net-worth-note">
           Assets less liabilities · as of {String(model.asOfDate || model.range?.end || '')}
         </span>
@@ -150,13 +169,13 @@ function CommandModule({ model }) {
         <div className="dashboard-flow-summary-head">
           <div>
             <span className="dashboard-kicker">Cash flow</span>
-            <h2>Inflow and outflow</h2>
+            <h2>Money in vs. money out</h2>
           </div>
           <span className="dashboard-flow-period">{model.periodLabel}</span>
         </div>
         <div className="dashboard-flow-summary-grid">
           <button
-            className="dashboard-flow-summary-item good"
+            className={`dashboard-flow-summary-item ${getFlowTone('inflow', inflowValue)}`}
             type="button"
             {...actions.action('open-dashboard-flow', {
               flowType: 'inflow',
@@ -167,12 +186,18 @@ function CommandModule({ model }) {
             <strong>{formatMoney(inflowValue, model.currency)}</strong>
             <small>Money in</small>
           </button>
-          <div className="dashboard-flow-connector" aria-hidden="true">
-            <span>Net Flow</span>
-            <b>{formatMoney(netFlow.value, model.currency)}</b>
+          <div
+            aria-label={`Net flow, ${netFlowDirection}, ${formatMoney(netFlowValue, model.currency)}`}
+            className="dashboard-flow-connector"
+            role="group"
+          >
+            <span aria-hidden="true">Net Flow</span>
+            <b aria-hidden="true" className={getMoneyTone(netFlowValue)}>
+              {formatMoney(netFlowValue, model.currency)}
+            </b>
           </div>
           <button
-            className="dashboard-flow-summary-item bad"
+            className={`dashboard-flow-summary-item ${getFlowTone('outflow', outflowValue)}`}
             type="button"
             {...actions.action('open-dashboard-flow', {
               flowType: 'outflow',
@@ -215,6 +240,27 @@ function getTransactionAmount(transaction) {
   return Number(source.baseAmount ?? source.amount) || 0;
 }
 
+function getTransactionTone(transaction) {
+  const amount = getTransactionAmount(transaction);
+  if (!amount) return 'neutral';
+  const eventKind = String(transaction?.eventKind || transaction?.template || '');
+  if (['merchant_refund', 'refund', 'reimbursement'].includes(eventKind)) return 'good';
+  const kind = String(transaction?.flowKind || '');
+  if (kind === 'inflow') return 'good';
+  if (['expense', 'savings', 'debt'].includes(kind)) return 'bad';
+  return 'neutral';
+}
+
+function formatDirectionalTransactionMoney(transaction, currency) {
+  const amount = getTransactionAmount(transaction);
+  const tone = getTransactionTone(transaction);
+  const formatted = formatMoney(Math.abs(amount), currency);
+  if (!amount) return formatted;
+  if (tone === 'good') return `+${formatted}`;
+  if (tone === 'bad') return `−${formatted}`;
+  return formatted;
+}
+
 function getTransactionCategoryName(model, transaction) {
   const category = asObject(asObject(model.categoryLookup)[transaction?.categoryId]);
   return category.name || 'Uncategorized';
@@ -232,24 +278,28 @@ function buildTransactionGroup(item, flowType, label) {
     transactionMatchesFlow(transaction, flowType)
   );
   const totals = asObject(item?.totals);
-  const fallbackTotal =
-    flowType === 'inflow'
-      ? Number(totals.income) || 0
-      : flowType === 'outflow'
-        ? Number(totals.outflow) || 0
-        : Math.abs(Number(totals.income) || 0) + Math.abs(Number(totals.outflow) || 0);
+  const totalKey = flowType === 'inflow' ? 'income' : flowType === 'outflow' ? 'outflow' : '';
+  const hasCanonicalTotal = totalKey && Number.isFinite(Number(totals[totalKey]));
+  const transactionTotal = transactions.reduce((sum, transaction) => {
+    const amount = Math.abs(getTransactionAmount(transaction));
+    if (flowType === 'outflow' && getTransactionTone(transaction) === 'good') {
+      return sum - amount;
+    }
+    return sum + amount;
+  }, 0);
+  const total =
+    flowType === 'both'
+      ? Math.abs(Number(totals.income) || 0) + Math.abs(Number(totals.outflow) || 0)
+      : hasCanonicalTotal
+        ? Math.abs(Number(totals[totalKey]) || 0)
+        : Math.abs(transactionTotal);
   return {
     id: `${item?.periodKey || item?.id || label}-${flowType}`,
     label,
     flowType,
     range: asObject(item?.range),
     transactions,
-    total: transactions.length
-      ? transactions.reduce(
-          (sum, transaction) => sum + Math.abs(getTransactionAmount(transaction)),
-          0
-        )
-      : fallbackTotal
+    total
   };
 }
 
@@ -262,14 +312,18 @@ function TransactionHoverPreview({ group, currency }) {
         <strong>{group.label}</strong>
         <span>
           {transactions.length} transaction{transactions.length === 1 ? '' : 's'} ·{' '}
-          {formatMoney(group.total, currency)}
+          <b className={getFlowTone(group.flowType, group.total)}>
+            {formatMoney(group.total, currency)}
+          </b>
         </span>
       </div>
       {transactions.length ? (
         transactions.slice(0, 3).map((transaction) => (
           <div className="chart-transaction-tooltip-row" key={transaction.id}>
             <span>{transaction.description || 'Transaction'}</span>
-            <b>{formatMoney(getTransactionAmount(transaction), currency)}</b>
+            <b className={getTransactionTone(transaction)}>
+              {formatDirectionalTransactionMoney(transaction, currency)}
+            </b>
           </div>
         ))
       ) : (
@@ -303,7 +357,9 @@ function TransactionSummaryModal({ group, model, onClose }) {
             <h3>{group.label}</h3>
             <p>
               {transactions.length} transaction{transactions.length === 1 ? '' : 's'} ·{' '}
-              {formatMoney(group.total, model.currency)}
+              <b className={getFlowTone(group.flowType, group.total)}>
+                {formatMoney(group.total, model.currency)}
+              </b>
             </p>
           </div>
           <button className="btn btn-icon" type="button" onClick={onClose} aria-label="Close">
@@ -321,7 +377,9 @@ function TransactionSummaryModal({ group, model, onClose }) {
                     {getTransactionCategoryName(model, transaction)}
                   </span>
                 </div>
-                <b>{formatMoney(getTransactionAmount(transaction), model.currency)}</b>
+                <b className={getTransactionTone(transaction)}>
+                  {formatDirectionalTransactionMoney(transaction, model.currency)}
+                </b>
                 <button
                   className="btn"
                   type="button"
@@ -455,22 +513,24 @@ function MiniDonut({ rows = [], currency, centerLabel = 'Total', onHoverGroup, o
             })}
           </svg>
           <div className="mini-donut-center">
-            <b>{formatMoney(activeItem ? activeItem.amount : total, currency)}</b>
+            <b className={getFlowTone('outflow', activeItem ? activeItem.amount : total)}>
+              {formatMoney(activeItem ? activeItem.amount : total, currency)}
+            </b>
             <span>{activeName}</span>
             {activeItem ? <small>{activePercent}% of spending</small> : null}
           </div>
         </div>
-        <p className="donut-hover-hint" aria-live="polite">
-          {activeItem
-            ? `${activeName}: ${formatMoney(activeItem.amount, currency)} · ${activePercent}%${
-                activeTransaction
-                  ? ` · ${activeTransaction.description || 'Transaction'}${
-                      activeTransactions.length > 1 ? ` +${activeTransactions.length - 1} more` : ''
-                    }`
-                  : ''
-              }`
-            : 'Hover a slice for spending details'}
-        </p>
+        {activeItem ? (
+          <p className="donut-hover-hint" aria-live="polite">
+            {`${activeName}: ${formatMoney(activeItem.amount, currency)} · ${activePercent}%${
+              activeTransaction
+                ? ` · ${activeTransaction.description || 'Transaction'}${
+                    activeTransactions.length > 1 ? ` +${activeTransactions.length - 1} more` : ''
+                  }`
+                : ''
+            }`}
+          </p>
+        ) : null}
       </div>
       <div className="donut-legend">
         {topRows.length ? (
@@ -491,7 +551,9 @@ function MiniDonut({ rows = [], currency, centerLabel = 'Total', onHoverGroup, o
               <>
                 <span className={`category-dot tone-${index % 6}`} />
                 <strong>{name}</strong>
-                <span className="amount">{formatMoney(amount, currency)}</span>
+                <span className={`amount ${getFlowTone('outflow', amount)}`}>
+                  {formatMoney(amount, currency)}
+                </span>
               </>
             );
             return categoryId ? (
@@ -598,13 +660,6 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
   );
   const showInflow = flowFilter !== 'outflow';
   const showOutflow = flowFilter !== 'inflow';
-  const pointLabel = averagePeriod === 'yearly' ? 'month' : 'day';
-  const timelineDescription =
-    averagePeriod === 'yearly'
-      ? 'Monthly income and expenses across the current year'
-      : averagePeriod === 'monthly'
-        ? 'Daily income and expenses across the current month'
-        : 'Daily income and expenses from Monday through Sunday';
   const minimumColumnWidth = averagePeriod === 'monthly' ? 8 : averagePeriod === 'yearly' ? 28 : 36;
 
   return (
@@ -612,11 +667,8 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
       <article className="reference-card reference-card-wide dashboard-timeline-card">
         <div className="timeline-header">
           <div>
-            <span className="dashboard-kicker">Bigger picture</span>
-            <h2>Money Timeline</h2>
-            <p>{timelineDescription}</p>
+            <h2>Cash-flow timeline</h2>
           </div>
-          <span className="tag">Tap a {pointLabel}</span>
         </div>
         <div className="timeline-controls" aria-label="Money timeline filters">
           <div className="timeline-control-group">
@@ -647,17 +699,21 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
         <div className="timeline-summary-strip">
           <div>
             <span>Average spending per year</span>
-            <strong className="warn">{formatMoney(spendingAverages.yearly, model.currency)}</strong>
+            <strong className={getFlowTone('outflow', spendingAverages.yearly)}>
+              {formatMoney(spendingAverages.yearly, model.currency)}
+            </strong>
           </div>
           <div>
             <span>Average spending per month</span>
-            <strong className="warn">
+            <strong className={getFlowTone('outflow', spendingAverages.monthly)}>
               {formatMoney(spendingAverages.monthly, model.currency)}
             </strong>
           </div>
           <div>
             <span>Average spending per week</span>
-            <strong className="warn">{formatMoney(spendingAverages.weekly, model.currency)}</strong>
+            <strong className={getFlowTone('outflow', spendingAverages.weekly)}>
+              {formatMoney(spendingAverages.weekly, model.currency)}
+            </strong>
           </div>
         </div>
         {chartRows.length ? (
@@ -701,7 +757,7 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
                           className={`combo-bar timeline-bar good${showInflow ? '' : ' is-filtered'}${income ? '' : ' is-empty'}`}
                           type="button"
                           title={`${label} inflows`}
-                          aria-label={`${label} inflows`}
+                          aria-label={`${label} inflows, ${formatMoney(income, model.currency)}`}
                           style={{ height: `${incomeHeight}%` }}
                           onClick={() => setSelectedGroup(inflowGroup)}
                           onMouseEnter={() => setHoveredGroup(inflowGroup)}
@@ -713,7 +769,7 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
                           className={`combo-bar timeline-bar bad${showOutflow ? '' : ' is-filtered'}${outflow ? '' : ' is-empty'}`}
                           type="button"
                           title={`${label} outflows`}
-                          aria-label={`${label} outflows`}
+                          aria-label={`${label} outflows, ${formatMoney(outflow, model.currency)}`}
                           style={{ height: `${expenseHeight}%` }}
                           onClick={() => setSelectedGroup(outflowGroup)}
                           onMouseEnter={() => setHoveredGroup(outflowGroup)}
@@ -748,8 +804,7 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
       <article className="reference-card dashboard-spending-card">
         <div className="reference-card-title">
           <div>
-            <span className="dashboard-kicker">Where it goes</span>
-            <h2>Expenses by Category</h2>
+            <h2>Spending by category</h2>
           </div>
           <span className="tag">{model.periodLabel}</span>
         </div>
@@ -771,11 +826,18 @@ function FlowsModule({ model, averagePeriod = 'weekly' }) {
 
 function TAccountColumn({ title, rows = [], total, tone, balances, currency }) {
   const actions = useActionBindings();
+  const getBalanceTone = (balance) => {
+    if (!balance) return 'neutral';
+    if (tone === 'bad') return balance > 0 ? 'bad' : 'good';
+    return balance > 0 ? 'good' : 'bad';
+  };
   return (
     <div className={`dashboard-t-account-column ${tone}`}>
       <div className="dashboard-t-account-column-header">
         <span>{title}</span>
-        <b className={`amount ${tone}`}>{formatMoney(total, currency)}</b>
+        <b className={`amount ${getBalanceTone(Number(total) || 0)}`}>
+          {formatMoney(total, currency)}
+        </b>
       </div>
       {rows.length ? (
         rows.map((account) => {
@@ -794,7 +856,9 @@ function TAccountColumn({ title, rows = [], total, tone, balances, currency }) {
                   {account.hasCurrencyMismatch ? ' · currency repair required' : ''}
                 </small>
               </span>
-              <b className={`amount ${tone}`}>{formatMoney(balance, currency)}</b>
+              <b className={`amount ${getBalanceTone(balance)}`}>
+                {formatMoney(balance, currency)}
+              </b>
             </button>
           );
         })
@@ -814,8 +878,7 @@ function MoneyShapeModule({ model }) {
       <article className="reference-card reference-card-wide dashboard-t-accounts-card">
         <div className="reference-card-title">
           <div>
-            <h3>T Accounts</h3>
-            <span className="tag">Assets & Liabilities</span>
+            <h3>Assets & obligations</h3>
           </div>
           <RouteButton label="View All" route="accounts" />
         </div>
@@ -900,7 +963,8 @@ function DashboardRouteView({ model }) {
   return (
     <section data-react-route="dashboard">
       <PageHeader
-        title="Dashboard"
+        eyebrow={data.currentDate ? `As of ${data.currentDate}` : 'Money overview'}
+        title="Money overview"
         center={
           <DashboardAveragePeriodSelector value={averagePeriod} onChange={setAveragePeriod} />
         }

@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function DashboardIllustration() {

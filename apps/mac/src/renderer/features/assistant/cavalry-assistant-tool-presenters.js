@@ -172,8 +172,26 @@ export function transactionRow(row, workbook) {
     note: asText(row.note),
     template: asText(row.template),
     type: asText(row.type),
+    eventKind: asText(row.eventKind),
+    flowKind: asText(row.flowKind),
     amount: Number(row.amount) || 0,
     baseAmount: Number(row.baseAmount) || 0,
+    signedBaseAmount: Number(row.signedBaseAmount) || 0,
+    effects: {
+      income: Number(row.contributions?.metrics?.income) || 0,
+      expense: Number(row.contributions?.metrics?.expense) || 0,
+      outflow: Number(row.contributions?.metrics?.outflow) || 0,
+      categoryBudget: Number(row.contributions?.metrics?.categoryBudget) || 0,
+      cashFlow: Number(row.contributions?.metrics?.cashFlow) || 0
+    },
+    contributionResolved: row.contributions?.resolved !== false,
+    contributionWarnings: asArray(row.contributions?.warnings).map((warning) => ({
+      code: asText(warning?.code),
+      message: asText(warning?.message)
+    })),
+    hasMissingReference: row.hasMissingReference === true,
+    categoryMissing: row.categoryMissing === true,
+    missingAccountIds: asArray(row.missingAccountIds).map(asText),
     currency: asText(row.currency),
     categoryId: asText(row.categoryId),
     categoryName: asText(row.categoryLabel),

@@ -390,8 +390,10 @@ describe('account-aware editing', () => {
       logoMode: 'icon'
     });
     expect(
-      screen.getByRole('button', { name: /^Open Emergency Cash account,/ }).textContent
-    ).toContain('local_atm');
+      screen
+        .getByRole('button', { name: /^Open Emergency Cash account,/ })
+        .querySelector('[data-cavalry-icon="local_atm"]')
+    ).not.toBeNull();
   });
 
   it('formats edited credit terms live and saves their unformatted value', async () => {

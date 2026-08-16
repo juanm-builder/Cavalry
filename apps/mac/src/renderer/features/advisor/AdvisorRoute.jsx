@@ -1,17 +1,15 @@
 import React from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { SanitizedRichText } from '../../shared/SanitizedRichText.jsx';
 import { formatUiDateTime } from '../../shared/date-format.js';
 import { ADVISOR_INTENTS } from './advisor-controller.js';
 import { useAdvisorController } from './useAdvisorController.js';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {

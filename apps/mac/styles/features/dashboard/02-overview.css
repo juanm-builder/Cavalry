@@ -136,7 +136,7 @@
   cursor: pointer;
 }
 
-.dashboard-flow-card .material-symbols-rounded {
+.dashboard-flow-card .cavalry-glyph {
   grid-row: 1 / span 3;
   width: 42px;
   height: 42px;
@@ -166,12 +166,12 @@
 }
 
 .dashboard-flow-card.good b,
-.dashboard-flow-card.good .material-symbols-rounded {
+.dashboard-flow-card.good .cavalry-glyph {
   color: var(--good);
 }
 
 .dashboard-flow-card.bad b,
-.dashboard-flow-card.bad .material-symbols-rounded {
+.dashboard-flow-card.bad .cavalry-glyph {
   color: var(--bad);
 }
 

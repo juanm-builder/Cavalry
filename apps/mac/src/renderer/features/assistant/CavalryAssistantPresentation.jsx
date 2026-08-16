@@ -1,5 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { formatUiDateTime } from '../../shared/date-format.js';
 import { MarkdownText } from '../../shared/MarkdownText.jsx';
 import { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
@@ -16,12 +18,8 @@ function asText(value) {
   return String(value == null ? '' : value).trim();
 }
 
-export function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+export function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 export function AssistantHeaderMenu({

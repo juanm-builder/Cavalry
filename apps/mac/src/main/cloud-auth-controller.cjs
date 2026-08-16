@@ -11,6 +11,11 @@ const CALLBACK_URL = 'cavalry://auth/callback';
 const CLOUD_SESSION_FILE = 'cavalry-cloud-auth.json';
 const OAUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const OAUTH_PENDING_STORAGE_KEY = 'cavalry-cloud-oauth-pending-until';
+const IDENTITY_AUTHORIZATION_TARGETS = Object.freeze({
+  apple: Object.freeze([
+    Object.freeze({ origin: 'https://appleid.apple.com', pathname: '/auth/authorize' })
+  ])
+});
 const OAUTH_PROVIDERS = Object.freeze({
   apple: Object.freeze({ id: 'apple', label: 'Apple' }),
   google: Object.freeze({
@@ -115,6 +120,24 @@ function isAllowedAuthorizationUrl(value, config, expectedPath = '/auth/v1/autho
       parsed.pathname === expectedPath &&
       !parsed.username &&
       !parsed.password
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isAllowedIdentityAuthorizationUrl(value, config, providerId) {
+  if (isAllowedAuthorizationUrl(value, config, '/auth/v1/user/identities/authorize')) return true;
+  const targets = IDENTITY_AUTHORIZATION_TARGETS[asString(providerId, 32).toLowerCase()] || [];
+  try {
+    const parsed = new URL(asString(value, 4096));
+    return (
+      parsed.protocol === 'https:' &&
+      !parsed.username &&
+      !parsed.password &&
+      targets.some(
+        (target) => parsed.origin === target.origin && parsed.pathname === target.pathname
+      )
     );
   } catch (_error) {
     return false;
@@ -639,7 +662,7 @@ function createCloudAuthController(dependencies = {}) {
       const authorizationUrl = result && result.data && result.data.url;
       if (
         result.error ||
-        !isAllowedAuthorizationUrl(authorizationUrl, config, '/auth/v1/user/identities/authorize')
+        !isAllowedIdentityAuthorizationUrl(authorizationUrl, config, provider.id)
       ) {
         throw new Error('authorization_failed');
       }
@@ -887,6 +910,7 @@ module.exports = {
   createCloudAuthController,
   isPublishableSupabaseKey,
   isAllowedAuthorizationUrl,
+  isAllowedIdentityAuthorizationUrl,
   normalizeCloudConfig,
   parsePendingOAuthAttempt,
   projectCloudUser

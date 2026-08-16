@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 import cavalryMark from '../assets/cavalry-mark.png';
 import { AppleOAuthButton } from '../shared/AppleOAuthButton.jsx';
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
 import { formatUiDateTime } from '../shared/date-format.js';
 
 export const WORKBOOK_STARTUP_STATUS = Object.freeze({
@@ -69,9 +70,7 @@ function RecentWorkbookLibrary({ recent: rawRecent, onOpenRecent }) {
             const opening = openingId === id;
             return (
               <li key={id}>
-                <span aria-hidden="true" className="landing-recent-icon material-symbols-rounded">
-                  description
-                </span>
+                <CavalryIcon className="landing-recent-icon" name="description" />
                 <span className="landing-recent-copy">
                   <strong title={fileName}>{fileName}</strong>
                   <small>
@@ -208,9 +207,7 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
                   .join(' • ');
                 return (
                   <li key={id}>
-                    <span aria-hidden="true" className="material-symbols-rounded">
-                      table_view
-                    </span>
+                    <CavalryIcon name="table_view" />
                     <span>
                       <strong>{name}</strong>
                       <small>{metadata || 'Cloud workbook'}</small>
@@ -305,9 +302,7 @@ export function WorkbookLandingScreen({
           <div className="field">
             <label htmlFor="workbook-name">1. Workbook Name</label>
             <div className="landing-input">
-              <span aria-hidden="true" className="material-symbols-rounded landing-input-icon">
-                book_2
-              </span>
+              <CavalryIcon className="landing-input-icon" name="book_2" />
               <input
                 aria-invalid={!name.trim() && !!validationError}
                 autoComplete="off"
@@ -329,9 +324,7 @@ export function WorkbookLandingScreen({
             <div className="field">
               <label htmlFor="workbook-year">2. Year</label>
               <div className="landing-input">
-                <span aria-hidden="true" className="material-symbols-rounded landing-input-icon">
-                  calendar_month
-                </span>
+                <CavalryIcon className="landing-input-icon" name="calendar_month" />
                 <input
                   disabled={busy}
                   id="workbook-year"
@@ -361,9 +354,7 @@ export function WorkbookLandingScreen({
                     tabIndex={-1}
                     type="button"
                   >
-                    <span aria-hidden="true" className="material-symbols-rounded">
-                      keyboard_arrow_up
-                    </span>
+                    <CavalryIcon name="keyboard_arrow_up" />
                   </button>
                   <button
                     aria-label="Decrease year"
@@ -372,9 +363,7 @@ export function WorkbookLandingScreen({
                     tabIndex={-1}
                     type="button"
                   >
-                    <span aria-hidden="true" className="material-symbols-rounded">
-                      keyboard_arrow_down
-                    </span>
+                    <CavalryIcon name="keyboard_arrow_down" />
                   </button>
                 </span>
               </div>
@@ -398,12 +387,7 @@ export function WorkbookLandingScreen({
                     </option>
                   ))}
                 </select>
-                <span
-                  aria-hidden="true"
-                  className="material-symbols-rounded landing-select-chevron"
-                >
-                  expand_more
-                </span>
+                <CavalryIcon className="landing-select-chevron" name="expand_more" />
               </div>
             </div>
           </div>
@@ -413,9 +397,7 @@ export function WorkbookLandingScreen({
               disabled={busy || typeof onCreate !== 'function'}
               type="submit"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                arrow_forward
-              </span>
+              <CavalryIcon name="arrow_forward" />
               {busy ? 'Creating…' : 'Create Workbook'}
             </button>
             <span>or</span>
@@ -426,14 +408,13 @@ export function WorkbookLandingScreen({
               onClick={onOpen}
               type="button"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                folder_open
-              </span>
+              <CavalryIcon name="folder_open" />
               Open an existing workbook
             </button>
           </div>
           <p className="landing-file-note">
-            <span className="material-symbols-rounded">info</span>Supports HTML and JSON files.
+            <CavalryIcon name="info" />
+            Supports HTML and JSON files.
           </p>
         </form>
         <RecentWorkbookLibrary recent={recentWorkbooks} onOpenRecent={onOpenRecent} />
@@ -467,9 +448,7 @@ export function WorkbookErrorScreen({ error = 'Workbook could not be opened.', o
         <StartupBrand />
         <div className="landing-form landing-status stack-list">
           <div role="alert">
-            <span className="landing-error-icon material-symbols-rounded" aria-hidden="true">
-              error
-            </span>
+            <CavalryIcon className="landing-error-icon" name="error" />
             <h1>Workbook could not be opened</h1>
             <p>{error}</p>
           </div>
@@ -481,9 +460,7 @@ export function WorkbookErrorScreen({ error = 'Workbook could not be opened.', o
             ) : null}
             {typeof onOpen === 'function' ? (
               <button className="btn btn-primary" onClick={onOpen} type="button">
-                <span aria-hidden="true" className="material-symbols-rounded">
-                  folder_open
-                </span>
+                <CavalryIcon name="folder_open" />
                 Open Another Workbook
               </button>
             ) : null}

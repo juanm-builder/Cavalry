@@ -54,7 +54,7 @@
   align-items: center;
 }
 
-.advisor-context-title .material-symbols-rounded {
+.advisor-context-title .cavalry-glyph {
   color: var(--info);
 }
 
@@ -293,7 +293,7 @@
   color: var(--text);
 }
 
-.advisor-thread-row .material-symbols-rounded {
+.advisor-thread-row .cavalry-glyph {
   width: 24px;
   min-width: 24px;
   color: var(--text-dim);
@@ -363,7 +363,7 @@
   text-align: center;
 }
 
-.advisor-empty-chat .material-symbols-rounded {
+.advisor-empty-chat .cavalry-glyph {
   color: var(--text-soft);
   font-size: 28px;
 }
@@ -414,7 +414,7 @@
   text-align: center;
 }
 
-.advisor-source-empty .material-symbols-rounded {
+.advisor-source-empty .cavalry-glyph {
   color: var(--text-soft);
   font-size: 30px;
 }
@@ -718,7 +718,7 @@ button.advisor-source-row:hover {
   align-items: start;
 }
 
-.advisor-draft-group-head > .material-symbols-rounded {
+.advisor-draft-group-head > .cavalry-glyph {
   font-size: 20px;
   color: var(--info);
 }
@@ -975,7 +975,7 @@ button.advisor-source-row:hover {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.advisor-draft-comparison-head .material-symbols-rounded {
+.advisor-draft-comparison-head .cavalry-glyph {
   font-size: 16px;
   color: var(--info);
 }
@@ -1042,7 +1042,7 @@ button.advisor-source-row:hover {
   margin-bottom: 10px;
 }
 
-.advisor-transaction-draft-head .material-symbols-rounded {
+.advisor-transaction-draft-head .cavalry-glyph {
   color: var(--text);
 }
 

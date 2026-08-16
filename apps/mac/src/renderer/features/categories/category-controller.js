@@ -3,6 +3,7 @@ import {
   createCategoryWithLinkedAccount,
   deleteCategory,
   getCategoryUsageSummary,
+  getTransactionContributions,
   renameCategory,
   replaceCategoryLinkedAccount,
   roundMoney,
@@ -161,7 +162,7 @@ function validateCategoryCustomization(workbook, payload) {
   ) {
     return errorResult(workbook, {
       code: 'category.color_invalid',
-      message: 'Category colors must use a six-digit hex value such as #5ba1df.',
+      message: 'Category colors must use a six-digit hex value such as #499eee.',
       field: 'color',
       details: { field: 'color' }
     });
@@ -345,12 +346,12 @@ function categoryIcon(category) {
 function categoryColor(category, index) {
   if (category?.color) return String(category.color);
   const colors = {
-    income: '#43a877',
-    expense: '#ef6f70',
-    savings: '#5b9ee6',
-    debt: '#f09b3d'
+    income: '#4d79eb',
+    expense: '#c47a2c',
+    savings: '#499eee',
+    debt: '#7758b8'
   };
-  return colors[category?.type] || ['#ef6f70', '#43a877', '#f09b3d', '#5b9ee6'][index % 4];
+  return colors[category?.type] || ['#1a3fe9', '#4d79eb', '#499eee', '#809fec'][index % 4];
 }
 
 function titleCase(value, fallback = 'Category') {
@@ -358,8 +359,13 @@ function titleCase(value, fallback = 'Category') {
   return text ? text.replace(/\b\w/g, (character) => character.toUpperCase()) : fallback;
 }
 
-function transactionAmount(transaction) {
-  return Math.abs(Number(transaction?.baseAmount ?? transaction?.amount) || 0);
+function transactionCategoryActivity(workbook, transaction, categoryType) {
+  const contribution = getTransactionContributions(workbook, transaction);
+  if (categoryType === 'income') return Number(contribution.metrics.income) || 0;
+  if (categoryType === 'expense') return Number(contribution.metrics.categoryBudget) || 0;
+  if (categoryType === 'savings') return Number(contribution.metrics.savings) || 0;
+  if (categoryType === 'debt') return Number(contribution.metrics.debt) || 0;
+  return 0;
 }
 
 export function buildCategoriesFeatureModel(workbook, options = {}) {
@@ -376,10 +382,16 @@ export function buildCategoriesFeatureModel(workbook, options = {}) {
   const categories = asArray(coreModel.categories)
     .map((item) => getCategory(workbook, item.value))
     .filter(Boolean);
+  const categoryById = new Map(categories.map((category) => [asText(category.id), category]));
   const spendByCategory = transactions.reduce((totals, transaction) => {
     const categoryId = asText(transaction?.categoryId);
-    if (categoryId)
-      totals[categoryId] = roundMoney((totals[categoryId] || 0) + transactionAmount(transaction));
+    const category = categoryById.get(categoryId);
+    if (categoryId && category) {
+      totals[categoryId] = roundMoney(
+        (totals[categoryId] || 0) +
+          transactionCategoryActivity(workbook, transaction, category.type)
+      );
+    }
     return totals;
   }, {});
   const spendingRows = categories
@@ -390,7 +402,12 @@ export function buildCategoriesFeatureModel(workbook, options = {}) {
     }))
     .filter((row) => row.total > 0)
     .sort((left, right) => right.total - left.total);
-  const totalSpent = roundMoney(spendingRows.reduce((total, row) => total + row.total, 0));
+  const totalActivity = roundMoney(
+    Object.values(spendByCategory).reduce(
+      (total, amount) => total + Math.abs(Number(amount) || 0),
+      0
+    )
+  );
 
   return {
     currency,
@@ -425,12 +442,34 @@ export function buildCategoriesFeatureModel(workbook, options = {}) {
                 ? 'info'
                 : 'bad',
         typeLabel: titleCase(category.type),
+        amountTone:
+          spent === 0
+            ? 'neutral'
+            : category.type === 'expense'
+              ? spent < 0
+                ? 'good'
+                : 'bad'
+              : ['income', 'savings', 'debt'].includes(category.type)
+                ? spent > 0
+                  ? 'good'
+                  : 'bad'
+                : 'neutral',
+        activityLabel:
+          category.type === 'income'
+            ? 'Received'
+            : category.type === 'savings'
+              ? 'Saved'
+              : category.type === 'debt'
+                ? 'Paid down'
+                : spent < 0
+                  ? 'Refunded'
+                  : 'Spent',
         bucketLabel:
           plannerBucket?.name ||
           (category.plannerBucketId ? titleCase(category.plannerBucketId) : 'Unassigned'),
         transactionCount: usage.transactionCount,
         spent,
-        percent: totalSpent ? Math.round((spent / totalSpent) * 1000) / 10 : 0,
+        percent: totalActivity ? Math.round((Math.abs(spent) / totalActivity) * 1000) / 10 : 0,
         isArchived: category.isActive === false,
         isSystem,
         linkedAccountName: linkedAccount?.name || '',

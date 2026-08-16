@@ -43,7 +43,7 @@
   color: var(--info);
 }
 
-.selected-account-mark .material-symbols-rounded {
+.selected-account-mark .cavalry-glyph {
   font-size: 28px;
 }
 
@@ -122,7 +122,7 @@
   text-align: center;
 }
 
-.account-history-empty .material-symbols-rounded {
+.account-history-empty .cavalry-glyph {
   font-size: 32px;
 }
 
@@ -418,7 +418,7 @@
   gap: 2px;
 }
 
-.account-transaction-flow-change .material-symbols-rounded {
+.account-transaction-flow-change .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -588,23 +588,56 @@
   gap: 10px;
 }
 
+.accounts-register-filters > select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--field-bg, var(--panel));
+  color: var(--text);
+  font: inherit;
+}
+
+.accounts-register-filters > select:hover {
+  border-color: var(--info);
+}
+
+.accounts-register-filters > select:focus-visible {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .accounts-search {
-  min-height: 38px;
+  min-height: 42px;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 11px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: var(--field-bg, rgba(255, 255, 255, 0.025));
 }
 
-.accounts-search .material-symbols-rounded {
+.accounts-search:hover {
+  border-color: var(--info);
+}
+
+.accounts-search:focus-within {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.accounts-search .cavalry-glyph {
   color: var(--text-dim);
   font-size: 19px;
 }
 .accounts-search input {
+  width: 100%;
   min-width: 0;
+  min-height: 40px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -681,7 +714,7 @@
   outline: none;
 }
 
-.account-create-entry .material-symbols-rounded {
+.account-create-entry .cavalry-glyph {
   display: grid;
   width: 40px;
   height: 40px;
@@ -730,7 +763,7 @@
   outline: none;
 }
 
-.account-create-card > .material-symbols-rounded {
+.account-create-card > .cavalry-glyph {
   display: grid;
   width: 46px;
   height: 46px;
@@ -1046,7 +1079,7 @@
   margin-top: 3px;
   color: var(--text-dim);
 }
-.account-type-option > .material-symbols-rounded:last-child {
+.account-type-option > .cavalry-glyph:last-child {
   color: var(--text-dim);
 }
 
@@ -1201,7 +1234,7 @@
   background: color-mix(in srgb, var(--account-accent) 11%, transparent);
 }
 
-.account-context-icon .material-symbols-rounded {
+.account-context-icon .cavalry-glyph {
   font-size: 31px;
 }
 
@@ -1394,13 +1427,13 @@
   display: none;
 }
 
-.account-optional-details > summary .material-symbols-rounded {
+.account-optional-details > summary .cavalry-glyph {
   color: var(--text-dim);
   font-size: 19px;
   transition: transform 160ms ease;
 }
 
-.account-optional-details:not([open]) > summary .material-symbols-rounded {
+.account-optional-details:not([open]) > summary .cavalry-glyph {
   transform: rotate(-90deg);
 }
 
@@ -1483,7 +1516,7 @@
   gap: 8px;
 }
 
-.account-capability-list .material-symbols-rounded {
+.account-capability-list .cavalry-glyph {
   color: var(--account-accent);
   font-size: 17px;
 }
@@ -1502,7 +1535,7 @@
   font-size: 12px;
 }
 
-.account-guidance-tip .material-symbols-rounded {
+.account-guidance-tip .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -2293,7 +2326,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   background: var(--control-bg);
 }
 
-.account-flow-header .btn-icon .material-symbols-rounded {
+.account-flow-header .btn-icon .cavalry-glyph {
   font-size: 25px;
 }
 
@@ -2319,7 +2352,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   background: color-mix(in srgb, var(--account-accent) 9%, var(--control-bg));
 }
 
-.account-flow-type-badge .material-symbols-rounded {
+.account-flow-type-badge .cavalry-glyph {
   font-size: 22px;
 }
 
@@ -2360,7 +2393,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   min-width: 0;
 }
 
-.account-flow-control > .material-symbols-rounded,
+.account-flow-control > .cavalry-glyph,
 .account-money-control > .account-currency-prefix {
   position: absolute;
   left: 15px;
@@ -2502,7 +2535,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   gap: 8px;
 }
 
-.account-name-suggestion .material-symbols-rounded {
+.account-name-suggestion .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -2624,11 +2657,11 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   display: none;
 }
 
-.account-flow-optional > summary > .material-symbols-rounded:first-child {
+.account-flow-optional > summary > .cavalry-glyph:first-child {
   color: var(--account-accent);
 }
 
-.account-flow-optional > summary > .material-symbols-rounded:last-child {
+.account-flow-optional > summary > .cavalry-glyph:last-child {
   color: var(--text-dim);
   transition: transform 150ms ease;
 }
@@ -2646,7 +2679,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   line-height: 1.45;
 }
 
-.account-flow-optional[open] > summary > .material-symbols-rounded:last-child {
+.account-flow-optional[open] > summary > .cavalry-glyph:last-child {
   transform: rotate(180deg);
 }
 
@@ -2678,7 +2711,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   background: var(--account-accent);
 }
 
-.account-flow-credit-icon .material-symbols-rounded {
+.account-flow-credit-icon .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -2725,7 +2758,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   );
 }
 
-.account-flow-form > .account-flow-save.btn .material-symbols-rounded {
+.account-flow-form > .account-flow-save.btn .cavalry-glyph {
   font-size: 23px;
 }
 
@@ -2739,7 +2772,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   font-size: 12px;
 }
 
-.account-flow-privacy .material-symbols-rounded {
+.account-flow-privacy .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -2962,7 +2995,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
 }
 
 .account-edit-summary-mark > .institution-mark,
-.account-edit-summary-mark > .material-symbols-rounded {
+.account-edit-summary-mark > .cavalry-glyph {
   width: 42px;
   height: 42px;
   display: grid;
@@ -3014,7 +3047,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   line-height: 1.45;
 }
 
-.account-edit-ledger-note .material-symbols-rounded {
+.account-edit-ledger-note .cavalry-glyph {
   flex: 0 0 auto;
   color: var(--account-accent);
   font-size: 17px;
@@ -3086,7 +3119,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   background: color-mix(in srgb, var(--account-accent) 10%, var(--control-bg));
 }
 
-.account-edit-generic-mark .material-symbols-rounded {
+.account-edit-generic-mark .cavalry-glyph {
   font-size: 22px;
 }
 
@@ -3158,7 +3191,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   }
 
   .account-edit-summary-mark > .institution-mark,
-  .account-edit-summary-mark > .material-symbols-rounded {
+  .account-edit-summary-mark > .cavalry-glyph {
     width: 36px;
     height: 36px;
   }
@@ -3235,7 +3268,7 @@ html[data-theme='dark'] .institution-mark.institution-mark.has-logo {
   }
 
   .account-edit-summary-mark > .institution-mark,
-  .account-edit-summary-mark > .material-symbols-rounded {
+  .account-edit-summary-mark > .cavalry-glyph {
     width: 36px;
     height: 36px;
   }

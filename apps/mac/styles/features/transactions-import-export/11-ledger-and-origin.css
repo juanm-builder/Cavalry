@@ -218,7 +218,7 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.transaction-search-control .material-symbols-rounded {
+.transaction-search-control .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }
@@ -257,7 +257,7 @@
   color: var(--text);
 }
 
-.transaction-search-clear .material-symbols-rounded {
+.transaction-search-clear .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -783,7 +783,7 @@
   background: color-mix(in srgb, var(--transaction-edit-accent) 10%, var(--control-bg));
 }
 
-.transaction-edit-type-badge .material-symbols-rounded {
+.transaction-edit-type-badge .cavalry-glyph {
   font-size: 21px;
 }
 
@@ -815,7 +815,7 @@
   background: color-mix(in srgb, var(--transaction-edit-accent) 12%, var(--bg-elevated));
 }
 
-.transaction-edit-account-mark > .material-symbols-rounded {
+.transaction-edit-account-mark > .cavalry-glyph {
   font-size: 24px;
 }
 
@@ -1009,16 +1009,16 @@
   display: none;
 }
 
-.transaction-edit-optional > summary .material-symbols-rounded:first-child {
+.transaction-edit-optional > summary .cavalry-glyph:first-child {
   color: var(--transaction-edit-accent);
 }
 
-.transaction-edit-optional > summary .material-symbols-rounded:last-child {
+.transaction-edit-optional > summary .cavalry-glyph:last-child {
   color: var(--text-dim);
   transition: transform 150ms ease;
 }
 
-.transaction-edit-optional[open] > summary .material-symbols-rounded:last-child {
+.transaction-edit-optional[open] > summary .cavalry-glyph:last-child {
   transform: rotate(180deg);
 }
 
@@ -1074,7 +1074,7 @@
   );
 }
 
-.transaction-edit-submit .material-symbols-rounded {
+.transaction-edit-submit .cavalry-glyph {
   font-size: 21px;
 }
 
@@ -1383,7 +1383,7 @@
   background: color-mix(in srgb, var(--transaction-kind-color) 15%, transparent);
 }
 
-.transaction-type-icon .material-symbols-rounded {
+.transaction-type-icon .cavalry-glyph {
   font-size: 31px;
 }
 
@@ -1440,7 +1440,7 @@
   flex: 0 0 auto;
 }
 
-.transaction-kind-badge .material-symbols-rounded {
+.transaction-kind-badge .cavalry-glyph {
   font-size: 22px;
 }
 
@@ -1511,7 +1511,7 @@
   height: 28px;
 }
 
-.transaction-create-account-mark > .material-symbols-rounded {
+.transaction-create-account-mark > .cavalry-glyph {
   font-size: 23px;
 }
 
@@ -1587,7 +1587,7 @@
   font-weight: 750;
 }
 
-.transaction-wizard-next .material-symbols-rounded {
+.transaction-wizard-next .cavalry-glyph {
   margin-left: auto;
 }
 
@@ -1668,7 +1668,7 @@
   font-weight: 400;
 }
 
-.transaction-review-row .material-symbols-rounded {
+.transaction-review-row .cavalry-glyph {
   color: var(--text-soft);
   font-size: 19px;
 }

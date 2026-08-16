@@ -1,14 +1,12 @@
 import React, { useEffect } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { FeedbackComposer } from './FeedbackComposer.jsx';
 import { FeedbackReportList } from './FeedbackReportList.jsx';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function SettingsCard({ children, headingId, icon, title, trailing }) {

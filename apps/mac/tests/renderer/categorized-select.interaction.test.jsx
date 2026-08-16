@@ -39,7 +39,9 @@ describe('categorized select', () => {
     expect(screen.getByRole('group', { name: 'Lifestyle' })).not.toBeNull();
     expect(screen.getByRole('group', { name: 'Savings & Goals' })).not.toBeNull();
     expect(
-      within(screen.getByRole('group', { name: 'Everyday Expenses' })).getByText('pets')
+      screen
+        .getByRole('group', { name: 'Everyday Expenses' })
+        .querySelector('[data-cavalry-icon="pets"]')
     ).not.toBeNull();
 
     await user.click(

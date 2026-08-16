@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
@@ -11,14 +13,7 @@ import { TransactionEditModal } from './TransactionEditModal.jsx';
 import { FilterSidePanel, InlineFilterToolbar } from './TransactionFilters.jsx';
 
 function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {

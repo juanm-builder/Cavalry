@@ -41,6 +41,41 @@ function expenseTransaction({ id, date, description, amount, categoryId, counter
   };
 }
 
+function refundTransaction({ id, date, description, amount, categoryId, counterpartyId = '' }) {
+  return {
+    id,
+    date,
+    monthKey: date.slice(0, 7),
+    template: 'merchant_refund',
+    eventKind: 'merchant_refund',
+    description,
+    categoryId,
+    counterpartyId,
+    originalCurrency: 'PHP',
+    amount,
+    baseAmount: amount,
+    source: 'manual',
+    lines: [
+      {
+        id: `line-${id}-cash`,
+        accountId: 'cash',
+        direction: 'debit',
+        amount,
+        currency: 'PHP',
+        baseAmount: amount
+      },
+      {
+        id: `line-${id}-expense`,
+        accountId: 'food-expense',
+        direction: 'credit',
+        amount,
+        currency: 'PHP',
+        baseAmount: amount
+      }
+    ]
+  };
+}
+
 function makeWorkbook() {
   return {
     id: 'open-advisor-workbook',
@@ -234,6 +269,31 @@ describe('workspace snapshot', () => {
 
     expect(built.json.length).toBeLessThanOrEqual(CAVALRY_ASSISTANT_SNAPSHOT_MAX_CHARS);
     expect(built.snapshot.accounts.omittedCount).toBeGreaterThan(0);
+  });
+
+  it('nets refunds in the snapshot instead of presenting them as new spending', () => {
+    const workbook = makeWorkbook();
+    workbook.transactions.push(
+      refundTransaction({
+        id: 'txn-refund',
+        date: '2026-07-10',
+        description: 'Groceries refund',
+        amount: 300,
+        categoryId: 'food',
+        counterpartyId: 'market'
+      })
+    );
+
+    const { snapshot } = buildCavalryAssistantWorkspaceSnapshot(workbook, {
+      today: '2026-07-10'
+    });
+
+    expect(snapshot.thisMonth.expense).toBe(2100);
+    expect(snapshot.thisMonth.topExpenseCategories[0]).toMatchObject({
+      category: 'Food',
+      total: 1700,
+      transactionCount: 3
+    });
   });
 
   it('never throws on a malformed or empty workbook', () => {

@@ -140,6 +140,27 @@ describe('workbook session', () => {
     expect(duplicate.errors).toHaveLength(1);
   });
 
+  it('increments the Cloud handoff sequence only after a native workbook save succeeds', () => {
+    const initial = createWorkbookSessionState({ initialWorkbook: makeWorkbook() });
+    const hydrated = workbookSessionReducer(initial, {
+      type: 'hydration/succeeded',
+      source: 'native',
+      workbook: makeWorkbook()
+    });
+    const cached = workbookSessionReducer(hydrated, {
+      type: 'save/cached',
+      savedAt: '2026-08-16T00:00:00.000Z'
+    });
+    const saved = workbookSessionReducer(cached, {
+      type: 'save/succeeded',
+      savedAt: '2026-08-16T00:00:01.000Z'
+    });
+
+    expect(hydrated.save.localSaveSequence).toBe(0);
+    expect(cached.save.localSaveSequence).toBe(0);
+    expect(saved.save.localSaveSequence).toBe(1);
+  });
+
   it('owns route and overlay interactions in one reducer-backed provider', async () => {
     const user = userEvent.setup();
     render(

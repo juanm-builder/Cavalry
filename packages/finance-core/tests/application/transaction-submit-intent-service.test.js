@@ -3,7 +3,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildManualTransactionSubmitIntent } from '@cavalry/finance-core/application/transactions/transaction-submit-intent-service.js';
-import { cloneFixture, makeDraftIsolationWorkbook } from '../fixtures/core-workbook-fixtures.js';
+import {
+  cloneFixture,
+  makeDraftIsolationWorkbook,
+  makeRefundWorkbook
+} from '../fixtures/core-workbook-fixtures.js';
 
 function makeWorkbook() {
   const workbook = makeDraftIsolationWorkbook();
@@ -191,6 +195,30 @@ describe('transaction submit intent service', () => {
     });
     expect(intent.recurringTracking.shouldCreate).toBe(false);
     expect(intent.advisor.shouldMarkPosted).toBe(false);
+  });
+
+  it('recognizes metadata-only refund edits as preserving their existing postings', () => {
+    const workbook = makeRefundWorkbook();
+    const existing = workbook.transactions.find(
+      (transaction) => transaction.id === 'txn-refund-unclear'
+    );
+    const intent = buildManualTransactionSubmitIntent(workbook, {
+      transactionId: existing.id,
+      template: existing.template,
+      amount: existing.amount,
+      currency: existing.originalCurrency,
+      date: existing.date,
+      description: 'Store refund received',
+      categoryId: existing.categoryId,
+      primaryAccountId: 'cash'
+    });
+
+    expect(intent.error).toBeNull();
+    expect(intent).toMatchObject({
+      isEdit: true,
+      preserveExistingPostings: true,
+      currencyConversionWarning: null
+    });
   });
 
   it('builds Advisor source metadata and bills route fallback without side effects', () => {

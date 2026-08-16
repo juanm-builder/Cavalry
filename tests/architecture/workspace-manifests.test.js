@@ -31,6 +31,7 @@ describe('workspace manifests', () => {
       'test',
       'test:integration',
       'test:e2e',
+      'verify:trust',
       'check',
       'package:mac',
       'package:mac:intel',

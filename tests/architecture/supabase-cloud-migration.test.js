@@ -15,6 +15,11 @@ const conflictRetryMigrationSource = readFileSync(
   resolve(migrationsDirectory, conflictRetryMigrationFile),
   'utf8'
 );
+const realtimeMigrationFile = '20260816000100_enable_workbook_realtime.sql';
+const realtimeMigrationSource = readFileSync(
+  resolve(migrationsDirectory, realtimeMigrationFile),
+  'utf8'
+);
 
 const cloudTables = [
   'profiles',
@@ -128,6 +133,27 @@ describe('Supabase Cavalry Cloud migration', () => {
     expect(conflictRetryMigrationSource).toContain("errcode = 'PT412'");
     expect(conflictRetryMigrationSource).toContain("message = 'workbook_revision_conflict'");
     expect(conflictRetryMigrationSource).not.toContain("errcode = '40001'");
+  });
+
+  it('publishes only owner-scoped workbook metadata to Realtime without weakening RLS', () => {
+    expect(migrationFiles).toContain(realtimeMigrationFile);
+    expect(realtimeMigrationSource).toMatch(
+      /pg_catalog\.pg_publication[\s\S]*?pubname\s*=\s*'supabase_realtime'/i
+    );
+    expect(realtimeMigrationSource).toMatch(
+      /pg_catalog\.pg_publication_rel[\s\S]*?namespace\.nspname\s*=\s*'public'[\s\S]*?relation\.relname\s*=\s*'workbooks'/i
+    );
+    expect(realtimeMigrationSource).toMatch(/puballtables/i);
+    expect(realtimeMigrationSource).toContain(
+      'alter publication supabase_realtime add table public.workbooks;'
+    );
+    expect(realtimeMigrationSource).toContain(
+      'alter table public.workbooks enable row level security;'
+    );
+    expect(realtimeMigrationSource).toContain(
+      'alter table public.workbooks force row level security;'
+    );
+    expect(realtimeMigrationSource).not.toMatch(/workbook_versions|portable_html|to anon/i);
   });
 
   it('enforces owner storage quotas inside the snapshot transaction', () => {

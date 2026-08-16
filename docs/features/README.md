@@ -13,7 +13,7 @@ The finance workflow is local-first: open or create a workbook, record balanced 
 | Advisor                                               | `advisor` plus `action-review` safety gates      | React conversation UI and injected transport     |
 | Cavalry Cloud                                         | Supabase owner-scoped snapshots and RLS          | Electron auth/transport and Account settings UI  |
 
-See [Action Review](action-review.md) for the portable plan format, [Advisor acceptance](advisor-acceptance.md) for its safety contract, and [Cavalry Cloud](cavalry-cloud.md) for the explicit-upload cloud boundary.
+See [Action Review](action-review.md) for the portable plan format, [Advisor acceptance](advisor-acceptance.md) for its safety contract, [AI companion capabilities](ai-companion-capabilities.md) for the feature-tool registration contract, and [Cavalry Cloud](cavalry-cloud.md) for the explicit-upload cloud boundary.
 
 Treat the [architecture map](../architecture/README.md) as authoritative when choosing a home for new code.
 

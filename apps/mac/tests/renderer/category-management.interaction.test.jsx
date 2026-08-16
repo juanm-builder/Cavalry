@@ -231,7 +231,7 @@ describe('category management interactions', () => {
     await user.clear(name);
     await user.type(name, 'Flexible Spending');
     await user.click(within(dialog).getByLabelText('flight'));
-    await user.click(within(dialog).getByLabelText('Color #5ba1df'));
+    await user.click(within(dialog).getByLabelText('Color #499eee'));
     await user.click(within(dialog).getByRole('button', { name: 'Next' }));
     dialog = screen.getByRole('dialog', { name: 'Edit Category' });
     await user.type(within(dialog).getByLabelText('Description (optional)'), 'Flexible expenses');
@@ -243,7 +243,7 @@ describe('category management interactions', () => {
       '"icon":"flight"'
     );
     expect(screen.getByLabelText('Category workbook state').textContent).toContain(
-      '"color":"#5ba1df"'
+      '"color":"#499eee"'
     );
 
     await user.click(

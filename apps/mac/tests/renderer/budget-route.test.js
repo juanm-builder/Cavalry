@@ -69,12 +69,21 @@ describe('BudgetRoute', () => {
 
   it('shows one plan section at a time instead of a duplicate usage dashboard', () => {
     const html = renderBudgetRoute();
+    const foodDescription = html.match(
+      /aria-describedby="([^"]+)" class="budget-category-list-row"/
+    );
+    const foodDescriptionId = foodDescription?.[1] || '';
 
     expect(html).toContain('Your plan');
     expect(html).toContain('Monthly Plan sections');
     expect(html).toContain('Food');
     expect(html).toContain('Subscriptions');
     expect(html).toContain('aria-label="Create budget"');
+    expect(foodDescription).not.toBeNull();
+    expect(html).not.toContain('aria-label="Open Food budget details"');
+    expect(html).toContain(`class="sr-only" id="${foodDescriptionId}">Plan: `);
+    expect(html).toContain('. Spent: ');
+    expect(html).toContain('. Status: ');
     expect(html).not.toContain('budget-usage-key');
     expect(html).not.toContain('Insights from Cavalry');
     expect(html).not.toContain('Spending Breakdown');

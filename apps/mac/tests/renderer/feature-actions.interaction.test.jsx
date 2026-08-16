@@ -215,7 +215,7 @@ describe('feature action callbacks', () => {
       />
     );
 
-    const juneInflows = screen.getByRole('button', { name: 'June inflows' });
+    const juneInflows = screen.getByRole('button', { name: 'June inflows, ₱1,000.00' });
     await user.hover(juneInflows);
     expect(screen.getByText('Salary')).not.toBeNull();
     await user.click(juneInflows);
@@ -294,11 +294,13 @@ describe('feature action callbacks', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'January inflows' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'January inflows, ₱100.00' })).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Next average period' }));
-    expect(screen.getByRole('button', { name: 'Wednesday, Jul 1 inflows' })).not.toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Wednesday, Jul 1 inflows, ₱100.00' })
+    ).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Next average period' }));
-    expect(screen.getByRole('button', { name: 'Monday, Jul 6 inflows' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Monday, Jul 6 inflows, ₱100.00' })).not.toBeNull();
   });
 
   it('captures checkbox and select values as serializable payloads', async () => {

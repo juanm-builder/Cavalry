@@ -115,6 +115,8 @@ export function useFinanceApplicationController({
     browserCache: ports.browserCache,
     workbookStorage: ports.workbookStorage,
     saveStatus: state.save.status,
+    localSaveSequence: state.save.localSaveSequence,
+    saveWorkbook,
     setWorkbook,
     navigate
   });
@@ -604,12 +606,23 @@ export function useFinanceApplicationController({
       const suppliedArguments = asObject(args);
       const approvedArguments = { ...suppliedArguments };
       if (metadata.approvedByUser !== true) {
-        if (Object.prototype.hasOwnProperty.call(approvedArguments, 'confirmed')) {
-          approvedArguments.confirmed = false;
-        }
-        if (Object.prototype.hasOwnProperty.call(approvedArguments, 'allowDuplicate')) {
-          approvedArguments.allowDuplicate = false;
-        }
+        const toolDefinition = asObject(metadata.tool);
+        const declaredApprovalFields = asArray(asObject(toolDefinition.cavalry).approvalFields)
+          .map(asString)
+          .filter((field) => /^[a-z][a-zA-Z0-9]*$/.test(field));
+        const approvalFields = Array.from(
+          new Set([
+            ...declaredApprovalFields,
+            'confirmed',
+            'allowDuplicate',
+            'allowCurrencyConversion'
+          ])
+        );
+        approvalFields.forEach((field) => {
+          if (Object.prototype.hasOwnProperty.call(approvedArguments, field)) {
+            approvedArguments[field] = false;
+          }
+        });
       }
       if (metadata.signal?.aborted) {
         return {

@@ -4,6 +4,46 @@
    the specialized layouts that are unique to each route. */
 
 :root,
+html[data-theme='cerulean'] {
+  color-scheme: light;
+  --bg: #edf4ff;
+  --bg-elevated: #fffefa;
+  --panel: #fffefa;
+  --panel-soft: #f3f3f0;
+  --panel-muted: #e5edff;
+  --line: #b9bdc5;
+  --line-strong: #111111;
+  --line-soft: #d5d5d1;
+  --text: #111111;
+  --text-soft: #30343b;
+  --text-dim: #666666;
+  --accent: #1a3fe9;
+  --accent-hover: #1233ca;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(73, 158, 238, 0.14);
+  --accent-line: rgba(26, 63, 233, 0.42);
+  --good: #19804f;
+  --warn: #946200;
+  --bad: #bd2d27;
+  --bad-vivid: #ed3730;
+  --info: #1a3fe9;
+  --nav-bg: #1a3fe9;
+  --topbar-bg: rgba(255, 254, 250, 0.96);
+  --overlay: rgba(17, 17, 17, 0.46);
+  --control-bg: rgba(26, 63, 233, 0.035);
+  --control-hover: rgba(26, 63, 233, 0.085);
+  --surface-highlight: rgba(255, 255, 255, 0.72);
+  --shadow-color: rgba(26, 42, 84, 0.12);
+  --bg-orb: rgba(73, 158, 238, 0.12);
+  --blue-strong: #1a3fe9;
+  --blue-mid: #4d79eb;
+  --blue-soft: #809fec;
+  --blue-cerulean: #499eee;
+  --paper: #f3f3f0;
+  --cream: #fef7d7;
+  --ink: #111111;
+}
+
 html[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0d0e10;
@@ -149,6 +189,47 @@ html[data-theme='custom'] {
   --surface-highlight: color-mix(in srgb, var(--custom-text, #f5f6f8) 6%, transparent);
   --shadow-color: color-mix(in srgb, var(--custom-background, #101114) 38%, transparent);
   --bg-orb: transparent;
+}
+
+/* Auxiliary roles used by the ledger skin. These deliberately derive from each
+   selected theme so paper, hover, chart, and focus surfaces never leak light
+   Cerulean colors into Dark or Custom appearances. */
+html[data-theme='dark'],
+html[data-theme='white'],
+html[data-theme='parchment'],
+html[data-theme='custom'] {
+  --blue-strong: var(--accent);
+  --blue-mid: color-mix(in srgb, var(--accent) 78%, var(--text));
+  --blue-soft: color-mix(in srgb, var(--accent) 52%, var(--panel));
+  --blue-cerulean: var(--nav-bg);
+  --paper: var(--panel-soft);
+  --cream: var(--panel-muted);
+  --ink: var(--text);
+  --focus-ring: color-mix(in srgb, var(--accent) 55%, var(--text));
+  --ledger-hover: color-mix(in srgb, var(--accent) 9%, var(--panel));
+}
+
+:root,
+html[data-theme='cerulean'] {
+  --focus-ring: #1a3fe9;
+  --ledger-hover: #edf2ff;
+  --on-bad: #ffffff;
+}
+
+html[data-theme='white'],
+html[data-theme='parchment'] {
+  --on-bad: #ffffff;
+  --bad-vivid: var(--bad);
+}
+
+html[data-theme='dark'] {
+  --on-bad: #111111;
+  --bad-vivid: var(--bad);
+}
+
+html[data-theme='custom'] {
+  --on-bad: var(--custom-background, #101114);
+  --bad-vivid: var(--bad);
 }
 
 :root {
@@ -405,7 +486,7 @@ textarea:disabled {
   gap: 10px;
 }
 
-.nav-copy .material-symbols-rounded {
+.nav-copy .cavalry-glyph {
   width: 22px;
   min-width: 22px;
   color: var(--text-dim);
@@ -413,7 +494,7 @@ textarea:disabled {
   transition: color 140ms ease;
 }
 
-.nav-item.active .nav-copy .material-symbols-rounded {
+.nav-item.active .nav-copy .cavalry-glyph {
   color: var(--accent);
   font-variation-settings:
     'FILL' 1,
@@ -461,7 +542,7 @@ textarea:disabled {
   text-transform: uppercase;
 }
 
-.quick-add-title .material-symbols-rounded {
+.quick-add-title .cavalry-glyph {
   color: var(--accent);
   font-size: 16px;
 }
@@ -479,7 +560,7 @@ textarea:disabled {
   color: var(--text);
 }
 
-.quick-add-card button .material-symbols-rounded {
+.quick-add-card button .cavalry-glyph {
   color: var(--accent);
   font-size: 17px;
 }
@@ -487,7 +568,7 @@ textarea:disabled {
 .rail-user-card {
   min-height: 48px;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   padding: 7px 8px;
@@ -553,7 +634,7 @@ textarea:disabled {
   width: auto;
 }
 
-.navigation-compact .nav-copy .material-symbols-rounded {
+.navigation-compact .nav-copy .cavalry-glyph {
   width: 24px;
   font-size: 21px;
 }
@@ -585,7 +666,7 @@ textarea:disabled {
   font-size: 0;
 }
 
-.navigation-compact .quick-add-card button .material-symbols-rounded {
+.navigation-compact .quick-add-card button .cavalry-glyph {
   color: var(--accent);
   font-size: 19px;
 }
@@ -754,7 +835,7 @@ textarea:disabled {
   padding: 0;
 }
 
-.btn .material-symbols-rounded {
+.btn .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1099,14 +1180,14 @@ table tbody tr:hover {
   }
 }
 
-.app-notice > .material-symbols-rounded {
+.app-notice > .cavalry-glyph {
   font-size: 20px;
 }
 
-.app-notice.warn > .material-symbols-rounded {
+.app-notice.warn > .cavalry-glyph {
   color: var(--warn);
 }
-.app-notice.bad > .material-symbols-rounded {
+.app-notice.bad > .cavalry-glyph {
   color: var(--bad);
 }
 
@@ -1140,7 +1221,7 @@ table tbody tr:hover {
   color: var(--text);
 }
 
-.app-notice button .material-symbols-rounded {
+.app-notice button .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -1188,7 +1269,7 @@ table tbody tr:hover {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.command-search > .material-symbols-rounded {
+.command-search > .cavalry-glyph {
   color: var(--accent);
   font-size: 22px;
 }
@@ -1256,7 +1337,7 @@ table tbody tr:hover {
   color: var(--accent);
 }
 
-.command-result-icon .material-symbols-rounded {
+.command-result-icon .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1276,7 +1357,7 @@ table tbody tr:hover {
   font-size: 10px;
 }
 
-.command-group button > .material-symbols-rounded {
+.command-group button > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 17px;
 }
@@ -1300,7 +1381,7 @@ table tbody tr:hover {
   text-align: center;
 }
 
-.command-empty .material-symbols-rounded {
+.command-empty .cavalry-glyph {
   margin-bottom: 9px;
   color: var(--accent);
   font-size: 30px;
@@ -1415,7 +1496,7 @@ table tbody tr:hover {
   line-height: 1.35;
 }
 
-.appearance-theme-card > .material-symbols-rounded {
+.appearance-theme-card > .cavalry-glyph {
   color: var(--accent);
   font-size: 18px;
 }
@@ -1753,7 +1834,7 @@ table tbody tr:hover {
   color: var(--text);
 }
 
-.landing-stepper .material-symbols-rounded {
+.landing-stepper .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -1794,7 +1875,7 @@ table tbody tr:hover {
   background: transparent;
 }
 
-.landing-create-button .material-symbols-rounded {
+.landing-create-button .cavalry-glyph {
   order: 2;
 }
 
@@ -1807,7 +1888,7 @@ table tbody tr:hover {
   font-size: 10px;
 }
 
-.landing-file-note .material-symbols-rounded {
+.landing-file-note .cavalry-glyph {
   font-size: 13px;
 }
 
@@ -1910,7 +1991,7 @@ html[data-color-scheme='light'] .nav-rail {
   box-shadow: 1px 0 0 rgba(27, 42, 66, 0.04);
 }
 
-html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
+html[data-color-scheme='light'] .btn-primary .cavalry-glyph {
   color: inherit;
 }
 
@@ -1962,9 +2043,9 @@ html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
   color: var(--text);
 }
 
-.advisor-thread-row.active .material-symbols-rounded,
-.advisor-command-action .material-symbols-rounded,
-.advisor-chat-card-v2 .advisor-prompt-grid button .material-symbols-rounded {
+.advisor-thread-row.active .cavalry-glyph,
+.advisor-command-action .cavalry-glyph,
+.advisor-chat-card-v2 .advisor-prompt-grid button .cavalry-glyph {
   color: var(--accent);
 }
 
@@ -2147,8 +2228,8 @@ html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
   white-space: nowrap;
 }
 
-.ai-draft-edit-hint .material-symbols-rounded,
-.ai-draft-field-label .material-symbols-rounded {
+.ai-draft-edit-hint .cavalry-glyph,
+.ai-draft-field-label .cavalry-glyph {
   color: var(--accent);
   font-size: 14px;
 }
@@ -2229,7 +2310,7 @@ html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
   color: var(--accent-ink);
 }
 
-.ai-draft-inline-actions .material-symbols-rounded {
+.ai-draft-inline-actions .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -2302,7 +2383,7 @@ html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .command-menu-trigger > span:not(.material-symbols-rounded),
+  .command-menu-trigger > span:not(.cavalry-glyph),
   .command-menu-trigger kbd {
     display: none;
   }
@@ -2411,8 +2492,8 @@ html[data-color-scheme='light'] .btn-primary .material-symbols-rounded {
     display: block;
   }
 
-  .nav-copy .material-symbols-rounded,
-  .navigation-compact .nav-copy .material-symbols-rounded {
+  .nav-copy .cavalry-glyph,
+  .navigation-compact .nav-copy .cavalry-glyph {
     width: auto;
     min-width: 0;
     font-size: 19px;

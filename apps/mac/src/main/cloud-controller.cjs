@@ -7,6 +7,8 @@ const { createTrustedCloudIpcGuard } = require('./cloud-ipc-security.cjs');
 const { createCloudProfileController } = require('./cloud-profile-controller.cjs');
 const { createCloudWorkbookController } = require('./cloud-workbook-controller.cjs');
 
+const REALTIME_REFRESH_RETRY_DELAYS_MS = Object.freeze([1_000, 3_000, 10_000]);
+
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
   linkAppleIdentity: 'cavalry-cloud:link-apple',
@@ -39,6 +41,14 @@ function createCloudController(dependencies = {}) {
   let handlersRegistered = false;
   let cloudSession = { userId: '', generation: 0 };
   let workbookMutationInProgress = false;
+  let workbookChange = null;
+  let workbookChangeSequence = 0;
+  let realtimeChannel = null;
+  let realtimeClient = null;
+  let realtimeUserId = '';
+  let queuedRealtimeChange = null;
+  let realtimeRefreshPromise = null;
+  let realtimeRetryTimer = null;
 
   function updateCloudSession(authState) {
     const nextUserId =
@@ -47,6 +57,9 @@ function createCloudController(dependencies = {}) {
         : '';
     if (nextUserId === cloudSession.userId) return;
     cloudSession = { userId: nextUserId, generation: cloudSession.generation + 1 };
+    workbooks = [];
+    profileName = '';
+    workbookChange = null;
   }
 
   function getState() {
@@ -60,7 +73,8 @@ function createCloudController(dependencies = {}) {
             ? { ...authState.user }
             : null,
       sessionGeneration: cloudSession.generation,
-      workbooks: workbooks.map((workbook) => ({ ...workbook }))
+      workbooks: workbooks.map((workbook) => ({ ...workbook })),
+      workbookChange: workbookChange ? { ...workbookChange } : null
     };
   }
 
@@ -82,7 +96,230 @@ function createCloudController(dependencies = {}) {
     return nextState;
   }
 
-  const auth = createCloudAuthController({
+  function normalizeRealtimeWorkbookChange(payload) {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const eventType = String(source.eventType || '').toUpperCase();
+    if (!['INSERT', 'UPDATE', 'DELETE'].includes(eventType)) return null;
+    // DELETE subscriptions are deliberately unfiltered because Supabase cannot
+    // authorize them with the deleted row's owner column under RLS. Treat every
+    // DELETE payload as opaque: only the subsequent RLS-authorized list result
+    // may cross IPC, even if a future server happens to include more old fields.
+    if (eventType === 'DELETE') {
+      return {
+        sequence: ++workbookChangeSequence,
+        eventType,
+        workbookId: '',
+        revision: 0,
+        updatedAt: ''
+      };
+    }
+    const record = source.new && typeof source.new === 'object' ? source.new : {};
+    const workbookId = String(record.local_workbook_id || '')
+      .trim()
+      .slice(0, 128);
+    if (!workbookId) return null;
+    const rawRevision = Number(record.latest_revision);
+    const revision = Number.isSafeInteger(rawRevision) && rawRevision > 0 ? rawRevision : 0;
+    return {
+      sequence: ++workbookChangeSequence,
+      eventType,
+      workbookId,
+      revision,
+      updatedAt: String(record.updated_at || '').slice(0, 64)
+    };
+  }
+
+  function captureCloudSession() {
+    return { userId: cloudSession.userId, generation: cloudSession.generation };
+  }
+
+  function isCurrentCloudSession(binding) {
+    return !!(
+      binding &&
+      binding.userId === cloudSession.userId &&
+      binding.generation === cloudSession.generation
+    );
+  }
+
+  function cloudSessionChangedFailure() {
+    return {
+      ok: false,
+      code: 'cloud_session_changed',
+      error: 'The Cavalry Cloud account changed before the operation finished.'
+    };
+  }
+
+  function cloudSessionChangedResponse() {
+    return { ...cloudSessionChangedFailure(), state: getState() };
+  }
+
+  function cancelRealtimeRetry() {
+    if (realtimeRetryTimer === null) return;
+    clearTimeout(realtimeRetryTimer);
+    realtimeRetryTimer = null;
+  }
+
+  function stopRealtimeSubscription() {
+    const channel = realtimeChannel;
+    const client = realtimeClient;
+    realtimeChannel = null;
+    realtimeClient = null;
+    realtimeUserId = '';
+    queuedRealtimeChange = null;
+    cancelRealtimeRetry();
+    if (!channel) return;
+    try {
+      if (client && typeof client.removeChannel === 'function') {
+        void Promise.resolve(client.removeChannel(channel)).catch(() => undefined);
+      } else if (typeof channel.unsubscribe === 'function') {
+        void Promise.resolve(channel.unsubscribe()).catch(() => undefined);
+      }
+    } catch (_error) {
+      // Realtime teardown is best effort; the authenticated session remains authoritative.
+    }
+  }
+
+  function drainRealtimeWorkbookRefreshes() {
+    if (realtimeRefreshPromise || realtimeRetryTimer !== null) return;
+    const entry = queuedRealtimeChange;
+    queuedRealtimeChange = null;
+    if (!entry || !isCurrentCloudSession(entry.session)) return;
+
+    const operation = (async () => {
+      const result = await refreshWorkbooks(entry.session);
+      if (!isCurrentCloudSession(entry.session)) return;
+      if (!result.ok) {
+        const delay = REALTIME_REFRESH_RETRY_DELAYS_MS[entry.retryAttempt];
+        if (delay !== undefined && !queuedRealtimeChange) {
+          queuedRealtimeChange = {
+            ...entry,
+            retryAttempt: entry.retryAttempt + 1
+          };
+          const timer = setTimeout(() => {
+            if (realtimeRetryTimer !== timer) return;
+            realtimeRetryTimer = null;
+            drainRealtimeWorkbookRefreshes();
+          }, delay);
+          realtimeRetryTimer = timer;
+          if (timer && typeof timer.unref === 'function') timer.unref();
+        }
+        return;
+      }
+      workbookChange = entry.change;
+      broadcastState();
+    })();
+    realtimeRefreshPromise = operation;
+    void operation
+      .catch(() => undefined)
+      .finally(() => {
+        if (realtimeRefreshPromise === operation) realtimeRefreshPromise = null;
+        if (queuedRealtimeChange && realtimeRetryTimer === null) {
+          // A completed request may belong to an old owner. Always allow the
+          // queued binding to decide whether current-session work can run next.
+          drainRealtimeWorkbookRefreshes();
+        }
+      });
+  }
+
+  function enqueueRealtimeWorkbookRefresh(session, change) {
+    if (!change || !session.userId || !isCurrentCloudSession(session)) return;
+    cancelRealtimeRetry();
+    queuedRealtimeChange = {
+      session: { ...session },
+      change,
+      retryAttempt: 0
+    };
+    drainRealtimeWorkbookRefreshes();
+  }
+
+  function queueRealtimeWorkbookRefresh(session, payload) {
+    enqueueRealtimeWorkbookRefresh(session, normalizeRealtimeWorkbookChange(payload));
+  }
+
+  function queueRealtimeReconciliation(session) {
+    if (!session.userId || !isCurrentCloudSession(session)) return;
+    enqueueRealtimeWorkbookRefresh(session, {
+      sequence: ++workbookChangeSequence,
+      eventType: 'UPDATE',
+      workbookId: '',
+      revision: 0,
+      updatedAt: ''
+    });
+  }
+
+  function bindRealtimeChange(channel, filter, callback) {
+    return channel.on('postgres_changes', filter, callback) || channel;
+  }
+
+  function syncRealtimeSubscription() {
+    const userId = cloudSession.userId;
+    const client = auth && auth.isSignedIn() ? auth.getClient() : null;
+    if (!userId || !(client && typeof client.channel === 'function')) {
+      stopRealtimeSubscription();
+      return;
+    }
+    if (realtimeChannel && realtimeClient === client && realtimeUserId === userId) return;
+    stopRealtimeSubscription();
+    try {
+      const channel = client.channel(`cavalry-workbooks-${userId}`);
+      if (!(channel && typeof channel.on === 'function')) return;
+      const session = captureCloudSession();
+      const handleChange = (payload) => queueRealtimeWorkbookRefresh(session, payload);
+      let subscribedChannel = bindRealtimeChange(
+        channel,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'workbooks',
+          filter: `owner_id=eq.${userId}`
+        },
+        handleChange
+      );
+      subscribedChannel = bindRealtimeChange(
+        subscribedChannel,
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'workbooks',
+          filter: `owner_id=eq.${userId}`
+        },
+        handleChange
+      );
+      subscribedChannel = bindRealtimeChange(
+        subscribedChannel,
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'workbooks'
+        },
+        handleChange
+      );
+      realtimeClient = client;
+      realtimeUserId = userId;
+      realtimeChannel = subscribedChannel;
+      if (typeof realtimeChannel.subscribe === 'function') {
+        realtimeChannel.subscribe((status) => {
+          if (
+            status === 'SUBSCRIBED' &&
+            realtimeChannel === subscribedChannel &&
+            realtimeClient === client &&
+            realtimeUserId === userId &&
+            isCurrentCloudSession(session)
+          ) {
+            // Realtime does not replay events missed while disconnected. A
+            // successful initial subscription or reconnect therefore performs
+            // a metadata reconciliation before relying on live events again.
+            queueRealtimeReconciliation(session);
+          }
+        });
+      }
+    } catch (_error) {
+      stopRealtimeSubscription();
+    }
+  }
+
+  let auth;
+  auth = createCloudAuthController({
     app: dependencies.app,
     safeStorage: dependencies.safeStorage,
     shell: dependencies.shell,
@@ -92,10 +329,7 @@ function createCloudController(dependencies = {}) {
     createStorage: dependencies.createStorage,
     onStateChange(nextAuthState) {
       updateCloudSession(nextAuthState);
-      if (nextAuthState.status !== 'signed_in') {
-        workbooks = [];
-        profileName = '';
-      }
+      syncRealtimeSubscription();
       broadcastState();
     }
   });
@@ -112,27 +346,41 @@ function createCloudController(dependencies = {}) {
     getPersistenceService: dependencies.getPersistenceService
   });
 
-  async function refreshWorkbooks() {
+  async function refreshWorkbooks(expectedSession) {
+    if (!isCurrentCloudSession(expectedSession)) return cloudSessionChangedFailure();
     const result = await workbookController.listWorkbooks();
+    if (!isCurrentCloudSession(expectedSession)) return cloudSessionChangedFailure();
     if (result.ok) workbooks = result.workbooks;
     return result;
   }
 
-  async function refreshProfile() {
+  async function refreshProfile(expectedSession) {
+    if (!isCurrentCloudSession(expectedSession)) return cloudSessionChangedFailure();
     const result = await profileController.getProfile();
+    if (!isCurrentCloudSession(expectedSession)) return cloudSessionChangedFailure();
     if (result.ok) profileName = result.profile.name;
     return result;
   }
 
   async function initialize() {
     await auth.initialize();
-    if (auth.isSignedIn()) await Promise.all([refreshProfile(), refreshWorkbooks()]);
+    const session = captureCloudSession();
+    if (auth.isSignedIn()) {
+      await Promise.all([refreshProfile(session), refreshWorkbooks(session)]);
+    }
+    if (!isCurrentCloudSession(session)) return getState();
+    syncRealtimeSubscription();
     return broadcastState();
   }
 
   async function restoreExistingSession() {
     await auth.restoreExistingSession();
-    if (auth.isSignedIn()) await Promise.all([refreshProfile(), refreshWorkbooks()]);
+    const session = captureCloudSession();
+    if (auth.isSignedIn()) {
+      await Promise.all([refreshProfile(session), refreshWorkbooks(session)]);
+    }
+    if (!isCurrentCloudSession(session)) return getState();
+    syncRealtimeSubscription();
     return broadcastState();
   }
 
@@ -153,7 +401,11 @@ function createCloudController(dependencies = {}) {
 
   async function handleAuthCallback(callback) {
     const result = await auth.handleAuthCallback(callback);
-    if (result.ok && !result.pending) await Promise.all([refreshProfile(), refreshWorkbooks()]);
+    const session = captureCloudSession();
+    if (result.ok && !result.pending) {
+      await Promise.all([refreshProfile(session), refreshWorkbooks(session)]);
+    }
+    if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
     return { ...result, state: broadcastState() };
   }
 
@@ -165,12 +417,16 @@ function createCloudController(dependencies = {}) {
   }
 
   async function listWorkbooks() {
-    const [result] = await Promise.all([refreshWorkbooks(), refreshProfile()]);
+    const session = captureCloudSession();
+    const [result] = await Promise.all([refreshWorkbooks(session), refreshProfile(session)]);
+    if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
     return { ...result, state: broadcastState() };
   }
 
   async function updateProfile(payload) {
+    const session = captureCloudSession();
     const result = await profileController.updateProfile(payload || {});
+    if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
     if (result.ok) profileName = result.profile.name;
     return { ...result, state: broadcastState() };
   }
@@ -186,14 +442,17 @@ function createCloudController(dependencies = {}) {
       };
     }
     workbookMutationInProgress = true;
+    const session = captureCloudSession();
 
     const mutation = (async () => {
       try {
         const result = await workbookController[method](safePayload);
+        if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
         const revisionConflict =
           result.conflict === true || result.code === 'workbook_revision_conflict';
         if (result.ok || revisionConflict) {
-          const refreshed = await refreshWorkbooks();
+          const refreshed = await refreshWorkbooks(session);
+          if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
           if (result.ok && !refreshed.ok && method === 'uploadWorkbook' && result.metadata) {
             workbooks = [
               result.metadata,
@@ -213,7 +472,9 @@ function createCloudController(dependencies = {}) {
   }
 
   async function downloadWorkbook(payload) {
+    const session = captureCloudSession();
     const result = await workbookController.downloadWorkbook(payload || {});
+    if (!isCurrentCloudSession(session)) return cloudSessionChangedResponse();
     return { ...result, state: getState() };
   }
 
@@ -261,6 +522,7 @@ function createCloudController(dependencies = {}) {
   }
 
   function dispose() {
+    stopRealtimeSubscription();
     auth.dispose();
   }
 

@@ -218,7 +218,7 @@
   cursor: default;
 }
 
-.cavalry-assistant-header-menu-item .material-symbols-rounded {
+.cavalry-assistant-header-menu-item .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -259,7 +259,7 @@
   white-space: nowrap;
 }
 
-.cavalry-assistant-provider .material-symbols-rounded {
+.cavalry-assistant-provider .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -283,7 +283,7 @@
   font-size: 12px;
 }
 
-.cavalry-assistant-context-bar .material-symbols-rounded {
+.cavalry-assistant-context-bar .cavalry-glyph {
   color: var(--accent);
   font-size: 16px;
 }
@@ -374,7 +374,7 @@
   background: var(--accent-soft);
 }
 
-.cavalry-assistant-history-icon .material-symbols-rounded {
+.cavalry-assistant-history-icon .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -400,7 +400,7 @@
   font-size: 9px;
 }
 
-.cavalry-assistant-history-row > .material-symbols-rounded {
+.cavalry-assistant-history-row > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 17px;
 }
@@ -415,7 +415,7 @@
   text-align: center;
 }
 
-.cavalry-assistant-history-empty > .material-symbols-rounded {
+.cavalry-assistant-history-empty > .cavalry-glyph {
   margin-bottom: 10px;
   color: var(--accent);
   font-size: 30px;
@@ -500,7 +500,7 @@
   background: var(--surface-accent);
 }
 
-.cavalry-assistant-suggestions .material-symbols-rounded {
+.cavalry-assistant-suggestions .cavalry-glyph {
   color: var(--accent);
   font-size: 17px;
 }
@@ -527,7 +527,7 @@
   background: var(--panel-muted);
 }
 
-.cavalry-assistant-message-avatar .material-symbols-rounded {
+.cavalry-assistant-message-avatar .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -908,16 +908,16 @@
   background: var(--surface-hover);
 }
 
-.cavalry-assistant-references-toggle .material-symbols-rounded {
+.cavalry-assistant-references-toggle .cavalry-glyph {
   color: var(--text-dim);
   font-size: 13px;
 }
 
-.cavalry-assistant-references-toggle .material-symbols-rounded:last-child {
+.cavalry-assistant-references-toggle .cavalry-glyph:last-child {
   transition: transform 140ms ease;
 }
 
-.cavalry-assistant-references-toggle[aria-expanded='true'] .material-symbols-rounded:last-child {
+.cavalry-assistant-references-toggle[aria-expanded='true'] .cavalry-glyph:last-child {
   transform: rotate(180deg);
 }
 
@@ -969,7 +969,7 @@
   background: color-mix(in srgb, var(--reference-kind-color) 12%, var(--panel));
 }
 
-.cavalry-assistant-reference-chip > .material-symbols-rounded {
+.cavalry-assistant-reference-chip > .cavalry-glyph {
   color: var(--reference-kind-color);
   font-size: 15px;
 }
@@ -1003,7 +1003,7 @@
   background: var(--surface-hover);
 }
 
-.cavalry-assistant-reference-record > .material-symbols-rounded {
+.cavalry-assistant-reference-record > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 14px;
 }
@@ -1072,12 +1072,12 @@
   font-size: 11px;
 }
 
-.cavalry-assistant-activity .material-symbols-rounded {
+.cavalry-assistant-activity .cavalry-glyph {
   color: var(--good);
   font-size: 15px;
 }
 
-.cavalry-assistant-activity.failed .material-symbols-rounded {
+.cavalry-assistant-activity.failed .cavalry-glyph {
   color: var(--bad);
 }
 
@@ -1101,7 +1101,7 @@
   background: color-mix(in srgb, var(--warn) 9%, var(--panel));
 }
 
-.cavalry-assistant-confirmation > .material-symbols-rounded {
+.cavalry-assistant-confirmation > .cavalry-glyph {
   color: var(--warn);
   font-size: 20px;
 }
@@ -1267,7 +1267,7 @@
   background: rgba(0, 0, 0, 0.72);
 }
 
-.cavalry-assistant-composer-image .material-symbols-rounded {
+.cavalry-assistant-composer-image .cavalry-glyph {
   font-size: 13px;
 }
 
@@ -1281,8 +1281,8 @@
   font-size: 10px;
 }
 
-.cavalry-assistant-attachment-summary .material-symbols-rounded,
-.cavalry-assistant-voice-status .material-symbols-rounded {
+.cavalry-assistant-attachment-summary .cavalry-glyph,
+.cavalry-assistant-voice-status .cavalry-glyph {
   color: var(--accent);
   font-size: 14px;
 }
@@ -1291,7 +1291,7 @@
   color: var(--bad);
 }
 
-.cavalry-assistant-voice-status.recording .material-symbols-rounded {
+.cavalry-assistant-voice-status.recording .cavalry-glyph {
   color: var(--bad);
   animation: cavalry-assistant-voice-pulse 1s ease-in-out infinite;
 }
@@ -1369,7 +1369,7 @@
   font-size: 11px;
 }
 
-.cavalry-assistant-error .material-symbols-rounded {
+.cavalry-assistant-error .cavalry-glyph {
   font-size: 16px;
 }
 

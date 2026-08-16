@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import {
   FEEDBACK_IMAGE_ACCEPT,
   prepareFeedbackImageAttachment
@@ -21,12 +23,8 @@ export function createFeedbackClientRequestId(cryptoObject = globalThis.crypto) 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function cloudGateCopy(feedback) {

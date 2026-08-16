@@ -59,7 +59,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-.settings-feedback-message .material-symbols-rounded {
+.settings-feedback-message .cavalry-glyph {
   font-size: 19px;
 }
 
@@ -68,7 +68,7 @@
   background: color-mix(in srgb, var(--bad) 7%, var(--panel));
 }
 
-.settings-feedback-message.bad .material-symbols-rounded {
+.settings-feedback-message.bad .cavalry-glyph {
   color: var(--bad);
 }
 
@@ -77,7 +77,7 @@
   background: color-mix(in srgb, var(--good) 6%, var(--panel));
 }
 
-.settings-feedback-message.good .material-symbols-rounded {
+.settings-feedback-message.good .cavalry-glyph {
   color: var(--good);
 }
 
@@ -158,7 +158,7 @@
   background: var(--accent-soft);
 }
 
-.settings-section-nav-icon .material-symbols-rounded {
+.settings-section-nav-icon .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -234,7 +234,7 @@
   background: var(--surface-subtle);
 }
 
-.settings-card-icon .material-symbols-rounded {
+.settings-card-icon .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -276,7 +276,7 @@
   white-space: nowrap;
 }
 
-.settings-status-pill .material-symbols-rounded {
+.settings-status-pill .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -478,7 +478,7 @@
   border-radius: 16px;
 }
 
-.settings-cloud-welcome-icon .material-symbols-rounded {
+.settings-cloud-welcome-icon .cavalry-glyph {
   font-size: 28px;
 }
 
@@ -932,7 +932,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--surface-subtle);
 }
 
-.settings-cloud-workbook-icon .material-symbols-rounded {
+.settings-cloud-workbook-icon .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -998,8 +998,8 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--surface-subtle);
 }
 
-.settings-counterparty-avatar .material-symbols-rounded,
-.settings-row-icon .material-symbols-rounded {
+.settings-counterparty-avatar .cavalry-glyph,
+.settings-row-icon .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1033,7 +1033,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   font-size: 10px;
 }
 
-.settings-row-action .material-symbols-rounded {
+.settings-row-action .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -1128,7 +1128,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   color: var(--accent);
 }
 
-.appearance-theme-selection .material-symbols-rounded {
+.appearance-theme-selection .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1183,7 +1183,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--surface-subtle);
 }
 
-.settings-card .advisor-copilot-status .material-symbols-rounded {
+.settings-card .advisor-copilot-status .cavalry-glyph {
   color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1218,7 +1218,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   color: var(--text-soft);
 }
 
-.advisor-api-key-remove .material-symbols-rounded {
+.advisor-api-key-remove .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1282,7 +1282,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   border-top: 0;
 }
 
-.settings-status-item .material-symbols-rounded {
+.settings-status-item .cavalry-glyph {
   color: var(--info);
   font-size: 17px;
 }
@@ -1353,7 +1353,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   border-color: var(--accent);
 }
 
-.settings-file-action .material-symbols-rounded {
+.settings-file-action .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -1369,7 +1369,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   font-size: 10px;
 }
 
-.settings-inline-message .material-symbols-rounded {
+.settings-inline-message .cavalry-glyph {
   color: var(--info);
   font-size: 17px;
 }
@@ -1415,7 +1415,7 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--bad-soft);
 }
 
-.settings-health-icon .material-symbols-rounded {
+.settings-health-icon .cavalry-glyph {
   font-size: 18px;
 }
 

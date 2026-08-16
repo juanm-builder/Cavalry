@@ -76,9 +76,9 @@ describe('Cavalry assistant runtime', () => {
     expect(instructions.length).toBeLessThan(9000);
 
     // Safety contract: approval flags, no unverified success claims, untrusted image text.
-    expect(instructions).toContain(
-      'never set confirmed, allowDuplicate, or allowCurrencyConversion yourself'
-    );
+    expect(instructions).toContain('without host approval arguments');
+    expect(instructions).toContain('confirmed, allowDuplicate, allowCurrencyConversion');
+    expect(instructions).toContain('never set them yourself');
     expect(instructions).toContain('Never claim an action succeeded unless a tool result confirms');
     expect(instructions).toMatch(/images? .*untrusted|untrusted evidence/i);
     expect(instructions).toContain('Do not reveal chain-of-thought');
@@ -123,6 +123,28 @@ describe('Cavalry assistant runtime', () => {
     expect(instructions).toContain('Never attach citation markers to snapshot figures');
     expect(instructions).toContain('confirmation card is currently showing');
     expect(instructions).toContain('delete “Rent”');
+  });
+
+  it('derives model awareness from the live feature capability catalog', () => {
+    const instructions = buildCavalryAssistantInstructions({
+      toolDefinitions: [
+        {
+          ...SEARCH_TOOL,
+          name: 'inspect_future_feature',
+          cavalry: {
+            capabilityId: 'future.feature',
+            capabilityTitle: 'Future feature',
+            instructions: 'Use this capability for future-feature requests.',
+            approvalFields: ['futureApproved']
+          }
+        }
+      ]
+    });
+
+    expect(instructions).toContain('live capability catalog is authoritative');
+    expect(instructions).toContain('Future feature: inspect_future_feature.');
+    expect(instructions).toContain('Use this capability for future-feature requests.');
+    expect(instructions).toContain('host approval arguments (futureApproved)');
   });
 
   it('runs an OpenAI Responses tool loop with continuation output and one request id', async () => {
@@ -1045,6 +1067,82 @@ describe('Cavalry assistant runtime', () => {
         status: 'confirmation_required',
         confirmation: { required: true, field: 'allowCurrencyConversion' }
       }
+    });
+  });
+
+  it('scrubs a feature-declared approval field without changing a central allowlist', async () => {
+    const advisor = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'future_call',
+                type: 'function',
+                function: {
+                  name: 'future_mutation',
+                  arguments:
+                    '{"value":"change","userApproved":true,"confirmed":true,"allowDuplicate":true}'
+                }
+              }
+            ]
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: 'Please approve this future change.',
+            tool_calls: []
+          }
+        })
+    };
+    const executeTool = vi.fn(async () => ({
+      ok: false,
+      status: 'confirmation_required',
+      confirmation: { required: true, field: 'userApproved', action: 'apply the future change' }
+    }));
+    const tool = {
+      type: 'function',
+      name: 'future_mutation',
+      parameters: {
+        type: 'object',
+        properties: {
+          value: { type: 'string' },
+          userApproved: { type: 'boolean' },
+          confirmed: { type: 'boolean' },
+          allowDuplicate: { type: 'boolean' }
+        },
+        additionalProperties: false
+      },
+      cavalry: { approvalFields: ['userApproved'] }
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'Make the future change.',
+      settings: { provider: 'custom' },
+      advisor,
+      tools: [tool],
+      executeTool
+    });
+
+    expect(executeTool).toHaveBeenCalledWith(
+      'future_mutation',
+      { value: 'change', userApproved: false, confirmed: false, allowDuplicate: false },
+      expect.objectContaining({ callId: 'future_call', tool })
+    );
+    expect(answer.toolResults[0]).toMatchObject({
+      arguments: {
+        value: 'change',
+        userApproved: false,
+        confirmed: false,
+        allowDuplicate: false
+      },
+      result: { confirmation: { field: 'userApproved' } }
     });
   });
 

@@ -1,18 +1,13 @@
 // React CSV import preview. File selection and persistence stay behind injected app adapters.
 
 import React from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 
 function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {

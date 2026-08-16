@@ -252,6 +252,7 @@ describe('category controller', () => {
     const model = buildCategoriesFeatureModel(makeWorkbook());
 
     expect(model.categoryRows.find((row) => row.id === 'food')).toMatchObject({
+      color: '#c47a2c',
       hasReferences: true,
       spent: 125
     });
@@ -260,5 +261,85 @@ describe('category controller', () => {
       canDelete: false
     });
     expect(() => JSON.stringify(model)).not.toThrow();
+  });
+
+  it('treats merchant refunds as spending reversals', () => {
+    const workbook = makeWorkbook();
+    workbook.transactions.push({
+      id: 'txn-food-refund',
+      date: '2026-06-02',
+      template: 'merchant_refund',
+      categoryId: 'food',
+      amount: 200,
+      baseAmount: 200,
+      lines: [
+        { accountId: 'cash', direction: 'debit', amount: 200, baseAmount: 200 },
+        { accountId: 'food-expense', direction: 'credit', amount: 200, baseAmount: 200 }
+      ]
+    });
+
+    const food = buildCategoriesFeatureModel(workbook).categoryRows.find(
+      (row) => row.id === 'food'
+    );
+    expect(food).toMatchObject({
+      spent: -75,
+      amountTone: 'good',
+      activityLabel: 'Refunded',
+      percent: 100
+    });
+  });
+
+  it('presents savings and debt activity as favorable progress', () => {
+    const workbook = makeWorkbook();
+    workbook.categories.push(
+      {
+        id: 'emergency-fund',
+        name: 'Emergency Fund',
+        type: 'savings',
+        currency: 'PHP',
+        isActive: true
+      },
+      {
+        id: 'card-paydown',
+        name: 'Card Paydown',
+        type: 'debt',
+        currency: 'PHP',
+        isActive: true
+      }
+    );
+    workbook.transactions.push(
+      {
+        id: 'txn-save',
+        date: '2026-06-02',
+        template: 'expense_paid',
+        eventKind: 'savings_contribution',
+        categoryId: 'emergency-fund',
+        amount: 300,
+        baseAmount: 300,
+        lines: []
+      },
+      {
+        id: 'txn-paydown',
+        date: '2026-06-03',
+        template: 'debt_payment',
+        eventKind: 'debt_principal_payment',
+        categoryId: 'card-paydown',
+        amount: 200,
+        baseAmount: 200,
+        lines: []
+      }
+    );
+
+    const rows = buildCategoriesFeatureModel(workbook).categoryRows;
+    expect(rows.find((row) => row.id === 'emergency-fund')).toMatchObject({
+      spent: 300,
+      amountTone: 'good',
+      activityLabel: 'Saved'
+    });
+    expect(rows.find((row) => row.id === 'card-paydown')).toMatchObject({
+      spent: 200,
+      amountTone: 'good',
+      activityLabel: 'Paid down'
+    });
   });
 });

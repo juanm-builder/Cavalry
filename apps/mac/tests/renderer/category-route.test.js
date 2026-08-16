@@ -63,7 +63,7 @@ describe('CategoryRoute', () => {
     expect(html).toContain('Group categories by');
     expect(html).toContain('Grid view');
     expect(html).not.toContain('June 2026');
-    expect(html).toContain('95.1% of total');
+    expect(html).toContain('95.1% of activity');
     expect(html).toContain('Food');
     expect(html).toContain('Old Food');
     expect(html).toContain('checked=""');
@@ -77,6 +77,42 @@ describe('CategoryRoute', () => {
     expect(html).toContain('aria-label="Delete category"');
     expect(html).not.toContain('data-action=');
     expect(html).toContain('category-card is-archived');
+  });
+
+  it('renders savings and debt progress as positive signed amounts', () => {
+    const model = makeCategoryModel();
+    model.categoryRows.push(
+      {
+        id: 'emergency-fund',
+        name: 'Emergency Fund',
+        typeTone: 'info',
+        typeLabel: 'Savings',
+        amountTone: 'good',
+        activityLabel: 'Saved',
+        transactionCount: 1,
+        spent: 300,
+        percent: 12,
+        isArchived: false
+      },
+      {
+        id: 'card-paydown',
+        name: 'Card Paydown',
+        typeTone: 'warn',
+        typeLabel: 'Debt',
+        amountTone: 'good',
+        activityLabel: 'Paid down',
+        transactionCount: 1,
+        spent: 200,
+        percent: 8,
+        isArchived: false
+      }
+    );
+
+    const html = renderCategoryRoute(model);
+    expect(html).toContain('class="category-card-amount good">+₱300.00</b>');
+    expect(html).toContain('Saved · 12% of activity');
+    expect(html).toContain('class="category-card-amount good">+₱200.00</b>');
+    expect(html).toContain('Paid down · 8% of activity');
   });
 
   it('renders empty states without fabricating rows', () => {

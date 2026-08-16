@@ -14,6 +14,12 @@ import {
 import { buildCsvImportPreviewModel } from '../import-export/import-export-controller.js';
 import { formatUiDateTime } from '../../shared/date-format.js';
 import { CREATE_TYPE_OPTIONS } from './transaction-model-options.js';
+import {
+  buildPeriodLabel,
+  buildTransactionRowModel,
+  formatDirectionalTransactionMoney,
+  formatTransactionMoney
+} from './transaction-row-presentation.js';
 
 const TEMPLATE_OPTIONS = Object.freeze([
   { value: 'expense_paid', label: 'Expense paid' },
@@ -199,20 +205,6 @@ function contextualAmountLabel(template, definition) {
   return 'Transaction amount';
 }
 
-export function formatTransactionMoney(value, currency = 'PHP') {
-  const code = asString(currency || 'PHP').toUpperCase() || 'PHP';
-  try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
-  } catch (_error) {
-    return `${(Number(value) || 0).toFixed(2)} ${code}`;
-  }
-}
-
 function formatTransactionDate(value) {
   const stamp = Date.parse(`${asString(value)}T00:00:00Z`);
   if (!Number.isFinite(stamp)) return asString(value) || '—';
@@ -223,6 +215,8 @@ function formatTransactionDate(value) {
     timeZone: 'UTC'
   }).format(new Date(stamp));
 }
+
+export { formatTransactionMoney };
 
 function isBalanceAccount(account) {
   return !!(account && (account.group === 'asset' || account.group === 'liability'));
@@ -756,75 +750,6 @@ function buildCreateComposerModel(workbook, modal) {
   };
 }
 
-function transactionTone(row) {
-  if (row.type === 'income') return 'good';
-  if (row.type === 'expense') return 'bad';
-  return 'info';
-}
-
-function buildTransactionRowModel(row, options = {}) {
-  const transaction = asObject(row.transaction);
-  const tone = transactionTone(row);
-  const isAiOrigin =
-    transaction.source === 'advisor' || /^advisor:/.test(asString(transaction.reference));
-  const currency = transaction.originalCurrency || transaction.currency || row.currency || 'PHP';
-  const balanceAfter = options.runningBalances?.get(row.id);
-  const cells = [
-    { field: 'date', kind: 'text', value: row.date, className: 'transaction-cell' },
-    {
-      field: 'description',
-      kind: 'entity',
-      value: row.description || 'Untitled transaction',
-      subtitle: row.templateLabel || titleCase(row.template),
-      isAiOrigin,
-      className: 'transaction-cell'
-    },
-    {
-      field: 'categoryId',
-      kind: 'category',
-      value: row.categoryLabel || 'Uncategorized',
-      tone,
-      className: 'transaction-cell'
-    },
-    {
-      field: 'primaryAccountId',
-      kind: 'text',
-      value: row.accountLabel || 'Workbook',
-      className: 'transaction-cell'
-    },
-    {
-      field: 'amount',
-      kind: 'amount',
-      value: formatTransactionMoney(row.amount, currency),
-      tone,
-      className: `amount ${tone} transaction-cell`
-    }
-  ];
-  if (options.showRunningBalance && balanceAfter) {
-    cells.push({
-      field: 'balanceAfter',
-      kind: 'amount',
-      value: formatTransactionMoney(balanceAfter.balance, options.baseCurrency || currency),
-      tone: balanceAfter.balance >= 0 ? 'good' : 'bad',
-      className: `amount ${balanceAfter.balance >= 0 ? 'good' : 'bad'} balance-after-cell`
-    });
-  }
-  return {
-    id: row.id,
-    isAiOrigin,
-    canEdit: row.inlineEditable !== false,
-    cells
-  };
-}
-
-function buildPeriodLabel(viewState) {
-  const range = asObject(viewState && viewState.dateRange);
-  if (range.start && range.end) return `${range.start} – ${range.end}`;
-  if (range.start) return `From ${range.start}`;
-  if (range.end) return `Through ${range.end}`;
-  return 'All dates';
-}
-
 function buildAccountRunningBalances(workbook, accountId) {
   const account = asArray(workbook && workbook.accounts).find(
     (item) => asString(item && item.id) === asString(accountId)
@@ -870,13 +795,14 @@ function formatSignedTransactionMoney(value, currency) {
 
 function transactionBalanceTone(account, value) {
   const amount = Number(value) || 0;
+  if (!amount) return 'neutral';
   if (account?.group === 'liability') return amount > 0 ? 'bad' : 'good';
-  return amount >= 0 ? 'good' : 'bad';
+  return amount > 0 ? 'good' : 'bad';
 }
 
 function transactionChangeTone(account, value) {
   const amount = Number(value) || 0;
-  if (!amount) return 'info';
+  if (!amount) return 'neutral';
   if (account?.group === 'liability') return amount > 0 ? 'bad' : 'good';
   return amount > 0 ? 'good' : 'bad';
 }
@@ -1079,6 +1005,9 @@ export function buildTransactionFeatureModel(workbook, state = {}) {
     asArray(options.accounts).find((option) => option.value === table.state.accountId)?.label || '';
   const startLabel = route.pageStartLabel;
   const endLabel = route.pageEndLabel;
+  const incomeTone = totals.income > 0 ? 'good' : 'neutral';
+  const expenseTone = totals.expense > 0 ? 'bad' : totals.expense < 0 ? 'good' : 'neutral';
+  const netTone = totals.net > 0 ? 'good' : totals.net < 0 ? 'bad' : 'neutral';
   return {
     filterType: table.state.type,
     filterOpen: !!state.filterOpen,
@@ -1103,35 +1032,48 @@ export function buildTransactionFeatureModel(workbook, state = {}) {
       {
         id: 'income',
         label: 'Total Income',
-        value: formatTransactionMoney(totals.income, workbook && workbook.currency),
+        value: formatDirectionalTransactionMoney(
+          totals.income,
+          workbook && workbook.currency,
+          incomeTone
+        ),
         subtitle: periodLabel,
         icon: 'trending_up',
-        tone: 'good',
+        tone: incomeTone,
         action: 'open-dashboard-flow',
         payload: { flowType: 'income' }
       },
       {
         id: 'expense',
         label: 'Total Expenses',
-        value: formatTransactionMoney(totals.expense, workbook && workbook.currency),
+        value: formatDirectionalTransactionMoney(
+          totals.expense,
+          workbook && workbook.currency,
+          expenseTone
+        ),
         subtitle: periodLabel,
         icon: 'trending_down',
-        tone: 'bad',
+        tone: expenseTone,
         action: 'open-dashboard-flow',
         payload: { flowType: 'expense' }
       },
       {
         id: 'net',
         label: 'Net',
-        value: formatTransactionMoney(totals.net, workbook && workbook.currency),
+        value: formatDirectionalTransactionMoney(
+          totals.net,
+          workbook && workbook.currency,
+          netTone
+        ),
         subtitle: periodLabel,
         icon: 'calculate',
-        tone: totals.net >= 0 ? 'good' : 'bad'
+        tone: netTone
       }
     ],
     rows: asArray(table.rows).map((row) =>
       buildTransactionRowModel(row, {
         baseCurrency: workbook && workbook.currency,
+        account: runningBalanceModel?.account,
         runningBalances: runningBalanceModel?.balances,
         showRunningBalance: !!runningBalanceModel
       })

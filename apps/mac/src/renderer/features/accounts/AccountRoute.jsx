@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import {
   ACCOUNT_ACTIONS,
@@ -17,14 +19,7 @@ import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
 function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {
@@ -201,7 +196,7 @@ function AccountHistoryVisual({
         ? width / 2
         : padX + (width - padX * 2) * (index / (chartRows.length - 1)),
     y: padY + ((maxBalance - (Number(row.runningBalance) || 0)) / spread) * (height - padY * 2),
-    tone: (Number(row.runningBalance) || 0) >= 0 ? 'good' : 'bad'
+    tone: row.balanceTone || 'neutral'
   }));
   const linePath = points
     .map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
@@ -284,7 +279,7 @@ function AccountHistoryVisual({
                     Change
                   </text>
                   <text
-                    className={`account-history-svg-value ${Number(point.row.change) >= 0 ? 'good' : 'bad'}`}
+                    className={`account-history-svg-value ${point.row.changeTone || 'neutral'}`}
                     textAnchor="end"
                     x={tooltipWidth - 10}
                     y="47"
@@ -591,7 +586,7 @@ function AccountRouteController({
           icon="payments"
           label="Assets"
           subtitle={resolvedModel.asOfLabel}
-          tone="good"
+          tone={resolvedModel.summary?.assetTone || 'neutral'}
           value={resolvedModel.summary?.assetCopy}
         />
         <StatCard
@@ -599,7 +594,7 @@ function AccountRouteController({
           icon="credit_card"
           label="Credit Card Outstanding"
           subtitle={resolvedModel.asOfLabel}
-          tone="bad"
+          tone={resolvedModel.summary?.creditTone || 'neutral'}
           value={resolvedModel.summary?.creditCopy}
         />
         <StatCard

@@ -34,7 +34,14 @@ describe('appearance preferences', () => {
         navigation: 'hidden'
       })
     ).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
-    expect(APPEARANCE_THEMES.map(({ id }) => id)).toEqual(['dark', 'white', 'parchment', 'custom']);
+    expect(APPEARANCE_THEMES.map(({ id }) => id)).toEqual([
+      'cerulean',
+      'dark',
+      'white',
+      'parchment',
+      'custom'
+    ]);
+    expect(getAppearanceTheme('cerulean')).toMatchObject({ id: 'cerulean', scheme: 'light' });
     expect(getAppearanceTheme('white')).toMatchObject({ id: 'white', scheme: 'light' });
   });
 

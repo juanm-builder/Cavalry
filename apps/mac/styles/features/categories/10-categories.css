@@ -89,7 +89,7 @@
   font-weight: 750;
 }
 
-.categories-group-select .material-symbols-rounded {
+.categories-group-select .cavalry-glyph {
   color: var(--text-dim);
   pointer-events: none;
 }
@@ -147,7 +147,7 @@
   background: var(--panel);
 }
 
-.categories-search .material-symbols-rounded {
+.categories-search .cavalry-glyph {
   color: var(--text-dim);
   font-size: 19px;
 }
@@ -264,8 +264,8 @@
   background: color-mix(in srgb, var(--category-color) 10%, var(--panel));
 }
 
-.category-card-icon .material-symbols-rounded,
-.category-preview-icon .material-symbols-rounded {
+.category-card-icon .cavalry-glyph,
+.category-preview-icon .cavalry-glyph {
   font-size: 30px;
   font-variation-settings:
     'FILL' 0,
@@ -478,7 +478,7 @@
   background: color-mix(in srgb, var(--category-green) 8%, var(--panel));
 }
 
-.category-create-card-icon .material-symbols-rounded {
+.category-create-card-icon .cavalry-glyph {
   font-size: 27px;
 }
 
@@ -595,7 +595,7 @@
   height: 46px;
 }
 
-.categories-view-list .category-card-icon .material-symbols-rounded {
+.categories-view-list .category-card-icon .cavalry-glyph {
   font-size: 25px;
 }
 
@@ -919,7 +919,7 @@
   background: color-mix(in srgb, var(--category-color) 9%, var(--panel));
 }
 
-.category-live-preview-icon .material-symbols-rounded {
+.category-live-preview-icon .cavalry-glyph {
   font-size: 30px;
 }
 
@@ -966,16 +966,14 @@
   font-size: 9px;
 }
 
-.category-create-details .category-modal-header::before {
+.category-create-details .category-modal-back-mark {
   display: grid;
   width: 32px;
   height: 32px;
   place-items: center;
   border-radius: 9px;
   color: var(--text-dim);
-  font-family: 'Material Symbols Rounded';
   font-size: 20px;
-  content: 'arrow_back';
 }
 
 .category-create-details .category-modal-header > div {
@@ -1049,7 +1047,7 @@
   font-weight: 500;
 }
 
-.category-rules-heading .material-symbols-rounded {
+.category-rules-heading .cavalry-glyph {
   color: var(--text-dim);
   font-size: 16px;
 }
@@ -1170,7 +1168,7 @@
   cursor: pointer;
 }
 
-.category-advanced-options[open] summary .material-symbols-rounded {
+.category-advanced-options[open] summary .cavalry-glyph {
   transform: rotate(180deg);
 }
 
@@ -1229,7 +1227,7 @@
   box-shadow: 0 10px 0 rgba(34, 58, 47, 0.08);
 }
 
-.category-celebration > span .material-symbols-rounded {
+.category-celebration > span .cavalry-glyph {
   font-size: 54px;
 }
 

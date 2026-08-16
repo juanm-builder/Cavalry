@@ -29,7 +29,7 @@
   background: transparent;
 }
 
-.notes-clear-button .material-symbols-rounded {
+.notes-clear-button .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }
@@ -48,7 +48,7 @@
   font-size: 12px;
 }
 
-.notes-route-notice > .material-symbols-rounded {
+.notes-route-notice > .cavalry-glyph {
   color: var(--accent);
   font-size: 18px;
 }
@@ -59,7 +59,7 @@
   color: var(--bad);
 }
 
-.notes-route-notice.is-error > .material-symbols-rounded {
+.notes-route-notice.is-error > .cavalry-glyph {
   color: var(--bad);
 }
 
@@ -132,7 +132,7 @@
   white-space: nowrap;
 }
 
-.notes-ai-badge .material-symbols-rounded {
+.notes-ai-badge .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -224,7 +224,7 @@
   background: var(--accent-hover);
 }
 
-.notes-panel-footer .material-symbols-rounded {
+.notes-panel-footer .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -302,7 +302,7 @@
   color: var(--notes-category-color);
 }
 
-.notes-category-icon .material-symbols-rounded {
+.notes-category-icon .cavalry-glyph {
   font-size: 22px;
 }
 
@@ -365,7 +365,7 @@
   white-space: nowrap;
 }
 
-.notes-review-badge .material-symbols-rounded {
+.notes-review-badge .cavalry-glyph {
   font-size: 13px;
 }
 
@@ -375,7 +375,7 @@
   color: var(--good);
 }
 
-.notes-ready-mark .material-symbols-rounded {
+.notes-ready-mark .cavalry-glyph {
   font-size: 19px;
   font-variation-settings:
     'FILL' 1,
@@ -398,7 +398,7 @@
   color: var(--text);
 }
 
-.notes-edit-button .material-symbols-rounded {
+.notes-edit-button .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -475,7 +475,7 @@
   color: var(--bad);
 }
 
-.notes-remove-button .material-symbols-rounded {
+.notes-remove-button .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -503,7 +503,7 @@
   color: var(--accent);
 }
 
-.notes-review-empty > span .material-symbols-rounded {
+.notes-review-empty > span .cavalry-glyph {
   font-size: 24px;
 }
 
@@ -587,7 +587,7 @@ html[data-density='compact'] .notes-review-summary {
     white-space: nowrap;
   }
 
-  .notes-clear-button .material-symbols-rounded {
+  .notes-clear-button .cavalry-glyph {
     flex: 0 0 auto;
     color: var(--text-dim);
   }

@@ -95,15 +95,15 @@
   color: var(--text);
 }
 
-.nav-list-expanded .nav-item.active .nav-copy .material-symbols-rounded {
-  color: var(--good);
+.nav-list-expanded .nav-item.active .nav-copy .cavalry-glyph {
+  color: var(--accent);
 }
 
 .nav-copy {
   gap: 12px;
 }
 
-.nav-copy .material-symbols-rounded {
+.nav-copy .cavalry-glyph {
   width: 22px;
   min-width: 22px;
   color: var(--text-dim);
@@ -334,7 +334,7 @@
   background: rgba(143, 201, 168, 0.11);
 }
 
-.advisor-thread-row .material-symbols-rounded {
+.advisor-thread-row .cavalry-glyph {
   color: var(--text-soft);
 }
 
@@ -404,7 +404,7 @@
   background: rgba(0, 0, 0, 0.12);
 }
 
-.advisor-zoom-controls span:not(.material-symbols-rounded) {
+.advisor-zoom-controls span:not(.cavalry-glyph) {
   color: var(--text-dim);
 }
 
@@ -495,7 +495,7 @@
   line-height: 1.2;
 }
 
-.advisor-message-trust .material-symbols-rounded {
+.advisor-message-trust .cavalry-glyph {
   font-size: 14px;
   line-height: 1;
 }
@@ -535,7 +535,7 @@
   background: rgba(143, 201, 168, 0.075);
 }
 
-.advisor-command-action .material-symbols-rounded {
+.advisor-command-action .cavalry-glyph {
   font-size: 18px;
   color: var(--good);
 }
@@ -564,7 +564,7 @@
   margin-bottom: 14px;
 }
 
-.advisor-transaction-draft-head > .material-symbols-rounded {
+.advisor-transaction-draft-head > .cavalry-glyph {
   width: 24px;
   height: 24px;
   border: 1px solid rgba(217, 182, 111, 0.5);
@@ -575,8 +575,8 @@
   font-size: 17px;
 }
 
-.advisor-transaction-draft-card.draft .advisor-transaction-draft-head > .material-symbols-rounded,
-.advisor-transaction-draft-card.posted .advisor-transaction-draft-head > .material-symbols-rounded {
+.advisor-transaction-draft-card.draft .advisor-transaction-draft-head > .cavalry-glyph,
+.advisor-transaction-draft-card.posted .advisor-transaction-draft-head > .cavalry-glyph {
   border-color: rgba(143, 201, 168, 0.5);
   color: var(--good);
 }
@@ -672,7 +672,7 @@
   color: var(--text-soft);
 }
 
-.advisor-chat-card-v2 .advisor-prompt-grid button .material-symbols-rounded {
+.advisor-chat-card-v2 .advisor-prompt-grid button .cavalry-glyph {
   color: var(--good);
 }
 
@@ -753,7 +753,7 @@
   color: var(--text);
 }
 
-.advisor-source-rail-head .material-symbols-rounded {
+.advisor-source-rail-head .cavalry-glyph {
   color: var(--text-soft);
 }
 
@@ -810,7 +810,7 @@
   bottom: 10px;
 }
 
-.advisor-source-empty-art .material-symbols-rounded {
+.advisor-source-empty-art .cavalry-glyph {
   position: relative;
   z-index: 1;
   color: var(--good);
@@ -925,7 +925,7 @@
   white-space: nowrap;
 }
 
-.advisor-message-thought .material-symbols-rounded {
+.advisor-message-thought .cavalry-glyph {
   font-size: 14px;
   line-height: 1;
 }
@@ -954,7 +954,7 @@
   color: var(--good);
 }
 
-.advisor-message-tool .material-symbols-rounded {
+.advisor-message-tool .cavalry-glyph {
   font-size: 15px;
 }
 
@@ -991,7 +991,7 @@
   color: #ffb0a8;
 }
 
-.advisor-pending-cancel .material-symbols-rounded {
+.advisor-pending-cancel .cavalry-glyph {
   font-size: 15px;
   line-height: 1;
 }
@@ -1069,7 +1069,7 @@
   height: 64px;
 }
 
-.advisor-attachment-file-icon .material-symbols-rounded {
+.advisor-attachment-file-icon .cavalry-glyph {
   font-size: 22px;
 }
 

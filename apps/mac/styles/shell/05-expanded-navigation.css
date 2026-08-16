@@ -72,7 +72,7 @@
   min-width: 0;
 }
 
-.nav-copy .material-symbols-rounded {
+.nav-copy .cavalry-glyph {
   width: 28px;
   min-width: 28px;
   color: var(--text-dim);
@@ -144,7 +144,7 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
-.sidebar-profile > .material-symbols-rounded {
+.sidebar-profile > .cavalry-glyph {
   width: 38px;
   height: 38px;
   border-radius: 999px;

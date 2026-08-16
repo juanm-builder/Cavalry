@@ -52,6 +52,7 @@ describe('application frame', () => {
     expect(onNavigate).toHaveBeenCalledWith('ledger');
     await user.click(within(navigation).getByRole('button', { name: 'Settings' }));
     expect(onNavigate).toHaveBeenLastCalledWith('settings');
+    expect(screen.getAllByRole('button', { name: 'Settings' })).toHaveLength(1);
 
     expect(document.querySelector('[data-action], [data-route]')).toBeNull();
   });
@@ -114,9 +115,16 @@ describe('application frame', () => {
     expect(screen.queryByText('Capture money movement fast')).toBeNull();
     expect(screen.getByRole('button', { name: 'Add Transaction' })).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Add Account' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Add Transaction' }).className).toContain(
+      'quick-add-primary'
+    );
+    expect(screen.getByRole('button', { name: 'Add Account' }).className).toContain(
+      'quick-add-primary'
+    );
+    expect(document.querySelector('.rail-user-card')).toBeNull();
   });
 
-  it('keeps update actions beside Settings and reports background download progress', async () => {
+  it('keeps update actions in the user footer and reports background download progress', async () => {
     const user = userEvent.setup();
     const downloadUpdate = vi.fn();
     const restartAndInstall = vi.fn();
@@ -137,9 +145,8 @@ describe('application frame', () => {
     const downloadButton = within(footer).getByRole('button', {
       name: 'Download Cavalry update 1.0.19'
     });
-    const settingsButton = within(footer).getByRole('button', { name: 'Settings' });
     expect(footer.classList.contains('has-update')).toBe(true);
-    expect(downloadButton.nextElementSibling).toBe(settingsButton);
+    expect(within(footer).queryByRole('button', { name: 'Settings' })).toBeNull();
     await user.click(downloadButton);
     expect(downloadUpdate).toHaveBeenCalledOnce();
 

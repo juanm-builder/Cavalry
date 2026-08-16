@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import {
   buildCategoriesFeatureModel,
@@ -7,22 +9,12 @@ import {
   executeCategoryCommand
 } from './category-controller.js';
 import { CATEGORY_COLORS, CATEGORY_ICONS } from './category-options.js';
+import { asArray, normalizeCurrency } from './category-route-utils.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
 function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function withClick(binding, callback) {
@@ -34,14 +26,6 @@ function withClick(binding, callback) {
       callback?.(event);
     }
   };
-}
-
-function normalizeCurrency(value) {
-  return (
-    String(value || 'PHP')
-      .trim()
-      .toUpperCase() || 'PHP'
-  );
 }
 
 function formatMoney(value, currency = 'PHP') {
@@ -95,9 +79,10 @@ function CategoryCard({ row, currency, actions, onOpenModal, isTarget = false, t
   const canDelete = !row.isSystem && row.canDelete !== false;
   const canLink = !row.isSystem && row.canLink !== false;
   const style = {
-    '--category-color': row.color || '#67b978',
+    '--category-color': row.color || '#499eee',
     '--category-progress': `${row.percent}%`
   };
+  const activitySign = row.amountTone === 'good' ? '+' : row.amountTone === 'bad' ? '−' : '';
 
   return (
     <article
@@ -163,11 +148,16 @@ function CategoryCard({ row, currency, actions, onOpenModal, isTarget = false, t
             <span className="category-system-badge">System</span>
           )}
         </div>
-        <b className="category-card-amount">{formatMoney(row.spent, currency)}</b>
-        <div className="category-progress" aria-label={`${formatPercent(row.percent)} of total`}>
+        <b className={`category-card-amount ${row.amountTone || 'neutral'}`}>
+          {activitySign}
+          {formatMoney(Math.abs(Number(row.spent) || 0), currency)}
+        </b>
+        <div className="category-progress" aria-label={`${formatPercent(row.percent)} of activity`}>
           <span />
         </div>
-        <span className="category-card-share">{formatPercent(row.percent)} of total</span>
+        <span className="category-card-share">
+          {row.activityLabel || 'Activity'} · {formatPercent(row.percent)} of activity
+        </span>
         <div className="category-card-foot">
           <span>
             {row.transactionCount || 0} transaction{row.transactionCount === 1 ? '' : 's'}
@@ -290,6 +280,9 @@ function ModalFrame({ title, eyebrow = '', error, children, onCancel, className 
         role="dialog"
       >
         <header className="category-modal-header">
+          {className.includes('category-create-details') ? (
+            <Icon className="category-modal-back-mark" name="arrow_back" />
+          ) : null}
           <div>
             {eyebrow ? <span>{eyebrow}</span> : null}
             <h2 id="category-modal-title">{title}</h2>

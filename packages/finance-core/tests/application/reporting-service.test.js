@@ -12,6 +12,7 @@ import {
   makeIncomeAndExpenseWorkbook,
   makeLine,
   makeMultiCurrencyWorkbook,
+  makeRefundWorkbook,
   makeTransaction
 } from '../fixtures/core-workbook-fixtures.js';
 import { makeTransactionTableWorkbook } from '../fixtures/transaction-table-scenarios.js';
@@ -49,6 +50,27 @@ describe('reporting service', () => {
     expect(report.income).toBe(0);
     expect(report.expense).toBe(1280);
     expect(report.net).toBe(-1280);
+  });
+
+  it('nets merchant refunds across cash flow, categories, and descriptions', () => {
+    const workbook = makeRefundWorkbook();
+    const cashFlow = buildMonthlyCashFlowReport(workbook);
+    const spending = buildCategorySpendingReport(workbook);
+    const descriptions = buildTopDescriptionReport(workbook);
+    const food = spending.rows.find((row) => row.categoryId === 'food');
+    const refund = descriptions.rows.find((row) => row.description === 'Store refund candidate');
+
+    expect(cashFlow.summary).toMatchObject({
+      expense: 1979,
+      outflow: 1979,
+      net: -1979,
+      transactionCount: 5
+    });
+    expect(spending).toMatchObject({ total: 1979, transactionCount: 5 });
+    expect(food).toMatchObject({ total: 200, transactionCount: 2 });
+    expect(refund).toMatchObject({ kind: 'expense', total: -50, transactionCount: 1 });
+    expect(cashFlow.limitations).not.toContain('refunds_are_not_separately_modeled');
+    expect(spending.limitations).not.toContain('refunds_are_not_separately_modeled');
   });
 
   it('reports category spending with archived and missing references visible', () => {

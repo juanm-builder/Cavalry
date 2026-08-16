@@ -1,141 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { BudgetEditorModal } from './BudgetEditorModal.jsx';
+import { BudgetTransactionsModal } from './BudgetTransactionsModal.jsx';
+import {
+  BudgetCategoryAvatar,
+  formatMoney,
+  getBudgetCategoryIcon,
+  getCategoryColor,
+  getPlanTypeCopy,
+  getRowStatusDetail,
+  getUsageTone
+} from './budget-view-helpers.jsx';
 
 function renderInBody(content) {
   return typeof document === 'undefined' ? content : createPortal(content, document.body);
 }
 
 function Icon({ name, className = '' }) {
-  return (
-    <span className={`material-symbols-rounded${className ? ` ${className}` : ''}`}>{name}</span>
-  );
-}
-
-function formatMoney(value, currency = 'PHP') {
-  try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'PHP',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
-  } catch (_error) {
-    return `${(Number(value) || 0).toFixed(2)} ${currency || 'PHP'}`;
-  }
-}
-
-function getBudgetCategoryIcon(category) {
-  if (category && category.icon) return String(category.icon);
-  const name = String(category && category.name ? category.name : '').toLowerCase();
-  if (/(grocery|groceries|food|dining|restaurant|meal)/.test(name)) return 'restaurant';
-  if (/(subscription|netflix|spotify|software|cloud|app)/.test(name)) return 'credit_card';
-  if (/(transport|bus|train|fuel|gas|parking|ride|commute)/.test(name)) return 'directions_bus';
-  if (/(utility|electric|water|internet|phone|bill)/.test(name)) return 'bolt';
-  if (/(personal|care|health|medical|beauty|wellness)/.test(name)) return 'favorite';
-  if (/(rent|home|housing|mortgage)/.test(name)) return 'home';
-  if (/(random|other|misc)/.test(name)) return 'deployed_code';
-  return 'shopping_bag';
-}
-
-function getUsageTone(row) {
-  const statusTone = String((row && row.statusTone) || '').toLowerCase();
-  if (statusTone === 'bad') return 'bad';
-  if (statusTone === 'warning' || statusTone === 'warn') return 'warn';
-  if (statusTone === 'good' || statusTone === 'info') return 'good';
-  const percent = Number(row && row.percent) || 0;
-  if (Number(row && row.remaining) < 0 && row?.categoryType === 'expense') return 'bad';
-  if (percent >= 75) return 'warn';
-  return 'good';
-}
-
-const PLAN_TYPE_COPY = Object.freeze({
-  expense: {
-    title: 'Spending',
-    description: 'Planned and spent by category.',
-    planLabel: 'Plan',
-    actualLabel: 'Spent',
-    detailTitle: 'Spending plan vs actual',
-    actualVerb: 'spent',
-    icon: 'shopping_bag'
-  },
-  savings: {
-    title: 'Savings',
-    description: 'Savings targets and progress.',
-    planLabel: 'Target',
-    actualLabel: 'Saved',
-    detailTitle: 'Savings target vs actual',
-    actualVerb: 'saved',
-    icon: 'savings'
-  },
-  debt: {
-    title: 'Debt Paydown',
-    description: 'Principal targets and progress.',
-    planLabel: 'Target',
-    actualLabel: 'Paid down',
-    detailTitle: 'Debt target vs actual',
-    actualVerb: 'paid down',
-    icon: 'credit_score'
-  },
-  income: {
-    title: 'Income',
-    description: 'Expected and received income.',
-    planLabel: 'Expected',
-    actualLabel: 'Received',
-    detailTitle: 'Expected income vs actual',
-    actualVerb: 'received',
-    icon: 'payments'
-  }
-});
-
-function getPlanTypeCopy(type) {
-  return PLAN_TYPE_COPY[String(type || 'expense')] || PLAN_TYPE_COPY.expense;
-}
-
-function getRowStatusDetail(row, currency) {
-  const type = String(row && row.categoryType ? row.categoryType : 'expense');
-  const planned = Number(row && row.planned) || 0;
-  const actual = Number(row && row.actual) || 0;
-  const remaining = Number(row && row.remaining) || 0;
-  if (row && row.isMissing) return 'Excluded until the missing category is repaired';
-  if (row && row.isArchived) return 'Excluded from trusted plan totals';
-  if (!(planned > 0)) {
-    return actual !== 0 ? 'No plan set for this activity' : 'No plan set';
-  }
-  if (type === 'income') {
-    return remaining >= 0
-      ? `${formatMoney(remaining, currency)} ahead`
-      : `${formatMoney(Math.abs(remaining), currency)} still expected`;
-  }
-  if (type === 'savings' || type === 'debt') {
-    return remaining > 0
-      ? `${formatMoney(remaining, currency)} to target`
-      : remaining < 0
-        ? `${formatMoney(Math.abs(remaining), currency)} ahead`
-        : 'Target reached';
-  }
-  return remaining < 0
-    ? `${formatMoney(Math.abs(remaining), currency)} over`
-    : `${formatMoney(remaining, currency)} left`;
-}
-
-function getCategoryColor(category, index = 0) {
-  if (category && category.color) return String(category.color);
-  const name = String(category && category.name ? category.name : '').toLowerCase();
-  if (/(food|dining|grocery|meal)/.test(name)) return '#ff6b6b';
-  if (/(subscription|software|cloud|app)/.test(name)) return '#a66cff';
-  if (/(transport|fuel|ride|commute)/.test(name)) return '#43a5ff';
-  if (/(utility|electric|water|internet|phone)/.test(name)) return '#36c99b';
-  if (/(rent|home|housing|mortgage)/.test(name)) return '#ffad45';
-  if (/(health|medical|care|wellness)/.test(name)) return '#f05ba7';
-  const palette = ['#6f7cff', '#b56cff', '#27b9c8', '#ff7d55', '#7ac943', '#ec5f83'];
-  const key = String((category && (category.id || category.name)) || index);
-  const hash = [...key].reduce(
-    (value, character) => (value * 31 + character.charCodeAt(0)) >>> 0,
-    0
-  );
-  return palette[hash % palette.length];
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function getMonthShift(range, offset) {
@@ -175,8 +60,9 @@ function BudgetStatus({ summary, currency, range, currentDate }) {
   );
   const dailyBudget = Number(summary.dailyBudget ?? total / Math.max(1, daysInPeriod));
   const spentPercent = total > 0 ? Math.max(0, Math.round((spent / total) * 100)) : 0;
+  const statusTone = over ? 'bad' : left > 0 ? 'good' : 'neutral';
   return (
-    <article className={`budget-status-card budget-status-compact ${over ? 'bad' : 'good'}`}>
+    <article className={`budget-status-card budget-status-compact ${statusTone}`}>
       <div className="budget-status-summary">
         <span className="budget-status-eyebrow">
           <Icon name={over ? 'warning' : 'check_circle'} /> {over ? 'Over plan' : 'On track'}
@@ -187,7 +73,7 @@ function BudgetStatus({ summary, currency, range, currentDate }) {
       <div className="budget-status-progress-block">
         <div className="budget-status-progress-copy">
           <span>Spent this month</span>
-          <strong>{spentPercent}%</strong>
+          <strong className={spent > 0 ? 'bad-text' : 'neutral-text'}>{spentPercent}%</strong>
         </div>
         <div className="budget-status-line">
           <i style={{ width: `${Math.min(100, spentPercent)}%` }} />
@@ -207,7 +93,9 @@ function BudgetStatus({ summary, currency, range, currentDate }) {
         </div>
         <div>
           <span>Safe today</span>
-          <strong className={safeToday <= 0 ? 'bad-text' : 'good-text'}>
+          <strong
+            className={safeToday < 0 ? 'bad-text' : safeToday > 0 ? 'good-text' : 'neutral-text'}
+          >
             {formatMoney(Math.max(0, safeToday), currency)}
           </strong>
         </div>
@@ -217,15 +105,6 @@ function BudgetStatus({ summary, currency, range, currentDate }) {
         </div>
       </div>
     </article>
-  );
-}
-
-function BudgetCategoryAvatar({ category }) {
-  const color = String(category && category.color ? category.color : '#ef7f7f');
-  return (
-    <span className="budget-category-avatar" style={{ '--category-color': color }}>
-      <Icon name={getBudgetCategoryIcon(category)} />
-    </span>
   );
 }
 
@@ -255,7 +134,9 @@ function PlanOverview({ summary, currency, onSelect }) {
           ? `${formatMoney(actualIncome, currency)} received`
           : `${formatMoney(actualIncome, currency)} received · add a plan anytime`,
       icon: 'payments',
-      tone: 'good'
+      tone: 'info',
+      valueTone: 'neutral',
+      detailTone: actualIncome > 0 ? 'good' : 'neutral'
     },
     {
       key: 'spending',
@@ -263,7 +144,9 @@ function PlanOverview({ summary, currency, onSelect }) {
       value: Number(summary.plannedSpending) || 0,
       detail: `${formatMoney(summary.spent, currency)} spent`,
       icon: 'account_balance_wallet',
-      tone: Number(summary.leftToSpend) < 0 ? 'bad' : 'info'
+      tone: Number(summary.leftToSpend) < 0 ? 'bad' : 'info',
+      valueTone: 'neutral',
+      detailTone: Number(summary.spent) > 0 ? 'bad' : 'neutral'
     },
     {
       key: 'commitments',
@@ -274,7 +157,9 @@ function PlanOverview({ summary, currency, onSelect }) {
           ? `${formatMoney(summary.uncoveredCommitments, currency)} outside your limits`
           : 'Covered by your spending limits',
       icon: 'event_repeat',
-      tone: Number(summary.uncoveredCommitments) > 0 ? 'warn' : 'good'
+      tone: Number(summary.uncoveredCommitments) > 0 ? 'warn' : 'info',
+      valueTone: 'neutral',
+      detailTone: Number(summary.uncoveredCommitments) > 0 ? 'bad' : 'neutral'
     },
     {
       key: 'unallocated',
@@ -282,7 +167,14 @@ function PlanOverview({ summary, currency, onSelect }) {
       value: Number(summary.unallocated) || 0,
       detail: 'Income not assigned to this month’s plan',
       icon: 'calculate',
-      tone: Number(summary.unallocated) < 0 ? 'bad' : 'good'
+      tone:
+        Number(summary.unallocated) < 0 ? 'bad' : Number(summary.unallocated) > 0 ? 'good' : 'info',
+      valueTone:
+        Number(summary.unallocated) < 0
+          ? 'bad'
+          : Number(summary.unallocated) > 0
+            ? 'good'
+            : 'neutral'
     }
   ];
   if (Number(summary.plannedSavings) > 0) {
@@ -292,7 +184,9 @@ function PlanOverview({ summary, currency, onSelect }) {
       value: Number(summary.plannedSavings) || 0,
       detail: `${formatMoney(summary.saved, currency)} saved`,
       icon: 'savings',
-      tone: 'good'
+      tone: 'info',
+      valueTone: 'neutral',
+      detailTone: Number(summary.saved) > 0 ? 'good' : 'neutral'
     });
   }
   if (Number(summary.plannedDebt) > 0) {
@@ -302,7 +196,9 @@ function PlanOverview({ summary, currency, onSelect }) {
       value: Number(summary.plannedDebt) || 0,
       detail: `${formatMoney(summary.debtPaid, currency)} paid down`,
       icon: 'credit_score',
-      tone: 'info'
+      tone: 'info',
+      valueTone: 'neutral',
+      detailTone: Number(summary.debtPaid) > 0 ? 'good' : 'neutral'
     });
   }
   return (
@@ -319,8 +215,10 @@ function PlanOverview({ summary, currency, onSelect }) {
           </span>
           <span className="monthly-plan-overview-copy">
             <small>{card.label}</small>
-            <strong>{formatMoney(card.value, currency)}</strong>
-            <em>{card.detail}</em>
+            <strong className={card.valueTone || 'neutral'}>
+              {formatMoney(card.value, currency)}
+            </strong>
+            <em className={card.detailTone || 'neutral'}>{card.detail}</em>
           </span>
           <Icon className="monthly-plan-overview-chevron" name="chevron_right" />
         </button>
@@ -593,12 +491,19 @@ function BudgetCategoryTable({ rows, currency, onSelect, type = 'expense', showC
             {rows.map((row, index) => {
               const tone = getUsageTone(row);
               const statusLabel = row.statusLabel || 'Review';
+              const statusDetail = getRowStatusDetail(row, currency);
+              const rowDescriptionId = `budget-${type}-${String(
+                row.category?.id || row.categoryId || `missing-${index}`
+              )
+                .replace(/[^a-zA-Z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '')}-${index}-description`;
               const commitmentCopy =
                 type === 'expense' && Number(row.committed) > 0
                   ? `${formatMoney(row.committed, currency)} committed`
                   : '';
               return (
                 <button
+                  aria-describedby={rowDescriptionId}
                   className="budget-category-list-row"
                   key={row.category?.id || row.categoryId}
                   onClick={() => onSelect(row)}
@@ -622,13 +527,29 @@ function BudgetCategoryTable({ rows, currency, onSelect, type = 'expense', showC
                       ) : null}
                     </span>
                   </span>
-                  <span className="amount">{formatMoney(row.planned, currency)}</span>
-                  <span className="amount">{formatMoney(row.actual, currency)}</span>
+                  <span className="amount neutral">{formatMoney(row.planned, currency)}</span>
+                  <span
+                    className={`amount ${
+                      Number(row.actual) <= 0
+                        ? 'neutral'
+                        : type === 'income'
+                          ? 'good'
+                          : type === 'expense'
+                            ? 'bad'
+                            : 'good'
+                    }`}
+                  >
+                    {formatMoney(row.actual, currency)}
+                  </span>
                   <span className={`budget-category-status ${tone}`}>
                     <b>{statusLabel}</b>
-                    <small>{getRowStatusDetail(row, currency)}</small>
+                    <small>{statusDetail}</small>
                   </span>
                   <Icon name="chevron_right" />
+                  <span className="sr-only" id={rowDescriptionId}>
+                    {copy.planLabel}: {formatMoney(row.planned, currency)}. {copy.actualLabel}:{' '}
+                    {formatMoney(row.actual, currency)}. Status: {statusLabel}. {statusDetail}
+                  </span>
                 </button>
               );
             })}
@@ -673,324 +594,6 @@ function PlanSectionTabs({ activeType, sections, onChange }) {
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function BudgetTransactionsModal({ row, currency, onClose, periodLabel, sheetId }) {
-  const actions = useActionBindings();
-  const [activeTab, setActiveTab] = useState('overview');
-  const drawerRef = useRef(null);
-  useEffect(() => {
-    if (!row) return undefined;
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose, row]);
-  useEffect(() => {
-    if (!row || !drawerRef.current) return;
-    drawerRef.current.focus({ preventScroll: true });
-  }, [row]);
-  if (!row) return null;
-  const category = row.category || {};
-  const copy = getPlanTypeCopy(row.categoryType);
-  const tone = getUsageTone(row);
-  const needsAttention =
-    row.isMissing || row.isArchived || Number(row.receipt?.unresolvedCount) > 0;
-  const hasBudget = Number(row.planned) > 0;
-  const canDelete = !!sheetId && row.canDelete !== false && hasBudget;
-  const canEdit = !!category.id && !row.isMissing && !row.isArchived && !row.isUncategorized;
-  const status = row.statusLabel || 'Review';
-  const editBinding = actions.action('open-simple-budget', {
-    sheetId,
-    categoryId: category.id,
-    planned: Number(row.planned) || '',
-    ...(row.note ? { note: row.note } : {})
-  });
-  const deleteBinding = actions.action('archive-budget', {
-    sheetId,
-    categoryId: category.id
-  });
-  return renderInBody(
-    <div className="budget-drawer-layer budget-detail-modal-layer">
-      <button
-        aria-label={`Dismiss ${category.name} budget details`}
-        className="budget-drawer-scrim"
-        onClick={onClose}
-        type="button"
-      />
-      <aside
-        aria-label={`${category.name} budget details`}
-        aria-modal="true"
-        className="budget-dialog budget-category-detail-dialog"
-        ref={drawerRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        <div className="budget-drawer-header">
-          <div className="budget-detail-heading">
-            <BudgetCategoryAvatar category={category} />
-            <div>
-              <h2>{category.name}</h2>
-              <span
-                className={
-                  tone === 'bad' ? 'status-bad' : tone === 'warn' ? 'warn-text' : 'good-text'
-                }
-              >
-                {status}
-              </span>
-            </div>
-          </div>
-          <button
-            aria-label={`Close ${category.name} budget details`}
-            className="btn btn-icon"
-            onClick={onClose}
-            type="button"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
-        <div aria-label="Budget detail views" className="budget-detail-tabs" role="tablist">
-          <button
-            aria-controls="budget-overview-panel"
-            aria-selected={activeTab === 'overview'}
-            className={activeTab === 'overview' ? 'active' : ''}
-            id="budget-overview-tab"
-            onClick={() => setActiveTab('overview')}
-            role="tab"
-            type="button"
-          >
-            Overview
-          </button>
-          <button
-            aria-controls="budget-transactions-panel"
-            aria-selected={activeTab === 'transactions'}
-            className={activeTab === 'transactions' ? 'active' : ''}
-            id="budget-transactions-tab"
-            onClick={() => setActiveTab('transactions')}
-            role="tab"
-            type="button"
-          >
-            Transactions
-          </button>
-        </div>
-        <div className="budget-detail-scroll">
-          {activeTab === 'overview' ? (
-            <div
-              aria-labelledby="budget-overview-tab"
-              className="budget-detail-overview-grid"
-              id="budget-overview-panel"
-              role="tabpanel"
-            >
-              <section className="budget-detail-card">
-                <div className="budget-detail-card-heading">
-                  <h3>{copy.detailTitle}</h3>
-                  <span className="tag">Monthly</span>
-                </div>
-                <div className="budget-vs-actual">
-                  <div>
-                    <strong className={tone === 'bad' ? 'status-bad' : ''}>
-                      {formatMoney(row.actual, currency)}
-                    </strong>
-                    <span>{copy.actualLabel}</span>
-                  </div>
-                  <div>
-                    <strong>{formatMoney(row.planned, currency)}</strong>
-                    <span>{copy.planLabel}</span>
-                  </div>
-                </div>
-                <div className="budget-detail-progress">
-                  <span style={{ width: `${Math.min(100, Number(row.progressPercent) || 0)}%` }} />
-                </div>
-                <div className="budget-detail-progress-meta">
-                  <span>{row.percent}% of plan</span>
-                  <strong className={tone === 'bad' ? 'status-bad' : 'good-text'}>
-                    {getRowStatusDetail(row, currency)}
-                  </strong>
-                </div>
-              </section>
-              {Number(row.committed) > 0 ? (
-                <section className="budget-detail-card">
-                  <div className="budget-detail-card-heading">
-                    <h3>Recurring commitments</h3>
-                    <span className="tag">Separate</span>
-                  </div>
-                  <p className="monthly-plan-formula-copy">
-                    These items inform the plan but do not automatically change this category’s
-                    limit.
-                  </p>
-                  <dl className="budget-detail-list">
-                    <div>
-                      <dt>Committed</dt>
-                      <dd>{formatMoney(row.committed, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt>Covered by plan</dt>
-                      <dd>
-                        {formatMoney(
-                          Math.min(Number(row.planned) || 0, Number(row.committed) || 0),
-                          currency
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Not covered</dt>
-                      <dd>
-                        {formatMoney(
-                          Math.max(0, (Number(row.committed) || 0) - (Number(row.planned) || 0)),
-                          currency
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                  {row.commitmentRows?.length ? (
-                    <div className="monthly-plan-commitment-list">
-                      {row.commitmentRows.map((commitment) => (
-                        <div key={commitment.id}>
-                          <span>
-                            <strong>{commitment.name}</strong>
-                            <small>{commitment.dueDate || commitment.frequency}</small>
-                          </span>
-                          <b>{formatMoney(commitment.amount, currency)}</b>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-              {needsAttention ? (
-                <section className="budget-detail-card monthly-plan-attention-card">
-                  <div className="budget-detail-card-heading">
-                    <h3>Needs review</h3>
-                    <Icon name="warning" />
-                  </div>
-                  <p>
-                    {row.isMissing
-                      ? 'The category referenced by this plan row no longer exists. Its plan amount is excluded from trusted totals.'
-                      : row.isArchived
-                        ? 'This category is archived. Its plan amount remains visible but is excluded from trusted totals.'
-                        : 'One or more transactions are missing the information required for a trusted base-currency total.'}
-                  </p>
-                </section>
-              ) : null}
-              <details className="budget-detail-card budget-detail-more">
-                <summary>More details</summary>
-                <dl className="budget-detail-list">
-                  <div>
-                    <dt>Difference</dt>
-                    <dd>{formatMoney(row.remaining, currency)}</dd>
-                  </div>
-                  <div>
-                    <dt>Plan period</dt>
-                    <dd>{periodLabel || 'Monthly'}</dd>
-                  </div>
-                  {row.createdAt ? (
-                    <div>
-                      <dt>Added</dt>
-                      <dd>{row.createdAt}</dd>
-                    </div>
-                  ) : null}
-                  {row.note ? (
-                    <div>
-                      <dt>Note</dt>
-                      <dd>{row.note}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </details>
-            </div>
-          ) : (
-            <div
-              aria-labelledby="budget-transactions-tab"
-              id="budget-transactions-panel"
-              role="tabpanel"
-            >
-              <div className="budget-transaction-tab-heading">
-                <h3>Transactions</h3>
-                <p>{row.transactions?.length || 0} associated transactions</p>
-              </div>
-              <div className="budget-transaction-list">
-                {row.transactions?.length ? (
-                  row.transactions.map((transaction) => (
-                    <button
-                      aria-label={`View ${transaction.description} transaction details`}
-                      className="budget-transaction-row"
-                      key={transaction.id}
-                      type="button"
-                      {...actions.action('open-budget-transaction', {
-                        transactionId: transaction.id
-                      })}
-                    >
-                      <span>
-                        <strong>{transaction.description}</strong>
-                        <small>
-                          {transaction.date}
-                          {transaction.eventKind
-                            ? ` • ${String(transaction.eventKind).replaceAll('_', ' ')}`
-                            : ''}
-                        </small>
-                      </span>
-                      <b>{formatMoney(transaction.amount, transaction.currency || currency)}</b>
-                      <Icon name="chevron_right" />
-                    </button>
-                  ))
-                ) : (
-                  <div className="empty-state compact-empty">
-                    <strong>No transactions in this period.</strong>
-                  </div>
-                )}
-                {row.receipt?.unresolved?.map((transaction) => (
-                  <div
-                    className="budget-transaction-row unresolved"
-                    key={`unresolved:${transaction.transactionId}`}
-                  >
-                    <span>
-                      <strong>{transaction.description}</strong>
-                      <small>{transaction.date} • excluded from total</small>
-                    </span>
-                    <b>{formatMoney(transaction.nativeAmount, transaction.nativeCurrency)}</b>
-                    <Icon name="warning" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-        {activeTab === 'overview' && (canEdit || canDelete) ? (
-          <div
-            className={`budget-detail-actions budget-detail-footer${canEdit && canDelete ? '' : ' single'}`}
-          >
-            {canEdit ? (
-              <button
-                aria-label="Edit Budget"
-                className="btn"
-                onClick={(event) => {
-                  editBinding.onClick?.(event);
-                  onClose();
-                }}
-                type="button"
-              >
-                {hasBudget ? 'Edit Plan' : 'Add to Plan'}
-              </button>
-            ) : null}
-            {canDelete ? (
-              <button
-                aria-label="Delete Budget"
-                className="btn btn-danger"
-                onClick={(event) => {
-                  deleteBinding.onClick?.(event);
-                  onClose();
-                }}
-                type="button"
-              >
-                <Icon name="delete" /> Remove from Plan
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </aside>
     </div>
   );
 }
@@ -1158,7 +761,6 @@ function BudgetRouteView({
       <section className="page-header monthly-plan-header">
         <div>
           <h1>Monthly Plan</h1>
-          <p className="budget-page-subtitle">Plan this month and see exactly where you stand.</p>
         </div>
         <div className="page-actions">
           <button
@@ -1185,7 +787,6 @@ function BudgetRouteView({
         <div className="monthly-plan-workspace-heading">
           <div>
             <h2>Your plan</h2>
-            <p>Tap any category to see the transactions behind it.</p>
           </div>
           <PlanSectionTabs
             activeType={activePlanType}

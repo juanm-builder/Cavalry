@@ -1,4 +1,6 @@
 import React from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
@@ -80,14 +82,7 @@ function asString(value) {
 }
 
 function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function templateLabel(option, contextKind) {

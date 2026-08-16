@@ -136,6 +136,10 @@ describe('BillsRoute', () => {
 
     expect(html).toContain('data-react-route="bills"');
     expect(html).toContain('Bills &amp; Subscriptions');
+    expect(html).not.toContain('Know what’s due');
+    expect(html).toContain('class="bill-search-field"');
+    expect(html).toContain('aria-label="Search bills"');
+    expect(html).toContain('class="bill-search-submit"');
     expect(html).toContain('bill-filter-panel');
     expect(html).toContain('bill-register-row warn');
     expect(html).toContain('Netflix');
@@ -151,8 +155,8 @@ describe('BillsRoute', () => {
     const html = renderBillsRoute();
 
     expect(html).toContain('Showing 11 to 20 of 30 items');
-    expect(html).toContain('material-symbols-rounded">chevron_left');
-    expect(html).toContain('material-symbols-rounded">chevron_right');
+    expect(html).toContain('data-cavalry-icon="chevron_left"');
+    expect(html).toContain('data-cavalry-icon="chevron_right"');
     expect(html).toContain('aria-label="Bills rows per page"');
   });
 

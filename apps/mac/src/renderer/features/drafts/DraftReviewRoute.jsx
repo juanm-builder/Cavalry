@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { formatUiDateTime } from '../../shared/date-format.js';
@@ -12,12 +14,8 @@ import {
   previewCheckpointRollback
 } from './draft-review-controller.js';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {
@@ -696,9 +694,6 @@ function DraftReviewController({
         </div>
         <div className="page-actions" />
       </section>
-      <p className="page-subtitle ai-drafts-subtitle">
-        AI-prepared suggestions stay reviewable here. Nothing changes until you apply a draft.
-      </p>
       <section className="ai-drafts-workbench">
         <DraftCommandBar model={resolvedModel.commandBar || {}} />
         <CheckpointPanel

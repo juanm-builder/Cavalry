@@ -1,6 +1,8 @@
 // Confirmation bookkeeping and post-approval narration for the Cavalry assistant panel.
 // Kept out of the panel component so the panel stays a view, not a rules engine.
 
+import { getCavalryAssistantToolMetadata } from './cavalry-assistant-tools.js';
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -61,7 +63,10 @@ export function confirmedActionEntity(toolResult) {
 }
 
 export function confirmedActionMessage(toolName, toolResult, argumentsValue = {}) {
-  const verb = CONFIRMED_ACTION_VERBS[asText(toolName)];
+  const normalizedToolName = asText(toolName);
+  const verb =
+    asText(getCavalryAssistantToolMetadata(normalizedToolName)?.actionVerb) ||
+    CONFIRMED_ACTION_VERBS[normalizedToolName];
   const entity = confirmedActionEntity(toolResult);
   const argumentsSource = asObject(argumentsValue);
   const label = asText(
@@ -79,7 +84,7 @@ export function confirmedActionMessage(toolName, toolResult, argumentsValue = {}
       argumentsSource.counterparty
   );
   if (verb && label) return `${verb} “${label}”.`;
-  if (asText(toolName) === 'save_workbook') return 'Saved.';
+  if (normalizedToolName === 'save_workbook') return 'Saved.';
   return 'Done—the change was saved.';
 }
 
@@ -91,7 +96,7 @@ export const CONFIRMATION_APPROVAL_FIELDS = Object.freeze([
 
 export function confirmationApprovalField(confirmation) {
   const field = asText(confirmation?.field);
-  return CONFIRMATION_APPROVAL_FIELDS.includes(field) ? field : 'confirmed';
+  return /^[a-z][a-zA-Z0-9]*$/.test(field) ? field : 'confirmed';
 }
 
 export function confirmationMessage(confirmation) {
@@ -109,12 +114,15 @@ export function pendingConfirmationFromResult(turnResult) {
     const confirmation = asObject(result.confirmation);
     if (confirmation.required !== true) continue;
     const argumentsWithoutApproval = { ...asObject(toolResult.arguments) };
-    CONFIRMATION_APPROVAL_FIELDS.forEach((field) => delete argumentsWithoutApproval[field]);
+    const approvalField = confirmationApprovalField(confirmation);
+    new Set([...CONFIRMATION_APPROVAL_FIELDS, approvalField]).forEach(
+      (field) => delete argumentsWithoutApproval[field]
+    );
     return {
       id: toolResult.callId || `${toolResult.toolName}-${index}`,
       toolName: asText(toolResult.toolName),
       arguments: argumentsWithoutApproval,
-      approvalField: confirmationApprovalField(confirmation),
+      approvalField,
       message: confirmationMessage(confirmation)
     };
   }

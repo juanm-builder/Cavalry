@@ -192,6 +192,87 @@ describe('account controller', () => {
     expect(() => JSON.stringify(model)).not.toThrow();
   });
 
+  it('uses liability-aware tri-state tones for balances, movements, and summaries', () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'card',
+      name: 'Credit Card',
+      group: 'liability',
+      subtype: 'credit_card',
+      currency: 'PHP',
+      openedDate: '2026-01-01',
+      isActive: true
+    });
+    workbook.transactions.push(
+      {
+        id: 'txn-card-charge',
+        date: '2026-06-02',
+        template: 'expense_charged',
+        description: 'Card charge',
+        categoryId: 'food',
+        amount: 100,
+        baseAmount: 100,
+        lines: [
+          { accountId: 'food-expense', direction: 'debit', amount: 100, baseAmount: 100 },
+          { accountId: 'card', direction: 'credit', amount: 100, baseAmount: 100 }
+        ]
+      },
+      {
+        id: 'txn-card-refund',
+        date: '2026-06-03',
+        template: 'merchant_refund',
+        description: 'Card refund',
+        categoryId: 'food',
+        amount: 150,
+        baseAmount: 150,
+        lines: [
+          { accountId: 'card', direction: 'debit', amount: 150, baseAmount: 150 },
+          { accountId: 'food-expense', direction: 'credit', amount: 150, baseAmount: 150 }
+        ]
+      }
+    );
+
+    const creditModel = buildAccountsFeatureModel(workbook, { selectedAccountId: 'card' });
+    expect(creditModel.accountRows.find((row) => row.id === 'card').balanceCell).toMatchObject({
+      value: -50,
+      tone: 'good'
+    });
+    expect(creditModel.selectedAccount).toMatchObject({
+      balanceCopy: '-₱50.00',
+      balanceTone: 'good'
+    });
+    expect(creditModel.summary).toMatchObject({ assetTone: 'neutral', creditTone: 'neutral' });
+    expect(creditModel.selectedAccount.historyRows).toEqual([
+      expect.objectContaining({
+        transactionId: 'txn-card-refund',
+        changeTone: 'good',
+        balanceTone: 'good'
+      }),
+      expect.objectContaining({
+        transactionId: 'txn-card-charge',
+        changeTone: 'bad',
+        balanceTone: 'bad'
+      })
+    ]);
+
+    const zeroWorkbook = structuredClone(workbook);
+    const zeroRefund = zeroWorkbook.transactions.find(
+      (transaction) => transaction.id === 'txn-card-refund'
+    );
+    zeroRefund.amount = 100;
+    zeroRefund.baseAmount = 100;
+    zeroRefund.lines.forEach((line) => {
+      line.amount = 100;
+      line.baseAmount = 100;
+    });
+    const zeroModel = buildAccountsFeatureModel(zeroWorkbook, { selectedAccountId: 'card' });
+
+    expect(zeroModel.accountRows.find((row) => row.id === 'card').balanceCell.tone).toBe('neutral');
+    expect(zeroModel.selectedAccount.balanceTone).toBe('neutral');
+    expect(zeroModel.selectedAccount.historyRows[0].balanceTone).toBe('neutral');
+    expect(zeroModel.summary.creditTone).toBe('neutral');
+  });
+
   it('keeps transfer details in the selected account perspective', () => {
     const workbook = makeWorkbook();
     workbook.transactions.push({

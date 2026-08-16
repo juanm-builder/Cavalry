@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { submitNotesBatchCommand } from './notes-controller.js';
 import { parseNotesWithAi } from './notes-ai-parser.js';
 import { isCreditCardAccount, paymentLabel, resolveNotesEntry } from './notes-parser.js';
@@ -12,12 +14,8 @@ function asString(value) {
   return String(value == null ? '' : value);
 }
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function categoryIcon(entry) {
@@ -234,6 +232,9 @@ function ReviewEntry({
   onEditSave,
   onRemove
 }) {
+  const amountTone = entry.template === 'income_received' ? 'good' : 'bad';
+  const amountDirection = amountTone === 'good' ? 'Income' : 'Expense';
+  const amountSign = amountTone === 'good' ? '+' : '−';
   return (
     <article
       className={`notes-review-entry${entry.issues.length ? ' needs-review' : ''}${isEditing ? ' is-editing' : ''}`}
@@ -251,7 +252,13 @@ function ReviewEntry({
           <strong>{entry.categoryName}</strong>
           <small>{entry.description}</small>
         </span>
-        <strong className="notes-entry-amount">{formatAmount(entry.amount, entry.currency)}</strong>
+        <strong
+          aria-label={`${amountDirection} ${formatAmount(entry.amount, entry.currency)}`}
+          className={`notes-entry-amount ${amountTone}`}
+        >
+          {amountSign}
+          {formatAmount(Math.abs(Number(entry.amount) || 0), entry.currency)}
+        </strong>
         <span className="notes-payment-pill">{entry.paymentLabel}</span>
         {entry.issues.length ? (
           <span className="notes-review-badge">
@@ -433,7 +440,6 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
       <header className="notes-page-header">
         <div>
           <h1>Notes</h1>
-          <p>Turn simple text into transactions</p>
         </div>
         <button
           className="btn notes-clear-button"
@@ -479,7 +485,6 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           <header>
             <div>
               <h2>Quick entry</h2>
-              <p>One transaction per line</p>
             </div>
             <span className="notes-ai-badge">
               <Icon name="auto_awesome" />
@@ -530,7 +535,6 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           <header>
             <div>
               <h2>Review transactions</h2>
-              <p>Check details before saving</p>
             </div>
             {entries.length ? (
               <span
@@ -570,7 +574,6 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                   <Icon name="receipt_long" />
                 </span>
                 <strong>Your review will appear here</strong>
-                <p>Enter one transaction per line, then process your notes.</p>
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@ import React from 'react';
 
 import { CavalryAssistantMark } from '../features/assistant/CavalryAssistantMark.jsx';
 import { SetupProgressButton } from '../features/onboarding/SetupChecklist.jsx';
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
 import { formatUiDateTime } from '../shared/date-format.js';
 
 const SAVE_PRESENTATIONS = Object.freeze({
@@ -65,9 +66,7 @@ export function WorkbookTopBar({
         title={navigationCompact ? 'Expand navigation' : 'Collapse navigation'}
         type="button"
       >
-        <span aria-hidden="true" className="material-symbols-rounded">
-          {navigationCompact ? 'dock_to_right' : 'dock_to_left'}
-        </span>
+        <CavalryIcon name={navigationCompact ? 'dock_to_right' : 'dock_to_left'} />
       </button>
       <div className="top-copy">
         <h2>{workbookName}</h2>
@@ -99,9 +98,7 @@ export function WorkbookTopBar({
           title="Search pages and actions"
           type="button"
         >
-          <span aria-hidden="true" className="material-symbols-rounded">
-            search
-          </span>
+          <CavalryIcon name="search" />
           <span>Search</span>
           <kbd>⌘ K</kbd>
         </button>

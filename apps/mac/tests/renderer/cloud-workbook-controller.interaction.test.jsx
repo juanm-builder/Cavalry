@@ -47,7 +47,263 @@ function createSyncStorage(revision = null, conflict = false) {
   return storage;
 }
 
+function createAutoSyncTimers() {
+  const timers = [];
+  return {
+    options: {
+      scheduleTimer(callback, delay) {
+        const timer = { callback, canceled: false, delay };
+        timers.push(timer);
+        return timer;
+      },
+      cancelTimer(timer) {
+        timer.canceled = true;
+      }
+    },
+    runLatest() {
+      const timer = [...timers].reverse().find((candidate) => !candidate.canceled);
+      timer.callback();
+      return timer;
+    }
+  };
+}
+
 describe('cloud workbook controller interactions', () => {
+  it('automatically uploads the latest workbook after its local file save succeeds', async () => {
+    const timers = createAutoSyncTimers();
+    const initialState = { ...signedInState(), workbooks: [] };
+    let uploadedRevision = 0;
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: initialState };
+        if (command === 'uploadWorkbook') {
+          uploadedRevision += 1;
+          const metadata = {
+            id: 'cloud-workbook',
+            name: 'Latest local plan',
+            revision: uploadedRevision
+          };
+          return {
+            ok: true,
+            metadata,
+            state: { ...signedInState(), workbooks: [metadata] }
+          };
+        }
+        return { ok: true, state: initialState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage();
+    const hook = renderHook(
+      ({ workbook, saveStatus, localSaveSequence }) =>
+        useCloudWorkbookController({
+          cloud,
+          workbook,
+          saveStatus,
+          localSaveSequence,
+          syncStorage,
+          autoSyncSchedulerOptions: timers.options
+        }),
+      {
+        initialProps: {
+          workbook: { id: 'cloud-workbook', name: 'Draft' },
+          saveStatus: 'dirty',
+          localSaveSequence: 0
+        }
+      }
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+
+    hook.rerender({
+      workbook: { id: 'cloud-workbook', name: 'Latest local plan' },
+      saveStatus: 'saved',
+      localSaveSequence: 1
+    });
+    await act(async () => {
+      expect(timers.runLatest().delay).toBe(800);
+      await vi.waitFor(() =>
+        expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+          workbook: { id: 'cloud-workbook', name: 'Latest local plan' },
+          expectedRevision: null
+        })
+      );
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+      known: true,
+      revision: 1,
+      conflict: false
+    });
+
+    hook.rerender({
+      workbook: { id: 'cloud-workbook', name: 'Second draft' },
+      saveStatus: 'dirty',
+      localSaveSequence: 1
+    });
+    hook.rerender({
+      workbook: { id: 'cloud-workbook', name: 'Second saved plan' },
+      saveStatus: 'saved',
+      localSaveSequence: 2
+    });
+    await act(async () => {
+      timers.runLatest();
+      await vi.waitFor(() =>
+        expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+          workbook: { id: 'cloud-workbook', name: 'Second saved plan' },
+          expectedRevision: 1
+        })
+      );
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook').revision).toBe(2);
+  });
+
+  it('ignores a realtime echo of the exact acknowledged revision', async () => {
+    let publishState = () => {};
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'downloadWorkbook') throw new Error('self events must not download');
+        return { ok: true, state: signedInState() };
+      }),
+      subscribe(callback) {
+        publishState = callback;
+        return () => {};
+      }
+    };
+    const syncStorage = createSyncStorage(2);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Cloud Plan' },
+        saveStatus: 'saved',
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    act(() => {
+      publishState({
+        ...signedInState(),
+        workbookChange: {
+          sequence: 1,
+          eventType: 'UPDATE',
+          workbookId: 'cloud-workbook',
+          revision: 2
+        }
+      });
+    });
+    await waitFor(() => expect(result.current.model.current.conflict).toBe(false));
+    expect(cloud.invoke).not.toHaveBeenCalledWith('downloadWorkbook', expect.anything());
+  });
+
+  it('downloads and locally saves a newer realtime revision when the workbook is clean', async () => {
+    let publishState = () => {};
+    const downloadedWorkbook = cloneFixture(makeMinimalWorkbook());
+    downloadedWorkbook.id = 'cloud-workbook';
+    downloadedWorkbook.name = 'Remote revision three';
+    const changedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 3 }],
+      workbookChange: {
+        sequence: 1,
+        eventType: 'UPDATE',
+        workbookId: 'cloud-workbook',
+        revision: 3
+      }
+    };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: downloadedWorkbook,
+            metadata: changedState.workbooks[0],
+            state: changedState
+          };
+        }
+        return { ok: true, state: changedState };
+      }),
+      subscribe(callback) {
+        publishState = callback;
+        return () => {};
+      }
+    };
+    const syncStorage = createSyncStorage(2);
+    const setWorkbook = vi.fn();
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Revision two' },
+        saveStatus: 'saved',
+        saveWorkbook,
+        syncStorage,
+        setWorkbook
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    act(() => publishState(changedState));
+    await waitFor(() => expect(saveWorkbook).toHaveBeenCalledWith(downloadedWorkbook));
+    expect(setWorkbook).toHaveBeenCalledWith(downloadedWorkbook, {
+      source: 'cloud-realtime',
+      markDirty: true
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+      known: true,
+      revision: 3,
+      conflict: false
+    });
+    expect(result.current.model.current.conflict).toBe(false);
+  });
+
+  it('latches a newer realtime revision instead of replacing unsaved local changes', async () => {
+    let publishState = () => {};
+    const changedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 3 }],
+      workbookChange: {
+        sequence: 1,
+        eventType: 'UPDATE',
+        workbookId: 'cloud-workbook',
+        revision: 3
+      }
+    };
+    const cloud = {
+      invoke: vi.fn(async (command) =>
+        command === 'getState'
+          ? { ok: true, state: signedInState() }
+          : { ok: true, state: changedState }
+      ),
+      subscribe(callback) {
+        publishState = callback;
+        return () => {};
+      }
+    };
+    const syncStorage = createSyncStorage(2);
+    const setWorkbook = vi.fn();
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'cloud-workbook', name: 'Unsaved local edits' },
+        saveStatus: 'dirty',
+        syncStorage,
+        setWorkbook
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    act(() => publishState(changedState));
+    await waitFor(() => expect(result.current.model.current.conflict).toBe(true));
+    expect(setWorkbook).not.toHaveBeenCalled();
+    expect(cloud.invoke).not.toHaveBeenCalledWith('downloadWorkbook', expect.anything());
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+      known: true,
+      revision: 2,
+      conflict: true
+    });
+  });
+
   it('caches the validated Cloud workbook before disconnecting and replacing native state', async () => {
     const workbook = cloneFixture(makeMinimalWorkbook());
     workbook.id = 'cloud-workbook';

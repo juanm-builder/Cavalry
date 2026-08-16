@@ -1,6 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { CavalryIcon } from './CavalryIcon.jsx';
+
 const GROUP_ORDER = [
   'Payments & Debt',
   'Everyday Expenses',
@@ -158,9 +160,7 @@ function InlineCategoryCreateDialog({
         role="dialog"
       >
         <header>
-          <span aria-hidden="true" className="material-symbols-rounded">
-            new_label
-          </span>
+          <CavalryIcon name="new_label" />
           <div>
             <h2>{createLabel}</h2>
             <p>
@@ -388,17 +388,10 @@ export function CategorizedSelect({
               role="option"
               type="button"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                select_all
-              </span>
+              <CavalryIcon name="select_all" />
               <span>{clearLabel}</span>
               {!asString(value) ? (
-                <span
-                  aria-hidden="true"
-                  className="material-symbols-rounded categorized-select-check"
-                >
-                  check
-                </span>
+                <CavalryIcon className="categorized-select-check" name="check" />
               ) : null}
             </button>
           ) : null}
@@ -419,17 +412,10 @@ export function CategorizedSelect({
                   role="option"
                   type="button"
                 >
-                  <span aria-hidden="true" className="material-symbols-rounded">
-                    {option.icon}
-                  </span>
+                  <CavalryIcon name={option.icon} />
                   <span>{option.label}</span>
                   {option.value === asString(value) ? (
-                    <span
-                      aria-hidden="true"
-                      className="material-symbols-rounded categorized-select-check"
-                    >
-                      check
-                    </span>
+                    <CavalryIcon className="categorized-select-check" name="check" />
                   ) : null}
                 </button>
               ))}
@@ -446,13 +432,9 @@ export function CategorizedSelect({
               role="option"
               type="button"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                add_circle
-              </span>
+              <CavalryIcon name="add_circle" />
               <span>{createLabel}</span>
-              <span aria-hidden="true" className="material-symbols-rounded">
-                arrow_forward
-              </span>
+              <CavalryIcon name="arrow_forward" />
             </button>
           ) : null}
         </div>,
@@ -486,13 +468,9 @@ export function CategorizedSelect({
         ref={triggerRef}
         type="button"
       >
-        <span aria-hidden="true" className="material-symbols-rounded categorized-select-leading">
-          {selected?.icon || 'category'}
-        </span>
+        <CavalryIcon className="categorized-select-leading" name={selected?.icon || 'category'} />
         <span className={selected ? '' : 'placeholder'}>{selected?.label || placeholder}</span>
-        <span aria-hidden="true" className="material-symbols-rounded categorized-select-chevron">
-          expand_more
-        </span>
+        <CavalryIcon className="categorized-select-chevron" name="expand_more" />
       </button>
       {name ? <input name={name} type="hidden" value={asString(value)} /> : null}
       {menu}

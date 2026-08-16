@@ -120,7 +120,7 @@
   padding: 12px;
 }
 
-.ai-draft-metric .material-symbols-rounded {
+.ai-draft-metric .cavalry-glyph {
   grid-row: 1 / span 2;
   width: 40px;
   height: 40px;
@@ -149,17 +149,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-.ai-draft-metric.needs_info .material-symbols-rounded {
+.ai-draft-metric.needs_info .cavalry-glyph {
   color: var(--warn);
   background: rgba(242, 179, 89, 0.12);
 }
 
-.ai-draft-metric.posted .material-symbols-rounded {
+.ai-draft-metric.posted .cavalry-glyph {
   color: var(--good);
   background: rgba(83, 209, 143, 0.12);
 }
 
-.ai-draft-metric.dismissed .material-symbols-rounded {
+.ai-draft-metric.dismissed .cavalry-glyph {
   color: var(--bad);
   background: rgba(239, 127, 127, 0.12);
 }
@@ -291,7 +291,7 @@
   background: rgba(0, 0, 0, 0.18);
 }
 
-.ai-draft-kind-mark .material-symbols-rounded {
+.ai-draft-kind-mark .cavalry-glyph {
   font-size: 19px;
 }
 
@@ -646,12 +646,12 @@ textarea.ai-draft-inline-input {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.ai-draft-checklist-section-head .material-symbols-rounded {
+.ai-draft-checklist-section-head .cavalry-glyph {
   color: var(--warn);
   font-size: 20px;
 }
 
-.ai-draft-checklist-suggestions .ai-draft-checklist-section-head .material-symbols-rounded {
+.ai-draft-checklist-suggestions .ai-draft-checklist-section-head .cavalry-glyph {
   color: var(--good);
 }
 
@@ -794,7 +794,7 @@ textarea.ai-draft-inline-input {
   padding: 8px 10px;
 }
 
-.ai-draft-metric .material-symbols-rounded {
+.ai-draft-metric .cavalry-glyph {
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -860,7 +860,7 @@ textarea.ai-draft-inline-input {
   background: rgba(132, 183, 255, 0.09);
 }
 
-.ai-draft-group-chip .material-symbols-rounded {
+.ai-draft-group-chip .cavalry-glyph {
   font-size: 18px;
   color: var(--info);
 }
@@ -1020,7 +1020,7 @@ textarea.ai-draft-inline-input {
   margin-top: 7px;
 }
 
-.ai-draft-detail-meta span:not(.material-symbols-rounded) {
+.ai-draft-detail-meta span:not(.cavalry-glyph) {
   color: var(--text-dim);
   font-size: 11px;
 }
@@ -1041,7 +1041,7 @@ textarea.ai-draft-inline-input {
   color: var(--info);
 }
 
-.ai-draft-detail-meta .material-symbols-rounded {
+.ai-draft-detail-meta .cavalry-glyph {
   font-size: 15px;
 }
 
@@ -1135,12 +1135,12 @@ textarea.ai-draft-inline-input {
   gap: 9px;
 }
 
-.ai-draft-required-head > .material-symbols-rounded {
+.ai-draft-required-head > .cavalry-glyph {
   color: var(--warn);
   font-size: 20px;
 }
 
-.ai-draft-ready-note > .material-symbols-rounded {
+.ai-draft-ready-note > .cavalry-glyph {
   color: var(--good);
   font-size: 20px;
 }
@@ -1175,7 +1175,7 @@ textarea.ai-draft-inline-input {
   font-size: 12px;
 }
 
-.ai-draft-suggestion-row .material-symbols-rounded {
+.ai-draft-suggestion-row .cavalry-glyph {
   margin-right: 5px;
   color: var(--good);
   font-size: 17px;
@@ -1387,7 +1387,7 @@ textarea.ai-draft-inline-input {
   padding: 9px 11px;
 }
 
-.ai-draft-metric .material-symbols-rounded {
+.ai-draft-metric .cavalry-glyph {
   width: 22px;
   height: 22px;
   min-width: 22px;
@@ -1407,17 +1407,17 @@ textarea.ai-draft-inline-input {
   font-size: 12px;
 }
 
-.ai-draft-metric.posted .material-symbols-rounded {
+.ai-draft-metric.posted .cavalry-glyph {
   color: var(--draft-sage);
   background: var(--draft-sage-soft);
 }
 
-.ai-draft-metric.needs_info .material-symbols-rounded {
+.ai-draft-metric.needs_info .cavalry-glyph {
   color: var(--draft-amber);
   background: var(--draft-amber-soft);
 }
 
-.ai-draft-metric.dismissed .material-symbols-rounded {
+.ai-draft-metric.dismissed .cavalry-glyph {
   color: var(--draft-coral);
   background: var(--draft-coral-soft);
 }
@@ -1663,7 +1663,7 @@ textarea.ai-draft-inline-input {
   gap: 7px;
 }
 
-.ai-draft-detail-meta span:not(.material-symbols-rounded) {
+.ai-draft-detail-meta span:not(.cavalry-glyph) {
   color: var(--draft-text-dim);
 }
 
@@ -1771,11 +1771,11 @@ textarea.ai-draft-inline-input {
   background: var(--warn-soft);
 }
 
-.ai-draft-required-head > .material-symbols-rounded {
+.ai-draft-required-head > .cavalry-glyph {
   color: var(--draft-amber);
 }
 
-.ai-draft-ready-note > .material-symbols-rounded {
+.ai-draft-ready-note > .cavalry-glyph {
   color: var(--draft-sage);
 }
 
@@ -1841,17 +1841,17 @@ textarea.ai-draft-inline-input {
   background: var(--surface-subtle);
 }
 
-.ai-draft-history-item .material-symbols-rounded {
+.ai-draft-history-item .cavalry-glyph {
   color: var(--draft-text-dim);
 }
 
-.ai-draft-history-item.good .material-symbols-rounded,
-.ai-draft-history-item.posted .material-symbols-rounded {
+.ai-draft-history-item.good .cavalry-glyph,
+.ai-draft-history-item.posted .cavalry-glyph {
   color: var(--draft-sage);
 }
 
-.ai-draft-history-item.bad .material-symbols-rounded,
-.ai-draft-history-item.dismissed .material-symbols-rounded {
+.ai-draft-history-item.bad .cavalry-glyph,
+.ai-draft-history-item.dismissed .cavalry-glyph {
   color: var(--draft-coral);
 }
 
@@ -1932,7 +1932,7 @@ textarea.ai-draft-inline-input {
   padding: 9px 10px;
 }
 
-.ai-checkpoint-metric .material-symbols-rounded {
+.ai-checkpoint-metric .cavalry-glyph {
   grid-row: 1 / span 2;
   color: var(--info);
   font-size: 20px;
@@ -1951,13 +1951,13 @@ textarea.ai-draft-inline-input {
   letter-spacing: 0;
 }
 
-.ai-checkpoint-metric.posted .material-symbols-rounded {
+.ai-checkpoint-metric.posted .cavalry-glyph {
   color: var(--good);
 }
-.ai-checkpoint-metric.needs_info .material-symbols-rounded {
+.ai-checkpoint-metric.needs_info .cavalry-glyph {
   color: var(--warn);
 }
-.ai-checkpoint-metric.info .material-symbols-rounded {
+.ai-checkpoint-metric.info .cavalry-glyph {
   color: var(--info);
 }
 
@@ -1986,7 +1986,7 @@ textarea.ai-draft-inline-input {
   background: rgba(132, 183, 255, 0.06);
 }
 
-.ai-checkpoint-picker-item .material-symbols-rounded {
+.ai-checkpoint-picker-item .cavalry-glyph {
   color: var(--info);
   font-size: 20px;
 }
@@ -2031,13 +2031,13 @@ textarea.ai-draft-inline-input {
   padding: 9px 10px;
 }
 
-.ai-checkpoint-change-row > .material-symbols-rounded {
+.ai-checkpoint-change-row > .cavalry-glyph {
   color: var(--good);
   font-size: 20px;
 }
 
-.ai-checkpoint-change-row.blocked > .material-symbols-rounded,
-.ai-checkpoint-change-row.rollback_conflict > .material-symbols-rounded {
+.ai-checkpoint-change-row.blocked > .cavalry-glyph,
+.ai-checkpoint-change-row.rollback_conflict > .cavalry-glyph {
   color: var(--warn);
 }
 
@@ -2089,23 +2089,23 @@ textarea.ai-draft-inline-input {
   background: rgba(244, 240, 232, 0.035);
 }
 
-.ai-drafts-workbench .ai-checkpoint-metric .material-symbols-rounded,
-.ai-drafts-workbench .ai-checkpoint-picker-item .material-symbols-rounded {
+.ai-drafts-workbench .ai-checkpoint-metric .cavalry-glyph,
+.ai-drafts-workbench .ai-checkpoint-picker-item .cavalry-glyph {
   color: var(--draft-blue);
 }
 
-.ai-drafts-workbench .ai-checkpoint-metric.posted .material-symbols-rounded,
-.ai-drafts-workbench .ai-checkpoint-change-row > .material-symbols-rounded {
+.ai-drafts-workbench .ai-checkpoint-metric.posted .cavalry-glyph,
+.ai-drafts-workbench .ai-checkpoint-change-row > .cavalry-glyph {
   color: var(--draft-sage);
 }
 
-.ai-drafts-workbench .ai-checkpoint-metric.needs_info .material-symbols-rounded,
-.ai-drafts-workbench .ai-checkpoint-change-row.blocked > .material-symbols-rounded,
-.ai-drafts-workbench .ai-checkpoint-change-row.rollback_conflict > .material-symbols-rounded {
+.ai-drafts-workbench .ai-checkpoint-metric.needs_info .cavalry-glyph,
+.ai-drafts-workbench .ai-checkpoint-change-row.blocked > .cavalry-glyph,
+.ai-drafts-workbench .ai-checkpoint-change-row.rollback_conflict > .cavalry-glyph {
   color: var(--draft-amber);
 }
 
-.ai-drafts-workbench .ai-checkpoint-metric.info .material-symbols-rounded {
+.ai-drafts-workbench .ai-checkpoint-metric.info .cavalry-glyph {
   color: var(--draft-blue);
 }
 
@@ -2121,7 +2121,7 @@ textarea.ai-draft-inline-input {
   color: var(--draft-text);
 }
 
-.ai-drafts-workbench .ai-draft-alert .material-symbols-rounded {
+.ai-drafts-workbench .ai-draft-alert .cavalry-glyph {
   color: var(--draft-amber);
 }
 
@@ -2152,7 +2152,7 @@ textarea.ai-draft-inline-input {
   font-size: 12px;
 }
 
-.ai-draft-alert .material-symbols-rounded {
+.ai-draft-alert .cavalry-glyph {
   color: var(--warn);
   font-size: 19px;
 }
@@ -2208,7 +2208,7 @@ textarea.ai-draft-inline-input {
   margin-bottom: 10px;
 }
 
-.ai-draft-editor-section-head > .material-symbols-rounded {
+.ai-draft-editor-section-head > .cavalry-glyph {
   width: 28px;
   height: 28px;
   display: grid;
@@ -2259,7 +2259,7 @@ textarea.ai-draft-inline-input {
   background: rgba(83, 209, 143, 0.035);
 }
 
-.ai-draft-editor-posting .ai-draft-editor-section-head > .material-symbols-rounded {
+.ai-draft-editor-posting .ai-draft-editor-section-head > .cavalry-glyph {
   background: rgba(83, 209, 143, 0.11);
   color: var(--good);
 }
@@ -2310,7 +2310,7 @@ textarea.ai-draft-inline-input {
   min-width: 0;
 }
 
-.ai-draft-editor-more summary .material-symbols-rounded {
+.ai-draft-editor-more summary .cavalry-glyph {
   color: var(--text-dim);
   font-size: 20px;
 }
@@ -2472,7 +2472,7 @@ textarea.ai-draft-inline-input {
   padding: 10px;
 }
 
-.ai-draft-change-item > .material-symbols-rounded {
+.ai-draft-change-item > .cavalry-glyph {
   color: var(--info);
   font-size: 20px;
 }
@@ -2535,12 +2535,12 @@ textarea.ai-draft-inline-input {
   padding: 8px 9px;
 }
 
-.ai-draft-history-item > .material-symbols-rounded {
+.ai-draft-history-item > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 20px;
 }
 
-.ai-draft-history-item.posted > .material-symbols-rounded {
+.ai-draft-history-item.posted > .cavalry-glyph {
   color: var(--good);
 }
 

@@ -37,7 +37,7 @@
   border-radius: 11px;
 }
 
-.monthly-plan-overview-icon .material-symbols-rounded {
+.monthly-plan-overview-icon .cavalry-glyph {
   font-size: 20px;
 }
 
@@ -68,7 +68,7 @@
   border-radius: 11px;
 }
 
-.monthly-plan-trust > .material-symbols-rounded {
+.monthly-plan-trust > .cavalry-glyph {
   width: 24px;
   height: 24px;
   font-size: 16px;
@@ -620,7 +620,7 @@
   text-transform: uppercase;
 }
 
-.subscription-suggestion-kicker .material-symbols-rounded {
+.subscription-suggestion-kicker .cavalry-glyph {
   font-size: 15px;
 }
 
@@ -720,7 +720,7 @@
   background: color-mix(in srgb, var(--good) 4%, var(--panel));
 }
 
-.subscription-suggestion-empty > .material-symbols-rounded {
+.subscription-suggestion-empty > .cavalry-glyph {
   font-size: 18px;
 }
 

@@ -2,6 +2,7 @@ import React from 'react';
 
 import { NAVIGATION_ROUTES } from '../app/routes.js';
 import cavalryMark from '../assets/cavalry-mark.png';
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
 import {
   isSidebarUpdateVisible,
   SidebarUpdateProgress,
@@ -50,9 +51,7 @@ function NavigationButton({ route, activeRouteId, pendingDraftCount, onNavigate 
       type="button"
     >
       <span className="nav-copy">
-        <span aria-hidden="true" className="material-symbols-rounded">
-          {route.icon}
-        </span>
+        <CavalryIcon name={route.icon} />
         <span>
           <b>{route.label}</b>
           <small>{route.description}</small>
@@ -122,7 +121,7 @@ export function SidebarNavigation({
             <div className="quick-add-title">
               <div>
                 <strong>Quick Add</strong>
-                <small>Capture money movement fast</small>
+                <small>Record money while it’s fresh</small>
               </div>
               <span aria-hidden="true" className="quick-add-badge">
                 +
@@ -137,22 +136,19 @@ export function SidebarNavigation({
               title="Add Transaction"
               type="button"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                receipt_long
-              </span>
+              <CavalryIcon name="receipt_long" />
               Add Transaction
             </button>
           ) : null}
           {typeof onAddAccount === 'function' ? (
             <button
               aria-label="Add Account"
+              className="quick-add-primary"
               onClick={onAddAccount}
               title="Add Account"
               type="button"
             >
-              <span aria-hidden="true" className="material-symbols-rounded">
-                account_balance_wallet
-              </span>
+              <CavalryIcon name="account_balance_wallet" />
               Add Account
             </button>
           ) : null}
@@ -161,22 +157,15 @@ export function SidebarNavigation({
 
       <SidebarUpdateProgress update={update} />
 
-      <div className={`rail-user-card${updateVisible ? ` has-update update-${updateStatus}` : ''}`}>
-        <span aria-hidden="true">{userInitials}</span>
-        <strong>{userLabel}</strong>
-        <SidebarUpdateStatus update={update} />
-        <button
-          aria-label="Settings"
-          className="btn btn-icon"
-          onClick={() => onNavigate?.('settings')}
-          title="Settings"
-          type="button"
+      {!compact || updateVisible ? (
+        <div
+          className={`rail-user-card${updateVisible ? ` has-update update-${updateStatus}` : ''}`}
         >
-          <span aria-hidden="true" className="material-symbols-rounded">
-            settings
-          </span>
-        </button>
-      </div>
+          <span aria-hidden="true">{userInitials}</span>
+          <strong>{userLabel}</strong>
+          <SidebarUpdateStatus update={update} />
+        </div>
+      ) : null}
     </aside>
   );
 }

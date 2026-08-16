@@ -256,7 +256,7 @@
   padding: 3px;
 }
 
-.advisor-zoom-controls span:not(.material-symbols-rounded) {
+.advisor-zoom-controls span:not(.cavalry-glyph) {
   min-width: 54px;
   color: var(--text-dim);
   font-size: 10px;
@@ -296,7 +296,7 @@
   height: 24px;
 }
 
-.advisor-zoom-compact .advisor-message-avatar .material-symbols-rounded {
+.advisor-zoom-compact .advisor-message-avatar .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -435,7 +435,7 @@
   background: rgba(255, 255, 255, 0.035);
 }
 
-.advisor-message-avatar .material-symbols-rounded {
+.advisor-message-avatar .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -508,7 +508,7 @@
   text-overflow: clip;
 }
 
-.advisor-chat-card-v2 .advisor-prompt-grid button .material-symbols-rounded {
+.advisor-chat-card-v2 .advisor-prompt-grid button .cavalry-glyph {
   color: var(--info);
   font-size: 15px;
 }
@@ -566,7 +566,7 @@
   font-size: 11px;
 }
 
-.advisor-voice-status .material-symbols-rounded {
+.advisor-voice-status .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -599,7 +599,7 @@
   font-size: 11px;
 }
 
-.advisor-voice-settings-button .material-symbols-rounded {
+.advisor-voice-settings-button .cavalry-glyph {
   font-size: 15px;
 }
 
@@ -693,7 +693,7 @@
   border-color: rgba(255, 110, 110, 0.4);
 }
 
-.advisor-attachment-remove .material-symbols-rounded {
+.advisor-attachment-remove .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -751,7 +751,7 @@
   height: 24px;
 }
 
-.advisor-chat-card-v2.advisor-zoom-compact .advisor-message-avatar .material-symbols-rounded {
+.advisor-chat-card-v2.advisor-zoom-compact .advisor-message-avatar .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -816,7 +816,7 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
-.advisor-copilot-status .material-symbols-rounded {
+.advisor-copilot-status .cavalry-glyph {
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -883,7 +883,7 @@
   flex: 0 0 auto;
 }
 
-.advisor-microphone-actions .material-symbols-rounded {
+.advisor-microphone-actions .cavalry-glyph {
   width: auto;
   height: auto;
   border-radius: 0;
@@ -923,7 +923,7 @@
   display: none;
 }
 
-.advisor-advanced-settings summary .material-symbols-rounded {
+.advisor-advanced-settings summary .cavalry-glyph {
   font-size: 18px;
 }
 

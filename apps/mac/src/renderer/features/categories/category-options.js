@@ -44,13 +44,13 @@ export const CATEGORY_ICONS = Object.freeze([
 ]);
 
 export const CATEGORY_COLORS = Object.freeze([
-  '#ef6f70',
-  '#ef942f',
-  '#f3c33d',
-  '#67b978',
-  '#5ba1df',
-  '#9563d8',
-  '#9aa0a4'
+  '#1a3fe9',
+  '#4d79eb',
+  '#499eee',
+  '#809fec',
+  '#c47a2c',
+  '#7758b8',
+  '#626a78'
 ]);
 
 const CATEGORY_ICON_SET = new Set(CATEGORY_ICONS);

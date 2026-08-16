@@ -9,30 +9,23 @@ import {
   inferAdvisorTransferAccountNamesFromPrompt
 } from '@cavalry/advisor/domain/advisor/transaction-drafts.js';
 import { splitAdvisorTransactionPrompts } from '@cavalry/advisor/domain/advisor/transaction-prompt-splitter.js';
+import { getLedgerTransactionTemplateConfig } from '@cavalry/finance-core';
 
-const TEMPLATE_CATEGORY_TYPES = Object.freeze({
-  expense_paid: ['expense'],
-  expense_charged: ['expense'],
-  income_received: ['income'],
-  debt_payment: ['debt'],
-  liability_payment: ['debt']
-});
+function templateConfig(template) {
+  return getLedgerTransactionTemplateConfig(asText(template));
+}
 
-const TEMPLATE_PRIMARY_ACCOUNT_GROUPS = Object.freeze({
-  expense_paid: ['asset'],
-  expense_charged: ['liability'],
-  income_received: ['asset'],
-  transfer: ['asset', 'liability'],
-  debt_payment: ['asset'],
-  liability_payment: ['asset'],
-  opening_balance: ['asset', 'liability']
-});
+function templateCategoryTypes(template) {
+  return asArray(templateConfig(template).categoryTypes);
+}
 
-const TEMPLATE_SECONDARY_ACCOUNT_GROUPS = Object.freeze({
-  transfer: ['asset', 'liability'],
-  debt_payment: ['liability'],
-  liability_payment: ['liability']
-});
+function templatePrimaryAccountGroups(template) {
+  return asArray(templateConfig(template).primaryGroups);
+}
+
+function templateSecondaryAccountGroups(template) {
+  return asArray(templateConfig(template).secondaryGroups);
+}
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -330,6 +323,9 @@ function transactionLocalQuestion(workbook, question, args, currentDate) {
 
 function templateFromSemanticDecision(decision, requestedTemplate) {
   const requested = asText(requestedTemplate);
+  if (decision.kind === ADVISOR_FINANCE_INTENT_KINDS.REFUND) {
+    return 'merchant_refund';
+  }
   if (decision.kind === ADVISOR_FINANCE_INTENT_KINDS.LIABILITY_PAYMENT) {
     return 'debt_payment';
   }
@@ -466,7 +462,7 @@ function accountMentionedForRole(account, prompt, role) {
 function accountRole(template, secondary) {
   if (template === 'expense_paid') return 'funding';
   if (template === 'expense_charged') return 'charged';
-  if (template === 'income_received') return 'destination';
+  if (template === 'income_received' || template === 'merchant_refund') return 'destination';
   if (template === 'debt_payment' || template === 'liability_payment') {
     return secondary ? 'destination' : 'funding';
   }
@@ -575,6 +571,9 @@ function transactionAccountId(workbook, transaction, template) {
       );
     });
   if (template === 'income_received') return asText(find('debit', ['asset'])?.accountId);
+  if (template === 'merchant_refund') {
+    return asText(find('debit', ['asset', 'liability'])?.accountId);
+  }
   if (template === 'expense_charged') return asText(find('credit', ['liability'])?.accountId);
   if (template === 'debt_payment' || template === 'liability_payment') {
     return asText(find('credit', ['asset'])?.accountId);
@@ -591,8 +590,7 @@ function transactionSecondaryAccountId(workbook, transaction, template) {
       account
     ])
   );
-  const allowedGroups =
-    template === 'transfer' ? ['asset', 'liability'] : TEMPLATE_SECONDARY_ACCOUNT_GROUPS[template];
+  const allowedGroups = templateSecondaryAccountGroups(template);
   const line = asArray(transaction && transaction.lines).find((candidate) => {
     const account = accountById.get(asText(candidate && candidate.accountId));
     return (
@@ -665,7 +663,7 @@ function resolveCounterpartyId(workbook, args, prompt = '') {
 }
 
 function inferCategory(workbook, args, template, prompt, userPrompt = prompt) {
-  const types = TEMPLATE_CATEGORY_TYPES[template] || [];
+  const types = templateCategoryTypes(template);
   if (!types.length) return null;
   const categories = activeCategories(workbook, types);
   if (!categories.length) return null;
@@ -732,8 +730,8 @@ function inferCategory(workbook, args, template, prompt, userPrompt = prompt) {
 
 function inferAccount(workbook, args, template, prompt, secondary = false, userPrompt = prompt) {
   const groups = secondary
-    ? TEMPLATE_SECONDARY_ACCOUNT_GROUPS[template] || []
-    : TEMPLATE_PRIMARY_ACCOUNT_GROUPS[template] || [];
+    ? templateSecondaryAccountGroups(template)
+    : templatePrimaryAccountGroups(template);
   if (!groups.length) return null;
   let accounts = activeAccounts(workbook, groups);
   if (!accounts.length) return null;
@@ -807,6 +805,7 @@ export function inferCavalryAssistantTransactionArguments(
   removeBlankOptionalEntityArguments(args);
   const prompt = asText(options.question);
   const currentDate = asText(options.currentDate);
+  const forcedTemplate = asText(options.forcedTemplate);
   const localQuestion = transactionLocalQuestion(workbook, prompt, args, currentDate);
   const semanticPrompt = [localQuestion, localArgumentText(args)].filter(Boolean).join(' ');
   const userSemantic = classifyAdvisorFinanceIntent(localQuestion, {
@@ -823,11 +822,23 @@ export function inferCavalryAssistantTransactionArguments(
     semanticDecision: semantic
   };
 
-  const template = userPromptHasExplicitTemplateCue(localQuestion, userSemantic)
-    ? userSemantic.template
-    : templateFromSemanticDecision(semantic, args.template);
+  const template = forcedTemplate
+    ? forcedTemplate
+    : userPromptHasExplicitTemplateCue(localQuestion, userSemantic)
+      ? userSemantic.template
+      : templateFromSemanticDecision(semantic, args.template);
   if (template !== asText(args.template)) {
-    setInferred(result, 'template', template, 'finance_intent');
+    setInferred(
+      result,
+      'template',
+      template,
+      forcedTemplate ? 'capability_contract' : 'finance_intent'
+    );
+  } else if (forcedTemplate) {
+    result.inferredFields.template = {
+      value: forcedTemplate,
+      reason: 'capability_contract'
+    };
   }
 
   if (!hasOwn(args, 'date') || !asText(args.date)) {
@@ -866,7 +877,7 @@ export function inferCavalryAssistantTransactionArguments(
     .filter(Boolean)
     .join(' ');
 
-  if ((TEMPLATE_CATEGORY_TYPES[effectiveTemplate] || []).length) {
+  if (templateCategoryTypes(effectiveTemplate).length) {
     const inferred = inferCategory(
       workbook,
       result.arguments,
@@ -919,7 +930,7 @@ export function inferCavalryAssistantTransactionArguments(
     }
   }
 
-  if ((TEMPLATE_SECONDARY_ACCOUNT_GROUPS[effectiveTemplate] || []).length) {
+  if (templateSecondaryAccountGroups(effectiveTemplate).length) {
     const inferred = inferAccount(
       workbook,
       result.arguments,

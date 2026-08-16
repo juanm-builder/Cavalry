@@ -254,6 +254,13 @@ function accountContextKind(account) {
   return 'asset';
 }
 
+function accountValueTone(group, value) {
+  const amount = Number(value) || 0;
+  if (amount === 0) return 'neutral';
+  if (group === 'liability') return amount > 0 ? 'bad' : 'good';
+  return amount > 0 ? 'good' : 'bad';
+}
+
 function accountIcon(account) {
   const customIcon = asText(account?.icon);
   if (customIcon) return customIcon;
@@ -362,22 +369,8 @@ function getAccountHistoryRows(
       const transactionAmount = Number(
         transaction?.amount ?? transaction?.baseAmount ?? Math.abs(change)
       );
-      const changeTone =
-        account?.group === 'liability'
-          ? change > 0
-            ? 'bad'
-            : 'good'
-          : change >= 0
-            ? 'good'
-            : 'bad';
-      const balanceTone =
-        account?.group === 'liability'
-          ? runningBalance > 0
-            ? 'bad'
-            : 'good'
-          : runningBalance >= 0
-            ? 'good'
-            : 'bad';
+      const changeTone = accountValueTone(account?.group, change);
+      const balanceTone = accountValueTone(account?.group, runningBalance);
       return rows.concat({
         transactionId: asText(transaction?.id),
         date: asText(transaction?.date),
@@ -484,7 +477,7 @@ export function buildAccountsFeatureModel(workbook, options = {}) {
         baseValue: baseBalance,
         baseCurrency: currency,
         baseCopy: formatAccountMoney(baseBalance, currency),
-        tone: account.group === 'liability' ? 'bad' : balance >= 0 ? 'good' : 'bad',
+        tone: accountValueTone(account.group, balance),
         canToggle: false
       },
       activityCopy: hasCurrencyIntegrityIssue
@@ -535,9 +528,11 @@ export function buildAccountsFeatureModel(workbook, options = {}) {
     selectedAccountId: coreModel.selectedAccountId,
     summary: {
       netWorthCopy: formatAccountMoney(assetTotal - liabilityTotal, currency),
-      netWorthTone: assetTotal - liabilityTotal >= 0 ? 'good' : 'bad',
+      netWorthTone: accountValueTone('asset', assetTotal - liabilityTotal),
       assetCopy: formatAccountMoney(assetTotal, currency),
-      creditCopy: formatAccountMoney(liabilityTotal, currency)
+      assetTone: accountValueTone('asset', assetTotal),
+      creditCopy: formatAccountMoney(liabilityTotal, currency),
+      creditTone: accountValueTone('liability', liabilityTotal)
     },
     accountRows,
     selectedAccount: selectedAccount
@@ -582,8 +577,7 @@ export function buildAccountsFeatureModel(workbook, options = {}) {
           balanceLabel: selectedHasCurrencyIntegrityIssue
             ? `Historical book balance (${selectedBalanceCurrency})`
             : '',
-          balanceTone:
-            selectedAccount.group === 'liability' ? 'bad' : selectedBalance >= 0 ? 'good' : 'bad',
+          balanceTone: accountValueTone(selectedAccount.group, selectedBalance),
           changeCopy: '',
           changeTone: 'info',
           changePercentCopy: '',

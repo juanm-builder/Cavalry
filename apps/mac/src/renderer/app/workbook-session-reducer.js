@@ -32,7 +32,8 @@ export function createWorkbookSessionState(options = {}) {
     save: {
       status: options.initialSaveStatus || SAVE_STATUS.IDLE,
       lastSavedAt: '',
-      error: ''
+      error: '',
+      localSaveSequence: 0
     },
     routeId: getRouteById(options.initialRouteId || DEFAULT_ROUTE_ID).id,
     overlays: [],
@@ -144,9 +145,11 @@ export function workbookSessionReducer(state, action) {
       return {
         ...state,
         save: {
+          ...state.save,
           status: SAVE_STATUS.SAVED,
           lastSavedAt: action.savedAt || state.save.lastSavedAt,
-          error: ''
+          error: '',
+          localSaveSequence: Math.max(0, Number(state.save.localSaveSequence) || 0) + 1
         }
       };
     case 'save/cancelled':
@@ -161,6 +164,7 @@ export function workbookSessionReducer(state, action) {
       return {
         ...state,
         save: {
+          ...state.save,
           status: SAVE_STATUS.CACHE,
           lastSavedAt: action.savedAt || state.save.lastSavedAt,
           error: ''

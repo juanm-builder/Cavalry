@@ -109,35 +109,61 @@
 
 .bills-filter-row {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) max-content max-content max-content;
+  grid-template-columns: minmax(240px, 1fr) max-content max-content;
   gap: 10px;
   align-items: center;
 }
 
 .bill-search-field {
-  min-height: 46px;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
+  gap: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--field-bg, var(--panel));
   color: var(--text-soft);
-  padding: 0 14px;
+  padding-left: 13px;
 }
 
 .bill-search-field input {
+  flex: 1;
   width: 100%;
   min-width: 0;
+  min-height: 42px;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   outline: 0;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.bill-search-field:focus-within {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.bill-search-submit {
+  align-self: stretch;
+  width: 44px;
+  min-width: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid var(--line);
   background: transparent;
   color: var(--text);
 }
 
-.bill-search-field:focus-within {
-  border-color: rgba(137, 177, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(137, 177, 255, 0.12);
+.bill-search-submit:hover,
+.bill-search-submit:focus-visible {
+  background: var(--control-hover, color-mix(in srgb, var(--info) 10%, transparent));
+  color: var(--info);
+  outline: 0;
 }
 
 .bill-filter-chips {
@@ -220,7 +246,7 @@
   color: var(--warn);
 }
 
-.bill-reconciliation-proof > .material-symbols-rounded {
+.bill-reconciliation-proof > .cavalry-glyph {
   font-size: 16px;
 }
 
@@ -811,7 +837,7 @@ button.bill-register-main {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.bill-control-select > .material-symbols-rounded:first-child {
+.bill-control-select > .cavalry-glyph:first-child {
   color: var(--text);
   font-size: 24px;
 }
@@ -1337,7 +1363,7 @@ button.bill-due-row:hover {
   accent-color: var(--info);
 }
 
-.bill-auto-renew-toggle > .material-symbols-rounded {
+.bill-auto-renew-toggle > .cavalry-glyph {
   color: var(--info);
 }
 

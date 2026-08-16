@@ -7,7 +7,11 @@ import {
 import { reconcileRecurringOccurrence } from '@cavalry/finance-core/application/recurring/recurring-reconciliation-service.js';
 import { getAssetLiabilityTotalsAsOf } from '@cavalry/finance-core/domain/ledger/balances.js';
 import { isTransactionBalanced } from '@cavalry/finance-core/domain/ledger/validation.js';
-import { cloneFixture, makeMinimalWorkbook } from '../fixtures/core-workbook-fixtures.js';
+import {
+  cloneFixture,
+  makeMinimalWorkbook,
+  makeRefundWorkbook
+} from '../fixtures/core-workbook-fixtures.js';
 
 function makeValidInput(overrides = {}) {
   return Object.assign(
@@ -579,6 +583,33 @@ describe('transaction command service', () => {
       amount: 0.32,
       currency: 'USD',
       baseAmount: 20
+    });
+  });
+
+  it('preserves refund postings during a metadata-only edit', () => {
+    const workbook = makeRefundWorkbook();
+    const existing = workbook.transactions.find(
+      (transaction) => transaction.id === 'txn-refund-unclear'
+    );
+    const edited = submitManualTransactionCommand(workbook, {
+      transactionId: existing.id,
+      template: existing.template,
+      amount: existing.amount,
+      currency: existing.originalCurrency,
+      date: existing.date,
+      description: 'Store refund received',
+      categoryId: existing.categoryId,
+      primaryAccountId: 'cash'
+    });
+
+    expect(edited.ok).toBe(true);
+    expect(edited.intent.preserveExistingPostings).toBe(true);
+    expect(edited.transaction.description).toBe('Store refund received');
+    expect(edited.transaction.lines).toEqual(existing.lines);
+    expect(edited.transaction.lines[0]).toMatchObject({
+      accountId: 'cash',
+      direction: 'debit',
+      baseAmount: 50
     });
   });
 });

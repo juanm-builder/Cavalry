@@ -1,14 +1,12 @@
 import React from 'react';
 
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {

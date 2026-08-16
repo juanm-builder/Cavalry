@@ -207,7 +207,7 @@ describe('budget editor interactions', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Open Food budget details' }));
+    await user.click(screen.getByRole('button', { name: /^Food / }));
     expect(screen.getByRole('dialog', { name: 'Food budget details' })).not.toBeNull();
     expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe(
       'true'

@@ -96,7 +96,7 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
-.budget-category-avatar .material-symbols-rounded {
+.budget-category-avatar .cavalry-glyph {
   font-size: 22px;
 }
 
@@ -274,6 +274,6 @@
   align-items: flex-start;
 }
 
-.budget-simple-tip .material-symbols-rounded {
+.budget-simple-tip .cavalry-glyph {
   color: var(--text-soft);
 }

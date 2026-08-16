@@ -406,6 +406,8 @@ describe('Cavalry assistant tool catalog', () => {
         'analyze_recurring_expenses',
         'list_counterparties',
         'create_transaction',
+        'create_refund',
+        'search_refunds',
         'update_transaction',
         'delete_transaction',
         'create_account',
@@ -460,6 +462,15 @@ describe('Cavalry assistant tool catalog', () => {
     expect(transactionCreate.parameters.properties.allowCurrencyConversion.description).toMatch(
       /user explicitly confirms/i
     );
+    expect(transactionCreate.parameters.properties.template.enum).toContain('merchant_refund');
+    const createRefund = definitions.find((definition) => definition.name === 'create_refund');
+    expect(createRefund).toMatchObject({
+      cavalry: {
+        capabilityId: 'transactions.refunds',
+        approvalFields: ['allowDuplicate', 'allowCurrencyConversion']
+      },
+      parameters: { required: ['amount', 'description'] }
+    });
   });
 });
 
@@ -654,6 +665,57 @@ describe('Cavalry assistant reads', () => {
       recordPreviewCount: 50,
       recordPreviewOmitted: 25
     });
+  });
+
+  it('searches refunds semantically and nets them out of companion spending totals', async () => {
+    const harness = makeHarness();
+    await executeCavalryAssistantTool(
+      {
+        name: 'create_refund',
+        arguments: {
+          amount: 40,
+          description: 'Groceries refund',
+          originalCategory: 'Food',
+          refundedTo: 'Cash',
+          merchant: 'Market'
+        }
+      },
+      harness.context
+    );
+
+    const refunds = await executeCavalryAssistantTool(
+      { id: 'refund-search', name: 'search_refunds', arguments: {} },
+      harness.context
+    );
+    const spending = await executeCavalryAssistantTool(
+      { id: 'refund-spending', name: 'summarize_spending', arguments: { groupBy: 'category' } },
+      harness.context
+    );
+    const summary = await executeCavalryAssistantTool(
+      { id: 'refund-summary', name: 'read_workspace_summary', arguments: {} },
+      harness.context
+    );
+
+    expect(refunds.data).toMatchObject({
+      total: 1,
+      totals: { expense: -40, refundCount: 1 },
+      transactions: [
+        {
+          template: 'merchant_refund',
+          eventKind: 'merchant_refund',
+          type: 'refund',
+          baseAmount: 40,
+          signedBaseAmount: -40,
+          effects: { expense: -40, categoryBudget: -40, cashFlow: 40 }
+        }
+      ]
+    });
+    expect(spending.data).toMatchObject({
+      grandTotal: 60,
+      totals: { expense: 60, refundCount: 1 },
+      groups: [expect.objectContaining({ label: 'Food', total: 60, transactionCount: 2 })]
+    });
+    expect(summary.data.cashFlow).toMatchObject({ expense: 60, net: -60 });
   });
 
   it('classifies recurring evidence and returns exact source sets for each pattern', async () => {
@@ -1099,6 +1161,127 @@ describe('Cavalry assistant mutations', () => {
       expect.arrayContaining([expect.objectContaining({ accountId: 'cash', direction: 'credit' })])
     );
     expect(transaction.counterpartyId).toBe('market');
+  });
+
+  it('records a feature-owned cash refund against the original expense category', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        id: 'call_create_refund',
+        name: 'create_refund',
+        arguments: {
+          amount: 40,
+          description: 'Groceries refund',
+          originalCategory: 'Food',
+          refundedTo: 'Cash',
+          merchant: 'Market'
+        }
+      },
+      { ...harness.context, question: 'Market refunded 40 to my Cash account for groceries' }
+    );
+    const refund = harness.workbook.transactions.find(
+      (transaction) => transaction.template === 'merchant_refund'
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          template: 'merchant_refund',
+          amount: 40,
+          categoryId: 'food',
+          counterpartyId: 'market'
+        },
+        inferredFields: {
+          template: { value: 'merchant_refund', reason: 'capability_contract' }
+        }
+      }
+    });
+    expect(refund).toMatchObject({
+      eventKind: 'merchant_refund',
+      categoryId: 'food',
+      counterpartyId: 'market'
+    });
+    expect(refund.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: 'cash', direction: 'debit', baseAmount: 40 }),
+        expect.objectContaining({ accountId: 'food-expense', direction: 'credit', baseAmount: 40 })
+      ])
+    );
+  });
+
+  it('records a card refund as a liability reduction without inventing cash flow', async () => {
+    const harness = makeHarness();
+
+    const created = await executeCavalryAssistantTool(
+      {
+        name: 'create_refund',
+        arguments: {
+          amount: 30,
+          description: 'Card purchase refund',
+          originalCategory: 'Food',
+          refundedTo: 'Credit Card',
+          merchant: 'Market'
+        }
+      },
+      harness.context
+    );
+    const searched = await executeCavalryAssistantTool(
+      { name: 'search_refunds', arguments: { query: 'Card purchase' } },
+      harness.context
+    );
+    const refund = harness.workbook.transactions.find(
+      (transaction) => transaction.template === 'merchant_refund'
+    );
+
+    expect(created).toMatchObject({ ok: true, changed: true });
+    expect(refund.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: 'card', direction: 'debit', baseAmount: 30 }),
+        expect.objectContaining({ accountId: 'food-expense', direction: 'credit', baseAmount: 30 })
+      ])
+    );
+    expect(searched.data.transactions[0]).toMatchObject({
+      signedBaseAmount: -30,
+      effects: { expense: -30, categoryBudget: -30, cashFlow: 0 }
+    });
+  });
+
+  it('corrects received-refund language to a refund instead of income', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'income_received',
+          amount: 25,
+          description: 'Market refund'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'I received a 25 refund from Market into Cash for groceries'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          template: 'merchant_refund',
+          categoryId: 'food',
+          counterpartyId: 'market'
+        },
+        inferredFields: {
+          template: { value: 'merchant_refund', reason: 'finance_intent' },
+          primaryAccountId: { value: 'cash', reason: 'explicit_account_role' }
+        }
+      }
+    });
   });
 
   it('applies saved category rules before generic semantic categorization', async () => {

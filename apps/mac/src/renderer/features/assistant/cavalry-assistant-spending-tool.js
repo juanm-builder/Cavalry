@@ -43,7 +43,10 @@ export async function summarizeSpending(environment) {
   const limit = clampInteger(args.limit, 1, 50, 20);
   const groupKey = SPENDING_GROUP_KEYS[groupBy];
   const groups = new Map();
-  view.allRows.forEach((row) => {
+  const trustedRows = view.allRows.filter(
+    (row) => row.hasMissingReference !== true && row.contributions?.resolved !== false
+  );
+  trustedRows.forEach((row) => {
     const label = groupKey(row);
     const group = groups.get(label) || {
       label,
@@ -52,7 +55,11 @@ export async function summarizeSpending(environment) {
       firstDate: asText(row.date),
       lastDate: asText(row.date)
     };
-    group.total = Math.round((group.total + (Number(row.baseAmount) || 0)) * 100) / 100;
+    const signedAmount = Number(row.signedBaseAmount);
+    const contributionAmount = Number.isFinite(signedAmount)
+      ? signedAmount
+      : Number(row.baseAmount) || 0;
+    group.total = Math.round((group.total + contributionAmount) * 100) / 100;
     group.transactionCount += 1;
     const date = asText(row.date);
     if (date && (!group.firstDate || date < group.firstDate)) group.firstDate = date;
@@ -66,7 +73,7 @@ export async function summarizeSpending(environment) {
   visibleGroups.forEach((group) => {
     group.share = grandTotal ? Math.round((group.total / grandTotal) * 1000) / 10 : 0;
   });
-  const evidenceSourceRefs = view.allRows.map(
+  const evidenceSourceRefs = trustedRows.map(
     (row) => `transaction:${encodeURIComponent(asText(row.id))}`
   );
   const evidenceSetId = `spending-summary-${asText(environment.toolCallId) || 'result'}`;
@@ -95,7 +102,9 @@ export async function summarizeSpending(environment) {
             }
           }
         : {}),
-      transactionCount: view.allRows.length,
+      transactionCount: trustedRows.length,
+      matchedTransactionCount: view.allRows.length,
+      unresolvedTransactionCount: view.allRows.length - trustedRows.length,
       evidenceSetId,
       evidenceSets: [
         {

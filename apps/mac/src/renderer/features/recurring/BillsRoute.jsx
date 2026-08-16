@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
-import { FinancialValueInput, formatFinancialValue } from '../../shared/FinancialValueInput.jsx';
+import { BillsEditorModal } from './BillsEditorModal.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
-import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import {
   getReconciliationPayload,
   getReconciliationTone,
@@ -13,12 +14,8 @@ import {
   ReconciliationReview
 } from './BillsReconciliation.jsx';
 
-const RECURRING_CATEGORY_TYPES = Object.freeze(['expense', 'debt']);
-
 function Icon({ name, className = '' }) {
-  return (
-    <span className={`material-symbols-rounded${className ? ` ${className}` : ''}`}>{name}</span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function asArray(value) {
@@ -78,7 +75,7 @@ function SummaryPill({ tone, status, label, value, detail, onAction }) {
       onClick={() => emit(onAction, 'set-bills-status', { billsStatus: status })}
     >
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong className={`amount ${tone || 'neutral'}`}>{value}</strong>
       <small>{detail}</small>
     </button>
   );
@@ -123,270 +120,6 @@ function ActionMenu({ children }) {
 
 function StatusPill({ status, tone }) {
   return <span className={`status-pill ${tone || 'info'}`}>{status || 'Upcoming'}</span>;
-}
-
-function EditorModal({ initialValues, options, onAction, onClose }) {
-  const dismiss = useModalDismiss(() => onClose(true));
-  const [values, setValues] = useState(initialValues);
-  const [error, setError] = useState('');
-  const isSubscription = values.kind === 'subscription';
-  const update = (key, value) => setValues((current) => ({ ...current, [key]: value }));
-
-  function submit(event) {
-    event.preventDefault();
-    if (!String(values.name || '').trim()) {
-      setError('Name is required.');
-      return;
-    }
-    if (!values.categoryId) {
-      setError('Pick an expense or debt category.');
-      return;
-    }
-    if (!values.dueDate) {
-      setError('Choose a valid due date.');
-      return;
-    }
-    const amount = Number(values.amount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setError('Enter a valid amount.');
-      return;
-    }
-    const result = emit(onAction, 'save-recurring-item', {
-      ...values,
-      amount,
-      autoRenew: values.autoRenew === true,
-      isActive: values.isActive !== false
-    });
-    if (result && result.ok === false) {
-      setError(
-        result.errors && result.errors[0]
-          ? result.errors[0].message
-          : 'The recurring item could not be saved.'
-      );
-      return;
-    }
-    onClose(false);
-  }
-
-  return renderInBody(
-    <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
-      <div
-        className="modal-card modal-card-wide bill-form-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${values.recurringItemId ? 'Edit' : 'Add'} bill or subscription`}
-      >
-        <div className="bill-form-header">
-          <div>
-            <h3>
-              {values.recurringItemId
-                ? `Edit ${isSubscription ? 'Subscription' : 'Bill'}`
-                : `Add ${isSubscription ? 'Subscription' : 'Bill'}`}
-            </h3>
-            <p>
-              {isSubscription
-                ? 'Track a recurring service or membership'
-                : 'Create a recurring payment reminder'}
-            </p>
-          </div>
-          <button
-            className="btn btn-icon"
-            type="button"
-            onClick={() => onClose(true)}
-            title="Close"
-            aria-label="Close"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
-        <form className="bill-subscription-form" onSubmit={submit} noValidate>
-          <div className="bill-kind-toggle">
-            <label className={!isSubscription ? 'active' : ''}>
-              <input
-                type="radio"
-                name="kind"
-                value="bill"
-                checked={!isSubscription}
-                onChange={() => update('kind', 'bill')}
-              />
-              <Icon name="receipt_long" />
-              Bill
-            </label>
-            <label className={isSubscription ? 'active' : ''}>
-              <input
-                type="radio"
-                name="kind"
-                value="subscription"
-                checked={isSubscription}
-                onChange={() => update('kind', 'subscription')}
-              />
-              <Icon name="sync" />
-              Subscription
-            </label>
-          </div>
-          {error ? (
-            <div className="panel-note status-bad" role="alert">
-              {error}
-            </div>
-          ) : null}
-          <div className="bill-form-body">
-            <div className="bill-form-grid">
-              <div className="field">
-                <label>{isSubscription ? 'Service Name *' : 'Name *'}</label>
-                <input
-                  aria-label="Recurring name"
-                  type="text"
-                  name="name"
-                  value={values.name || ''}
-                  onChange={(event) => update('name', event.currentTarget.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Amount *</label>
-                <FinancialValueInput
-                  allowNegative={false}
-                  aria-label="Recurring amount"
-                  min="0"
-                  name="amount"
-                  value={values.amount || ''}
-                  onChange={(event) => update('amount', event.currentTarget.value)}
-                />
-              </div>
-              <div className="field">
-                <label>{isSubscription ? 'Billing Anchor Date *' : 'Due Date *'}</label>
-                <input
-                  aria-label="Recurring due date"
-                  type="date"
-                  name="dueDate"
-                  value={values.dueDate || ''}
-                  onChange={(event) => update('dueDate', event.currentTarget.value)}
-                />
-                {isSubscription ? (
-                  <small>
-                    Used to calculate each expected charge; it may be a past known date.
-                  </small>
-                ) : null}
-              </div>
-              <div className="field">
-                <label>{isSubscription ? 'Billing Cycle *' : 'Frequency *'}</label>
-                <select
-                  aria-label="Recurring frequency"
-                  name="frequency"
-                  value={values.frequency || 'Monthly'}
-                  onChange={(event) => update('frequency', event.currentTarget.value)}
-                >
-                  {asArray(options.frequencies).map((frequency) => (
-                    <option key={frequency} value={frequency}>
-                      {frequency}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Category *</label>
-                <CategorizedSelect
-                  aria-label="Recurring category"
-                  createCategoryType="expense"
-                  createCategoryTypes={RECURRING_CATEGORY_TYPES}
-                  name="categoryId"
-                  onCreateCategory={(payload) => emit(onAction, CATEGORY_ACTIONS.CREATE, payload)}
-                  options={options.categories}
-                  placeholder="Select category"
-                  value={values.categoryId || ''}
-                  onChange={(event) => update('categoryId', event.currentTarget.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Payment Method</label>
-                <select
-                  aria-label="Recurring payment account"
-                  name="accountId"
-                  value={values.accountId || ''}
-                  onChange={(event) => update('accountId', event.currentTarget.value)}
-                >
-                  <option value="">Not set</option>
-                  {asArray(options.accounts).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {isSubscription ? (
-                <label className="bill-auto-renew-toggle bill-form-full">
-                  <input
-                    type="checkbox"
-                    name="autoRenew"
-                    checked={values.autoRenew === true}
-                    onChange={(event) => update('autoRenew', event.currentTarget.checked)}
-                  />
-                  <Icon name="autorenew" />
-                  <span>
-                    <strong>Auto-renews</strong>
-                    <small>Show this as a recurring subscription renewal.</small>
-                  </span>
-                </label>
-              ) : null}
-              <div className="field bill-form-full">
-                <label>
-                  Notes <span className="label-optional">(Optional)</span>
-                </label>
-                <textarea
-                  name="note"
-                  value={values.note || ''}
-                  onChange={(event) => update('note', event.currentTarget.value)}
-                />
-              </div>
-            </div>
-            <aside className="bill-preview-panel">
-              <span className="tag">Preview</span>
-              <div className="bill-preview-row">
-                <Icon
-                  className={`mini-icon ${isSubscription ? 'info' : 'warn'}`}
-                  name={isSubscription ? 'sync' : 'receipt_long'}
-                />
-                <span>
-                  <strong>{values.name || (isSubscription ? 'Netflix' : 'Internet')}</strong>
-                  <small>{values.frequency || 'Monthly'}</small>
-                </span>
-              </div>
-              <div className="bill-preview-details">
-                <span>{values.dueDate || 'Due date'}</span>
-                <b className="amount">
-                  {formatFinancialValue(values.amount || 0)} {values.currency || options.currency}
-                </b>
-              </div>
-              <div className="bill-preview-footer">
-                <StatusPill status="Upcoming" tone="warn" />
-              </div>
-            </aside>
-          </div>
-          <div className="bill-form-footer">
-            <label className="bill-active-toggle">
-              <input
-                type="checkbox"
-                name="isActive"
-                checked={values.isActive !== false}
-                onChange={(event) => update('isActive', event.currentTarget.checked)}
-              />
-              <span>
-                <strong>Active</strong>
-                <small>Inactive items stay saved but stay out of Due Next.</small>
-              </span>
-            </label>
-            <div className="modal-actions">
-              <button className="btn" type="button" onClick={() => onClose(true)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" type="submit">
-                Save {isSubscription ? 'Subscription' : 'Bill'}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
 }
 
 function ArchiveModal({ row, onAction, onClose }) {
@@ -492,7 +225,7 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
         <strong>{row.dueDateCopy}</strong>
         <small>{relativeDateLabel}</small>
       </div>
-      <b className="bill-register-amount amount">{row.amountCopy}</b>
+      <b className={`bill-register-amount amount ${displayTone || 'neutral'}`}>{row.amountCopy}</b>
       <div className="bill-register-status">
         <StatusPill status={displayStatus} tone={displayTone} />
       </div>
@@ -692,19 +425,20 @@ function FilterPanel({ filters, options, onAction }) {
       }}
     >
       <div className="bills-filter-row">
-        <label className="bill-search-field">
+        <div className="bill-search-field">
           <Icon name="search" />
           <input
+            aria-label="Search bills"
             type="search"
             name="search"
             value={draft.search || ''}
             onChange={(event) => update('search', event.currentTarget.value)}
             placeholder="Search bills, category, payment method"
           />
-        </label>
-        <button className="btn btn-icon" type="submit" aria-label="Apply bill search">
-          <Icon name="search" />
-        </button>
+          <button className="bill-search-submit" type="submit" aria-label="Apply bill search">
+            <Icon name="chevron_right" />
+          </button>
+        </div>
         <button
           className="btn"
           type="button"
@@ -904,7 +638,7 @@ function InactiveRecurring({ items, onAction }) {
                 {item.frequency} • {item.categoryName}
               </small>
             </span>
-            <b className="amount">{item.amountCopy}</b>
+            <b className="amount neutral">{item.amountCopy}</b>
             <button
               aria-label={`Restore ${item.name}`}
               className="btn btn-icon"
@@ -954,7 +688,9 @@ function DueNext({ groups, onSelect }) {
                     <strong>{row.name}</strong>
                     <small>{row.dueDateCopy}</small>
                   </span>
-                  <b className="amount">{row.dueAmountCopy || row.amountCopy}</b>
+                  <b className={`amount ${row.tone || 'neutral'}`}>
+                    {row.dueAmountCopy || row.amountCopy}
+                  </b>
                   <span className={`bill-days-tag ${row.tone || ''}`}>{row.relativeDateLabel}</span>
                 </button>
               ))}
@@ -1015,7 +751,7 @@ function SubscriptionSuggestions({ review, onReview }) {
               </small>
               <em>{candidate.confidenceLabel || 'Possible recurring'}</em>
             </span>
-            <b className="amount">{candidate.amountCopy}</b>
+            <b className="amount neutral">{candidate.amountCopy}</b>
             <button
               aria-label={`Review ${candidate.name} recurring suggestion`}
               className="btn subscription-suggestion-review"
@@ -1143,10 +879,7 @@ export function BillsRoute({
 
   return (
     <section data-react-route="bills">
-      <PageHeader
-        title="Bills & Subscriptions"
-        subtitle="See what is due, what was charged, and recurring patterns Cavalry notices."
-      >
+      <PageHeader title="Bills & Subscriptions">
         <button
           className="btn bills-scan-button"
           disabled={!header.sheetId || header.scanDisabled}
@@ -1276,7 +1009,7 @@ export function BillsRoute({
         />
       ) : null}
       {editor ? (
-        <EditorModal
+        <BillsEditorModal
           key={`${editor.recurringItemId || 'new'}:${editorInstanceKey}`}
           initialValues={editor}
           options={

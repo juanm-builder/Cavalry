@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
+
 const HIDDEN_STATUSES = new Set(['disabled', 'idle', 'checking', 'up-to-date']);
 
 function versionSuffix(version) {
@@ -67,9 +69,7 @@ export function SidebarUpdateStatus({ update = {} }) {
         className="rail-update-indicator downloading"
         title={`${presentation.title}, ${presentation.percent}%`}
       >
-        <span aria-hidden="true" className="material-symbols-rounded">
-          {presentation.icon}
-        </span>
+        <CavalryIcon name={presentation.icon} />
       </span>
     );
   }
@@ -83,9 +83,7 @@ export function SidebarUpdateStatus({ update = {} }) {
       title={presentation.actionLabel}
       type="button"
     >
-      <span aria-hidden="true" className="material-symbols-rounded">
-        {presentation.icon}
-      </span>
+      <CavalryIcon name={presentation.icon} />
     </button>
   );
 }
@@ -99,9 +97,7 @@ export function SidebarUpdateProgress({ update = {} }) {
   return (
     <section aria-label="Software update" className="rail-update-progress-card">
       <div className="rail-update-progress-copy">
-        <span aria-hidden="true" className="material-symbols-rounded">
-          {presentation.icon}
-        </span>
+        <CavalryIcon name={presentation.icon} />
         <span>
           <strong>{presentation.title}</strong>
           <small>{presentation.detail}</small>

@@ -87,7 +87,7 @@
   color: var(--accent);
 }
 
-.onboarding-point-icon .material-symbols-rounded {
+.onboarding-point-icon .cavalry-glyph {
   font-size: 19px;
 }
 
@@ -197,7 +197,7 @@
   font-family: var(--font-sans);
 }
 
-.tour-mock .material-symbols-rounded {
+.tour-mock .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -242,7 +242,7 @@
   white-space: nowrap;
 }
 
-.tour-mock-nav .material-symbols-rounded {
+.tour-mock-nav .cavalry-glyph {
   font-size: 13px;
 }
 
@@ -517,7 +517,7 @@
   color: var(--accent);
 }
 
-.tour-mock-check .material-symbols-rounded {
+.tour-mock-check .cavalry-glyph {
   font-size: 28px;
 }
 
@@ -631,7 +631,7 @@
   color: var(--bg-elevated);
 }
 
-.setup-checklist-status .material-symbols-rounded {
+.setup-checklist-status .cavalry-glyph {
   font-size: 14px;
   font-weight: 700;
 }
@@ -658,7 +658,7 @@
   font-size: 11.5px;
 }
 
-.setup-checklist-item > .material-symbols-rounded {
+.setup-checklist-item > .cavalry-glyph {
   color: var(--text-dim);
   font-size: 18px;
 }

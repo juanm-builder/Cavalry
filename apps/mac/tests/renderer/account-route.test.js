@@ -159,6 +159,9 @@ describe('AccountRoute', () => {
 
     expect(html).toContain('data-react-route="accounts"');
     expect(html).toContain('Accounts');
+    expect(html).not.toContain('Balances, institutions, and recent movement');
+    expect(html).toContain('aria-label="Filter account type"');
+    expect(html).toContain('aria-label="Search accounts"');
     expect(html).toContain('Net Worth');
     expect(html).toContain('Credit Card Outstanding');
     expect(html).toContain('Create account');

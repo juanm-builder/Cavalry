@@ -1,14 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { CavalryIcon } from '../shared/CavalryIcon.jsx';
+
 import { NAVIGATION_ROUTES } from '../app/routes.js';
 import { CavalryAssistantMark } from '../features/assistant/CavalryAssistantMark.jsx';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function includesQuery(item, query) {

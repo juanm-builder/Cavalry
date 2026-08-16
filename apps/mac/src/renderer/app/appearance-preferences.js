@@ -25,6 +25,13 @@ export const CUSTOM_COLOR_FIELDS = Object.freeze([
 
 export const APPEARANCE_THEMES = Object.freeze([
   Object.freeze({
+    id: 'cerulean',
+    label: 'Cerulean',
+    description: 'Bright blue, warm paper, and crisp ink',
+    scheme: 'light',
+    swatches: Object.freeze(['#1a3fe9', '#499eee', '#fef7d7'])
+  }),
+  Object.freeze({
     id: 'dark',
     label: 'Dark',
     description: 'Neutral charcoal and soft white',
@@ -64,7 +71,7 @@ export const APPEARANCE_DENSITIES = Object.freeze([
 ]);
 
 export const DEFAULT_APPEARANCE_PREFERENCES = Object.freeze({
-  theme: 'dark',
+  theme: 'cerulean',
   density: 'comfortable',
   navigation: 'expanded',
   customPalette: DEFAULT_CUSTOM_PALETTE

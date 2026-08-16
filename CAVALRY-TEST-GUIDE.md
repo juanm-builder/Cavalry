@@ -86,7 +86,7 @@ Expected result:
 - A cash-account refund increases cash flow by ₱1,000.
 - A credit-card refund reduces the card liability and does not invent cash flow.
 
-For this tranche, enter refunds through the standard transaction editor. The Assistant and Action Review were intentionally left unchanged, so AI-created refund drafts still follow the legacy assembly path.
+The in-app Assistant can now create and search refunds directly, and its workspace/spending summaries net them against the original expense category. The separate Action Review/Companion API draft path remains outside this acceptance check and must not be used to apply refund drafts until its legacy assembly path is upgraded.
 
 ## 6. Acceptance test: Monthly Plan calculations
 

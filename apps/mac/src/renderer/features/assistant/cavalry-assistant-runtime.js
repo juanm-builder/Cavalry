@@ -426,9 +426,17 @@ function toolHostApprovalFields(tools, toolName) {
     definition.parameters || definition.inputSchema || functionDefinition.parameters
   );
   const properties = asObject(parameters.properties);
-  return ['confirmed', 'allowDuplicate', 'allowCurrencyConversion'].filter((field) =>
-    Object.prototype.hasOwnProperty.call(properties, field)
+  const declared = asArray(asObject(definition.cavalry).approvalFields)
+    .map(asString)
+    .filter((field) => /^[a-z][a-zA-Z0-9]*$/.test(field));
+  const candidates = Array.from(
+    new Set([...declared, 'confirmed', 'allowDuplicate', 'allowCurrencyConversion'])
   );
+  return candidates.filter((field, index) => {
+    return (
+      candidates.indexOf(field) === index && Object.prototype.hasOwnProperty.call(properties, field)
+    );
+  });
 }
 
 function isTurnCancelled(context) {
@@ -1048,7 +1056,8 @@ export async function runCavalryAssistantTurn(options = {}) {
         typeof options.workspaceSnapshot === 'string'
           ? options.workspaceSnapshot
           : asString(asObject(options.workspaceSnapshot).json),
-      pendingConfirmationMessage: options.pendingConfirmationMessage
+      pendingConfirmationMessage: options.pendingConfirmationMessage,
+      toolDefinitions: options.tools
     }),
     makeId,
     maxIterations: boundedIterations(options.maxIterations),

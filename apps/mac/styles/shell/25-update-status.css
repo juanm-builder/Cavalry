@@ -1,5 +1,5 @@
 .rail-user-card.has-update {
-  grid-template-columns: 30px minmax(0, 1fr) 31px 31px;
+  grid-template-columns: 30px minmax(0, 1fr) 31px;
   gap: 7px;
 }
 
@@ -14,8 +14,8 @@
   border-radius: 9px;
 }
 
-.rail-update-button .material-symbols-rounded,
-.rail-update-indicator .material-symbols-rounded {
+.rail-update-button .cavalry-glyph,
+.rail-update-indicator .cavalry-glyph {
   font-size: 18px;
 }
 
@@ -66,7 +66,7 @@
   gap: 8px;
 }
 
-.rail-update-progress-copy > .material-symbols-rounded {
+.rail-update-progress-copy > .cavalry-glyph {
   color: var(--info);
   font-size: 18px;
 }
@@ -115,14 +115,13 @@
 
 .navigation-compact .rail-user-card.has-update {
   display: grid;
-  grid-template-columns: 28px 28px;
+  grid-template-columns: 28px;
   justify-content: center;
   gap: 4px;
 }
 
 .navigation-compact .rail-update-button,
-.navigation-compact .rail-update-indicator,
-.navigation-compact .rail-user-card.has-update .btn-icon {
+.navigation-compact .rail-update-indicator {
   width: 28px;
   min-width: 28px;
   height: 28px;
@@ -139,7 +138,7 @@
   gap: 5px;
 }
 
-.navigation-compact .rail-update-progress-copy > span:not(.material-symbols-rounded) {
+.navigation-compact .rail-update-progress-copy > span:not(.cavalry-glyph) {
   display: none;
 }
 
@@ -176,7 +175,7 @@
     gap: 8px;
   }
 
-  .navigation-compact .rail-update-progress-copy > span:not(.material-symbols-rounded) {
+  .navigation-compact .rail-update-progress-copy > span:not(.cavalry-glyph) {
     display: block;
   }
 
@@ -209,7 +208,6 @@
 
   .rail-user-card.has-update > span,
   .rail-user-card.has-update > strong,
-  .rail-user-card.has-update > .btn-icon:last-child,
   .rail-user-card.update-downloading {
     display: none;
   }

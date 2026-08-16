@@ -1,14 +1,12 @@
 import React from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 
-function Icon({ name }) {
-  return (
-    <span aria-hidden="true" className="material-symbols-rounded">
-      {name}
-    </span>
-  );
+function Icon({ name, className = '' }) {
+  return <CavalryIcon className={className} name={name} />;
 }
 
 function DetailField({ label, value, className = '' }) {

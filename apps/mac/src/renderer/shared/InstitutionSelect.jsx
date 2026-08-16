@@ -7,6 +7,7 @@ import {
   searchInstitutions
 } from '@cavalry/finance-core';
 
+import { CavalryIcon } from './CavalryIcon.jsx';
 import { INSTITUTION_LOGOS } from './institution-logos.jsx';
 
 export function InstitutionMark({
@@ -16,14 +17,7 @@ export function InstitutionMark({
 }) {
   const institution = findInstitutionById(institutionId);
   if (!institution) {
-    return (
-      <span
-        aria-hidden="true"
-        className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-      >
-        {fallbackIcon}
-      </span>
-    );
+    return <CavalryIcon className={className} name={fallbackIcon} />;
   }
   const logo = INSTITUTION_LOGOS[institution.id];
   const logoContent = typeof logo === 'string' ? <img alt="" draggable="false" src={logo} /> : logo;
@@ -143,12 +137,7 @@ export function InstitutionSelect({
           role="combobox"
           value={query}
         />
-        <span
-          aria-hidden="true"
-          className="material-symbols-rounded institution-select-search-icon"
-        >
-          search
-        </span>
+        <CavalryIcon className="institution-select-search-icon" name="search" />
       </div>
       {open && results.length ? (
         <ul className="institution-select-popover" id={listboxId} role="listbox">

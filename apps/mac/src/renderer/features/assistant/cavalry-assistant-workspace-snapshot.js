@@ -108,13 +108,18 @@ function topCategoriesSection(workbook, range, limit) {
     pageSize: 1
   });
   const groups = new Map();
-  view.allRows.forEach((row) => {
-    const label = asText(row.categoryLabel) || 'Uncategorized';
-    const group = groups.get(label) || { category: label, total: 0, transactionCount: 0 };
-    group.total = round2(group.total + (Number(row.baseAmount) || 0));
-    group.transactionCount += 1;
-    groups.set(label, group);
-  });
+  view.allRows
+    .filter((row) => row.hasMissingReference !== true && row.contributions?.resolved !== false)
+    .forEach((row) => {
+      const label = asText(row.categoryLabel) || 'Uncategorized';
+      const group = groups.get(label) || { category: label, total: 0, transactionCount: 0 };
+      const signedAmount = Number(row.signedBaseAmount);
+      group.total = round2(
+        group.total + (Number.isFinite(signedAmount) ? signedAmount : Number(row.baseAmount) || 0)
+      );
+      group.transactionCount += 1;
+      groups.set(label, group);
+    });
   return Array.from(groups.values())
     .sort((left, right) => right.total - left.total)
     .slice(0, limit);

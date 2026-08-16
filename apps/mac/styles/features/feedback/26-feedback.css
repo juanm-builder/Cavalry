@@ -65,7 +65,7 @@
   box-shadow: inset 0 1px 0 var(--surface-highlight);
 }
 
-.feedback-kind-control .material-symbols-rounded {
+.feedback-kind-control .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -95,7 +95,7 @@
   text-align: left;
 }
 
-.feedback-attachment-button > .material-symbols-rounded {
+.feedback-attachment-button > .cavalry-glyph {
   grid-row: 1 / span 2;
   align-self: center;
   color: var(--accent);
@@ -159,7 +159,7 @@
   font-size: 10.5px;
 }
 
-.feedback-message .material-symbols-rounded {
+.feedback-message .cavalry-glyph {
   font-size: 17px;
 }
 
@@ -196,7 +196,7 @@
   font-size: 9.5px;
 }
 
-.feedback-composer-actions > span .material-symbols-rounded {
+.feedback-composer-actions > span .cavalry-glyph {
   font-size: 14px;
 }
 
@@ -368,7 +368,7 @@
   background: var(--surface-subtle);
 }
 
-.feedback-report-empty > .material-symbols-rounded {
+.feedback-report-empty > .cavalry-glyph {
   font-size: 25px;
 }
 
@@ -477,7 +477,7 @@
   background: var(--good-soft);
 }
 
-.companion-feedback-success > span .material-symbols-rounded {
+.companion-feedback-success > span .cavalry-glyph {
   font-size: 27px;
 }
 

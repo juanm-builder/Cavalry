@@ -498,10 +498,10 @@ describe('SettingsRoute', () => {
     const html = renderSettingsRoute(model);
 
     expect(html).toMatch(
-      /<button aria-busy="true" class="btn" type="button"><span[^>]*>stop<\/span>Stop Model<\/button>/
+      /<button aria-busy="true" class="btn" type="button"><svg[^>]*data-cavalry-icon="stop"[\s\S]*?<\/svg>Stop Model<\/button>/
     );
     expect(html).toMatch(
-      /<button aria-busy="true" class="btn" disabled="" type="button"><span[^>]*>network_check<\/span>Testing Model…<\/button>/
+      /<button aria-busy="true" class="btn" disabled="" type="button"><svg[^>]*data-cavalry-icon="network_check"[\s\S]*?<\/svg>Testing Model…<\/button>/
     );
   });
 });

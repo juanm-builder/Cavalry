@@ -131,6 +131,12 @@ describe('Notes route', () => {
       />
     );
 
+    expect(
+      screen.queryByText('Turn rough money notes into clean, reviewable transactions.')
+    ).toBeNull();
+    expect(screen.queryByText('One transaction per line')).toBeNull();
+    expect(screen.queryByText('Check details before saving')).toBeNull();
+
     await user.type(
       screen.getByLabelText('Transaction notes'),
       'one kay Grab home from NAIA, charged to Credit Card'

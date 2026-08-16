@@ -11,7 +11,11 @@ import {
   buildReportsPeriodSummaryViewModel,
   buildReportsRouteViewModel
 } from '@cavalry/finance-core/application/reports/reports-route-view-model-service.js';
-import { cloneFixture, makeIncomeAndExpenseWorkbook } from '../fixtures/core-workbook-fixtures.js';
+import {
+  cloneFixture,
+  makeIncomeAndExpenseWorkbook,
+  makeRefundWorkbook
+} from '../fixtures/core-workbook-fixtures.js';
 import { makeTransactionTableWorkbook } from '../fixtures/transaction-table-scenarios.js';
 
 function categoryIds(viewModel) {
@@ -122,6 +126,18 @@ describe('reports route view-model service', () => {
       expense: 2029,
       net: 47971
     });
+  });
+
+  it('carries net refund spending through report route view models', () => {
+    const model = buildReportsRouteViewModel(makeRefundWorkbook(), {
+      range: { start: '2026-06-01', end: '2026-06-30' }
+    });
+
+    expect(model.periodSummary).toMatchObject({ expense: 1979, outflow: 1979, net: -1979 });
+    expect(model.categoryBreakdown).toMatchObject({ total: 1979, transactionCount: 5 });
+    expect(model.categoryBreakdown.categoryTotals.food).toBe(200);
+    expect(model.cashFlow.summary).toMatchObject({ expense: 1979, outflow: 1979, net: -1979 });
+    expect(model.cashFlow.limitations).not.toContain('refunds_are_not_separately_modeled');
   });
 
   it('keeps archived and missing report references visible where existing helpers do', () => {

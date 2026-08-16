@@ -1,4 +1,6 @@
 import React, { useEffect } from 'react';
+
+import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { findInstitutionById } from '@cavalry/finance-core';
@@ -7,14 +9,7 @@ import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { InstitutionMark, InstitutionSelect } from '../../shared/InstitutionSelect.jsx';
 
 export function Icon({ name, className = '' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`material-symbols-rounded${className ? ` ${className}` : ''}`}
-    >
-      {name}
-    </span>
-  );
+  return <CavalryIcon className={className} name={name} />;
 }
 
 export const ACCOUNT_TYPE_OPTIONS = [

@@ -5,15 +5,15 @@ import { createBudgetController } from '../budgets/budget-controller.js';
 import { BILLS_ACTIONS, createBillsController } from '../recurring/bills-controller.js';
 import { SETTINGS_ACTIONS, createSettingsController } from '../settings/settings-controller.js';
 
-export {
-  CAVALRY_ASSISTANT_TOOLS,
-  getCavalryAssistantToolDefinitions
-} from './cavalry-assistant-tool-definitions.js';
+import {
+  capabilityProviderFromLegacyTools,
+  createCavalryAssistantCapabilityRegistry
+} from './cavalry-assistant-capability-registry.js';
 import {
   APP_ROUTES,
   BILL_WRITE_PROPERTIES,
+  CAVALRY_ASSISTANT_TOOLS as BUILTIN_CAVALRY_ASSISTANT_TOOLS,
   CATEGORY_CUSTOMIZATION_PROPERTIES,
-  TOOL_NAMES,
   asArray,
   asObject,
   asText,
@@ -55,6 +55,20 @@ import {
 } from './cavalry-assistant-tool-support.js';
 import { payBill } from './cavalry-assistant-pay-bill.js';
 import { summarizeSpending } from './cavalry-assistant-spending-tool.js';
+
+const FEATURE_CAPABILITY_MODULES = import.meta.glob('../*/cavalry-assistant-capability.js', {
+  eager: true
+});
+
+const FEATURE_CAPABILITY_PROVIDERS = Object.entries(FEATURE_CAPABILITY_MODULES).map(
+  ([source, module]) => {
+    const provider = asObject(module).default;
+    if (!provider) {
+      throw new Error(`Cavalry assistant capability module “${source}” has no default export.`);
+    }
+    return provider;
+  }
+);
 
 async function readPersistedWorkbook(environment, fallbackWorkbook) {
   try {
@@ -830,6 +844,41 @@ const TOOL_HANDLERS = Object.freeze({
   save_workbook: saveWorkbookTool
 });
 
+const CAVALRY_ASSISTANT_CAPABILITY_REGISTRY = createCavalryAssistantCapabilityRegistry([
+  capabilityProviderFromLegacyTools({
+    id: 'cavalry.core',
+    title: 'Cavalry workspace',
+    description:
+      'Read and safely operate the core Cavalry workspace, ledger, planning, and settings features.',
+    definitions: BUILTIN_CAVALRY_ASSISTANT_TOOLS,
+    handlers: TOOL_HANDLERS
+  }),
+  ...FEATURE_CAPABILITY_PROVIDERS
+]);
+
+export const CAVALRY_ASSISTANT_TOOLS = CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.definitions;
+export const TOOL_NAMES = new Set(CAVALRY_ASSISTANT_TOOLS.map((definition) => definition.name));
+
+export function getCavalryAssistantToolDefinitions() {
+  return CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.getDefinitions();
+}
+
+export function getCavalryAssistantCapabilityManifest() {
+  return CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.getManifest();
+}
+
+export function getCavalryAssistantToolMetadata(name) {
+  const entry = CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.entry(name);
+  if (!entry) return null;
+  return {
+    capabilityId: entry.providerId,
+    capabilityTitle: entry.capabilityTitle,
+    instructions: entry.capabilityInstructions,
+    approvalFields: [...entry.approvalFields],
+    actionVerb: entry.actionVerb
+  };
+}
+
 export async function executeCavalryAssistantTool(toolCall, context = {}) {
   const parsed = toolCallParts(toolCall);
   const environment = {
@@ -840,7 +889,7 @@ export async function executeCavalryAssistantTool(toolCall, context = {}) {
     services: asObject(context.services),
     workbook: null
   };
-  if (!parsed.name || !TOOL_NAMES.has(parsed.name) || !TOOL_HANDLERS[parsed.name]) {
+  if (!parsed.name || !CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.has(parsed.name)) {
     return failure(
       environment,
       'unsupported_tool',
@@ -878,7 +927,7 @@ export async function executeCavalryAssistantTool(toolCall, context = {}) {
     );
   }
   try {
-    return await TOOL_HANDLERS[parsed.name](environment);
+    return await CAVALRY_ASSISTANT_CAPABILITY_REGISTRY.execute(parsed.name, environment);
   } catch (error) {
     return failure(
       environment,

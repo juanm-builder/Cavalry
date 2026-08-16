@@ -6,6 +6,7 @@ import {
   resolveCloudWorkbookSyncStorage,
   writeCloudWorkbookSyncState
 } from './cloud-workbook-sync-state.js';
+import { createCloudWorkbookAutoSyncScheduler } from './cloud-workbook-auto-sync.js';
 import { useCloudFeedbackController } from './use-cloud-feedback-controller.js';
 
 const CLOUD_STATUSES = new Set([
@@ -76,8 +77,24 @@ function normalizeCloudWorkbook(value) {
   };
 }
 
+function normalizeCloudWorkbookChange(value) {
+  const source = asObject(value);
+  const sequence = Number(source.sequence);
+  const eventType = asString(source.eventType).toUpperCase();
+  const workbookId = asString(source.workbookId);
+  if (!(Number.isSafeInteger(sequence) && sequence > 0 && workbookId)) return null;
+  return {
+    sequence,
+    eventType: ['INSERT', 'UPDATE', 'DELETE'].includes(eventType) ? eventType : 'UPDATE',
+    workbookId,
+    revision: asRevision(source.revision),
+    updatedAt: asString(source.updatedAt)
+  };
+}
+
 export function normalizeCloudState(value) {
   const source = asObject(value);
+  const workbookChange = normalizeCloudWorkbookChange(source.workbookChange);
   const configured = source.configured === true;
   const status = CLOUD_STATUSES.has(source.status)
     ? source.status
@@ -94,6 +111,7 @@ export function normalizeCloudState(value) {
     workbooks: (Array.isArray(source.workbooks) ? source.workbooks : [])
       .map(normalizeCloudWorkbook)
       .filter(Boolean),
+    ...(workbookChange ? { workbookChange } : {}),
     sessionPersistence:
       source.sessionPersistence === true || source.sessionPersistence === 'secure',
     error: asString(asObject(source.error).message || source.error)
@@ -112,6 +130,24 @@ function errorMessageFromResult(result) {
     (typeof source.error === 'string' ? source.error : asObject(source.error).message) ||
       asObject(state.error).message
   );
+}
+
+function isRetryableAutomaticSyncFailure(result) {
+  const source = asObject(result);
+  if (source.conflict === true || source.code === 'workbook_revision_conflict') return false;
+  const code = asString(source.code || asObject(source.error).code);
+  if (
+    [
+      'cloud_quota_exceeded',
+      'cloud_database_update_required',
+      'invalid_workbook_id',
+      'invalid_revision',
+      'not_signed_in'
+    ].includes(code)
+  ) {
+    return false;
+  }
+  return !source.ok;
 }
 
 export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
@@ -159,8 +195,11 @@ export function useCloudWorkbookController({
   workbookStorage,
   syncStorage,
   saveStatus,
+  localSaveSequence = 0,
+  saveWorkbook,
   setWorkbook,
-  navigate
+  navigate,
+  autoSyncSchedulerOptions
 } = {}) {
   const [cloudState, setCloudState] = useState(EMPTY_CLOUD_STATE);
   const [uiState, setUiState] = useState({ pendingOperation: '', notice: '', error: '' });
@@ -172,8 +211,13 @@ export function useCloudWorkbookController({
   const workbookRef = useRef(workbook);
   const saveStatusRef = useRef(saveStatus);
   const pendingOperationRef = useRef('');
+  const previousLocalSaveSequenceRef = useRef(Math.max(0, Number(localSaveSequence) || 0));
+  const suppressNextAutoSyncRef = useRef(null);
+  const remoteRefreshInFlightRef = useRef(null);
   const [conflictedWorkbookIds, setConflictedWorkbookIds] = useState(() => new Set());
   const conflictedWorkbookIdsRef = useRef(conflictedWorkbookIds);
+  const [autoSyncEpoch, setAutoSyncEpoch] = useState(0);
+  const autoSyncSchedulerRef = useRef(null);
 
   useEffect(() => {
     stateRef.current = cloudState;
@@ -200,38 +244,6 @@ export function useCloudWorkbookController({
 
   const cloudUserId = asString(cloudState.user && cloudState.user.id);
   const localWorkbookId = asString(workbook && workbook.id);
-
-  useEffect(() => {
-    if (cloudState.status !== 'signed_in' || !cloudUserId || !localWorkbookId) return;
-    const remote = cloudState.workbooks.find((item) => item.id === localWorkbookId);
-    const remoteExists = !!remote;
-    const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
-    if (
-      remoteExists &&
-      (!syncState.known ||
-        !syncState.revision ||
-        syncState.conflict ||
-        remote.revision !== syncState.revision)
-    ) {
-      if (!syncState.conflict) {
-        writeCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId, {
-          revision: syncState.revision,
-          conflict: true
-        });
-      }
-      updateWorkbookConflict(localWorkbookId, true);
-    } else if (!remoteExists && syncState.conflict) {
-      removeCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
-      updateWorkbookConflict(localWorkbookId, false);
-    }
-  }, [
-    cloudState.status,
-    cloudState.workbooks,
-    cloudUserId,
-    localWorkbookId,
-    resolvedSyncStorage,
-    updateWorkbookConflict
-  ]);
 
   useEffect(() => {
     const remoteIds = new Set(cloudState.workbooks.map((item) => item.id));
@@ -292,6 +304,271 @@ export function useCloudWorkbookController({
       if (typeof dispose === 'function') dispose();
     };
   }, [applyRemoteState, cloud, invoke]);
+
+  const latchWorkbookConflict = useCallback(
+    (userId, workbookId, revision) => {
+      const ownerId = asString(userId);
+      const targetId = asString(workbookId);
+      if (!(ownerId && targetId)) return;
+      writeCloudWorkbookSyncState(resolvedSyncStorage, ownerId, targetId, {
+        revision: asRevision(revision) || null,
+        conflict: true
+      });
+      updateWorkbookConflict(targetId, true);
+    },
+    [resolvedSyncStorage, updateWorkbookConflict]
+  );
+
+  const performAutomaticCloudSync = useCallback(
+    async (entry) => {
+      const currentState = stateRef.current;
+      const currentUserId = asString(currentState.user && currentState.user.id);
+      const currentWorkbookId = asString(entry && entry.workbookId);
+      if (
+        currentState.status !== 'signed_in' ||
+        !currentUserId ||
+        currentUserId !== asString(entry && entry.userId) ||
+        !currentWorkbookId
+      ) {
+        return { ok: false, retry: false, code: 'not_signed_in' };
+      }
+
+      const syncState = readCloudWorkbookSyncState(
+        resolvedSyncStorage,
+        currentUserId,
+        currentWorkbookId
+      );
+      if (syncState.conflict || conflictedWorkbookIdsRef.current.has(currentWorkbookId)) {
+        return { ok: false, retry: false, conflict: true, code: 'workbook_revision_conflict' };
+      }
+      const remote = currentState.workbooks.find((item) => item.id === currentWorkbookId);
+      if (!remote && syncState.known && syncState.revision) {
+        return { ok: false, retry: false, code: 'cloud_workbook_missing' };
+      }
+      if (
+        remote &&
+        (!syncState.known || !syncState.revision || remote.revision !== syncState.revision)
+      ) {
+        latchWorkbookConflict(currentUserId, currentWorkbookId, syncState.revision);
+        return { ok: false, retry: false, conflict: true, code: 'workbook_revision_conflict' };
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(entry, 'expectedRevision')) {
+        entry.expectedRevision = syncState.known ? syncState.revision : null;
+      }
+      const result = await invoke('uploadWorkbook', {
+        workbook: entry.workbook,
+        expectedRevision: entry.expectedRevision
+      });
+      const resultState = stateFromResult(result);
+
+      if (result && (result.conflict === true || result.code === 'workbook_revision_conflict')) {
+        latchWorkbookConflict(currentUserId, currentWorkbookId, entry.expectedRevision);
+        if (resultState) applyRemoteState(resultState);
+        return { ...result, retry: false, conflict: true };
+      }
+      if (!(result && result.ok)) {
+        return { ...(result || {}), retry: isRetryableAutomaticSyncFailure(result) };
+      }
+
+      const metadata = asObject(result.metadata);
+      const metadataId = asString(metadata.id);
+      if (metadataId && metadataId !== currentWorkbookId) {
+        return {
+          ok: false,
+          retry: false,
+          code: 'cloud_workbook_identity_mismatch'
+        };
+      }
+      const resultRemote = (
+        resultState ? normalizeCloudState(resultState) : currentState
+      ).workbooks.find((item) => item.id === currentWorkbookId);
+      const revision = asRevision(metadata.revision || (resultRemote && resultRemote.revision));
+      if (!revision) {
+        return { ok: false, retry: true, code: 'cloud_revision_missing' };
+      }
+
+      writeCloudWorkbookSyncState(resolvedSyncStorage, currentUserId, currentWorkbookId, {
+        revision,
+        conflict: false
+      });
+      updateWorkbookConflict(currentWorkbookId, false);
+      if (resultState) applyRemoteState(resultState);
+      else await refreshState();
+      return { ...result, retry: false };
+    },
+    [
+      applyRemoteState,
+      invoke,
+      latchWorkbookConflict,
+      refreshState,
+      resolvedSyncStorage,
+      updateWorkbookConflict
+    ]
+  );
+  useEffect(() => {
+    const scheduler = createCloudWorkbookAutoSyncScheduler({
+      ...(autoSyncSchedulerOptions || {}),
+      performSync: performAutomaticCloudSync,
+      onStatus: () => setAutoSyncEpoch((current) => current + 1)
+    });
+    autoSyncSchedulerRef.current = scheduler;
+    return () => {
+      if (autoSyncSchedulerRef.current === scheduler) autoSyncSchedulerRef.current = null;
+      scheduler.stop();
+    };
+  }, [autoSyncSchedulerOptions, performAutomaticCloudSync]);
+
+  useEffect(() => {
+    const previousSequence = previousLocalSaveSequenceRef.current;
+    const nextSequence = Math.max(0, Number(localSaveSequence) || 0);
+    previousLocalSaveSequenceRef.current = nextSequence;
+    if (nextSequence <= previousSequence) return;
+
+    const currentWorkbook = workbookRef.current;
+    const workbookId = asString(currentWorkbook && currentWorkbook.id);
+    const userId = asString(stateRef.current.user && stateRef.current.user.id);
+    const suppression = suppressNextAutoSyncRef.current;
+    if (
+      suppression &&
+      suppression.workbookId === workbookId &&
+      suppression.workbook === currentWorkbook
+    ) {
+      suppressNextAutoSyncRef.current = null;
+      return;
+    }
+    if (stateRef.current.status !== 'signed_in' || !(userId && workbookId && currentWorkbook)) {
+      return;
+    }
+    autoSyncSchedulerRef.current?.enqueue({
+      userId,
+      workbookId,
+      workbook: currentWorkbook
+    });
+  }, [localSaveSequence, workbook]);
+
+  const refreshCurrentWorkbookFromCloud = useCallback(
+    async (userId, remote) => {
+      const workbookId = asString(remote && remote.id);
+      const revision = asRevision(remote && remote.revision);
+      if (!(userId && workbookId && revision) || remoteRefreshInFlightRef.current) return;
+      remoteRefreshInFlightRef.current = { workbookId, revision };
+      try {
+        const result = await invoke('downloadWorkbook', { workbookId });
+        if (!(result && result.ok && result.workbook)) return;
+        if (asString(result.workbook.id) !== workbookId) {
+          latchWorkbookConflict(
+            userId,
+            workbookId,
+            readCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId).revision
+          );
+          return;
+        }
+
+        const stillCurrent = asString(workbookRef.current && workbookRef.current.id) === workbookId;
+        const stillClean = ['saved', 'cache'].includes(asString(saveStatusRef.current));
+        if (
+          !stillCurrent ||
+          !stillClean ||
+          autoSyncSchedulerRef.current?.hasWork() ||
+          pendingOperationRef.current
+        ) {
+          const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId);
+          latchWorkbookConflict(userId, workbookId, syncState.revision);
+          return;
+        }
+
+        suppressNextAutoSyncRef.current = { workbookId, revision, workbook: result.workbook };
+        if (typeof setWorkbook === 'function') {
+          setWorkbook(result.workbook, {
+            source: 'cloud-realtime',
+            markDirty: true
+          });
+        }
+        const localSaveResult =
+          typeof saveWorkbook === 'function'
+            ? await saveWorkbook(result.workbook)
+            : browserCache && typeof browserCache.save === 'function'
+              ? await browserCache.save(result.workbook)
+              : { ok: false };
+        if (!(localSaveResult && localSaveResult.ok)) {
+          const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId);
+          latchWorkbookConflict(userId, workbookId, syncState.revision);
+          return;
+        }
+
+        const resultState = stateFromResult(result);
+        const remoteFromResult = (
+          resultState ? normalizeCloudState(resultState) : stateRef.current
+        ).workbooks.find((item) => item.id === workbookId);
+        const acknowledgedRevision = asRevision(
+          asObject(result.metadata).revision ||
+            (remoteFromResult && remoteFromResult.revision) ||
+            revision
+        );
+        writeCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId, {
+          revision: acknowledgedRevision,
+          conflict: false
+        });
+        updateWorkbookConflict(workbookId, false);
+        if (resultState) applyRemoteState(resultState);
+      } finally {
+        remoteRefreshInFlightRef.current = null;
+      }
+    },
+    [
+      applyRemoteState,
+      browserCache,
+      invoke,
+      latchWorkbookConflict,
+      resolvedSyncStorage,
+      saveWorkbook,
+      setWorkbook,
+      updateWorkbookConflict
+    ]
+  );
+
+  useEffect(() => {
+    if (cloudState.status !== 'signed_in' || !cloudUserId || !localWorkbookId) return;
+    const remote = cloudState.workbooks.find((item) => item.id === localWorkbookId);
+    const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
+    if (!remote) {
+      if (syncState.conflict) {
+        removeCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
+        updateWorkbookConflict(localWorkbookId, false);
+      }
+      return;
+    }
+    if (syncState.conflict) {
+      updateWorkbookConflict(localWorkbookId, true);
+      return;
+    }
+    if (!syncState.known || !syncState.revision) {
+      latchWorkbookConflict(cloudUserId, localWorkbookId, syncState.revision);
+      return;
+    }
+    if (remote.revision <= syncState.revision) return;
+
+    // A realtime echo can arrive before the upload RPC resolves. Defer the
+    // decision until the exact CAS result either advances the anchor or latches.
+    if (pendingOperationRef.current || autoSyncSchedulerRef.current?.hasWork()) return;
+    if (!['saved', 'cache'].includes(asString(saveStatusRef.current))) {
+      latchWorkbookConflict(cloudUserId, localWorkbookId, syncState.revision);
+      return;
+    }
+    void refreshCurrentWorkbookFromCloud(cloudUserId, remote);
+  }, [
+    autoSyncEpoch,
+    cloudState.status,
+    cloudState.workbookChange,
+    cloudState.workbooks,
+    cloudUserId,
+    latchWorkbookConflict,
+    localWorkbookId,
+    refreshCurrentWorkbookFromCloud,
+    resolvedSyncStorage,
+    updateWorkbookConflict
+  ]);
 
   const execute = useCallback(
     async (operation, payload = {}) => {

@@ -4,7 +4,23 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## Unreleased
 
-## 1.0.26 - 2026-08-15
+## 1.0.26 - 2026-08-16
+
+- Redesigned the complete Mac interface around Cavalry's new Cerulean Vault
+  visual system: warm paper surfaces, disciplined cobalt and cerulean accents,
+  compact mono typography, sharper hierarchy, and clearer responsive layouts.
+- Replaced the network-loaded Material Symbols font with more than 150 original,
+  local inline SVG glyphs across navigation, actions, statuses, accounts, and all
+  category choices. A compact ledger-mark family handles utilities while a
+  coordinated stamp family gives all 42 category choices recognizable, optically
+  balanced pictograms. Icons can no longer fall back to raw names such as
+  `dashboard` or `receipt_long` when a font request is late or unavailable.
+- Reserved green and red for financial meaning. Positive income, refunds,
+  savings progress, and liability credits now read green; expenses, losses, and
+  overdue values read red; zero-value states remain neutral.
+- Improved navigation and modal accessibility, including complete compact-window
+  route access, larger reliable click targets, preserved financial row labels for
+  assistive technology, and a readable net-flow announcement.
 
 - Rebuilt Budget as **Monthly Plan**, keeping manual spending limits, recurring
   commitments, savings targets, debt-paydown targets, and expected income as
@@ -44,23 +60,21 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - Added durable `YYYY-MM` sheet identities and cross-year month creation so one
   workbook can continue beyond its original calendar year.
 - Updated regression expectations for the refund, Monthly Plan, recurring,
-  modal-layout, and multi-year behavior. The Assistant/AI component source was
-  intentionally left unchanged.
+  modal-layout, multi-year, semantic-color, and local-icon behavior.
 - Migration: no workbook schema-version bump. Legacy month-index sheets receive a
   durable month key during normalization and persist it on a later save. Test
   first with a duplicate workbook.
 - Known limitations: historical refunds previously recorded as ordinary income
-  cannot be inferred safely and must be reviewed manually. The Assistant and
-  Action Review were intentionally left unchanged, so merchant refunds should be
-  entered through the standard transaction editor in this tranche. Recurring
-  detection is pattern-based and may require correction. This handoff is
-  source-only; it is not a signed or notarized desktop release.
-- Validation for this source handoff: ten-check trust-critical finance verifier,
-  JavaScript/JSX syntax parsing, Prettier, ESLint, release metadata validation,
-  and source-package integrity checks pass. The complete Vitest, TypeScript,
-  Vite, and Electron gates must be rerun after a clean `npm ci` on macOS because
-  the uploaded dependency tree contained macOS-native optional packages that
-  cannot execute in the Linux packaging environment.
+  cannot be inferred safely and must be reviewed manually. Recurring detection
+  is pattern-based and may require correction.
+- Validation: formatting, runtime-license notices, lint, type checks, production
+  builds, 1,734 workspace/unit/renderer tests, 262 integration tests, Electron
+  smoke, release security checks, trust-critical finance verification, and
+  release metadata validation are gated before packaging.
+- Signing/notarization status: the local DMG is an ad-hoc development artifact.
+  Distribution remains gated on the GitHub release workflow's Developer ID
+  signing, Apple notarization and stapling, Gatekeeper checks, updater metadata
+  verification, and manual review of the generated draft assets.
 
 ## 1.0.25 - 2026-08-13
 

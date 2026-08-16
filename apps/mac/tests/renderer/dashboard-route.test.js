@@ -72,7 +72,10 @@ function renderDashboardRoute(model = makeRouteModel()) {
 
 describe('DashboardRoute', () => {
   it('renders dashboard sections and action affordances from the route model', () => {
-    const html = renderDashboardRoute();
+    const model = makeRouteModel();
+    const html = renderDashboardRoute(model);
+    const netFlowValue = Number(model.stats.cards.find((card) => card.id === 'net_flow')?.value);
+    const netFlowDirection = netFlowValue > 0 ? 'positive' : netFlowValue < 0 ? 'negative' : 'zero';
 
     expect(html).toContain('data-react-route="dashboard"');
     expect(html).toContain('Dashboard');
@@ -83,6 +86,9 @@ describe('DashboardRoute', () => {
     expect(html).toContain('Total Inflows');
     expect(html).toContain('Total Outflows');
     expect(html).toContain('Net Flow');
+    expect(html).toContain(`aria-label="Net flow, ${netFlowDirection}, `);
+    expect(html).toContain('class="dashboard-flow-connector" role="group"');
+    expect(html).not.toContain('class="dashboard-flow-connector" aria-hidden="true"');
     expect(html).toContain('Dashboard average period');
     expect(html).toContain('Yearly');
     expect(html).toContain('Average spending per year');
@@ -95,13 +101,42 @@ describe('DashboardRoute', () => {
   it('renders the timeline, spending, and account drilldowns', () => {
     const html = renderDashboardRoute();
 
-    expect(html).toContain('Money Timeline');
-    expect(html).toContain('Monthly income and expenses across the current year');
-    expect(html).toContain('Expenses by Category');
+    expect(html).toContain('Cash-flow timeline');
+    expect(html).not.toContain('Bigger picture');
+    expect(html).not.toContain('Monthly income and expenses across the current year');
+    expect(html).toContain('Spending by category');
+    expect(html).not.toContain('Where it goes');
+    expect(html).not.toContain('Your position, cash flow');
+    expect(html).not.toContain('>Position</span>');
     expect(html).not.toMatch(/class="amount">[^<]+ · \d+%/);
-    expect(html).toContain('T Accounts');
+    expect(html).toContain('Assets &amp; obligations');
     expect(html).not.toContain('Monthly Net Movement');
     expect(html).not.toContain('Transactions in Range');
+  });
+
+  it('uses semantic tones for negative and zero position values', () => {
+    const negativeModel = makeRouteModel();
+    negativeModel.timeframes = {};
+    negativeModel.stats.cards = negativeModel.stats.cards.map((card) =>
+      card.id === 'net_worth' ? { ...card, value: -1250 } : card
+    );
+    const negativeHtml = renderDashboardRoute(negativeModel);
+    expect(negativeHtml).toContain(
+      '<span class="dashboard-kicker">Net Worth</span><strong class="bad">'
+    );
+
+    const zeroModel = makeRouteModel();
+    zeroModel.timeframes = {};
+    zeroModel.stats.cards = zeroModel.stats.cards.map((card) =>
+      ['net_worth', 'total_inflows', 'total_outflows', 'net_flow'].includes(card.id)
+        ? { ...card, value: 0 }
+        : card
+    );
+    const zeroHtml = renderDashboardRoute(zeroModel);
+    expect(zeroHtml).toContain(
+      '<span class="dashboard-kicker">Net Worth</span><strong class="neutral">'
+    );
+    expect(zeroHtml).toContain('dashboard-flow-summary-item neutral');
   });
 
   it('respects dashboard layout ordering and hidden layout empty state', () => {

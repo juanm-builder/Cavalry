@@ -1,3 +1,5 @@
+import { LEDGER_TRANSACTION_TEMPLATES } from '@cavalry/finance-core';
+
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '../categories/category-options.js';
 
 export const APP_ROUTES = Object.freeze([
@@ -10,14 +12,7 @@ export const APP_ROUTES = Object.freeze([
   'settings'
 ]);
 
-const TRANSACTION_TEMPLATES = Object.freeze([
-  'expense_paid',
-  'expense_charged',
-  'income_received',
-  'transfer',
-  'debt_payment',
-  'opening_balance'
-]);
+const TRANSACTION_TEMPLATES = Object.freeze([...LEDGER_TRANSACTION_TEMPLATES]);
 
 const CONFIRMATION_COPY =
   'Set confirmed to true only after the user explicitly confirms this destructive action.';
@@ -88,7 +83,15 @@ function tool(name, description, properties = {}, required = []) {
   });
 }
 
-const DATE_RANGE_PROPERTIES = Object.freeze({
+export function defineCavalryAssistantTool(name, description, properties = {}, required = []) {
+  return tool(name, description, properties, required);
+}
+
+export const assistantStringProperty = stringProperty;
+export const assistantNumberProperty = numberProperty;
+export const assistantBooleanProperty = booleanProperty;
+
+export const DATE_RANGE_PROPERTIES = Object.freeze({
   start: stringProperty('Optional inclusive start date in YYYY-MM-DD format.'),
   end: stringProperty('Optional inclusive end date in YYYY-MM-DD format.')
 });
@@ -224,7 +227,7 @@ export const CAVALRY_ASSISTANT_TOOLS = Object.freeze([
   tool('search_transactions', 'Search and filter transactions without changing the workbook.', {
     query: stringProperty('Search text matched across descriptions, notes, references, and IDs.'),
     type: stringProperty('Transaction flow filter.', {
-      enum: ['all', 'income', 'expense', 'transfer', 'opening', 'other']
+      enum: ['all', 'income', 'expense', 'refund', 'transfer', 'opening', 'other']
     }),
     account: stringProperty('Account ID or exact name, matched case-insensitively.'),
     accountId: stringProperty('Account ID or exact name, matched case-insensitively.'),
@@ -248,7 +251,7 @@ export const CAVALRY_ASSISTANT_TOOLS = Object.freeze([
         enum: ['category', 'counterparty', 'account', 'month']
       }),
       type: stringProperty('Transaction flow filter. Defaults to expense.', {
-        enum: ['all', 'income', 'expense', 'transfer', 'opening', 'other']
+        enum: ['all', 'income', 'expense', 'refund', 'transfer', 'opening', 'other']
       }),
       account: stringProperty('Optional account ID or exact name filter.'),
       accountId: stringProperty('Optional account ID or exact name filter.'),
@@ -295,7 +298,7 @@ export const CAVALRY_ASSISTANT_TOOLS = Object.freeze([
   }),
   tool(
     'create_transaction',
-    'Create a validated transaction. Omit date when the user did not specify one; Cavalry defaults it to the current date. Category and compatible accounts may be inferred from explicit wording, saved category rules, matching transaction history, and transaction semantics. Possible duplicates are returned for confirmation before posting.',
+    'Create a validated transaction, including merchant refunds that reduce the original expense category instead of counting as income. Omit date when the user did not specify one; Cavalry defaults it to the current date. Category and compatible accounts may be inferred from explicit wording, saved category rules, matching transaction history, and transaction semantics. Possible duplicates are returned for confirmation before posting.',
     TRANSACTION_WRITE_PROPERTIES,
     ['amount', 'description']
   ),

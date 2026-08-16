@@ -597,9 +597,11 @@ export function recurringItemsWithLabels(workbook, includeArchived, asOfDate = '
 export async function createTransaction(environment) {
   const workbook = environment.workbook;
   const date = currentDate(workbook, environment.services);
+  const forcedTemplate = asText(environment.context?.forcedTransactionTemplate);
   const inferred = inferCavalryAssistantTransactionArguments(workbook, environment.arguments, {
     currentDate: date,
-    question: asText(environment.context && environment.context.question)
+    question: asText(environment.context && environment.context.question),
+    forcedTemplate
   });
   const defaults = buildTransactionComposerDraft(workbook, '', {
     defaultDate: date

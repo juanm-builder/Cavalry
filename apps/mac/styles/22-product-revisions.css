@@ -111,9 +111,9 @@
   outline: none;
 }
 
-.categorized-select-group > button .material-symbols-rounded,
-.categorized-select-clear .material-symbols-rounded,
-.categorized-select-create-option .material-symbols-rounded {
+.categorized-select-group > button .cavalry-glyph,
+.categorized-select-clear .cavalry-glyph,
+.categorized-select-create-option .cavalry-glyph {
   color: currentColor;
   font-size: 19px;
 }
@@ -134,7 +134,7 @@
   font-weight: 700;
 }
 
-.categorized-select-create-option .material-symbols-rounded:last-child {
+.categorized-select-create-option .cavalry-glyph:last-child {
   justify-self: end;
   font-size: 17px;
 }
@@ -166,7 +166,7 @@
   margin-bottom: 20px;
 }
 
-.categorized-select-create-dialog > header > .material-symbols-rounded {
+.categorized-select-create-dialog > header > .cavalry-glyph {
   display: grid;
   width: 42px;
   height: 42px;
@@ -983,7 +983,7 @@
   outline: none;
 }
 
-.advisor-image-upload-button .material-symbols-rounded {
+.advisor-image-upload-button .cavalry-glyph {
   color: var(--accent);
   font-size: 19px;
 }
