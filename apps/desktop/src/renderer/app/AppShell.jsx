@@ -58,6 +58,7 @@ function SessionContent({ routeId, routeModels, onAction }) {
     openRecentWorkbook,
     ports,
     recentWorkbooks,
+    retryHydration,
     saveWorkbook,
     setWorkbook
   } = useWorkbookSession();
@@ -166,7 +167,7 @@ function SessionContent({ routeId, routeModels, onAction }) {
         status="error"
         error={state.hydration.error}
         onOpen={openWorkbook}
-        onRetry={openWorkbook}
+        onRetry={retryHydration}
       />
     );
   }

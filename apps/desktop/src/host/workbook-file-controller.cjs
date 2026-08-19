@@ -9,9 +9,27 @@ function normalizeWorkbookPath(value) {
   return path.isAbsolute(filePath) ? path.normalize(filePath) : '';
 }
 
+function errorCode(error) {
+  return String((error && (error.code || (error.cause && error.cause.code))) || '');
+}
+
 function isMissingFileError(error) {
-  const code = String((error && (error.code || (error.cause && error.cause.code))) || '');
+  const code = errorCode(error);
   return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+function isPermissionError(error) {
+  const code = errorCode(error);
+  return code === 'EPERM' || code === 'EACCES';
+}
+
+// A raw "EPERM: operation not permitted" tells the reader nothing about the cause, which on macOS
+// is almost always a folder the operating system protects until the application is granted access.
+function describeReadFailure(error, filePath) {
+  if (isPermissionError(error)) {
+    return `Cavalry is not allowed to read ${filePath}. Grant Cavalry access to that folder in your operating system privacy settings, then try again.`;
+  }
+  return error && error.message ? error.message : 'The linked workbook file could not be opened.';
 }
 
 function recentWorkbookId(filePath) {
@@ -174,9 +192,9 @@ function createWorkbookFileController({
       return {
         ok: false,
         missing: isMissingFileError(error),
+        permissionDenied: isPermissionError(error),
         fileName: getFileName(filePath),
-        error:
-          error && error.message ? error.message : 'The linked workbook file could not be opened.'
+        error: describeReadFailure(error, filePath)
       };
     }
   }

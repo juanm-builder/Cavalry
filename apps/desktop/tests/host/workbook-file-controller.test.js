@@ -323,7 +323,12 @@ describe('workbook file controller', () => {
 
     await expect(
       invokeFileHandler(ipcMain, 'cavalry-files:open-recent', { id: recent.id })
-    ).resolves.toMatchObject({ ok: false, missing: false, error: 'Permission denied' });
+    ).resolves.toMatchObject({
+      ok: false,
+      missing: false,
+      permissionDenied: true,
+      error: expect.stringContaining('privacy settings')
+    });
     await expect(getFileHandler(ipcMain, 'cavalry-files:list-recent')()).resolves.toMatchObject({
       ok: true,
       workbooks: [{ id: recent.id }]

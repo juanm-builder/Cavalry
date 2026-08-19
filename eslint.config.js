@@ -9,7 +9,13 @@ const commonRules = {
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/test-artifacts/**']
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/test-artifacts/**',
+      // Cargo build output, including generated Tauri codegen assets that are not parseable JS.
+      'apps/desktop/src-tauri/target/**'
+    ]
   },
   {
     files: ['**/*.{js,mjs,cjs,jsx}'],

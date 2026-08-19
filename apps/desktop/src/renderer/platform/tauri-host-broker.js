@@ -2,6 +2,21 @@ const HOST_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:', 'tel:']);
 const ALLOWED_SYSTEM_PROTOCOLS = new Set(['x-apple.systempreferences:', 'ms-settings:']);
 
+// Tauri rejects a command promise with the plain value returned by `Err(String)`, so callers
+// reading `error.message` would otherwise drop the host's reason and report a generic failure.
+function toHostError(error, channel) {
+  if (error instanceof Error) return error;
+  const message =
+    typeof error === 'string' && error.trim()
+      ? error.trim()
+      : error && typeof error.message === 'string' && error.message.trim()
+        ? error.message.trim()
+        : `The Cavalry desktop host failed to handle ${channel}.`;
+  const hostError = new Error(message);
+  hostError.channel = String(channel || '');
+  return hostError;
+}
+
 function getTauriGlobal() {
   const tauri = globalThis && globalThis.__TAURI__;
   if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') {
@@ -155,6 +170,8 @@ class CavalryHostBroker {
     });
     try {
       return await Promise.race([operation, timeout]);
+    } catch (error) {
+      throw toHostError(error, channel);
     } finally {
       globalThis.clearTimeout(timeoutId);
     }

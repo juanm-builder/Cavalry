@@ -4,6 +4,22 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.0.1 - 2026-08-19
+
+### Fixed
+
+- Signed macOS releases are now notarized and stapled. The release workflow passed the App Store
+  Connect key path in place of the key ID, so Tauri logged a warning and skipped notarization while
+  the build still reported success; the disk image is now notarized as well as the application, and
+  the build fails if either is unsigned, unnotarized, or unstapled.
+- Desktop host failures now report their reason. Tauri rejects a command with a plain string, so
+  every host error was replaced by a generic "The workbook file could not be loaded."
+- The startup error screen's buttons now respond. "Try Again" retries loading the workbook instead
+  of opening a file picker, and "Open Another Workbook" reports a reason when the picker cannot open
+  rather than silently redisplaying the same screen.
+- A workbook stored in an operating-system protected folder now explains that Cavalry needs folder
+  access, instead of surfacing a raw "EPERM: operation not permitted".
+
 ## 2.0.0 - 2026-08-19
 
 ### Changed

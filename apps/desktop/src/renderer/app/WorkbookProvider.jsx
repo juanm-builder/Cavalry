@@ -115,6 +115,23 @@ export function WorkbookProvider({
     };
   }, [applyHydrationResult, autoHydrate, resolvedPorts]);
 
+  // The startup error screen needs to re-run hydration itself; opening a file picker is a different
+  // action and cannot recover a workbook that failed to load on its own.
+  const retryHydration = useCallback(async () => {
+    dispatch({ type: 'hydration/started' });
+    try {
+      applyHydrationResult(await hydrateWorkbookFromPorts(resolvedPorts));
+    } catch (error) {
+      dispatch({
+        type: 'hydration/failed',
+        error: {
+          code: 'workbook.load_failed',
+          message: error && error.message ? error.message : String(error)
+        }
+      });
+    }
+  }, [applyHydrationResult, resolvedPorts]);
+
   const setWorkbook = useCallback(
     (workbook, options = {}) => {
       const nextWorkbook =
@@ -340,18 +357,24 @@ export function WorkbookProvider({
     if (result && result.status === 'loaded') {
       applyOpenedWorkbook(result);
       void refreshRecentWorkbooks({ quiet: true });
-    } else if (result && result.status === 'error') {
-      if (currentWorkbookRef.current) {
-        dispatch({
-          type: 'error/reported',
-          error: {
-            code: 'workbook.open_failed',
-            message: result.error || 'The selected workbook could not be opened.'
-          }
-        });
-      } else {
-        applyHydrationResult(result);
-      }
+      return result;
+    }
+    // Every remaining status is a failure the person needs to see. Falling through silently leaves
+    // the startup error screen unchanged, which reads as a button that does nothing.
+    const message =
+      (result && result.error) ||
+      (result && result.status === 'unavailable'
+        ? 'The Cavalry desktop host is unavailable, so the file picker could not open.'
+        : result && result.status === 'missing'
+          ? 'That workbook file could not be found.'
+          : 'The selected workbook could not be opened.');
+    if (currentWorkbookRef.current) {
+      dispatch({
+        type: 'error/reported',
+        error: { code: 'workbook.open_failed', message }
+      });
+    } else {
+      applyHydrationResult({ status: 'error', source: 'native', error: message });
     }
     return result;
   }, [applyHydrationResult, applyOpenedWorkbook, refreshRecentWorkbooks, resolvedPorts]);
@@ -457,6 +480,7 @@ export function WorkbookProvider({
       openRecentWorkbook,
       recentWorkbooks,
       refreshRecentWorkbooks,
+      retryHydration,
       dispatch,
       ports: resolvedPorts,
       navigate: (routeId) => dispatch({ type: 'route/navigated', routeId }),
@@ -469,6 +493,7 @@ export function WorkbookProvider({
       recentWorkbooks,
       refreshRecentWorkbooks,
       resolvedPorts,
+      retryHydration,
       saveWorkbook,
       scheduleWorkbookSave,
       saveWorkbookAs,
