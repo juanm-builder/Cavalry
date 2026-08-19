@@ -4,6 +4,7 @@ export * from './domain/ledger/account-currency-integrity.js';
 export * from './domain/ledger/balances.js';
 export * from './domain/ledger/invariants.js';
 export * from './domain/ledger/summaries.js';
+export * from './domain/ledger/transaction-contributions.js';
 export * from './domain/ledger/transactions.js';
 export * from './domain/ledger/validation.js';
 export * from './domain/workbook/normalize.js';

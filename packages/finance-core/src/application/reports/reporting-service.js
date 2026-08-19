@@ -1,8 +1,5 @@
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
-import {
-  getLedgerTransactionBaseAmount,
-  getLedgerTransactionFlowKind
-} from '../../domain/ledger/transactions.js';
+import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
 import {
   getAssetLiabilityTotalsAsOf,
   getLedgerHistoricalBalances
@@ -89,7 +86,14 @@ function makeCashFlowBucket(monthKey = '') {
   };
 }
 
-function addFlowAmount(bucket, kind, amount) {
+function addFlowAmount(bucket, contribution) {
+  if (contribution.eventKind === 'transfer') {
+    bucket.transferCount += 1;
+    return;
+  }
+  if (!contribution.resolved) return;
+  const kind = contribution.flowKind;
+  const amount = contribution.signedBaseAmount;
   if (kind === 'inflow') {
     bucket.income = roundMoney(bucket.income + amount);
     bucket.transactionCount += 1;
@@ -102,8 +106,6 @@ function addFlowAmount(bucket, kind, amount) {
   } else if (kind === 'debt') {
     bucket.debt = roundMoney(bucket.debt + amount);
     bucket.transactionCount += 1;
-  } else if (kind === 'transfer') {
-    bucket.transferCount += 1;
   }
   bucket.outflow = roundMoney(bucket.expense + bucket.savings + bucket.debt);
   bucket.net = roundMoney(bucket.income - bucket.outflow);
@@ -122,15 +124,6 @@ function collectReportLimitations(workbook, transactions) {
     )
   ) {
     limitations.push('multi_currency_base_amounts');
-  }
-  if (
-    transactions.some((transaction) =>
-      asString(transaction && transaction.template)
-        .toLowerCase()
-        .includes('refund')
-    )
-  ) {
-    limitations.push('refunds_are_not_separately_modeled');
   }
   if (
     transactions.some(
@@ -157,14 +150,13 @@ export function buildMonthlyCashFlowReport(workbook, options = {}) {
   const months = new Map();
   const summary = makeCashFlowBucket('');
   transactions.forEach((transaction) => {
-    const kind = getLedgerTransactionFlowKind(workbook, transaction);
-    const amount = getLedgerTransactionBaseAmount(transaction);
+    const contribution = getTransactionContributions(workbook || {}, transaction || {});
     const monthKey = getReportMonthKey(transaction) || 'unknown';
     if (!months.has(monthKey)) {
       months.set(monthKey, makeCashFlowBucket(monthKey));
     }
-    addFlowAmount(months.get(monthKey), kind, amount);
-    addFlowAmount(summary, kind, amount);
+    addFlowAmount(months.get(monthKey), contribution);
+    addFlowAmount(summary, contribution);
   });
   return {
     currency: baseCurrency(workbook),
@@ -185,7 +177,7 @@ function makeCategoryRow(categoryId, category, amount, transaction) {
     isArchived: category ? category.isActive === false : false,
     isMissing: missing,
     total: amount,
-    transactionCount: 1,
+    transactionCount: 0,
     firstDate: getReportTransactionDate(transaction),
     lastDate: getReportTransactionDate(transaction)
   };
@@ -198,12 +190,12 @@ export function buildCategorySpendingReport(workbook, options = {}) {
   let total = 0;
   let transferCount = 0;
   transactions.forEach((transaction) => {
-    const kind = getLedgerTransactionFlowKind(workbook, transaction);
-    if (kind === 'transfer') {
+    const contribution = getTransactionContributions(workbook || {}, transaction || {});
+    if (contribution.eventKind === 'transfer') {
       transferCount += 1;
       return;
     }
-    if (kind !== 'expense') {
+    if (!contribution.resolved || contribution.flowKind !== 'expense') {
       return;
     }
     const categoryId = asString(transaction && transaction.categoryId);
@@ -212,13 +204,10 @@ export function buildCategorySpendingReport(workbook, options = {}) {
       return;
     }
     const rowKey = categoryId || '__uncategorized';
-    const amount = getLedgerTransactionBaseAmount(transaction);
+    const amount = contribution.metrics.expense;
     const current = rows.get(rowKey) || makeCategoryRow(categoryId, category, 0, transaction);
     current.total = roundMoney(current.total + amount);
-    current.transactionCount +=
-      current.total === amount && current.firstDate === getReportTransactionDate(transaction)
-        ? 0
-        : 1;
+    current.transactionCount += 1;
     current.firstDate =
       current.firstDate && current.firstDate < getReportTransactionDate(transaction)
         ? current.firstDate
@@ -261,12 +250,16 @@ export function buildTopDescriptionReport(workbook, options = {}) {
   const groups = new Map();
   const transactions = getReportTransactions(workbook, options);
   transactions.forEach((transaction) => {
-    const kind = getLedgerTransactionFlowKind(workbook, transaction);
-    if (kind === 'transfer') {
+    const contribution = getTransactionContributions(workbook || {}, transaction || {});
+    const kind = contribution.flowKind;
+    if (!contribution.resolved || contribution.eventKind === 'transfer') {
       return;
     }
     const key = textKey(transaction && transaction.description) || 'uncategorized';
-    const amount = getLedgerTransactionBaseAmount(transaction);
+    const amount =
+      contribution.eventKind === 'merchant_refund'
+        ? contribution.signedBaseAmount
+        : contribution.baseAmount;
     const current = groups.get(key) || {
       description: asString(transaction && transaction.description) || 'Unlabeled transaction',
       kind,

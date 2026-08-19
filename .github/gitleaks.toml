@@ -16,7 +16,7 @@ description = "Synthetic API key used to verify log redaction"
 condition = "AND"
 targetRules = ["generic-api-key"]
 regexTarget = "line"
-paths = ['^apps/mac/tests/electron/advisor-runtime-controller\.test\.js$']
+paths = ['^apps/desktop/tests/host/advisor-runtime-controller\.test\.js$']
 regexes = ['api_key=synthetic-api-key-123456']
 
 [[allowlists]]

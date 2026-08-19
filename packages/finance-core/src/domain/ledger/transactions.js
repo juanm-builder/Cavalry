@@ -1,10 +1,16 @@
 import { normalizeDateKey, roundMoney } from '../money.js';
 import { isTransactionBalanced } from './validation.js';
+import {
+  getTransactionContributions,
+  inferTransactionEventKind,
+  normalizeTransactionEventKind
+} from './transaction-contributions.js';
 
 export const LEDGER_TRANSACTION_TEMPLATES = Object.freeze([
   'expense_paid',
   'expense_charged',
   'income_received',
+  'merchant_refund',
   'transfer',
   'debt_payment',
   'liability_payment',
@@ -19,6 +25,10 @@ const LEDGER_TRANSACTION_TEMPLATE_ALIASES = Object.freeze({
   charged: 'expense_charged',
   income: 'income_received',
   salary: 'income_received',
+  refund: 'merchant_refund',
+  merchant_refund: 'merchant_refund',
+  chargeback: 'merchant_refund',
+  reversal: 'merchant_refund',
   transfer: 'transfer',
   debt: 'debt_payment',
   payment: 'debt_payment',
@@ -63,6 +73,21 @@ export function getLedgerTransactionTemplateConfig(template) {
       secondaryPlaceholder: '',
       counterpartyLabel: 'Received From',
       counterpartyKinds: ['employer', 'family', 'client', 'other'],
+      usesCounterparty: true,
+      usesCategory: true
+    };
+  }
+  if (value === 'merchant_refund') {
+    return {
+      categoryTypes: ['expense'],
+      primaryLabel: 'Refunded To',
+      primaryGroups: ['asset', 'liability'],
+      primaryPlaceholder: 'Choose the cash account or credit card receiving the refund',
+      secondaryLabel: '',
+      secondaryGroups: [],
+      secondaryPlaceholder: '',
+      counterpartyLabel: 'Refunded By',
+      counterpartyKinds: ['merchant', 'biller', 'other'],
       usesCounterparty: true,
       usesCategory: true
     };
@@ -293,6 +318,7 @@ export function normalizeLedgerTransaction(transaction, index = 0, workbook = {}
   const source = transaction || {};
   const date = normalizeDateKey(source.date) || asString(source.date);
   const fxRateToBase = Number(source.fxRateToBase || 0) || 0;
+  const eventKind = normalizeTransactionEventKind(source.eventKind);
   const lines = Array.isArray(source.lines)
     ? source.lines.map((line, lineIndex) => {
         const currency =
@@ -330,6 +356,7 @@ export function normalizeLedgerTransaction(transaction, index = 0, workbook = {}
     date,
     monthKey: asString(source.monthKey) || date.slice(0, 7),
     template: asString(source.template) || 'manual_journal',
+    ...(eventKind ? { eventKind } : {}),
     description: asString(source.description) || 'Ledger Transaction',
     reference: String(source.reference || ''),
     categoryId: asString(source.categoryId),
@@ -483,6 +510,35 @@ export function buildManualLedgerTransaction(
     );
     resolvedDescription =
       resolvedDescription || `${category.name} charged to ${primaryAccount.name}`;
+  } else if (template === 'merchant_refund') {
+    if (!(category && category.type === 'expense'))
+      throw new Error('Pick the original expense category.');
+    if (!(primaryAccount && ['asset', 'liability'].includes(primaryAccount.group))) {
+      throw new Error('Choose the cash account or credit card receiving the refund.');
+    }
+    lines.push(
+      createLedgerLine(
+        workbook,
+        primaryAccount.id,
+        'debit',
+        amount,
+        currency,
+        primaryAccount.group === 'liability' ? 'Liability refund' : 'Refund received',
+        makeLineOptions(0)
+      )
+    );
+    lines.push(
+      createLedgerLine(
+        workbook,
+        getCategoryLinkedAccountId(workbook, category.id),
+        'credit',
+        amount,
+        currency,
+        'Expense reversal',
+        makeLineOptions(1)
+      )
+    );
+    resolvedDescription = resolvedDescription || `${category.name} refund`;
   } else if (template === 'transfer') {
     if (!(primaryAccount && secondaryAccount && primaryAccount.id !== secondaryAccount.id))
       throw new Error('Choose two different accounts for the transfer.');
@@ -605,6 +661,10 @@ export function buildManualLedgerTransaction(
       id: existingTransaction ? existingTransaction.id : undefined,
       date,
       template,
+      eventKind:
+        normalizeTransactionEventKind(fields.eventKind) ||
+        normalizeTransactionEventKind(existingTransaction && existingTransaction.eventKind) ||
+        inferTransactionEventKind(workbook, { template, categoryId: finalCategoryId }),
       description: resolvedDescription,
       categoryId: finalCategoryId,
       counterpartyId: existingTransaction
@@ -642,21 +702,7 @@ export function getLedgerTransactionBaseAmount(transaction) {
 }
 
 export function getLedgerTransactionFlowKind(workbook, transaction) {
-  const template = asString(transaction && transaction.template);
-  if (template === 'opening_balance' || template === 'existing_liability') return 'opening';
-  if (template === 'transfer') return 'transfer';
-  const category =
-    transaction && transaction.categoryId
-      ? findLedgerCategory(workbook, transaction.categoryId)
-      : null;
-  if (category && category.type === 'income') return 'inflow';
-  if (category && category.type === 'expense') return 'expense';
-  if (category && category.type === 'savings') return 'savings';
-  if (category && category.type === 'debt') return 'debt';
-  if (template === 'income_received' || template === 'daily_interest') return 'inflow';
-  if (template === 'expense_paid' || template === 'expense_charged') return 'expense';
-  if (template === 'debt_payment' || template === 'liability_payment') return 'debt';
-  return 'transfer';
+  return getTransactionContributions(workbook, transaction).flowKind;
 }
 
 export function summarizeLedgerActivity(workbook, options = {}) {
@@ -678,14 +724,16 @@ export function summarizeLedgerActivity(workbook, options = {}) {
       if ((start && date && date < start) || (end && date && date > end)) {
         return;
       }
-      const kind = getLedgerTransactionFlowKind(workbook, transaction);
-      const amount = getLedgerTransactionBaseAmount(transaction);
+      const contribution = getTransactionContributions(workbook, transaction);
+      if (!contribution.resolved) return;
+      const kind = contribution.flowKind;
+      const amount = contribution.signedBaseAmount;
       if (kind === 'inflow') summary.income = roundMoney(summary.income + amount);
       if (kind === 'expense') summary.expense = roundMoney(summary.expense + amount);
       if (kind === 'savings') summary.savings = roundMoney(summary.savings + amount);
       if (kind === 'debt') summary.debt = roundMoney(summary.debt + amount);
       if (['inflow', 'expense', 'savings', 'debt'].includes(kind)) {
-        const categoryId = transaction.categoryId || '__uncategorized';
+        const categoryId = contribution.categoryId;
         summary.categoryTotals[categoryId] = roundMoney(
           (summary.categoryTotals[categoryId] || 0) + amount
         );

@@ -1,33 +1,33 @@
 # Third-party notices
 
-Cavalry's project code is licensed under the [Apache License 2.0](LICENSE). This file identifies important third-party software and artwork distributed with or referenced by Cavalry. It is informational and does not replace the original license texts.
+Cavalry project code is licensed under the [Apache License 2.0](LICENSE). This file identifies important third-party software and artwork distributed with or referenced by Cavalry. It is informational and does not replace the original license texts.
 
-## Desktop runtime and JavaScript packages
+## Desktop runtime
 
-The packaged desktop app uses the following principal third-party projects:
+The packaged desktop application uses the following principal projects:
 
-| Project                                                  | License                       | Source                                                                                      |
-| -------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| Electron                                                 | MIT                           | [electron/electron](https://github.com/electron/electron)                                   |
-| Chromium and Chromium components distributed by Electron | Multiple open-source licenses | [Chromium](https://www.chromium.org/Home/)                                                  |
-| React and React DOM                                      | MIT                           | [facebook/react](https://github.com/facebook/react)                                         |
-| Supabase JavaScript client                               | MIT                           | [supabase/supabase-js](https://github.com/supabase/supabase-js)                             |
-| electron-updater                                         | MIT                           | [electron-userland/electron-builder](https://github.com/electron-userland/electron-builder) |
-| js-yaml                                                  | MIT                           | [nodeca/js-yaml](https://github.com/nodeca/js-yaml)                                         |
+| Project                                              | License                               | Source                                                                          |
+| ---------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
+| Tauri and Wry                                        | Apache-2.0 and MIT                    | [tauri-apps/tauri](https://github.com/tauri-apps/tauri)                         |
+| Tauri official plugins                               | Apache-2.0 and MIT                    | [tauri-apps/plugins-workspace](https://github.com/tauri-apps/plugins-workspace) |
+| Rust standard library and Cargo-resolved crates      | Project-specific open-source licenses | [Rust](https://github.com/rust-lang/rust) and each crate's package metadata     |
+| Node.js runtime embedded in the Cavalry host sidecar | MIT and bundled third-party notices   | [nodejs/node](https://github.com/nodejs/node)                                   |
+| React and React DOM                                  | MIT                                   | [facebook/react](https://github.com/facebook/react)                             |
+| Supabase JavaScript client                           | MIT                                   | [supabase/supabase-js](https://github.com/supabase/supabase-js)                 |
+| `@yao-pkg/pkg` build tool                            | MIT                                   | [yao-pkg/pkg](https://github.com/yao-pkg/pkg)                                   |
 
-Exact versions and transitive npm dependencies are recorded in `package-lock.json`. The generated runtime bundle described below reproduces their reviewed legal files for redistribution.
+On macOS, Tauri uses the operating system's WKWebView. On Windows, it uses the installed Microsoft Edge WebView2 runtime. Cavalry does not distribute an Electron or Chromium framework. System WebView components remain governed by their platform terms.
 
-Packaged desktop applications include these files under the application resources directory:
+Exact JavaScript versions and transitive dependencies are recorded in `package-lock.json`. Exact Rust versions must be recorded in `apps/desktop/src-tauri/Cargo.lock` before a production release. The target-specific Node sidecar must retain Node's bundled license and third-party notices.
 
-- `licenses/Cavalry-LICENSE.txt`
-- `licenses/THIRD_PARTY_NOTICES.md`
-- `licenses/RUNTIME-DEPENDENCY-LICENSES.txt`
-- `licenses/Electron-LICENSE.txt`
-- `licenses/LICENSES.chromium.html`
+Packaged applications include or link to:
 
-`RUNTIME-DEPENDENCY-LICENSES.txt` contains the actual license and notice text for the complete external npm production dependency set recorded by `package-lock.json`, including nested runtime packages. It is generated without network access from the installed package metadata and legal files by `tools/release/generate-runtime-licenses.mjs`. Packaging regenerates it, and `npm run licenses:runtime:check` fails when the committed bundle is stale or a runtime dependency lacks reviewed legal text.
+- `LICENSE`
+- `THIRD_PARTY_NOTICES.md`
+- `apps/desktop/packaging/RUNTIME-DEPENDENCY-INVENTORY.txt`
+- the license and notice material emitted with the target-specific Node sidecar
 
-`LICENSES.chromium.html`, supplied by the installed Electron distribution, contains the notices and license texts for Chromium and its bundled third-party components.
+`RUNTIME-DEPENDENCY-INVENTORY.txt` is generated from `package-lock.json` by `tools/release/generate-runtime-licenses.mjs`. It provides a reviewable inventory for the JavaScript production graph. Production packaging must also verify that Rust crate and embedded Node notices are present in the final bundle.
 
 ## Material Symbols
 
@@ -39,7 +39,7 @@ Cavalry can launch or connect to [llama.cpp](https://github.com/ggml-org/llama.c
 
 ## Institution logos
 
-The SVG files under `apps/mac/src/renderer/assets/institution-logos/` are local copies from Wikimedia Commons used only to identify institutions in the user interface. They were imported without modification. The source pages provide the following authorship and licensing information:
+The SVG files under `apps/desktop/src/renderer/assets/institution-logos/` are local copies from Wikimedia Commons used only to identify institutions in the user interface. They were imported without modification. The source pages provide the following authorship and licensing information:
 
 | File               | Attribution                                                                                       | Copyright license or status                                                                                                                      | Wikimedia Commons source                                                                                                    |
 | ------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |

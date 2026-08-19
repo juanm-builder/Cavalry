@@ -8,11 +8,9 @@ const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 function readJson(relativePath) {
   return JSON.parse(readFileSync(resolve(workspaceRoot, relativePath), 'utf8'));
 }
-
 function fail(message) {
   throw new Error(`Release validation failed: ${message}`);
 }
-
 function compareStableVersions(left, right) {
   const leftParts = left.split('.').map(BigInt);
   const rightParts = right.split('.').map(BigInt);
@@ -22,50 +20,63 @@ function compareStableVersions(left, right) {
   }
   return 0;
 }
-
-const tag = process.argv[2] || process.env.GITHUB_REF_NAME || '';
-if (!tag) {
-  fail('pass the release tag (for example, npm run release:validate -- v1.2.3).');
+function cargoVersion() {
+  const source = readFileSync(resolve(workspaceRoot, 'apps/desktop/src-tauri/Cargo.toml'), 'utf8');
+  const match = source.match(/^version\s*=\s*"([^"]+)"/m);
+  return match ? match[1] : '';
 }
 
+const tag = process.argv[2] || process.env.GITHUB_REF_NAME || '';
+if (!tag) fail('pass the release tag, for example v1.2.3.');
 const version = tag.startsWith('v') ? tag.slice(1) : '';
 if (!stableVersionPattern.test(version) || tag !== `v${version}`) {
-  fail(`tag "${tag}" must use the stable vMAJOR.MINOR.PATCH format.`);
+  fail(`tag "${tag}" must use stable vMAJOR.MINOR.PATCH format.`);
 }
 
 const rootManifest = readJson('package.json');
-const appManifest = readJson('apps/mac/package.json');
+const appManifest = readJson('apps/desktop/package.json');
 const lockfile = readJson('package-lock.json');
-const lockRoot = lockfile.packages?.[''];
-const lockApp = lockfile.packages?.['apps/mac'];
-
-if (rootManifest.version !== version) {
-  fail(`package.json is ${rootManifest.version}, but the tag is ${tag}.`);
-}
-if (appManifest.version !== version) {
-  fail(`apps/mac/package.json is ${appManifest.version}, but the tag is ${tag}.`);
-}
-if (lockRoot?.version !== version || lockApp?.version !== version) {
-  fail('package-lock.json must contain the same root and desktop app version as the tag.');
-}
-
-const updaterVersion = appManifest.dependencies?.['electron-updater'];
-if (typeof updaterVersion !== 'string' || updaterVersion.length === 0) {
-  fail('electron-updater must be a production dependency of the desktop app.');
-}
-if (lockApp?.dependencies?.['electron-updater'] !== updaterVersion) {
-  fail('package-lock.json must contain the desktop app electron-updater dependency.');
+const tauriConfig = readJson('apps/desktop/src-tauri/tauri.conf.json');
+const releaseTemplate = readJson('apps/desktop/src-tauri/tauri.release.template.json');
+const versions = new Map([
+  ['package.json', rootManifest.version],
+  ['apps/desktop/package.json', appManifest.version],
+  ['package-lock.json root', lockfile.packages?.['']?.version],
+  ['package-lock.json desktop', lockfile.packages?.['apps/desktop']?.version],
+  ['tauri.conf.json', tauriConfig.version],
+  ['Cargo.toml', cargoVersion()]
+]);
+for (const [source, found] of versions) {
+  if (found !== version) fail(`${source} declares ${found || '(missing)'}, expected ${version}.`);
 }
 
-const publishedStableVersions = process.argv
+for (const name of [
+  ...Object.keys(appManifest.dependencies || {}),
+  ...Object.keys(appManifest.devDependencies || {})
+]) {
+  if (['electron', 'electron-builder', 'electron-updater'].includes(name)) {
+    fail(`legacy Electron dependency remains: ${name}.`);
+  }
+}
+if (releaseTemplate.bundle?.createUpdaterArtifacts !== true) {
+  fail('release template must create signed updater artifacts.');
+}
+if (releaseTemplate.plugins?.updater?.pubkey !== '__CAVALRY_UPDATER_PUBLIC_KEY__') {
+  fail('tracked release template must contain only the updater public-key placeholder.');
+}
+if (
+  !releaseTemplate.plugins?.updater?.endpoints?.every((endpoint) => /^https:\/\//.test(endpoint))
+) {
+  fail('all updater endpoints must use HTTPS.');
+}
+
+const published = process.argv
   .slice(3)
-  .map((publishedTag) => (publishedTag.startsWith('v') ? publishedTag.slice(1) : ''))
-  .filter((publishedVersion) => stableVersionPattern.test(publishedVersion));
-const highestPublishedVersion = publishedStableVersions.sort(compareStableVersions).at(-1);
-if (highestPublishedVersion && compareStableVersions(version, highestPublishedVersion) <= 0) {
-  fail(
-    `version ${version} must be higher than the newest published stable version ${highestPublishedVersion}.`
-  );
+  .map((value) => (value.startsWith('v') ? value.slice(1) : value))
+  .filter((value) => stableVersionPattern.test(value));
+const highest = published.sort(compareStableVersions).at(-1);
+if (highest && compareStableVersions(version, highest) <= 0) {
+  fail(`version ${version} must be higher than published version ${highest}.`);
 }
 
-process.stdout.write(`Release ${tag} matches the workspace, desktop app, and lockfile versions.\n`);
+process.stdout.write(`Release ${tag} matches npm, Tauri, Cargo, and updater metadata.\n`);

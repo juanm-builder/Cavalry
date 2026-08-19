@@ -4,8 +4,8 @@
     "checkJs": false
   },
   "include": [
-    "apps/mac/src/**/*",
-    "apps/mac/scripts/**/*",
+    "apps/desktop/src/**/*",
+    "apps/desktop/scripts/**/*",
     "packages/*/src/**/*",
     "packages/*/scripts/**/*",
     "tools/repo/**/*"
@@ -15,6 +15,6 @@
     "**/dist/**",
     "**/out/**",
     "**/test-artifacts/**",
-    "apps/mac/src/renderer/legacy/**"
+    "apps/desktop/src/renderer/legacy/**"
   ]
 }

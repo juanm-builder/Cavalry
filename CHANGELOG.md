@@ -2,7 +2,105 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
-## Unreleased
+## [Unreleased]
+
+## 2.0.1 - 2026-08-19
+
+### Fixed
+
+- Signed macOS releases are now notarized and stapled. The release workflow passed the App Store
+  Connect key path in place of the key ID, so Tauri logged a warning and skipped notarization while
+  the build still reported success; the disk image is now notarized as well as the application, and
+  the build fails if either is unsigned, unnotarized, or unstapled.
+- Desktop host failures now report their reason. Tauri rejects a command with a plain string, so
+  every host error was replaced by a generic "The workbook file could not be loaded."
+- The startup error screen's buttons now respond. "Try Again" retries loading the workbook instead
+  of opening a file picker, and "Open Another Workbook" reports a reason when the picker cannot open
+  rather than silently redisplaying the same screen.
+- A workbook stored in an operating-system protected folder now explains that Cavalry needs folder
+  access, instead of surfacing a raw "EPERM: operation not permitted".
+
+## 2.0.0 - 2026-08-19
+
+### Changed
+
+- Replaced the Electron desktop shell with Tauri 2 while preserving the React renderer, finance packages, workbook format, and existing visual design.
+- Added a Rust-owned native boundary and isolated Cavalry host sidecar for workbook, Cloud, Companion API, Advisor, and local-model services.
+- Replaced Electron packaging and update configuration with Tauri capabilities, target overlays, signed updater metadata, and native release workflows.
+- Updated repository structure, tests, security controls, and documentation for the Tauri runtime.
+- Documented the required reauthentication, installed-client handoff, native certification, signing, and updater transition gates.
+
+## 1.0.26 - 2026-08-16
+
+- Redesigned the complete Mac interface around Cavalry's new Cerulean Vault
+  visual system: warm paper surfaces, disciplined cobalt and cerulean accents,
+  compact mono typography, sharper hierarchy, and clearer responsive layouts.
+- Replaced the network-loaded Material Symbols font with more than 150 original,
+  local inline SVG glyphs across navigation, actions, statuses, accounts, and all
+  category choices. A compact ledger-mark family handles utilities while a
+  coordinated stamp family gives all 42 category choices recognizable, optically
+  balanced pictograms. Icons can no longer fall back to raw names such as
+  `dashboard` or `receipt_long` when a font request is late or unavailable.
+- Reserved green and red for financial meaning. Positive income, refunds,
+  savings progress, and liability credits now read green; expenses, losses, and
+  overdue values read red; zero-value states remain neutral.
+- Improved navigation and modal accessibility, including complete compact-window
+  route access, larger reliable click targets, preserved financial row labels for
+  assistive technology, and a readable net-flow announcement.
+
+- Rebuilt Budget as **Monthly Plan**, keeping manual spending limits, recurring
+  commitments, savings targets, debt-paydown targets, and expected income as
+  separate concepts instead of silently merging them into one number.
+- Refined Monthly Plan after real-workbook testing: reduced the overview to four
+  primary cards, shows savings and debt only when relevant, replaces the large
+  Budget Usage wall with a compact status, and presents one Spending, Income,
+  Savings, or Debt plan list at a time.
+- Moved Monthly Plan details and the Add to Plan editor into document-level,
+  viewport-safe dialogs. Overview and category drilldowns now open as wide,
+  centered detail views, while the editor appears immediately without requiring
+  the underlying Budget page to be scrolled into position.
+- Reduced explanatory clutter by keeping the essential labels in the main view
+  and placing secondary definitions under optional calculation details.
+- Added calculation receipts and drilldowns for Monthly Plan totals and category
+  actuals. Headline figures, category rows, and transaction details now use the
+  same contribution records, date range, and base-currency rules.
+- Added a central transaction-contribution model for purchases, income, merchant
+  refunds, reimbursements, transfers, savings contributions, debt principal,
+  debt interest or fees, opening balances, and adjustments. Merchant refunds now
+  subtract from the original expense category rather than increasing spending.
+- Excluded unresolved foreign-currency activity from trusted totals until an FX
+  rate is available, while retaining a visible warning instead of guessing.
+- Kept missing and archived Monthly Plan categories visible for repair, but
+  excluded them from trusted headline totals. Partial-month custom ranges now
+  exclude full-month plans and explain the scope difference.
+- Reworked Bills & Subscriptions so search and table filters no longer redefine
+  the headline cards. Recurring values are shown as a normalized monthly
+  equivalent across weekly, biweekly, monthly, quarterly, and yearly schedules.
+- Added a review-first **Find recurring charges** workflow backed by Cavalry's
+  existing transaction-pattern analysis. Suggestions do not create records
+  automatically; Review opens a prefilled recurring-item editor with the next
+  expected due date.
+- Added occurrence-first bill details, separate access to the recurring rule,
+  restoration for inactive recurring items, correct per-item currency labels,
+  and correct handling of a partial item whose remaining amount is exactly zero.
+- Added durable `YYYY-MM` sheet identities and cross-year month creation so one
+  workbook can continue beyond its original calendar year.
+- Updated regression expectations for the refund, Monthly Plan, recurring,
+  modal-layout, multi-year, semantic-color, and local-icon behavior.
+- Migration: no workbook schema-version bump. Legacy month-index sheets receive a
+  durable month key during normalization and persist it on a later save. Test
+  first with a duplicate workbook.
+- Known limitations: historical refunds previously recorded as ordinary income
+  cannot be inferred safely and must be reviewed manually. Recurring detection
+  is pattern-based and may require correction.
+- Validation: formatting, runtime-license notices, lint, type checks, production
+  builds, 1,734 workspace/unit/renderer tests, 262 integration tests, Electron
+  smoke, release security checks, trust-critical finance verification, and
+  release metadata validation are gated before packaging.
+- Signing/notarization status: the local DMG is an ad-hoc development artifact.
+  Distribution remains gated on the GitHub release workflow's Developer ID
+  signing, Apple notarization and stapling, Gatekeeper checks, updater metadata
+  verification, and manual review of the generated draft assets.
 
 ## 1.0.25 - 2026-08-13
 

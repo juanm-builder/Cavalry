@@ -87,7 +87,8 @@ describe('Bills route view-model service', () => {
       totalOverdue: 2000,
       totalUnrecorded: 0,
       totalReview: 0,
-      totalPartial: 0
+      totalPartial: 0,
+      unresolvedFxCount: 0
     });
     expect(viewModel.dueNextRows.map((row) => row.id)).toEqual([
       'row-overdue',
@@ -96,7 +97,10 @@ describe('Bills route view-model service', () => {
     ]);
     expect(viewModel.recurring).toEqual({
       monthlyCount: 4,
-      monthlyTotal: 5748
+      monthlyTotal: 5748,
+      monthlyEquivalentCount: 4,
+      monthlyEquivalentTotal: 5748,
+      unresolvedFxCount: 0
     });
     expect(viewModel.pagination).toMatchObject({
       rowsPerPage: 5,
@@ -329,7 +333,56 @@ describe('Bills route view-model service', () => {
       totalPartial: 750,
       totalUnrecorded: 3000
     });
-    expect(viewModel.recurring).toEqual({ monthlyCount: 4, monthlyTotal: 10000 });
+    expect(viewModel.recurring).toEqual({
+      monthlyCount: 4,
+      monthlyTotal: 10000,
+      monthlyEquivalentCount: 4,
+      monthlyEquivalentTotal: 10000,
+      unresolvedFxCount: 0
+    });
+  });
+
+  it('keeps headline totals stable under table filters and normalizes recurring cadence', () => {
+    const rows = [
+      makeRow({
+        id: 'row-weekly',
+        recurringItemId: 'weekly',
+        name: 'Weekly service',
+        amount: 120,
+        frequency: 'Weekly',
+        status: 'Overdue'
+      }),
+      makeRow({
+        id: 'row-annual',
+        recurringItemId: 'annual',
+        name: 'Annual service',
+        amount: 1200,
+        frequency: 'Yearly',
+        status: 'Upcoming'
+      }),
+      makeRow({
+        id: 'row-partial',
+        recurringItemId: 'partial',
+        name: 'Settled partial',
+        amount: 500,
+        remainingAmount: 0,
+        status: 'Partial'
+      })
+    ];
+    const all = buildBillsRouteViewModel(rows, { today: '2026-07-01' });
+    const filtered = buildBillsRouteViewModel(rows, {
+      today: '2026-07-01',
+      search: 'Annual'
+    });
+
+    expect(filtered.summary).toEqual(all.summary);
+    expect(filtered.viewSummary).not.toEqual(all.viewSummary);
+    expect(filtered.rowCount).toBe(1);
+    expect(all.summary.totalPartial).toBe(0);
+    expect(all.recurring).toMatchObject({
+      monthlyEquivalentCount: 3,
+      monthlyEquivalentTotal: 1120
+    });
   });
 
   it('returns stable empty route metadata', () => {

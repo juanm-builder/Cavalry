@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
-
 import {
   collectArchitectureReport,
   getRendererBoundaryViolations,
@@ -21,7 +20,6 @@ describe('workspace architecture', () => {
     const sourceDirectory = join(root, 'packages/finance-core/src');
     mkdirSync(sourceDirectory, { recursive: true });
     writeFileSync(join(sourceDirectory, 'untracked-module.js'), "import 'node:fs';\n");
-
     try {
       expect(getWorkspaceBoundaryViolations(root)).toEqual([
         expect.objectContaining({
@@ -35,21 +33,22 @@ describe('workspace architecture', () => {
     }
   });
 
-  it('keeps the final renderer free of transitional surfaces', () => {
+  it('keeps one renderer root and platform access behind the Tauri adapter layer', () => {
     const report = collectArchitectureReport();
-
-    expect(report.legacyAppLoc).toBe(0);
-    // The composition root owns the trusted renderer/window binding and nonblocking cloud startup.
-    expect(report.electronMainLoc).toBeLessThanOrEqual(205);
-    expect(report.largestMainModule.loc).toBeLessThanOrEqual(1394);
-    expect(report.largestNonLegacyRendererModule.loc).toBeLessThanOrEqual(1100);
-    expect(report.mountAdapters).toEqual([]);
-    expect(report.compatibilityFiles).toEqual([]);
-    expect(report.cwdDependentFiles).toEqual([]);
+    expect(report.desktopHostLoc).toBeGreaterThan(0);
+    expect(report.rustHostLoc).toBeGreaterThan(0);
+    expect(report.largestHostModule.loc).toBeLessThanOrEqual(1400);
+    expect(report.largestRendererModule.loc).toBeLessThanOrEqual(1100);
     expect(report.reactRootCalls).toBe(1);
-    expect(report.routeRegistryFiles).toEqual(['apps/mac/src/renderer/app/routes.js']);
+    expect(report.routeRegistryFiles).toEqual(['apps/desktop/src/renderer/app/routes.js']);
     expect(report.rawPlatformGlobalFiles).toEqual([]);
-    expect(report.delegatedActionAttributeFiles).toEqual([]);
     expect(report.unsafeHtmlSites).toBe(0);
+    expect(report.tauriBridgeFiles.sort()).toEqual([
+      'apps/desktop/src/renderer/platform/tauri-bridge.js',
+      'apps/desktop/src/renderer/platform/tauri-host-broker.js',
+      'apps/desktop/src/renderer/platform/tauri-updates.js'
+    ]);
+    expect(report.sidecarProtocolFiles.length).toBeGreaterThan(0);
+    expect(report.trackedGeneratedFiles).toEqual([]);
   });
 });

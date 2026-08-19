@@ -4,7 +4,7 @@ Review and safety workflows for proposed workbook changes. This package owns act
 
 ## Boundary
 
-`action-review` may depend on `@cavalry/finance-core`. It must not import Advisor orchestration, Electron, renderer, server, or Companion API modules. Provider-specific draft interpretation and Advisor-facing display models belong in `@cavalry/advisor`.
+`action-review` may depend on `@cavalry/finance-core`. It must not import Advisor orchestration, desktop host, renderer, server, or Companion API modules. Provider-specific draft interpretation and Advisor-facing display models belong in `@cavalry/advisor`.
 
 Public modules are available through the package root and the explicit `application/*` and `domain/*` export-map entries. Prefer package specifiers across workspace boundaries:
 

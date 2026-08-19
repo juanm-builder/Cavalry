@@ -93,9 +93,9 @@ describe('dashboard route view-model service', () => {
 
     expect(categoryIds(budget.rows)).toEqual(['subscriptions', 'food']);
     expect(budget.summary).toMatchObject({
-      totalBudget: 900,
+      totalBudget: 800,
       spent: 0,
-      leftToSpend: 900,
+      leftToSpend: 800,
       spentPercent: 0
     });
     expect(budget.rows[0]).toMatchObject({

@@ -2,6 +2,7 @@ import { normalizeDateKey, roundMoney } from '../money.js';
 import { getLedgerHistoricalBalances } from './balances.js';
 import { getAccountCurrencyIntegrity } from './account-currency-integrity.js';
 import { isTransactionBalanced } from './validation.js';
+import { getTransactionContributions } from './transaction-contributions.js';
 import {
   getLedgerTransactionFlowKind,
   normalizeLedgerTransactionTemplate,
@@ -207,6 +208,17 @@ export function validateLedgerInvariants(workbook) {
         )
       );
     }
+    const contribution = getTransactionContributions(source, transaction);
+    contribution.warnings.forEach((warning) => {
+      warnings.push(
+        issue(
+          warning.code || 'transaction_contribution_warning',
+          warning.message || 'Transaction contribution needs review.',
+          String(id || index)
+        )
+      );
+    });
+
     if (
       template === 'transfer' &&
       getLedgerTransactionFlowKind(source, transaction) !== 'transfer'

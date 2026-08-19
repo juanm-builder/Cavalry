@@ -1,6 +1,6 @@
 {
   "name": "cavalry-workspace",
-  "version": "1.0.25",
+  "version": "2.0.1",
   "description": "Cavalry local-first desktop finance app and supporting workspaces.",
   "license": "Apache-2.0",
   "repository": {
@@ -19,23 +19,28 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @cavalry/mac",
-    "build": "npm run build --workspace @cavalry/mac",
+    "dev": "npm run dev --workspace @cavalry/desktop",
+    "build": "npm run build --workspace @cavalry/desktop",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @cavalry/mac",
-    "test": "vitest run --config vitest.config.mjs && npm test --workspace @cavalry/finance-core && npm test --workspace @cavalry/action-review && npm test --workspace @cavalry/advisor && npm test --workspace @cavalry/companion-api && npm test --workspace @cavalry/sync-foundation && npm test --workspace @cavalry/mac",
-    "test:integration": "npm run test:integration --workspace @cavalry/companion-api && npm run test:integration --workspace @cavalry/mac",
-    "test:e2e": "npm run test:e2e --workspace @cavalry/mac",
-    "check": "prettier --check . && npm run licenses:runtime:check && npm run lint && npm run typecheck && npm run build && npm run test && npm run openapi:validate --workspace @cavalry/companion-api && npm run openapi:action-sanity --workspace @cavalry/companion-api && npm run gpt-instructions:check --workspace @cavalry/companion-api && npm run gpt-checkpointed-instructions:check --workspace @cavalry/companion-api",
-    "package:mac": "npm run dist:mac --workspace @cavalry/mac",
-    "package:mac:intel": "npm run dist:mac:intel --workspace @cavalry/mac",
-    "package:release:mac": "npm run dist:release:mac --workspace @cavalry/mac",
-    "package:release:windows": "npm run dist:release:windows --workspace @cavalry/mac",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @cavalry/desktop",
+    "test": "vitest run --config vitest.config.mjs && npm test --workspace @cavalry/finance-core && npm test --workspace @cavalry/action-review && npm test --workspace @cavalry/advisor && npm test --workspace @cavalry/companion-api && npm test --workspace @cavalry/sync-foundation && npm test --workspace @cavalry/desktop",
+    "test:integration": "npm run test:integration --workspace @cavalry/companion-api && npm run test:integration --workspace @cavalry/desktop",
+    "test:e2e": "npm run test:e2e --workspace @cavalry/desktop",
+    "verify:architecture": "node tools/verify-tauri-architecture.mjs && node tools/repo/architecture-report.mjs",
     "licenses:runtime": "node tools/release/generate-runtime-licenses.mjs",
     "licenses:runtime:check": "node tools/release/generate-runtime-licenses.mjs --check",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test && npm run verify:architecture && npm run licenses:runtime:check && npm run openapi:validate --workspace @cavalry/companion-api && npm run openapi:action-sanity --workspace @cavalry/companion-api && npm run gpt-instructions:check --workspace @cavalry/companion-api && npm run gpt-checkpointed-instructions:check --workspace @cavalry/companion-api",
+    "package:desktop": "npm run tauri:build --workspace @cavalry/desktop",
+    "package:mac": "npm run tauri:build:mac --workspace @cavalry/desktop",
+    "package:mac:intel": "npm run tauri:build:mac:intel --workspace @cavalry/desktop",
+    "package:windows": "npm run tauri:build:windows --workspace @cavalry/desktop",
+    "package:release:mac": "npm run tauri:release:mac --workspace @cavalry/desktop",
+    "package:release:mac:intel": "npm run tauri:release:mac:intel --workspace @cavalry/desktop",
     "release:validate": "node tools/release/validate-release.mjs",
-    "release:security": "node tools/release/security-check.mjs"
+    "release:security": "node tools/release/security-check.mjs",
+    "release:manifest": "node tools/release/generate-update-manifest.mjs"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

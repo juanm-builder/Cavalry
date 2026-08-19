@@ -2,7 +2,7 @@
 
 Platform-independent financial domain and application logic for Cavalry.
 
-This package owns workbook schema normalization and portable serialization, money and ledger rules, accounts, categories, transactions, budgets, recurring items, reporting, dashboard projections, and CSV import/export. It does not own Electron, filesystem, process, network, DOM, React, Advisor orchestration, or action-review behavior.
+This package owns workbook schema normalization and portable serialization, money and ledger rules, accounts, categories, transactions, budgets, recurring items, reporting, dashboard projections, and CSV import/export. It does not own Tauri, filesystem, process, network, DOM, React, Advisor orchestration, or action-review behavior.
 
 ## Public API
 

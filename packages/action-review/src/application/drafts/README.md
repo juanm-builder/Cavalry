@@ -10,9 +10,9 @@ Files:
 
 Advisor-dependent card and queue projections live in `@cavalry/advisor/application/drafts`.
 
-Renderer-owned behavior lives in `apps/mac/src/renderer/features/drafts/`: serializable card models, explicit edit/apply/reject/hide callbacks, source navigation, selection state, and save/navigation effects. The feature renders React elements rather than package-produced HTML.
+Renderer-owned behavior lives in `apps/desktop/src/renderer/features/drafts/`: serializable card models, explicit edit/apply/reject/hide callbacks, source navigation, selection state, and save/navigation effects. The feature renders React elements rather than package-produced HTML.
 
-Do not import Electron, Node-only modules, preload bridges, provider clients, filesystem access, `window`, or `document` into browser-safe draft display modules. Do not change draft apply/reject/hide/edit semantics, source contracts, Advisor trust labels, or Companion/API draft shapes without focused parity coverage.
+Do not import Tauri, Node-only modules, desktop bridges, provider clients, filesystem access, `window`, or `document` into browser-safe draft display modules. Do not change draft apply/reject/hide/edit semantics, source contracts, Advisor trust labels, or Companion/API draft shapes without focused parity coverage.
 
 Browser-safe modules:
 

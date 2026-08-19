@@ -1,9 +1,9 @@
 import { roundMoney } from '../../domain/money.js';
+import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
 import {
-  getLedgerTransactionBaseAmount,
-  getLedgerTransactionFlowKind
-} from '../../domain/ledger/transactions.js';
-import { getRecurringProjectionTotalsByCategory } from '../recurring/recurring-analysis-service.js';
+  getRecurringAmountConversion,
+  getRecurringCommitmentSummaryByCategory
+} from '../recurring/recurring-analysis-service.js';
 
 function asString(value) {
   return String(value == null ? '' : value).trim();
@@ -50,24 +50,19 @@ function transactionMonthKey(transaction) {
 }
 
 function convertAmountToBase(workbook, amount, currency) {
-  const source = asString(currency).toUpperCase() || baseCurrency(workbook);
-  const numeric = Number(amount) || 0;
-  if (source === baseCurrency(workbook)) {
-    return roundMoney(numeric);
-  }
-  const usdToBaseRate =
-    Number(workbook && workbook.settings && workbook.settings.usdToBaseRate) || 0;
-  if (source === 'USD' && baseCurrency(workbook) === 'PHP' && usdToBaseRate > 0) {
-    return roundMoney(numeric * usdToBaseRate);
-  }
-  return roundMoney(numeric);
+  return getRecurringAmountConversion(workbook, amount, currency);
 }
 
 export function normalizeBudget(budget) {
-  return {
+  const normalized = {
     categoryId: asString(budget && budget.categoryId),
     planned: roundMoney(Number(budget && budget.planned) || 0)
   };
+  const createdAt = asString(budget && budget.createdAt);
+  const note = asString(budget && budget.note);
+  if (createdAt) normalized.createdAt = createdAt;
+  if (note) normalized.note = note;
+  return normalized;
 }
 
 export function normalizeBudgetLineItem(item, index = 0, workbook = {}) {
@@ -101,7 +96,8 @@ export function syncSheetBudgetsFromLineItems(workbook, sheet) {
     }
     budgetMap[item.categoryId] = roundMoney(
       (budgetMap[item.categoryId] || 0) +
-        convertAmountToBase(workbook, item.planned, item.currency || baseCurrency(workbook))
+        (convertAmountToBase(workbook, item.planned, item.currency || baseCurrency(workbook))
+          .amount || 0)
     );
   });
   const directBudgets = [];
@@ -127,66 +123,94 @@ export function syncSheetBudgetsFromLineItems(workbook, sheet) {
   return sheet.budgets;
 }
 
-export function getSheetBudgetMap(workbook, sheet) {
-  const budgetMap = {};
+export function getSheetPlanSources(workbook, sheet) {
+  const manualByCategory = {};
+  const manualSourcesByCategory = {};
+  const unresolvedManualItems = [];
   const directCategoryIds = new Set();
-  const recurringTotals = getRecurringProjectionTotalsByCategory(workbook, sheet);
-  const linkedLegacyTotals = {};
-  asArray(sheet && sheet.budgetLineItems).forEach((item) => {
-    if (!item.categoryId || item.isActive === false || !item.recurringItemId) {
-      return;
-    }
-    linkedLegacyTotals[item.categoryId] = roundMoney(
-      (linkedLegacyTotals[item.categoryId] || 0) +
-        convertAmountToBase(workbook, item.planned, item.currency || baseCurrency(workbook))
-    );
-  });
+
   asArray(sheet && sheet.budgets).forEach((budget) => {
     const normalized = normalizeBudget(budget);
-    if (!normalized.categoryId) {
-      return;
-    }
-    const category = getCategoryById(workbook, normalized.categoryId);
-    const budgetAmount = convertAmountToBase(
-      workbook,
-      normalized.planned,
-      (category && category.currency) || baseCurrency(workbook)
+    if (!normalized.categoryId || !(Math.abs(normalized.planned) > 0.0001)) return;
+    // Category budgets are stored in the workbook base currency. This avoids
+    // reinterpreting an old plan when a category's display currency changes.
+    directCategoryIds.add(normalized.categoryId);
+    manualByCategory[normalized.categoryId] = roundMoney(
+      (manualByCategory[normalized.categoryId] || 0) + normalized.planned
     );
-    const generatedAmount = roundMoney(
-      recurringTotals[normalized.categoryId] || 0 || linkedLegacyTotals[normalized.categoryId] || 0
-    );
-    if (generatedAmount > 0 && Math.abs(budgetAmount - generatedAmount) < 0.01) {
-      return;
+    if (!manualSourcesByCategory[normalized.categoryId]) {
+      manualSourcesByCategory[normalized.categoryId] = [];
     }
-    budgetMap[normalized.categoryId] = roundMoney(
-      (budgetMap[normalized.categoryId] || 0) + budgetAmount
-    );
-    if (Math.abs(budgetAmount) > 0.0001) {
-      directCategoryIds.add(normalized.categoryId);
-    }
+    manualSourcesByCategory[normalized.categoryId].push({
+      source: 'category_budget',
+      amount: normalized.planned,
+      currency: baseCurrency(workbook),
+      ...(normalized.createdAt ? { createdAt: normalized.createdAt } : {}),
+      ...(normalized.note ? { note: normalized.note } : {})
+    });
   });
-  Object.keys(recurringTotals).forEach((categoryId) => {
-    if (!directCategoryIds.has(categoryId)) {
-      budgetMap[categoryId] = roundMoney(
-        (budgetMap[categoryId] || 0) + recurringTotals[categoryId]
-      );
-    }
-  });
-  asArray(sheet && sheet.budgetLineItems).forEach((item) => {
+
+  asArray(sheet && sheet.budgetLineItems).forEach((item, index) => {
     if (
-      !item.categoryId ||
+      !asString(item && item.categoryId) ||
       item.isActive === false ||
-      item.recurringItemId ||
-      directCategoryIds.has(item.categoryId)
+      asString(item && item.recurringItemId) ||
+      directCategoryIds.has(asString(item && item.categoryId))
     ) {
       return;
     }
-    budgetMap[item.categoryId] = roundMoney(
-      (budgetMap[item.categoryId] || 0) +
-        convertAmountToBase(workbook, item.planned, item.currency || baseCurrency(workbook))
+    const normalized = normalizeBudgetLineItem(item, index, workbook);
+    const conversion = convertAmountToBase(
+      workbook,
+      normalized.planned,
+      normalized.currency || baseCurrency(workbook)
     );
+    if (!conversion.resolved) {
+      unresolvedManualItems.push({
+        id: normalized.id,
+        categoryId: normalized.categoryId,
+        name: normalized.name,
+        planned: normalized.planned,
+        currency: normalized.currency,
+        warning: conversion.warning || 'Missing FX rate.'
+      });
+      return;
+    }
+    manualByCategory[normalized.categoryId] = roundMoney(
+      (manualByCategory[normalized.categoryId] || 0) + conversion.amount
+    );
+    if (!manualSourcesByCategory[normalized.categoryId]) {
+      manualSourcesByCategory[normalized.categoryId] = [];
+    }
+    manualSourcesByCategory[normalized.categoryId].push({
+      source: 'legacy_line_item',
+      id: normalized.id,
+      name: normalized.name,
+      amount: conversion.amount,
+      nativeAmount: normalized.planned,
+      currency: normalized.currency
+    });
   });
-  return budgetMap;
+
+  const commitments = getRecurringCommitmentSummaryByCategory(workbook, sheet);
+  return {
+    monthKey: monthKeyFromSheet(workbook, sheet),
+    manualByCategory,
+    manualSourcesByCategory,
+    commitmentsByCategory: commitments.totalsByCategory,
+    commitmentRows: commitments.rows,
+    unresolvedCommitmentsByCategory: commitments.unresolvedByCategory,
+    unresolvedCommitmentCount: commitments.unresolvedCount,
+    unresolvedManualItems
+  };
+}
+
+export function getSheetBudgetMap(workbook, sheet) {
+  return getSheetPlanSources(workbook, sheet).manualByCategory;
+}
+
+export function getSheetCommitmentMap(workbook, sheet) {
+  return getSheetPlanSources(workbook, sheet).commitmentsByCategory;
 }
 
 export function getBudgetRemaining(category, planned, actual) {
@@ -201,11 +225,24 @@ export function getBudgetStatus(category, planned, actual) {
   const nextPlanned = Number(planned) || 0;
   const nextActual = Number(actual) || 0;
   const remaining = getBudgetRemaining(category, nextPlanned, nextActual);
-  if (category && category.type === 'income') {
+  const categoryType = asString(category && category.type) || 'expense';
+  if (categoryType === 'income') {
     if (!(nextPlanned > 0) && nextActual > 0) return { label: 'Unplanned income', tone: 'good' };
     if (remaining >= 0.01) return { label: 'Ahead', tone: 'good' };
     if (remaining <= -0.01) return { label: 'Below plan', tone: 'bad' };
     return { label: 'On plan', tone: 'info' };
+  }
+  if (categoryType === 'savings' || categoryType === 'debt') {
+    if (!(nextPlanned > 0) && nextActual > 0) {
+      return {
+        label: categoryType === 'savings' ? 'Unplanned saving' : 'Unplanned payoff',
+        tone: 'good'
+      };
+    }
+    if (!(nextPlanned > 0)) return { label: 'No target', tone: 'info' };
+    if (remaining < -0.01) return { label: 'Ahead', tone: 'good' };
+    if (remaining > 0.01) return { label: 'In progress', tone: 'info' };
+    return { label: 'Target reached', tone: 'good' };
   }
   if (!(nextPlanned > 0) && nextActual > 0) return { label: 'Unplanned', tone: 'bad' };
   if (remaining < -0.01) return { label: 'Overspent', tone: 'bad' };
@@ -218,31 +255,33 @@ export function getSheetActualByCategory(workbook, sheet) {
   const monthKey = monthKeyFromSheet(workbook, sheet);
   const totals = {};
   asArray(workbook && workbook.transactions).forEach((transaction) => {
-    if (transactionMonthKey(transaction) !== monthKey) {
-      return;
-    }
-    const flow = getLedgerTransactionFlowKind(workbook, transaction);
-    if (!['inflow', 'expense', 'savings', 'debt'].includes(flow)) {
-      return;
-    }
-    const categoryId = asString(transaction && transaction.categoryId) || '__uncategorized';
-    totals[categoryId] = roundMoney(
-      (totals[categoryId] || 0) + getLedgerTransactionBaseAmount(transaction)
-    );
+    if (transactionMonthKey(transaction) !== monthKey) return;
+    const contribution = getTransactionContributions(workbook, transaction);
+    if (!contribution.resolved) return;
+    if (!['inflow', 'expense', 'savings', 'debt'].includes(contribution.flowKind)) return;
+    const categoryId = contribution.categoryId || '__uncategorized';
+    totals[categoryId] = roundMoney((totals[categoryId] || 0) + contribution.signedBaseAmount);
   });
   return totals;
 }
 
 export function buildBudgetSummary(workbook, sheet) {
-  const budgetMap = getSheetBudgetMap(workbook, sheet);
+  const planSources = getSheetPlanSources(workbook, sheet);
+  const budgetMap = planSources.manualByCategory;
+  const commitmentMap = planSources.commitmentsByCategory;
   const actualByCategory = getSheetActualByCategory(workbook, sheet);
   const categoryIds = Array.from(
-    new Set(Object.keys(budgetMap).concat(Object.keys(actualByCategory)))
+    new Set(
+      Object.keys(budgetMap)
+        .concat(Object.keys(commitmentMap))
+        .concat(Object.keys(actualByCategory))
+    )
   ).sort();
   const rows = categoryIds.map((categoryId) => {
     const category =
       categoryId === '__uncategorized' ? null : getCategoryById(workbook, categoryId);
     const planned = roundMoney(budgetMap[categoryId] || 0);
+    const committed = roundMoney(commitmentMap[categoryId] || 0);
     const actual = roundMoney(actualByCategory[categoryId] || 0);
     const remaining = getBudgetRemaining(category, planned, actual);
     const status = getBudgetStatus(category, planned, actual);
@@ -257,8 +296,12 @@ export function buildBudgetSummary(workbook, sheet) {
       isArchived: category ? category.isActive === false : false,
       isMissing: categoryId !== '__uncategorized' && !category,
       planned,
+      committed,
       actual,
       remaining,
+      sources: planSources.manualSourcesByCategory[categoryId] || [],
+      commitmentRows: planSources.commitmentRows.filter((row) => row.categoryId === categoryId),
+      unresolvedCommitments: planSources.unresolvedCommitmentsByCategory[categoryId] || [],
       statusLabel: status.label,
       statusTone: status.tone
     };
@@ -268,11 +311,17 @@ export function buildBudgetSummary(workbook, sheet) {
       const type = row.categoryType || 'expense';
       summary.plannedByType[type] = roundMoney((summary.plannedByType[type] || 0) + row.planned);
       summary.actualByType[type] = roundMoney((summary.actualByType[type] || 0) + row.actual);
+      if (type === 'expense') {
+        summary.committedByType.expense = roundMoney(
+          summary.committedByType.expense + row.committed
+        );
+      }
       return summary;
     },
     {
       plannedByType: { income: 0, expense: 0, savings: 0, debt: 0 },
-      actualByType: { income: 0, expense: 0, savings: 0, debt: 0 }
+      actualByType: { income: 0, expense: 0, savings: 0, debt: 0 },
+      committedByType: { expense: 0 }
     }
   );
   totals.plannedNet = roundMoney(
@@ -293,10 +342,15 @@ export function buildBudgetSummary(workbook, sheet) {
     monthKey: monthKeyFromSheet(workbook, sheet),
     rows: rows.sort(
       (a, b) =>
-        Math.abs(b.actual || b.planned) - Math.abs(a.actual || a.planned) ||
+        Math.max(Math.abs(b.actual), Math.abs(b.planned), Math.abs(b.committed)) -
+          Math.max(Math.abs(a.actual), Math.abs(a.planned), Math.abs(a.committed)) ||
         a.categoryName.localeCompare(b.categoryName)
     ),
-    totals
+    totals,
+    unresolved: {
+      manualItems: planSources.unresolvedManualItems,
+      commitmentCount: planSources.unresolvedCommitmentCount
+    }
   };
 }
 
@@ -311,6 +365,10 @@ export function createBudget(workbook, sheetId, input = {}) {
     (budget) => asString(budget && budget.categoryId) !== category.id
   );
   const budget = { categoryId: category.id, planned };
+  const createdAt = asString(input.createdAt);
+  const note = asString(input.note);
+  if (createdAt) budget.createdAt = createdAt;
+  if (note) budget.note = note;
   sheet.budgets.push(budget);
   return budget;
 }
@@ -324,6 +382,16 @@ export function editBudget(workbook, sheetId, categoryId, input = {}) {
   );
   if (!budget) throw new Error('Budget not found.');
   budget.planned = roundMoney(Number(input.planned) || 0);
+  if (Object.prototype.hasOwnProperty.call(input, 'createdAt')) {
+    const createdAt = asString(input.createdAt);
+    if (createdAt) budget.createdAt = createdAt;
+    else delete budget.createdAt;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'note')) {
+    const note = asString(input.note);
+    if (note) budget.note = note;
+    else delete budget.note;
+  }
   if (!(Math.abs(budget.planned) > 0.0001)) {
     sheet.budgets = asArray(sheet.budgets).filter((item) => item !== budget);
     return null;

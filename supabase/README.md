@@ -39,13 +39,17 @@ conflict out of PostgreSQL's retryable `serialization_failure` path. The caller
 must never retry with the new revision automatically, because that would silently
 overwrite financial data.
 
-After a conflict, Cavalry refreshes the workbook library. If the Cloud row still
-exists, the current workbook stays conflict-latched across restarts and sign-ins
-until the user saves the local copy and explicitly opens the Cloud copy. Cavalry
-stores only the account/workbook IDs, last acknowledged revision, and conflict
-flag locally for this check—not workbook contents. If the row was deleted,
-Cavalry removes the stale link so the local workbook can be added again
-deliberately.
+After a conflict, Cavalry refreshes the workbook library and keeps the workbook
+conflict-latched instead of advancing the compare-and-swap anchor
+automatically. On Mac, the user first makes the local file safe and then
+explicitly opens the Cloud copy; the separate Mac sync-state store contains only
+the account/workbook IDs, last acknowledged revision, and conflict flag. On iOS,
+complete workbooks and sync metadata persist in SQLite. **Use Cloud** validates
+and stores the latest Cloud snapshot, while **Keep Local** re-lists the current
+Cloud revision and deliberately saves the selected local snapshot against that
+exact revision. These are whole-snapshot choices, not a field-level merge. If a
+Cloud row was deleted, the client removes or marks the stale link without
+deleting its local workbook.
 
 ## Apply it to the existing Supabase project
 
@@ -63,6 +67,13 @@ For an existing Cavalry Cloud project, `supabase db push` applies
 `20260726000100_fix_workbook_conflict_retry.sql` as a forward-only hotfix. It
 replaces the snapshot function without changing existing workbooks or versions.
 Do not edit or re-run the older applied migration files.
+
+It also applies `20260816000100_enable_workbook_realtime.sql`, which
+idempotently adds only `public.workbooks` to the `supabase_realtime`
+publication. The migration reasserts enabled and forced RLS. It deliberately
+does not publish `workbook_versions` or snapshot contents; clients may use an
+authorized metadata event only as a signal to refresh through the existing
+owner-scoped query/RPC contract.
 
 Keep the GitHub Supabase integration rooted at the repository root so it finds
 `supabase/config.toml` and `supabase/migrations/`. Review production deployment
@@ -121,11 +132,18 @@ In the Supabase Dashboard:
 6. Keep email confirmation and account-lifecycle settings aligned with the
    product's support and deletion policy.
 
+Follow the canonical
+[cross-app OAuth release runbook](../docs/features/cavalry-cloud-oauth-runbook.md)
+before distributing either client.
+
 The desktop app needs only the project URL and Supabase publishable key (or the
 legacy `anon` key). Those identify the project but do not bypass RLS. Never ship a
-secret key or `service_role` key in Electron, preload, or renderer code.
+secret key or `service_role` key in the desktop host, renderer bridge, or renderer code.
 
-## Desktop query contract
+## Client query contract
+
+The Mac main-process controller and the iOS Supabase repository use the same
+owner-scoped metadata and snapshot contract.
 
 List non-deleted workbook metadata without downloading financial snapshots:
 

@@ -9,9 +9,9 @@ Files:
 - `import-apply-service.js` applies approved previews to workbook data and supports cancel behavior.
 - `export-service.js` and `chatgpt-context-pack-export.js` handle export payloads and ChatGPT context-pack shapes.
 
-Renderer-owned behavior lives in `apps/mac/src/renderer/features/import-export/` and the transaction controller. It uses injected file-picker and download ports, renders the preview modal, requests confirmation, and sends immutable command results to the workbook session.
+Renderer-owned behavior lives in `apps/desktop/src/renderer/features/import-export/` and the transaction controller. It uses injected file-picker and download ports, renders the preview modal, requests confirmation, and sends immutable command results to the workbook session.
 
-Do not import Electron, Node-only modules, preload bridges, filesystem access, provider calls, `window`, or `document` here. Do not change CSV parsing, import apply behavior, transaction posting, workbook schema, or portable workbook format without focused import/export and workbook parity coverage.
+Do not import Tauri, Node-only modules, desktop bridges, filesystem access, provider calls, `window`, or `document` here. Do not change CSV parsing, import apply behavior, transaction posting, workbook schema, or portable workbook format without focused import/export and workbook parity coverage.
 
 Browser-safe modules:
 
@@ -23,4 +23,4 @@ Browser-safe modules:
 
 Node/main/server-only modules: none in this directory.
 
-Package coverage includes the CSV parser, preview, apply, export, and round-trip tests under `tests/application/`; Mac route and file-effect coverage lives under `apps/mac/tests/renderer/` and `apps/mac/tests/application/`.
+Package coverage includes the CSV parser, preview, apply, export, and round-trip tests under `tests/application/`; Mac route and file-effect coverage lives under `apps/desktop/tests/renderer/` and `apps/desktop/tests/application/`.

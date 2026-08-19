@@ -1,68 +1,99 @@
 # Cavalry
 
-Cavalry is a local-first desktop finance app for macOS and Windows. The repository is an npm workspace with the Electron product under the historically named `apps/mac/` workspace, reusable domain and workflow packages under `packages/`, and supporting developer tools under `tools/`.
+Cavalry is a local-first personal finance application for macOS and Windows. The desktop product uses a React renderer inside **Tauri 2**, with a Rust host that owns native windowing, menus, deep links, updates, and a tightly scoped Cavalry host sidecar. The renderer, finance rules, workbook format, and visual design are shared with the previous desktop runtime.
 
-## Project status
+> Cavalry organizes financial information. It does not provide financial, tax, legal, or investment advice.
 
-Cavalry is under active development. The public repository is available for review, issue reporting, and focused contributions; a public source tree is not a guarantee that every experimental integration is ready for production use. Review the [changelog](CHANGELOG.md) and maintained feature documentation before relying on a release.
+## Repository map
 
-Cavalry organizes user-provided financial information but does not provide financial, tax, legal, or investment advice.
-
-## Workspace map
-
-- `apps/mac/` — Electron main process, preload bridge, renderer, app tests, and packaging configuration.
+- `apps/desktop/` — Tauri desktop application, React renderer, isolated host sidecar, native configuration, and app tests.
 - `packages/` — platform-independent finance and workflow packages.
-- `tools/` — repository tooling and the optional llama.cpp launcher.
-- `examples/workbooks/` — sanitized portable-workbook examples.
-- `tests/architecture/` — repository-wide dependency and ownership guardrails.
-- `docs/` — maintained architecture, development, feature, integration, operations, and ADR documentation.
+- `tools/` — architecture, release, security, and optional local-model tooling.
+- `tests/architecture/` — repository-wide dependency and ownership checks.
+- `examples/workbooks/` — sanitized workbook examples.
+- `docs/` — architecture, development, feature, integration, migration, security, and release documentation.
 
-The dependency direction is `apps/mac` → workflow/integration packages → `finance-core`. `finance-core` is platform-independent; Electron, filesystem, process, network, DOM, and React APIs stay in their owning adapters.
+The intended dependency direction is:
 
-The renderer has one React root and one executable route registry. A reducer-backed workbook session owns hydration, immutable workbook state, save state, navigation, overlays, warnings, and errors. Feature controllers consume explicit storage, cache, Advisor, Companion, clock, ID, fingerprint, download, and file-picker ports instead of reading preload globals directly.
+```text
+Tauri shell / desktop adapters
+        ↓
+workflow and integration packages
+        ↓
+@cavalry/finance-core
+```
 
-## Privacy and safety
+`@cavalry/finance-core` stays independent of Tauri, Node, filesystems, provider SDKs, React, and browser globals. Privileged behavior is reached through injected renderer ports rather than direct access to native APIs.
 
-The core workbook workflow is local-first. Optional Cavalry Cloud, remote Advisor providers, voice transcription, and Companion tunnel features can transmit selected data when a user configures and invokes them. Read [PRIVACY.md](PRIVACY.md) for the current data boundary and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+## Desktop architecture
 
-Never attach a real workbook, credentials, account details, or unredacted logs to a public issue. Use synthetic examples when reporting a problem.
+The desktop app has three runtime layers:
 
-## Develop
+1. **React renderer** — the existing interface, routes, workbook session, feature controllers, and CSS.
+2. **Rust/Tauri host** — the native window, application menu, single-instance behavior, `cavalry://` deep links, updater, lifecycle, and the bounded IPC bridge.
+3. **Cavalry host sidecar** — existing Node services for workbook persistence and recovery, Cavalry Cloud, Companion API, Advisor streaming, transcription, and llama.cpp process supervision.
 
-Use Node 22 and run commands from the repository root:
+The sidecar is an intentional compatibility boundary, not renderer-accessible Node integration. Only the Rust host can launch it. Requests use a versioned newline-delimited protocol, named channels, input-size limits, request timeouts, and Tauri events.
+
+## Local setup
+
+Requirements:
+
+- Node.js 22
+- npm
+- Rust stable
+- stable Rust toolchain with `tauri-cli` 2.11.4 installed (`cargo install tauri-cli --version 2.11.4 --locked`)
+- platform prerequisites from the Tauri documentation
+
+From the repository root:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Before handing off a change, run the full static, build, and unit gate. Add integration or Electron E2E coverage when the changed boundary requires it:
+`npm run dev` builds the Node host bundle and starts the pinned Tauri CLI. The renderer is served by Vite and retains hot reload.
+
+## Validation
 
 ```bash
 npm run check
 npm run test:integration
 npm run test:e2e
+npm run verify:architecture
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
-Build the ad-hoc Apple-silicon package with `npm run package:mac`. Build the otherwise identical Intel package with `npm run package:mac:intel`. Current production macOS packages are signed and notarized by the tag-only release workflow. Windows packaging and updater support remain available for a future signed rollout but are not part of the current release channel; see [`docs/operations/release.md`](docs/operations/release.md).
+Native packaging also requires a target-specific sidecar. The package commands prepare it automatically:
+
+```bash
+npm run package:mac
+npm run package:mac:intel
+npm run package:windows
+```
+
+Release builds additionally require operating-system signing credentials and Tauri updater keys. See [the release guide](docs/operations/release.md).
+
+## Privacy and safety
+
+The primary workbook workflow is local-first. Optional Cloud, remote Advisor providers, voice transcription, and Companion integrations can transmit selected information only when configured and used. Read [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before testing with sensitive data.
+
+Never publish a real workbook, credentials, account details, model keys, private tunnel addresses, or unredacted diagnostics. Use synthetic fixtures in issues and tests.
 
 ## Documentation
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution and validation workflow.
-- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — community participation expectations.
-- [`SECURITY.md`](SECURITY.md) — private vulnerability reporting and security invariants.
-- [`PRIVACY.md`](PRIVACY.md) — current local and optional network data handling.
-- [`SUPPORT.md`](SUPPORT.md) — safe support and issue-reporting guidance.
-- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — dependency and asset attributions.
-- [`CHANGELOG.md`](CHANGELOG.md) — user-visible and compatibility-relevant changes.
-- [`docs/README.md`](docs/README.md) — documentation index.
-- [`docs/architecture/README.md`](docs/architecture/README.md) — current workspace boundaries and dependency direction.
-- [`docs/development/README.md`](docs/development/README.md) — contributor workflow and root commands.
-- [`docs/operations/README.md`](docs/operations/README.md) — security and release guidance.
-- [`apps/mac/README.md`](apps/mac/README.md) — Electron desktop app source map.
-
-Advisor providers, Companion API/Custom GPT access, checkpointed external apply, Cavalry Cloud, and the llama.cpp launcher are optional unless a current feature document says otherwise. Cavalry Cloud currently provides explicit revision-checked workbook snapshots; automatic two-way merge and hosted Companion infrastructure remain intentionally deferred. Signing, notarization, and updater publication apply only to production release packages; local builds stay non-publishing.
+- [Documentation index](docs/README.md)
+- [Desktop source map](apps/desktop/README.md)
+- [Architecture](docs/architecture/README.md)
+- [Development workflow](docs/development/README.md)
+- [Electron-to-Tauri migration](docs/operations/electron-to-tauri-migration.md)
+- [Native certification checklist](docs/operations/native-certification.md)
+- [Release process](docs/operations/release.md)
+- [Security model](docs/operations/security.md)
+- [Migration status](MIGRATION_STATUS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 ## License
 
-Cavalry project code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, institution logos, and trademarks remain subject to their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Cavalry project code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, institution logos, and trademarks remain subject to their own terms.

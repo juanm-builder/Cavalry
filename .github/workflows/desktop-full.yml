@@ -1,0 +1,80 @@
+name: Desktop Full Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
+
+concurrency:
+  group: desktop-full-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS Apple Silicon
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            sidecar: sidecar:prepare:mac
+          - label: macOS Intel
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            sidecar: sidecar:prepare:mac:intel
+          - label: Windows x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar: sidecar:prepare:windows
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Rust target and Tauri CLI
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "${{ matrix.target }}"
+          cargo install tauri-cli --version 2.11.4 --locked
+
+      - name: Build renderer and host sidecar
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          npm run licenses:runtime
+          npm run build:host
+          npm run "${{ matrix.sidecar }}"
+
+      - name: Build native package
+        shell: bash
+        working-directory: apps/desktop
+        run: cargo tauri build --target "${{ matrix.target }}" --config src-tauri/tauri.bundle.conf.json
+
+      - name: Upload native packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cavalry-${{ matrix.target }}
+          path: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false

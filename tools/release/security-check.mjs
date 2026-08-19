@@ -5,8 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const minimumElectronVersion = '41.10.3';
-const electronEndOfLifeByMajor = Object.freeze({ 41: '2026-08-25' });
 const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const reviewedDevelopmentAdvisories = new Map([
   [
@@ -32,7 +30,20 @@ const allowedEmbeddedImages = new Map([
     ])
   ],
   [
+    'apps/desktop/src/renderer/assets/institution-logos/cimb.svg',
+    new Set([
+      'e7d21436a34f67320ca9d858feb15a4bb7338bb639b9ff7f2108e5432e4c4ad9',
+      'f49f3b51d87aa0c3b2d2390896f23b0b8093771f3927f2151ef56410c01e45d1',
+      '0a6ce91fe9ce0194d4aa1f8523dd27e822d7b6c43d10989aff2da35fe387974c',
+      '55f96ade00ea28523f8641db0b8dbc3acbfbbc5774969f059e7b59e758bb899f'
+    ])
+  ],
+  [
     'apps/mac/scripts/advisor-live-smoke.mjs',
+    new Set(['88ae895f28730657472360cf14da61edf6d2d54a81043a58e983f0db160423e4'])
+  ],
+  [
+    'apps/desktop/scripts/advisor-live-smoke.mjs',
     new Set(['88ae895f28730657472360cf14da61edf6d2d54a81043a58e983f0db160423e4'])
   ]
 ]);
@@ -43,7 +54,19 @@ const allowedFindingFingerprints = new Map([
     new Set(['OpenAI secret key:sha256:d0037c92ccd6857f'])
   ],
   [
+    'apps/desktop/tests/host/in-app-advisor-ipc.test.js',
+    new Set(['OpenAI secret key:sha256:d0037c92ccd6857f'])
+  ],
+  [
     'apps/mac/tests/electron/advisor-runtime-controller.test.js',
+    new Set([
+      'local user path:sha256:5754d5fb68617b6a',
+      'local user path:sha256:c8805d1b7d27eda1',
+      'local user path:sha256:a95ed35b26f48abb'
+    ])
+  ],
+  [
+    'apps/desktop/tests/host/advisor-runtime-controller.test.js',
     new Set([
       'local user path:sha256:5754d5fb68617b6a',
       'local user path:sha256:c8805d1b7d27eda1',
@@ -332,50 +355,44 @@ function compareVersions(left, right) {
   return 0;
 }
 
-function checkElectronVersion() {
-  const manifest = readJson('apps/mac/package.json');
+function checkDesktopRuntime() {
+  const manifest = readJson('apps/desktop/package.json');
   const lockfile = readJson('package-lock.json');
-  const version = manifest.devDependencies?.electron;
-  if (!stableVersionPattern.test(version || '')) {
-    fail('apps/mac must pin Electron to an exact stable version.');
+  const forbidden = new Set(['electron', 'electron-builder', 'electron-updater']);
+  for (const name of [
+    ...Object.keys(manifest.dependencies || {}),
+    ...Object.keys(manifest.devDependencies || {})
+  ]) {
+    if (forbidden.has(name)) fail(`legacy Electron dependency remains: ${name}.`);
   }
-  if (compareVersions(version, minimumElectronVersion) < 0) {
-    fail(`Electron ${version} is below the known-safe floor ${minimumElectronVersion}.`);
+  for (const lockPath of Object.keys(lockfile.packages || {})) {
+    if (/^node_modules\/(?:electron|electron-builder|electron-updater)$/.test(lockPath)) {
+      fail(`legacy Electron lock entry remains: ${lockPath}.`);
+    }
   }
-  if (lockfile.packages?.['apps/mac']?.devDependencies?.electron !== version) {
-    fail('the Electron version in package-lock.json does not match apps/mac/package.json.');
-  }
-  const lockedVersion = lockfile.packages?.['node_modules/electron']?.version;
-  if (lockedVersion !== version) {
-    fail(
-      `the installed Electron lock entry is ${lockedVersion || 'missing'}, expected ${version}.`
-    );
+  if (lockfile.packages?.['apps/desktop']?.name !== '@cavalry/desktop') {
+    fail('package-lock.json does not contain the Tauri desktop workspace.');
   }
 
-  const major = version.split('.')[0];
-  const endOfLife = electronEndOfLifeByMajor[major];
-  if (endOfLife && Date.now() >= Date.parse(`${endOfLife}T00:00:00.000Z`)) {
-    fail(`Electron ${major} reached end of life on ${endOfLife}; upgrade to a supported major.`);
-  }
-  const registryResult = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'view',
-    `electron@${major}`,
-    'version',
-    '--json'
-  ]);
-  if (registryResult.status !== 0) {
-    fail(`could not verify Electron's current patch release: ${registryResult.stderr.trim()}`);
-  }
-  const registryValue = JSON.parse(registryResult.stdout || '[]');
-  const publishedVersions = (Array.isArray(registryValue) ? registryValue : [registryValue]).filter(
-    (candidate) => stableVersionPattern.test(candidate)
+  const capability = readJson('apps/desktop/src-tauri/capabilities/main.json');
+  const permissionNames = (capability.permissions || []).map((permission) =>
+    String(typeof permission === 'string' ? permission : permission && permission.identifier)
   );
-  const newestSameMajor = publishedVersions.sort(compareVersions).at(-1);
-  if (!newestSameMajor) fail(`npm returned no stable Electron ${major} releases.`);
-  if (compareVersions(version, newestSameMajor) < 0) {
-    fail(`Electron ${version} is behind the current ${major}.x patch ${newestSameMajor}.`);
+  if (permissionNames.some((permission) => permission.startsWith('shell:'))) {
+    fail('the renderer capability grants direct shell access.');
   }
-  process.stdout.write(`Electron ${version} is the current ${major}.x security patch.\n`);
+  if (permissionNames.some((permission) => permission.startsWith('process:'))) {
+    fail('the renderer capability grants direct process access.');
+  }
+
+  const releaseTemplate = readJson('apps/desktop/src-tauri/tauri.release.template.json');
+  if (releaseTemplate.plugins?.updater?.pubkey !== '__CAVALRY_UPDATER_PUBLIC_KEY__') {
+    fail('the tracked release template must not contain a real updater key.');
+  }
+  if (releaseTemplate.bundle?.createUpdaterArtifacts !== true) {
+    fail('production Tauri releases must create signed updater artifacts.');
+  }
+  process.stdout.write('Tauri runtime, capabilities, and signed-updater template are secure.\n');
 }
 
 function listWorkspaceFiles() {
@@ -700,7 +717,7 @@ export function runSecurityChecks({ contentOnly = false } = {}) {
   checkWorkflowSecurity();
   if (contentOnly) return;
   checkGitHistory();
-  checkElectronVersion();
+  checkDesktopRuntime();
   checkDependencyAudit();
   process.stdout.write('Release security checks passed.\n');
 }

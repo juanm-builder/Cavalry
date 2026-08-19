@@ -351,7 +351,7 @@ if (
 }
 
 const reviewUiText = existingText(
-  repoPath('apps/mac/src/renderer/features/drafts/DraftReviewRoute.jsx')
+  repoPath('apps/desktop/src/renderer/features/drafts/DraftReviewRoute.jsx')
 );
 if (/Nothing changes until you apply a draft/.test(reviewUiText)) {
   pass('review-ui', 'Review UI warns that drafts have not changed the workbook yet');

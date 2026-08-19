@@ -446,7 +446,7 @@ export function makeDirtyLegacyWorkbook() {
         id: 'dirty-unknown-template',
         date: '2026-06-14',
         monthKey: '2026-06',
-        template: 'refund',
+        template: 'mystery_template',
         description: 'Unknown template candidate',
         categoryId: 'food',
         amount: 30,

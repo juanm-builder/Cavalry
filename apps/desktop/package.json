@@ -1,0 +1,77 @@
+{
+  "name": "@cavalry/desktop",
+  "version": "2.0.1",
+  "description": "Cavalry local-first desktop finance app powered by Tauri.",
+  "author": "Cavalry",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanm-builder/Cavalry.git",
+    "directory": "apps/desktop"
+  },
+  "bugs": {
+    "url": "https://github.com/juanm-builder/Cavalry/issues"
+  },
+  "homepage": "https://github.com/juanm-builder/Cavalry#readme",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:host && cargo tauri dev",
+    "dev:renderer": "vite --config vite.renderer.config.mjs --host 127.0.0.1",
+    "build": "npm run build:renderer && npm run build:host",
+    "build:renderer": "vite build --config vite.renderer.config.mjs",
+    "build:host": "vite build --config vite.host.config.mjs",
+    "sidecar:prepare": "npm run build:host && node scripts/build-sidecar.mjs",
+    "sidecar:prepare:mac": "npm run build:host && node scripts/build-sidecar.mjs --target aarch64-apple-darwin",
+    "sidecar:prepare:mac:intel": "npm run build:host && node scripts/build-sidecar.mjs --target x86_64-apple-darwin",
+    "sidecar:prepare:windows": "npm run build:host && node scripts/build-sidecar.mjs --target x86_64-pc-windows-msvc",
+    "sidecar:smoke": "node scripts/sidecar-smoke.mjs",
+    "licenses:runtime": "node ../../tools/release/generate-runtime-licenses.mjs",
+    "release:config": "node scripts/write-release-config.mjs",
+    "tauri:build": "npm run licenses:runtime && npm run sidecar:prepare && cargo tauri build --config src-tauri/tauri.bundle.conf.json",
+    "tauri:build:mac": "npm run licenses:runtime && npm run sidecar:prepare:mac && cargo tauri build --target aarch64-apple-darwin --config src-tauri/tauri.bundle.conf.json",
+    "tauri:build:mac:intel": "npm run licenses:runtime && npm run sidecar:prepare:mac:intel && cargo tauri build --target x86_64-apple-darwin --config src-tauri/tauri.bundle.conf.json",
+    "tauri:build:windows": "npm run licenses:runtime && npm run sidecar:prepare:windows && cargo tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.bundle.conf.json",
+    "tauri:release:mac": "npm run licenses:runtime && npm run sidecar:prepare:mac && npm run release:config && cargo tauri build --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json",
+    "tauri:release:mac:intel": "npm run licenses:runtime && npm run sidecar:prepare:mac:intel && npm run release:config && cargo tauri build --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src scripts tests vite.*.config.mjs vitest*.config.mjs",
+    "typecheck": "tsc -p tsconfig.checkjs.json --noEmit",
+    "test": "npm run test:unit && npm run test:renderer",
+    "test:unit": "vitest run",
+    "test:renderer": "vitest run --config vitest.renderer.config.mjs",
+    "test:integration": "vitest run tests/application tests/host",
+    "test:e2e": "npm run build && node scripts/core-dom-smoke.mjs",
+    "check": "npm run lint && npm run typecheck && npm run build && npm run test && npm run sidecar:smoke",
+    "advisor:certify": "node scripts/advisor-ui-certification.mjs",
+    "advisor:live-smoke": "node scripts/advisor-live-smoke.mjs",
+    "tauri:doctor": "cargo tauri info"
+  },
+  "dependencies": {
+    "@cavalry/action-review": "1.0.15",
+    "@cavalry/advisor": "1.0.15",
+    "@cavalry/companion-api": "1.0.15",
+    "@cavalry/finance-core": "1.0.15",
+    "@cavalry/sync-foundation": "1.0.15",
+    "@fortawesome/fontawesome-svg-core": "^7.3.1",
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
+    "@fortawesome/react-fontawesome": "^3.5.0",
+    "@supabase/supabase-js": "^2.110.8",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.0.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vite": "7.3.6",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

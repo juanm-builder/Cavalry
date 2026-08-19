@@ -1,0 +1,17 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/cavalry-host"],
+    "resources": [
+      "../packaging/RUNTIME-DEPENDENCY-INVENTORY.txt",
+      "../../../LICENSE",
+      "../../../THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "__CAVALRY_UPDATER_PUBLIC_KEY__",
+      "endpoints": ["https://github.com/juanm-builder/Cavalry/releases/latest/download/latest.json"]
+    }
+  }
+}

@@ -1,7 +1,36 @@
-# Security
+# Security and data handling
 
-Do not report a suspected vulnerability in a public issue. Use the repository's private security-advisory channel when available, or contact the maintainers privately. Include affected versions, reproduction steps, impact, and any proposed mitigation without attaching real financial data or credentials.
+Report suspected vulnerabilities privately through the process in [`SECURITY.md`](../../SECURITY.md). Never attach real financial records, credentials, signing material, private tunnel URLs, or model files to a public issue.
 
-Never commit API keys, bearer tokens, OAuth credentials, private tunnel URLs, user workbooks, backups, local application data, logs containing financial data, or model files. Keep secrets in ignored local configuration or the operating system's supported secret storage.
+## Desktop trust boundaries
 
-The renderer must not gain direct Node or Electron access. Keep `contextIsolation` enabled, expose only narrow preload methods, validate all IPC inputs, and keep external actions draft-first with explicit review. Security-sensitive fixes should include regression coverage and a private disclosure timeline before public release notes.
+- The renderer has no Node integration.
+- Tauri capabilities do not grant shell or process execution to the renderer.
+- The renderer reaches privileged host behavior through one named Rust command.
+- Rust accepts only approved `cavalry-*` channel prefixes, enforces request limits and timeouts, and launches only the named sidecar.
+- Native dialogs and external URLs are constrained by the renderer broker and Tauri permissions.
+- External write proposals remain draft-first and require explicit review.
+
+## Credential storage
+
+The host encrypts credentials with AES-256-GCM using a random master key protected by:
+
+- macOS Login Keychain; or
+- Windows current-user DPAPI.
+
+A local key file is allowed only in development or under an explicit development override. Packaged builds fail closed when secure OS storage is unavailable. Old Electron `safeStorage` ciphertext is treated as incompatible rather than copied or written in plaintext.
+
+## Content security
+
+The renderer Content Security Policy blocks embedded frames, objects, unsafe evaluation, and unapproved network destinations. Cloud connections are restricted to configured Supabase origins; local model sockets are limited to localhost.
+
+## Release security
+
+Before publishing:
+
+```bash
+npm run release:security
+npm run verify:architecture
+```
+
+Review the generated Tauri capability set, updater public key and endpoint, target-specific sidecar, OS signatures, repository diff, and secret scan. Rotate any exposed credential even if it was deleted later.

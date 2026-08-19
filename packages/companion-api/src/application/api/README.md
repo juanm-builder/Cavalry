@@ -13,12 +13,12 @@ Files:
 
 Server-owned behavior stays in `src/server/cavalry-api/`: HTTP routing, runtime config, auth token verification, live workbook stores, host binding, and OpenAPI serving.
 
-Renderer/Electron-owned behavior stays outside this directory: UI controls, preload namespaces, IPC, provider secrets, and native runtime state.
+Renderer/desktop-host-owned behavior stays outside this directory: UI controls, desktop bridge namespaces, IPC, provider secrets, and native runtime state.
 
-Do not import Electron, preload bridges, renderer globals, provider secrets, `window`, or `document` here. Do not change API auth, scopes, checkpoint apply behavior, response shapes, audit fields, or OpenAPI-visible contracts without focused API/OpenAPI coverage.
+Do not import Tauri, desktop bridges, renderer globals, provider secrets, `window`, or `document` here. Do not change API auth, scopes, checkpoint apply behavior, response shapes, audit fields, or OpenAPI-visible contracts without focused API/OpenAPI coverage.
 
-Browser-safe modules: none are renderer-facing today; keep controller dependencies explicit and testable without direct server or Electron imports.
+Browser-safe modules: none are renderer-facing today; keep controller dependencies explicit and testable without direct server or Tauri imports.
 
 Node/main/server-only modules: none in this directory; Node HTTP/runtime work belongs in `src/server/` and scripts.
 
-Package coverage: `tests/application/cavalry-api-controller.test.js`, `tests/application/companion-mutation-gate-service.test.js`, `tests/application/companion-checkpointed-api.test.js`, `tests/server/cavalry-api.test.js`, `tests/server/companion-runtime-auth.test.js`, and `tests/openapi/cavalry-gpt-actions.test.js`. The Mac workspace retains live-app bridge coverage because that test crosses the Electron adapter boundary.
+Package coverage: `tests/application/cavalry-api-controller.test.js`, `tests/application/companion-mutation-gate-service.test.js`, `tests/application/companion-checkpointed-api.test.js`, `tests/server/cavalry-api.test.js`, `tests/server/companion-runtime-auth.test.js`, and `tests/openapi/cavalry-gpt-actions.test.js`. The Mac workspace retains live-app bridge coverage because that test crosses the desktop adapter boundary.

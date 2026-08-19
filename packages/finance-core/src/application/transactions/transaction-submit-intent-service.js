@@ -60,6 +60,8 @@ function normalizeTemplate(value) {
   if (raw === 'expense' || raw === 'purchase' || raw === 'spend') return 'expense_paid';
   if (raw === 'charge' || raw === 'charged') return 'expense_charged';
   if (raw === 'income' || raw === 'salary') return 'income_received';
+  if (['refund', 'chargeback', 'charge_reversal', 'reversal'].includes(raw))
+    return 'merchant_refund';
   if (raw === 'payment' || raw === 'debt' || raw === 'liability') return 'debt_payment';
   if (raw === 'opening') return 'opening_balance';
   return raw || 'expense_paid';
@@ -88,6 +90,19 @@ function buildAssignmentIssue(workbook, composerInput) {
         code: 'invalid_income_account',
         field: 'primaryAccountId',
         message: 'Choose an asset account to receive the income.'
+      };
+  } else if (template === 'merchant_refund') {
+    if (!(category && category.type === 'expense'))
+      return {
+        code: 'invalid_refund_category',
+        field: 'categoryId',
+        message: 'Pick the original expense category.'
+      };
+    if (!(primaryAccount && ['asset', 'liability'].includes(primaryAccount.group)))
+      return {
+        code: 'invalid_refund_account',
+        field: 'primaryAccountId',
+        message: 'Choose the cash account or credit card receiving the refund.'
       };
   } else if (template === 'expense_paid') {
     if (!(category && category.type === 'expense'))
@@ -195,6 +210,8 @@ function existingTransactionAssignments(workbook, transaction) {
     primaryAccountId = asLegacyId(
       findTransactionLineAccount(workbook, transaction, 'asset', 'debit')?.accountId
     );
+  } else if (template === 'merchant_refund') {
+    primaryAccountId = asLegacyId(balanceLine('debit')?.accountId);
   } else if (template === 'expense_paid') {
     primaryAccountId = asLegacyId(
       findTransactionLineAccount(workbook, transaction, 'asset', 'credit')?.accountId

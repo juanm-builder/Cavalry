@@ -1,41 +1,64 @@
 # Development
 
-Use Node 22 (see `.node-version`) and run maintained commands from the repository root.
+## Prerequisites
+
+- Node.js 22 and npm
+- Rust stable
+- package-registry access for the pinned Tauri CLI and sidecar packager
+- Xcode Command Line Tools on macOS
+- Microsoft C++ Build Tools and WebView2 on Windows
+
+Install the pinned native CLI with `cargo install tauri-cli --version 2.11.4 --locked`. Repository scripts then invoke it through `cargo tauri`.
+
+## Setup
 
 ```bash
 npm ci
 npm run dev
 ```
 
-The root command facade is:
+The development command builds the Node host bundle, starts Vite, launches the Tauri application, and uses the system WebView. Development mode invokes the host bundle through the local `node` executable; packaged builds use the target-specific sidecar binary.
 
-- `npm run build`
-- `npm run format`
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-- `npm run test:integration`
-- `npm run test:e2e`
-- `npm run check`
-- `npm run package:mac`
-- `npm run package:mac:intel`
-- `npm run release:validate -- vMAJOR.MINOR.PATCH`
+## Common commands
 
-The package commands are local, ad-hoc macOS outputs. Signed and notarized macOS artifacts are built only by the tag-triggered release workflow. Windows packaging remains dormant for a future signed rollout; see [`../operations/release.md`](../operations/release.md).
+```bash
+npm run format
+npm run lint
+npm run typecheck
+npm run build
+npm run test
+npm run test:integration
+npm run test:e2e
+npm run verify:architecture
+npm run check
+```
 
-`npm run check` runs formatting verification, lint, check-JS/type checking, all three Vite builds, unit suites, architecture rules, and Companion contract checks. `npm run test:integration` covers owning-package server/application adapters and Mac integration/Electron modules. `npm run test:e2e` builds and drives the Electron UI.
+Rust host validation:
 
-Run `npm run check` before every handoff. Run integration and E2E gates for workbook persistence, route interactions, preload/IPC, native files, packaging, Advisor transport, or Companion behavior. App- and integration-specific diagnostics remain available with a workspace selector.
+```bash
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+```
 
-## Change workflow
+## Change ownership
 
-1. Identify the owning app or package from the [architecture map](../architecture/README.md).
-2. Add or update the narrowest relevant test before moving behavior across a boundary.
-3. Import another workspace only through its package export map; never use a deep relative path across packages.
-4. Keep React views serializable and callback-driven. Put preload access in renderer platform adapters and native effects in main-process adapters.
-5. Keep pure moves separate from behavior changes when practical.
-6. Do not commit generated bundles, package output, test artifacts, local model files, or user workbooks.
-7. Update an ADR when a durable boundary or public contract changes.
-8. Run the relevant root validation commands and inspect `git diff --check`.
+- Finance rules and workbook semantics belong in `packages/finance-core`.
+- Draft review and action execution belong in `packages/action-review`.
+- Advisor display/orchestration contracts belong in `packages/advisor`.
+- Companion API contracts belong in `packages/companion-api`.
+- Native lifecycle, menus, updater, deep links, and sidecar supervision belong in `apps/desktop/src-tauri`.
+- Filesystem, Cloud, Companion server, and model-process implementations belong in `apps/desktop/src/host`.
+- User interaction and rendering belong in `apps/desktop/src/renderer`.
 
-See [contributing.md](contributing.md) for review expectations and [changelog-policy.md](changelog-policy.md) for user-visible change records.
+Keep changes inside the narrowest owning boundary. Do not bypass renderer ports or add a second native bridge.
+
+## Generated files
+
+Generated build output is ignored. Runtime dependency inventory is generated intentionally and should be refreshed when production JavaScript dependencies change:
+
+```bash
+npm run licenses:runtime
+npm run licenses:runtime:check
+```
+
+A newly resolved Rust dependency graph should produce and commit `apps/desktop/src-tauri/Cargo.lock` from a network-enabled development machine before a production release.

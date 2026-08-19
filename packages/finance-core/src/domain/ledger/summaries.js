@@ -1,6 +1,7 @@
 // Reporting preserves the established posted-flow classification used by schema-v2 workbooks.
 
 import { roundMoney } from '../money.js';
+import { getTransactionContributions } from './transaction-contributions.js';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -107,39 +108,7 @@ function getMonthRangeFromKey(monthKey) {
 }
 
 export function getTransactionFlowKind(transaction, workbook, _options = {}) {
-  const template = String(transaction && transaction.template ? transaction.template : '');
-  if (template === 'opening_balance' || template === 'existing_liability') {
-    return 'opening';
-  }
-  if (template === 'transfer') {
-    return 'transfer';
-  }
-  const category =
-    transaction && transaction.categoryId
-      ? getCategoryById(workbook, transaction.categoryId)
-      : null;
-  if (category && category.type === 'income') {
-    return 'inflow';
-  }
-  if (category && category.type === 'expense') {
-    return 'expense';
-  }
-  if (category && category.type === 'savings') {
-    return 'savings';
-  }
-  if (category && category.type === 'debt') {
-    return 'debt';
-  }
-  if (template === 'income_received' || template === 'daily_interest') {
-    return 'inflow';
-  }
-  if (template === 'expense_paid' || template === 'expense_charged') {
-    return 'expense';
-  }
-  if (template === 'debt_payment' || template === 'liability_payment') {
-    return 'debt';
-  }
-  return 'transfer';
+  return getTransactionContributions(workbook, transaction).flowKind;
 }
 
 export function flowKindMatches(kind, requestedType) {
@@ -178,9 +147,10 @@ export function getFlowTransactions(workbook, rangeOrMonthKey, type, options = {
 export function getFlowBreakdown(workbook, transactions) {
   const categoryTotals = {};
   asArray(transactions).forEach((transaction) => {
-    const categoryId = transaction.categoryId || '__uncategorized';
+    const contribution = getTransactionContributions(workbook, transaction);
+    const categoryId = contribution.categoryId;
     categoryTotals[categoryId] = roundMoney(
-      (categoryTotals[categoryId] || 0) + getTransactionBaseAmount(transaction)
+      (categoryTotals[categoryId] || 0) + contribution.signedBaseAmount
     );
   });
   return Object.keys(categoryTotals)
@@ -204,7 +174,7 @@ export function getMonthlyFlowBreakdown(workbook, monthKey, type, options = {}) 
     rows: getFlowBreakdown(workbook, transactions),
     total: roundMoney(
       transactions.reduce((sum, transaction) => {
-        return sum + getTransactionBaseAmount(transaction);
+        return sum + getTransactionContributions(workbook, transaction).signedBaseAmount;
       }, 0)
     )
   };
@@ -227,8 +197,9 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
     transactions
   };
   transactions.forEach((transaction) => {
-    const kind = getTransactionFlowKind(transaction, workbook);
-    const amount = getTransactionBaseAmount(transaction);
+    const contribution = getTransactionContributions(workbook, transaction);
+    const kind = contribution.flowKind;
+    const amount = contribution.signedBaseAmount;
     if (kind === 'inflow') {
       summary.income = roundMoney(summary.income + amount);
     } else if (kind === 'expense') {
@@ -239,7 +210,7 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
       summary.debt = roundMoney(summary.debt + amount);
     }
     if (kind === 'inflow' || kind === 'expense' || kind === 'savings' || kind === 'debt') {
-      const categoryId = transaction.categoryId || '__uncategorized';
+      const categoryId = contribution.categoryId;
       summary.categoryTotals[categoryId] = roundMoney(
         (summary.categoryTotals[categoryId] || 0) + amount
       );

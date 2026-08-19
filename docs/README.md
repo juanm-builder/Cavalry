@@ -1,14 +1,30 @@
 # Cavalry documentation
 
-The maintained documentation follows the workspace architecture. Start with the smallest section that owns the change you are making.
+This documentation describes the current Tauri desktop architecture and the compatibility boundaries that keep Cavalry's finance behavior stable.
 
-## Maintained guides
+## Start here
 
-- [`architecture/`](architecture/README.md) — workspace map, package boundaries, and dependency direction.
-- [`development/`](development/README.md) — root commands, contribution workflow, and changelog policy.
-- [`features/`](features/README.md) — core finance feature documentation and QA maps.
-- [`integrations/`](integrations/README.md) — Advisor, Companion API, sync, cloud, and llama.cpp material.
-- [`operations/`](operations/README.md) — security, generated artifacts, packaging, and release checks.
-- [`adr/`](adr/README.md) — durable architecture decisions.
+- [Architecture](architecture/README.md)
+- [Development](development/README.md)
+- [Desktop workspace](../apps/desktop/README.md)
+- [Operations](operations/README.md)
+- [Electron-to-Tauri migration](operations/electron-to-tauri-migration.md)
+- [Native certification checklist](operations/native-certification.md)
+- [Architecture decisions](adr/README.md)
 
-Source-layer README files live beside their code in each package. Curated Companion examples live under `packages/companion-api/examples/`; sanitized portable workbook examples live under `examples/workbooks/`.
+## Product and integrations
+
+- [Feature documentation](features/README.md)
+- [Integration documentation](integrations/README.md)
+- [Cavalry Cloud](features/cavalry-cloud.md)
+- [Advisor acceptance](features/advisor-acceptance.md)
+- [AI companion capabilities](features/ai-companion-capabilities.md)
+
+## Repository policies
+
+- [Contributing](../CONTRIBUTING.md)
+- [Security](../SECURITY.md)
+- [Privacy](../PRIVACY.md)
+- [Support](../SUPPORT.md)
+- [Third-party notices](../THIRD_PARTY_NOTICES.md)
+- [Changelog](../CHANGELOG.md)

@@ -6,6 +6,7 @@ import {
   filterTransactionRows,
   validateTransactionTableViewState
 } from '@cavalry/finance-core/application/transactions/transaction-table-service.js';
+import { makeRefundWorkbook } from '../fixtures/core-workbook-fixtures.js';
 import { makeTransactionTableWorkbook } from '../fixtures/transaction-table-scenarios.js';
 
 describe('transaction table filtering', () => {
@@ -60,6 +61,35 @@ describe('transaction table filtering', () => {
         end: '2026-06-30'
       }).map((row) => row.id)
     ).toEqual(['txn-card']);
+  });
+
+  it('classifies and filters legacy refund aliases by their semantic contribution', () => {
+    const rows = buildTransactionRows(makeRefundWorkbook());
+    const refund = rows.find((row) => row.id === 'txn-refund-unclear');
+
+    expect(refund).toMatchObject({
+      type: 'refund',
+      eventKind: 'merchant_refund',
+      flowKind: 'expense',
+      signedBaseAmount: -50,
+      contributions: {
+        eventKind: 'merchant_refund',
+        flowKind: 'expense',
+        signedBaseAmount: -50,
+        resolved: true,
+        metrics: {
+          expense: -50,
+          outflow: -50,
+          categoryBudget: -50,
+          cashFlow: 50
+        }
+      }
+    });
+    expect(filterTransactionRows(rows, { type: 'refund' }).map((row) => row.id)).toEqual([
+      'txn-refund-unclear'
+    ]);
+    expect(filterTransactionRows(rows, { type: 'expense' })).toHaveLength(5);
+    expect(validateTransactionTableViewState({ type: 'refund' }).type).toBe('refund');
   });
 
   it('normalizes invalid filter state safely in full table views', () => {

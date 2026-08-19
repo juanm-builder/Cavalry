@@ -1,9 +1,9 @@
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import {
   buildManualLedgerTransaction,
-  getLedgerTransactionBaseAmount,
   normalizeLedgerTransactionTemplate
 } from '../../domain/ledger/transactions.js';
+import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
 
 const DEFAULT_PAGE_SIZE = 12;
 const EDITABLE_INLINE_FIELDS = Object.freeze([
@@ -70,21 +70,19 @@ function getPrimaryAccount(lines, accountById) {
   return null;
 }
 
-export function getTransactionTableType(workbook, transaction) {
-  const template = asString(transaction && transaction.template);
-  const categoryById = byId(workbook && workbook.categories);
-  const category =
-    transaction && transaction.categoryId
-      ? categoryById.get(asString(transaction.categoryId))
-      : null;
-  if (template === 'transfer') return 'transfer';
-  if (template === 'opening_balance' || template === 'existing_liability') return 'opening';
-  if (category && category.type === 'income') return 'income';
-  if (category && ['expense', 'debt', 'savings'].includes(category.type)) return 'expense';
-  if (template === 'income_received' || template === 'daily_interest') return 'income';
-  if (['expense_paid', 'expense_charged', 'debt_payment', 'liability_payment'].includes(template))
-    return 'expense';
+function transactionTableTypeForContribution(contribution) {
+  if (contribution.eventKind === 'merchant_refund') return 'refund';
+  if (contribution.eventKind === 'transfer') return 'transfer';
+  if (contribution.eventKind === 'opening_balance') return 'opening';
+  if (contribution.flowKind === 'inflow') return 'income';
+  if (['expense', 'savings', 'debt'].includes(contribution.flowKind)) return 'expense';
   return 'other';
+}
+
+export function getTransactionTableType(workbook, transaction) {
+  return transactionTableTypeForContribution(
+    getTransactionContributions(workbook || {}, transaction || {})
+  );
 }
 
 export function resolveTransactionRowReferences(workbook, transaction, options = {}) {
@@ -141,14 +139,20 @@ export function buildTransactionRows(workbook, options = {}) {
   const categoryById = byId(workbook && workbook.categories);
   const counterpartyById = byId(workbook && workbook.counterparties);
   return asArray(workbook && workbook.transactions).map((transaction, index) => {
+    const contribution = getTransactionContributions(workbook || {}, transaction || {});
+    const contributions = {
+      ...contribution,
+      metrics: { ...contribution.metrics },
+      warnings: contribution.warnings.map((warning) => ({ ...warning }))
+    };
     const references = resolveTransactionRowReferences(workbook, transaction, {
       accountById,
       categoryById,
       counterpartyById
     });
-    const type = getTransactionTableType(workbook, transaction);
+    const type = transactionTableTypeForContribution(contribution);
     const amount = Number(transaction && transaction.amount) || 0;
-    const baseAmount = getLedgerTransactionBaseAmount(transaction);
+    const baseAmount = contribution.baseAmount;
     const row = {
       id: asString(transaction && transaction.id) || `transaction_${index}`,
       transaction,
@@ -162,8 +166,12 @@ export function buildTransactionRows(workbook, options = {}) {
       template: asString(transaction && transaction.template),
       templateLabel: templateLabel(transaction && transaction.template),
       type,
+      eventKind: contribution.eventKind,
+      flowKind: contribution.flowKind,
       amount,
       baseAmount,
+      signedBaseAmount: contribution.signedBaseAmount,
+      contributions,
       currency:
         asString(
           transaction && (transaction.originalCurrency || transaction.currency)
@@ -225,6 +233,8 @@ function buildRowSearchText(row) {
       row.template,
       row.templateLabel,
       row.type,
+      row.eventKind,
+      row.flowKind,
       row.categoryLabel,
       row.categoryType,
       row.accountLabel,
@@ -287,7 +297,16 @@ export function filterTransactionRows(rows, filters = {}) {
       return false;
     if (Number.isFinite(maxAmount) && asString(filters.maxAmount) && amount > maxAmount)
       return false;
-    if (type !== 'all' && type !== 'uncategorized' && row.type !== type) return false;
+    if (
+      type !== 'all' &&
+      type !== 'uncategorized' &&
+      !(
+        row.type === type ||
+        (type === 'refund' && row.eventKind === 'merchant_refund') ||
+        (type === 'expense' && (row.type === 'refund' || row.flowKind === 'expense'))
+      )
+    )
+      return false;
     if (includeUncategorized && !row.isUncategorized) return false;
     if (
       accountId &&
@@ -347,23 +366,64 @@ export function sortTransactionRows(rows, sort = {}) {
 export function calculateVisibleTransactionTotals(rows) {
   return asArray(rows).reduce(
     (totals, row) => {
-      if (row.type === 'income') {
-        totals.income = roundMoney(totals.income + row.baseAmount);
-      } else if (row.categoryType === 'expense') {
-        totals.expense = roundMoney(totals.expense + row.baseAmount);
-      } else if (row.type === 'transfer') {
+      const fallbackAmount = Math.abs(Number(row && row.baseAmount) || 0);
+      const hasTrustedReferences = row && row.hasMissingReference !== true;
+      const metrics = !hasTrustedReferences
+        ? {}
+        : row.contributions &&
+            row.contributions.metrics &&
+            typeof row.contributions.metrics === 'object'
+          ? row.contributions.metrics
+          : row.type === 'income'
+            ? { income: fallbackAmount }
+            : row.type === 'refund'
+              ? { expense: -fallbackAmount, outflow: -fallbackAmount }
+              : row.categoryType === 'expense' || row.type === 'expense'
+                ? { expense: fallbackAmount, outflow: fallbackAmount }
+                : {};
+      [
+        'income',
+        'expense',
+        'savings',
+        'debt',
+        'outflow',
+        'categoryBudget',
+        'debtPrincipal',
+        'cashFlow'
+      ].forEach((metric) => {
+        totals[metric] = roundMoney(totals[metric] + (Number(metrics[metric]) || 0));
+      });
+      if (row && (row.eventKind === 'transfer' || (!row.eventKind && row.type === 'transfer'))) {
         totals.transferCount += 1;
       }
+      if (row && (row.eventKind === 'merchant_refund' || row.type === 'refund')) {
+        totals.refundCount += 1;
+      }
+      if (
+        row &&
+        (row.hasMissingReference === true ||
+          (row.contributions && row.contributions.resolved === false))
+      ) {
+        totals.unresolvedCount += 1;
+      }
       totals.count += 1;
-      totals.net = roundMoney(totals.income - totals.expense);
+      totals.net = roundMoney(totals.income - totals.outflow);
       return totals;
     },
     {
       income: 0,
       expense: 0,
+      savings: 0,
+      debt: 0,
+      outflow: 0,
+      categoryBudget: 0,
+      debtPrincipal: 0,
+      cashFlow: 0,
       net: 0,
       count: 0,
       transferCount: 0,
+      refundCount: 0,
+      unresolvedCount: 0,
       currency: 'base'
     }
   );
@@ -373,9 +433,16 @@ export function validateTransactionTableViewState(viewState = {}) {
   const type = lower(viewState.type || viewState.direction || 'all') || 'all';
   const sort = viewState.sort || {};
   return {
-    type: ['all', 'income', 'expense', 'transfer', 'opening', 'other', 'uncategorized'].includes(
-      type
-    )
+    type: [
+      'all',
+      'income',
+      'expense',
+      'refund',
+      'transfer',
+      'opening',
+      'other',
+      'uncategorized'
+    ].includes(type)
       ? type
       : 'all',
     accountId: asString(viewState.accountId),

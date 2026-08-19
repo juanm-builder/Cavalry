@@ -6,8 +6,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const WORKSPACE_ROOT = path.resolve(TOOL_DIR, '../..');
-const SOURCE_PATTERN = /\.(?:cjs|mjs|js|jsx)$/;
+const SOURCE_PATTERN = /\.(?:cjs|mjs|js|jsx|rs)$/;
 const BUILTINS = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
+const SKIPPED_DIRECTORIES = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'coverage',
+  'out',
+  'target',
+  'test-artifacts'
+]);
 
 const PACKAGE_RULES = Object.freeze({
   '@cavalry/finance-core': [],
@@ -33,30 +42,25 @@ export function readText(root, filePath) {
   return readFileSync(path.resolve(root, filePath), 'utf8');
 }
 
-export function listTrackedFiles(root = WORKSPACE_ROOT) {
-  const result = spawnSync('git', ['ls-files', '--full-name'], { cwd: root, encoding: 'utf8' });
-  if (result.status !== 0) {
-    throw new Error(
-      String(result.stderr || result.stdout || 'Unable to list tracked files.').trim()
-    );
-  }
-  return result.stdout.split(/\r?\n/).map(posix).filter(Boolean).sort();
-}
-
 function listFilesBelow(root, relativeDirectory) {
   const absoluteDirectory = path.resolve(root, relativeDirectory);
   if (!existsSync(absoluteDirectory)) return [];
-
   return readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap((entry) => {
+    if (SKIPPED_DIRECTORIES.has(entry.name)) return [];
     const relativePath = posix(path.join(relativeDirectory, entry.name));
-    if (entry.isDirectory()) {
-      if (['node_modules', 'dist', 'coverage', 'out', 'test-artifacts'].includes(entry.name)) {
-        return [];
-      }
-      return listFilesBelow(root, relativePath);
-    }
+    if (entry.isDirectory()) return listFilesBelow(root, relativePath);
     return entry.isFile() ? [relativePath] : [];
   });
+}
+
+export function listTrackedFiles(root = WORKSPACE_ROOT) {
+  const result = spawnSync('git', ['ls-files', '--full-name'], { cwd: root, encoding: 'utf8' });
+  if (result.status === 0) {
+    return result.stdout.split(/\r?\n/).map(posix).filter(Boolean).sort();
+  }
+  return listFilesBelow(root, '.')
+    .map((file) => file.replace(/^\.\//, ''))
+    .sort();
 }
 
 export function listSourceFiles(root = WORKSPACE_ROOT, prefixes = ['apps/', 'packages/']) {
@@ -74,63 +78,21 @@ export function extractImportSpecifiers(source) {
     /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g,
     /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g
   ];
-  patterns.forEach((pattern) => {
+  for (const pattern of patterns) {
     let match = pattern.exec(source);
     while (match) {
       values.push(match[1]);
       match = pattern.exec(source);
     }
-  });
-  return Array.from(new Set(values));
+  }
+  return [...new Set(values)];
 }
 
 function executableSource(source) {
-  let result = '';
-  let state = 'code';
-  let quote = '';
-  let escaping = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1] || '';
-    if (state === 'line-comment') {
-      if (char === '\n') {
-        state = 'code';
-        result += '\n';
-      } else result += ' ';
-      continue;
-    }
-    if (state === 'block-comment') {
-      if (char === '*' && next === '/') {
-        result += '  ';
-        index += 1;
-        state = 'code';
-      } else result += char === '\n' ? '\n' : ' ';
-      continue;
-    }
-    if (state === 'string') {
-      if (escaping) escaping = false;
-      else if (char === '\\') escaping = true;
-      else if (char === quote) state = 'code';
-      result += char === '\n' ? '\n' : ' ';
-      continue;
-    }
-    if (char === '/' && next === '/') {
-      result += '  ';
-      index += 1;
-      state = 'line-comment';
-    } else if (char === '/' && next === '*') {
-      result += '  ';
-      index += 1;
-      state = 'block-comment';
-    } else if (char === '"' || char === "'" || char === '`') {
-      quote = char;
-      state = 'string';
-      result += ' ';
-    } else {
-      result += char;
-    }
-  }
-  return result;
+  return String(source || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, '');
 }
 
 function packageForFile(file) {
@@ -140,18 +102,18 @@ function packageForFile(file) {
 function importedWorkspacePackage(specifier) {
   return (
     Object.keys(PACKAGE_RULES).find(
-      (packageName) => specifier === packageName || specifier.startsWith(`${packageName}/`)
+      (name) => specifier === name || specifier.startsWith(`${name}/`)
     ) || ''
   );
 }
 
 export function getWorkspaceBoundaryViolations(root = WORKSPACE_ROOT) {
   const violations = [];
-  listSourceFiles(root, ['packages/']).forEach((file) => {
+  for (const file of listSourceFiles(root, ['packages/'])) {
     const owner = packageForFile(file);
-    if (!owner) return;
+    if (!owner) continue;
     const source = readText(root, file);
-    extractImportSpecifiers(source).forEach((specifier) => {
+    for (const specifier of extractImportSpecifiers(source)) {
       const dependency = importedWorkspacePackage(specifier);
       if (dependency && dependency !== owner && !PACKAGE_RULES[owner].includes(dependency)) {
         violations.push({
@@ -168,7 +130,7 @@ export function getWorkspaceBoundaryViolations(root = WORKSPACE_ROOT) {
       if (nodeImport && !nodeAllowed) {
         violations.push({ file, owner, dependency: 'node', specifier, reason: 'platform-import' });
       }
-      if (specifier === 'electron' || specifier === 'react' || specifier === 'react-dom') {
+      if (['@tauri-apps/api', 'react', 'react-dom', 'electron'].includes(specifier)) {
         violations.push({
           file,
           owner,
@@ -177,7 +139,7 @@ export function getWorkspaceBoundaryViolations(root = WORKSPACE_ROOT) {
           reason: 'ui-platform-import'
         });
       }
-    });
+    }
     if (/\b(?:window|document|localStorage|indexedDB)\b/.test(executableSource(source))) {
       violations.push({
         file,
@@ -187,7 +149,7 @@ export function getWorkspaceBoundaryViolations(root = WORKSPACE_ROOT) {
         reason: 'browser-global'
       });
     }
-  });
+  }
   return violations.sort((a, b) =>
     `${a.file}:${a.specifier}`.localeCompare(`${b.file}:${b.specifier}`)
   );
@@ -195,69 +157,31 @@ export function getWorkspaceBoundaryViolations(root = WORKSPACE_ROOT) {
 
 export function getRendererBoundaryViolations(root = WORKSPACE_ROOT) {
   const violations = [];
-  listSourceFiles(root, ['apps/mac/src/renderer/features/']).forEach((file) => {
+  for (const file of listSourceFiles(root, ['apps/desktop/src/renderer/features/'])) {
     const source = readText(root, file);
-    extractImportSpecifiers(source).forEach((specifier) => {
+    for (const specifier of extractImportSpecifiers(source)) {
       const bareBuiltin = specifier.replace(/^node:/, '');
-      const resolvedRelative = specifier.startsWith('.')
+      const resolved = specifier.startsWith('.')
         ? posix(path.relative(root, path.resolve(root, path.dirname(file), specifier)))
         : '';
       if (BUILTINS.has(specifier) || BUILTINS.has(bareBuiltin) || specifier === 'electron') {
         violations.push({ file, specifier, reason: 'platform-import' });
       }
       if (
-        /(?:^|\/)src\/(?:main|preload|server)(?:\/|$)/.test(specifier) ||
-        /^apps\/mac\/src\/(?:main|preload|server)(?:\/|$)/.test(resolvedRelative) ||
+        /(?:^|\/)src\/(?:host|preload|server|src-tauri)(?:\/|$)/.test(specifier) ||
+        /^apps\/desktop\/src\/(?:host|preload|server|src-tauri)(?:\/|$)/.test(resolved) ||
         specifier.startsWith('@cavalry/companion-api/server/')
       ) {
         violations.push({ file, specifier, reason: 'privileged-layer-import' });
       }
-    });
-    if (/\bwindow\.cavalry(?:Files|Advisor|Companion)\b/.test(source)) {
-      violations.push({ file, specifier: 'window.cavalry*', reason: 'platform-global' });
     }
-  });
+    if (/\b(?:window\.__TAURI__|window\.cavalry\w*)\b/.test(source)) {
+      violations.push({ file, specifier: 'desktop platform global', reason: 'platform-global' });
+    }
+  }
   return violations.sort((a, b) =>
     `${a.file}:${a.specifier}`.localeCompare(`${b.file}:${b.specifier}`)
   );
-}
-
-function extractBalancedObject(source, objectStart) {
-  let depth = 0;
-  let quote = '';
-  let escaping = false;
-  for (let index = objectStart; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote) {
-      if (escaping) escaping = false;
-      else if (char === '\\') escaping = true;
-      else if (char === quote) quote = '';
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') quote = char;
-    else if (char === '{') depth += 1;
-    else if (char === '}' && --depth === 0) return source.slice(objectStart, index + 1);
-  }
-  return '';
-}
-
-export function getPreloadApiSurface(root = WORKSPACE_ROOT) {
-  const preloadPath = 'apps/mac/src/preload/index.cjs';
-  const source = readText(root, preloadPath);
-  const exposures = [];
-  const pattern = /contextBridge\.exposeInMainWorld\(\s*['"]([^'"]+)['"]\s*,/g;
-  let match = pattern.exec(source);
-  while (match) {
-    const objectStart = source.indexOf('{', match.index);
-    const objectSource = extractBalancedObject(source, objectStart);
-    const methods = Array.from(objectSource.matchAll(/(?:^|[\n,{])\s*([A-Za-z_$][\w$]*)\s*:/g))
-      .map((entry) => entry[1])
-      .filter((name) => name !== 'type')
-      .sort();
-    exposures.push({ namespace: match[1], methods });
-    match = pattern.exec(source);
-  }
-  return exposures.sort((a, b) => a.namespace.localeCompare(b.namespace));
 }
 
 export function getTrackedGeneratedFiles(root = WORKSPACE_ROOT) {
@@ -268,8 +192,9 @@ export function getTrackedGeneratedFiles(root = WORKSPACE_ROOT) {
   return listTrackedFiles(root).filter((file) => {
     if (allowed.has(file)) return false;
     return (
-      /(^|\/)(?:dist|dist-renderer|coverage|test-artifacts|node_modules)\//.test(file) ||
-      /(^|\/)app\.bundle\.js$/.test(file) ||
+      /(^|\/)(?:dist|coverage|out|target|test-artifacts|node_modules)\//.test(file) ||
+      /apps\/desktop\/src-tauri\/binaries\/cavalry-host-/.test(file) ||
+      /apps\/desktop\/src-tauri\/tauri\.release\.conf\.json$/.test(file) ||
       /\.(?:gguf|safetensors|onnx|pt|pth|mlmodel|log)$/.test(file)
     );
   });
@@ -291,24 +216,18 @@ function largestFile(root, files) {
 }
 
 export function collectArchitectureReport(root = WORKSPACE_ROOT) {
-  const rendererFiles = listSourceFiles(root, ['apps/mac/src/renderer/']);
+  const rendererFiles = listSourceFiles(root, ['apps/desktop/src/renderer/']);
   const featureFiles = rendererFiles.filter((file) => file.includes('/features/'));
-  const mainFiles = listSourceFiles(root, ['apps/mac/src/main/']);
+  const hostFiles = listSourceFiles(root, ['apps/desktop/src/host/']);
   const maintainedSourceFiles = listSourceFiles(root, ['apps/', 'packages/', 'tools/', 'tests/']);
   return {
     boundaryViolations: getWorkspaceBoundaryViolations(root),
     rendererBoundaryViolations: getRendererBoundaryViolations(root),
-    preloadApiSurface: getPreloadApiSurface(root),
     trackedGeneratedFiles: getTrackedGeneratedFiles(root),
-    legacyAppLoc: countLines(root, 'apps/mac/src/renderer/legacy/legacy-app.js'),
-    electronMainLoc: countLines(root, 'apps/mac/src/main/index.cjs'),
-    largestMainModule: largestFile(root, mainFiles),
-    largestNonLegacyRendererModule: largestFile(
-      root,
-      rendererFiles.filter((file) => !file.includes('/legacy/'))
-    ),
-    mountAdapters: rendererFiles.filter((file) => /-mount\.jsx$/.test(file)),
-    compatibilityFiles: rendererFiles.filter((file) => file.includes('/compatibility/')),
+    desktopHostLoc: countLines(root, 'apps/desktop/src/host/index.cjs'),
+    rustHostLoc: countLines(root, 'apps/desktop/src-tauri/src/lib.rs'),
+    largestHostModule: largestFile(root, hostFiles),
+    largestRendererModule: largestFile(root, rendererFiles),
     cwdDependentFiles: maintainedSourceFiles.filter((file) =>
       /\bprocess\.cwd\s*\(/.test(readText(root, file))
     ),
@@ -320,16 +239,15 @@ export function collectArchitectureReport(root = WORKSPACE_ROOT) {
       /\bNAVIGATION_ROUTES\s*=/.test(readText(root, file))
     ),
     rawPlatformGlobalFiles: featureFiles.filter((file) =>
-      /\bwindow\.cavalry(?:Files|Advisor|Companion)\b/.test(readText(root, file))
+      /\b(?:window\.__TAURI__|window\.cavalry\w*)\b/.test(readText(root, file))
     ),
-    delegatedActionAttributeFiles: rendererFiles
-      .filter((file) => !file.includes('/legacy/') && !file.includes('/compatibility/'))
-      .filter((file) => /\bdata-(?:action|route)\b/.test(readText(root, file))),
     unsafeHtmlSites: rendererFiles.reduce(
       (count, file) =>
         count + (readText(root, file).match(/dangerouslySetInnerHTML/g) || []).length,
       0
-    )
+    ),
+    tauriBridgeFiles: rendererFiles.filter((file) => file.includes('/platform/tauri-')),
+    sidecarProtocolFiles: hostFiles.filter((file) => file.includes('/runtime/'))
   };
 }
 
@@ -345,20 +263,18 @@ export function formatArchitectureReport(report) {
     ...report.rendererBoundaryViolations.map(
       (entry) => `  - ${entry.file}: ${entry.reason} (${entry.specifier})`
     ),
-    `legacy renderer LOC: ${report.legacyAppLoc}`,
-    `Electron main LOC: ${report.electronMainLoc}`,
-    `largest main module: ${report.largestMainModule.file} (${report.largestMainModule.loc} LOC)`,
-    `largest non-legacy renderer module: ${report.largestNonLegacyRendererModule.file} (${report.largestNonLegacyRendererModule.loc} LOC)`,
-    `renderer mount adapters: ${report.mountAdapters.length}`,
-    `renderer compatibility files: ${report.compatibilityFiles.length}`,
+    `Node desktop host LOC: ${report.desktopHostLoc}`,
+    `Rust Tauri host LOC: ${report.rustHostLoc}`,
+    `largest host module: ${report.largestHostModule.file} (${report.largestHostModule.loc} LOC)`,
+    `largest renderer module: ${report.largestRendererModule.file} (${report.largestRendererModule.loc} LOC)`,
+    `Tauri renderer bridge modules: ${report.tauriBridgeFiles.length}`,
+    `sidecar protocol modules: ${report.sidecarProtocolFiles.length}`,
     `cwd-dependent source files: ${report.cwdDependentFiles.length}`,
     `React root calls: ${report.reactRootCalls}`,
     `renderer route registries: ${report.routeRegistryFiles.length}`,
     `feature platform-global imports: ${report.rawPlatformGlobalFiles.length}`,
-    `feature delegated action attributes: ${report.delegatedActionAttributeFiles.length}`,
     `unsafe HTML sites: ${report.unsafeHtmlSites}`,
-    `tracked generated files: ${report.trackedGeneratedFiles.length}`,
-    'preload namespaces: ' + report.preloadApiSurface.map((entry) => entry.namespace).join(', ')
+    `tracked generated files: ${report.trackedGeneratedFiles.length}`
   ].join('\n');
 }
 

@@ -6,6 +6,7 @@ import {
   filterTransactionRows,
   searchTransactionRows
 } from '@cavalry/finance-core/application/transactions/transaction-table-service.js';
+import { makeRefundWorkbook } from '../fixtures/core-workbook-fixtures.js';
 import { makeTransactionTableWorkbook } from '../fixtures/transaction-table-scenarios.js';
 
 describe('transaction table visible totals', () => {
@@ -16,6 +17,7 @@ describe('transaction table visible totals', () => {
     expect(totals).toMatchObject({
       income: 50000,
       expense: 1850,
+      outflow: 1850,
       net: 48150,
       count: 7,
       transferCount: 1,
@@ -54,7 +56,36 @@ describe('transaction table visible totals', () => {
       transferCount: 1
     });
     expect(archivedTotals).toMatchObject({ expense: 400, net: -400, count: 1 });
-    expect(missingTotals).toMatchObject({ expense: 0, count: 1 });
+    expect(missingTotals).toMatchObject({
+      expense: 0,
+      net: 0,
+      count: 1,
+      unresolvedCount: 1
+    });
+  });
+
+  it('nets refund contributions in expense totals while retaining a refund-only view', () => {
+    const rows = buildTransactionRows(makeRefundWorkbook());
+    const allTotals = calculateVisibleTransactionTotals(rows);
+    const refundTotals = calculateVisibleTransactionTotals(
+      filterTransactionRows(rows, { type: 'refund' })
+    );
+
+    expect(allTotals).toMatchObject({
+      expense: 1979,
+      outflow: 1979,
+      net: -1979,
+      count: 5,
+      refundCount: 1
+    });
+    expect(refundTotals).toMatchObject({
+      expense: -50,
+      outflow: -50,
+      cashFlow: 50,
+      net: 50,
+      count: 1,
+      refundCount: 1
+    });
   });
 
   it('documents that totals use base amounts rather than inventing multi-currency conversion', () => {

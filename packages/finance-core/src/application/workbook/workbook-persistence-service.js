@@ -102,11 +102,23 @@ function normalizeCounterpartyForPersistence(counterparty, index, options) {
   });
 }
 
-function normalizeSheetForPersistence(sheet, index, options) {
+function normalizeSheetForPersistence(sheet, index, workbook, options) {
   const source = isPlainObject(sheet) ? sheet : {};
+  const directMonthKey = /^\d{4}-(0[1-9]|1[0-2])$/.test(asString(source.monthKey))
+    ? asString(source.monthKey)
+    : '';
+  const workbookYear = Math.trunc(Number(workbook && workbook.year));
+  const monthIndex = Math.max(0, Math.min(11, Math.trunc(Number(source.monthIndex)) || 0));
+  const fallbackYear =
+    workbookYear >= 1000 && workbookYear <= 9999 ? workbookYear : new Date().getFullYear();
+  const monthKey =
+    directMonthKey ||
+    `${String(fallbackYear).padStart(4, '0')}-${String(monthIndex + 1).padStart(2, '0')}`;
   return Object.assign({}, source, {
     id: asString(source.id) || createId('sheet', index, options),
-    name: asString(source.name) || `Sheet ${index + 1}`,
+    name: asString(source.name) || monthKey || `Sheet ${index + 1}`,
+    monthKey,
+    monthIndex: Number(monthKey.slice(5, 7)) - 1,
     budgets: asArray(source.budgets).map(clonePlainObject),
     budgetLineItems: asArray(source.budgetLineItems).map(clonePlainObject),
     entries: asArray(source.entries).map(clonePlainObject)
@@ -240,7 +252,7 @@ export function normalizeLoadedWorkbook(rawWorkbook, options = {}) {
     normalizeTransactionForPersistence(transaction, index, workbook, options)
   );
   workbook.sheets = asArray(source.sheets).map((sheet, index) =>
-    normalizeSheetForPersistence(sheet, index, options)
+    normalizeSheetForPersistence(sheet, index, workbook, options)
   );
   workbook.recurringItems = asArray(source.recurringItems).map((item, index) =>
     normalizeRecurringItemForPersistence(item, index, workbook, options)

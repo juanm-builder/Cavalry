@@ -62,7 +62,7 @@ describe('release security content scanner', () => {
     const fixtureToken = ['sk', 'voice', 'with', 'local', 'chat'].join('-');
     const contents = `const apiKey = "${fixtureToken}";`;
 
-    expect(scanText('apps/mac/tests/electron/in-app-advisor-ipc.test.js', contents)).toEqual([]);
+    expect(scanText('apps/desktop/tests/host/in-app-advisor-ipc.test.js', contents)).toEqual([]);
     expect(rulesFor(contents)).toContain('OpenAI secret key');
   });
 
@@ -78,7 +78,7 @@ describe('release security content scanner', () => {
       Buffer.from('synthetic test payload')
     ]);
     const arbitraryUri = `data:image/png;base64,${arbitraryPng.toString('base64')}`;
-    const smokePath = 'apps/mac/scripts/advisor-live-smoke.mjs';
+    const smokePath = 'apps/desktop/scripts/advisor-live-smoke.mjs';
     const smokeContents = readFileSync(resolve(smokePath), 'utf8');
 
     expect(scanEmbeddedImages('docs/example.md', arbitraryUri)).toEqual([

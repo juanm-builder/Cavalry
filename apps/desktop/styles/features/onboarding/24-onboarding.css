@@ -1,0 +1,728 @@
+/* Onboarding: welcome modal, guided tour carousel, and setup checklist. */
+
+/* Above the fluid-layout bottom nav rail (z 90), aligned with the command palette. */
+.onboarding-backdrop {
+  z-index: 120;
+}
+
+.onboarding-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* ---------- Welcome modal ---------- */
+
+.onboarding-welcome {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 20px;
+}
+
+.onboarding-welcome-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.onboarding-welcome-mark {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.onboarding-welcome-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.onboarding-welcome-header h1 {
+  margin: 0 0 4px;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.onboarding-welcome-header p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.onboarding-welcome-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.onboarding-welcome-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.onboarding-point-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.onboarding-point-icon .cavalry-glyph {
+  font-size: 19px;
+}
+
+.onboarding-welcome-points strong {
+  display: block;
+  font-size: 13.5px;
+}
+
+.onboarding-welcome-points small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.onboarding-welcome-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ---------- Guided tour ---------- */
+
+.onboarding-tour {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.onboarding-tour-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding-tour-header strong {
+  font-size: 15px;
+}
+
+.onboarding-tour-count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding-tour-stage {
+  min-height: 224px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel-soft);
+}
+
+.onboarding-tour-copy h1 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.onboarding-tour-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.onboarding-tour-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding-tour-dots {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.onboarding-tour-dots button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition:
+    width 0.2s ease,
+    background 0.2s ease;
+}
+
+.onboarding-tour-dots button.active {
+  width: 18px;
+  background: var(--accent);
+}
+
+/* ---------- Tour illustrations ---------- */
+
+.tour-mock {
+  width: 100%;
+  max-width: 390px;
+  font-family: var(--font-sans);
+}
+
+.tour-mock .cavalry-glyph {
+  font-size: 14px;
+}
+
+.tour-mock-split {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.tour-mock-sidebar {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.tour-mock-dots {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.tour-mock-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.tour-mock-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--text-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tour-mock-nav .cavalry-glyph {
+  font-size: 13px;
+}
+
+.tour-mock-nav.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.tour-mock-panel {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.tour-mock-panel small {
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+
+.tour-mock-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-mock-delta {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--good);
+}
+
+.tour-mock-range {
+  display: flex;
+  gap: 4px;
+}
+
+.tour-mock-range b {
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.tour-mock-range b.active {
+  background: var(--panel-muted);
+  color: var(--text);
+}
+
+.tour-mock-panel svg {
+  width: 100%;
+  height: 60px;
+}
+
+.tour-mock-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tour-mock-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.tour-mock-chip {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tour-mock-day {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-mock-row-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.tour-mock-row-copy b {
+  font-size: 11.5px;
+}
+
+.tour-mock-bar {
+  display: block;
+  width: 70%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.tour-mock-bar.wide {
+  width: 90%;
+}
+
+.tour-mock-bar.short {
+  width: 45%;
+}
+
+.tour-mock-amount-tag {
+  flex: none;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-mock-amount-tag.good {
+  color: var(--good);
+}
+
+.tour-mock-amount-tag.bad {
+  color: var(--bad);
+}
+
+.tour-mock-due {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  color: var(--warn);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tour-mock-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tour-mock-card {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.tour-mock-card b {
+  font-size: 11px;
+}
+
+.tour-mock-card-amount {
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-mock-budget {
+  display: grid;
+  gap: 6px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.tour-mock-budget > span:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.tour-mock-budget b {
+  font-size: 11.5px;
+}
+
+.tour-mock-budget small {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-mock-meter {
+  display: block;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+  overflow: hidden;
+}
+
+.tour-mock-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.tour-mock-meter i.warn {
+  background: var(--warn);
+}
+
+.tour-mock-chat {
+  display: grid;
+  gap: 8px;
+  max-width: 330px;
+}
+
+.tour-mock-bubble {
+  display: grid;
+  gap: 5px;
+  justify-self: start;
+  min-width: 150px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  font-size: 11.5px;
+}
+
+.tour-mock-bubble.user {
+  justify-self: end;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.tour-mock-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.tour-mock-wrapup {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+}
+
+.tour-mock-check {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tour-mock-check .cavalry-glyph {
+  font-size: 28px;
+}
+
+/* ---------- Setup checklist ---------- */
+
+.setup-checklist-panel {
+  position: fixed;
+  top: calc(var(--topbar-height) + 16px);
+  right: 20px;
+  z-index: 60;
+  width: min(400px, calc(100vw - 40px));
+  max-height: calc(100vh - var(--topbar-height) - 32px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: setup-panel-enter 0.18s ease;
+}
+
+@keyframes setup-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.setup-checklist-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setup-checklist-header strong {
+  display: block;
+  font-size: 14.5px;
+}
+
+.setup-checklist-header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-checklist-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+  overflow: hidden;
+}
+
+.setup-checklist-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.setup-checklist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.setup-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.setup-checklist-item:hover {
+  background: var(--panel-soft);
+  border-color: var(--line);
+}
+
+.setup-checklist-status {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.setup-checklist-status.complete {
+  border-color: var(--good);
+  background: var(--good);
+  color: var(--bg-elevated);
+}
+
+.setup-checklist-status .cavalry-glyph {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.setup-checklist-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.setup-checklist-copy strong {
+  display: block;
+  font-size: 12.5px;
+}
+
+.setup-checklist-item.complete .setup-checklist-copy strong {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.setup-checklist-copy small {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.setup-checklist-item > .cavalry-glyph {
+  color: var(--text-dim);
+  font-size: 18px;
+}
+
+.setup-checklist-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+/* ---------- Topbar progress trigger ---------- */
+
+.setup-progress-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.setup-progress-trigger svg {
+  width: 20px;
+  height: 20px;
+  transform: rotate(-90deg);
+}
+
+.setup-progress-track {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2.5;
+}
+
+.setup-progress-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.setup-progress-trigger small {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 640px) {
+  .tour-mock-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tour-mock-sidebar {
+    display: none;
+  }
+
+  .tour-mock-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-checklist-panel {
+    right: 10px;
+    width: min(400px, calc(100vw - 20px));
+  }
+}

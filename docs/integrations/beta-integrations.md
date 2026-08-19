@@ -6,7 +6,7 @@ These capabilities sit above the local Mac finance workflow. They must remain di
 
 - [Current acceptance and safety contract](../features/advisor-acceptance.md)
 
-Provider-neutral semantics are maintained in `packages/advisor/`. Electron transport, provider secrets, microphone access, and local-model process management stay in `apps/mac/`.
+Provider-neutral semantics are maintained in `packages/advisor/`. Desktop-host transport, provider secrets, microphone access, and local-model process management stay in `apps/desktop/`.
 
 ## Companion API and Custom GPT
 
@@ -32,6 +32,6 @@ Checkpointed apply remains experimental, scoped, and opt-in. The normal GPT-faci
 
 ## Sync and local models
 
-`packages/sync-foundation/` contains local types, change logs, conflict checks, and readiness reporting only. Cavalry Cloud's explicit Supabase snapshot transport lives behind the desktop Electron port; automatic remote merging remains deferred. The current boundary is documented in [`../features/cavalry-cloud.md`](../features/cavalry-cloud.md).
+`packages/sync-foundation/` contains local types, change logs, conflict checks, and readiness reporting only. Cavalry Cloud's explicit Supabase snapshot transport lives behind the desktop host port; automatic remote merging remains deferred. The current boundary is documented in [`../features/cavalry-cloud.md`](../features/cavalry-cloud.md).
 
 The optional llama.cpp launcher is documented in [`tools/llama-cpp-launcher/`](../../tools/llama-cpp-launcher/README.md). It is not a runtime dependency of `finance-core` or workbook access.

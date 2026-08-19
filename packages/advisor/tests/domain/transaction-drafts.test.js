@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyTransactionAiDraftMutation,
+  ADVISOR_FINANCE_INTENT_KINDS,
   advisorPromptReferencesAttachedImage,
   advisorPromptRequestsTransactionHistory,
   advisorTransactionFieldLabel,
@@ -86,6 +87,59 @@ describe('advisor transaction drafts', () => {
         amount: '\u20b11.5k'
       }).amount
     ).toBe(1500);
+  });
+
+  it('normalizes canonical merchant-refund template aliases', () => {
+    expect(normalizeAdvisorTransactionTemplate('refund')).toBe('merchant_refund');
+    expect(normalizeAdvisorTransactionTemplate('merchant refund')).toBe('merchant_refund');
+    expect(normalizeAdvisorTransactionTemplate('chargeback')).toBe('merchant_refund');
+    expect(normalizeAdvisorTransactionTemplate('reversal')).toBe('merchant_refund');
+  });
+
+  it.each([
+    'I received a refund of PHP 500 from Nike',
+    'Record a PHP 500 chargeback to my credit card',
+    'Record a PHP 500 charge reversal on my card',
+    'The merchant returned PHP 500 to my Cash account for the purchase'
+  ])('classifies merchant-refund wording before income or purchase: %s', (prompt) => {
+    expect(classifyAdvisorFinanceIntent(prompt)).toMatchObject({
+      kind: ADVISOR_FINANCE_INTENT_KINDS.REFUND,
+      template: 'merchant_refund',
+      amount: 500
+    });
+    expect(inferAdvisorTransactionTemplateFromText(prompt)).toBe('merchant_refund');
+  });
+
+  it.each([
+    ['Reverse the transfer from Cash to Savings', 'transfer'],
+    ['Record the reversal of a transfer from Cash to Savings', 'transfer'],
+    ['Reverse the card payment from Cash', 'debt_payment'],
+    ['The money was returned to Cash after a failed bank transfer', 'transfer'],
+    ['The transfer was returned to my Cash account', 'transfer']
+  ])('does not reinterpret non-merchant reversals as refunds: %s', (prompt, template) => {
+    expect(classifyAdvisorFinanceIntent(prompt)).not.toMatchObject({
+      kind: ADVISOR_FINANCE_INTENT_KINDS.REFUND
+    });
+    expect(inferAdvisorTransactionTemplateFromText(prompt)).toBe(template);
+  });
+
+  it('coerces a model-proposed income draft to a merchant refund when the prompt says refund', () => {
+    expect(
+      coerceAdvisorTransactionTemplate(
+        workbook,
+        'income_received',
+        {
+          primaryAccountName: 'Cash'
+        },
+        'I received a PHP 500 refund from Lalamove to Cash',
+        ''
+      )
+    ).toBe('merchant_refund');
+    expect(getAdvisorTransactionTemplateConfig('merchant_refund')).toMatchObject({
+      categoryTypes: ['expense'],
+      primaryGroups: ['asset', 'liability'],
+      primaryLabel: 'Refunded To'
+    });
   });
 
   it('parses prompt amount/date signals used by transaction intake', () => {
@@ -621,6 +675,26 @@ describe('advisor transaction drafts', () => {
     expect(validations[0].fields.counterpartyName).toBe('Phohoa');
     expect(validations[1].fields.categoryName).toBe('Subscriptions');
     expect(validations[1].fields.counterpartyName).toBe('Vercel');
+  });
+
+  it('keeps cash and card refunds as refunds in batch transaction rows', () => {
+    const rows = parseAdvisorTransactionListRows(
+      [
+        'post these transactions:',
+        '',
+        'Aug 14 - Nike refund - 500 - Cash',
+        'Aug 15 - Nike refund - 500 - Credit Card'
+      ].join('\n'),
+      { currentDate: '2026-08-16' }
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.fields.template)).toEqual(['merchant_refund', 'merchant_refund']);
+    expect(rows.map((row) => row.fields.primaryAccountName)).toEqual(['Cash', 'Credit Card']);
+    expect(rows.map((row) => row.prompt)).toEqual([
+      expect.stringContaining('refund of 500 pesos for Nike refund to Cash'),
+      expect.stringContaining('refund of 500 pesos for Nike refund to Credit Card')
+    ]);
   });
 
   it('cleans amount-first transaction rows into useful display descriptions', () => {

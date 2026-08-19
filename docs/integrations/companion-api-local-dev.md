@@ -38,6 +38,6 @@ export CAVALRY_COMPANION_DEV_TOKEN=dev-token
 npm run dev
 ```
 
-When the Electron app is running, the Companion API uses the workbook currently open in the UI. `/v1/workbooks` should list that workbook, and draft creation should add reviewable AI Drafts without posting transactions.
+When the Tauri desktop app is running, the Companion API uses the workbook currently open in the UI. `/v1/workbooks` should list that workbook, and draft creation should add reviewable AI Drafts without posting transactions.
 
 The certification report is written to `test-artifacts/companion-gpt-action-certification/report.md` and `report.json` at the repository root.

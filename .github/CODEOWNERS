@@ -2,6 +2,7 @@
 * @juanm-builder
 /.github/ @juanm-builder
 /tools/release/ @juanm-builder
-/apps/mac/electron-builder*.yml @juanm-builder
+/apps/desktop/src-tauri/ @juanm-builder
+/apps/desktop/scripts/build-sidecar.mjs @juanm-builder
 /package.json @juanm-builder
 /package-lock.json @juanm-builder

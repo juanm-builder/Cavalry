@@ -9,6 +9,7 @@ export const ADVISOR_TRANSACTION_TEMPLATES = [
   'expense_paid',
   'expense_charged',
   'income_received',
+  'merchant_refund',
   'transfer',
   'debt_payment',
   'liability_payment',
@@ -44,6 +45,7 @@ export const ADVISOR_FINANCE_INTENT_KINDS = Object.freeze({
   LIABILITY_PAYMENT: 'liability_payment',
   TRANSFER: 'transfer',
   INCOME: 'income',
+  REFUND: 'refund',
   REVISE: 'revise',
   DELETE: 'delete',
   ENTITY_CREATE: 'entity_create',
@@ -58,6 +60,10 @@ export const ADVISOR_TRANSACTION_TEMPLATE_ALIASES = {
   charged: 'expense_charged',
   income: 'income_received',
   salary: 'income_received',
+  refund: 'merchant_refund',
+  merchant_refund: 'merchant_refund',
+  chargeback: 'merchant_refund',
+  reversal: 'merchant_refund',
   transfer: 'transfer',
   debt: 'debt_payment',
   payment: 'debt_payment',
@@ -568,6 +574,21 @@ export function getAdvisorTransactionTemplateConfig(template) {
       secondaryPlaceholder: '',
       counterpartyLabel: 'Received From',
       counterpartyKinds: ['employer', 'family', 'client', 'other'],
+      usesCounterparty: true,
+      usesCategory: true
+    };
+  }
+  if (value === 'merchant_refund') {
+    return {
+      categoryTypes: ['expense'],
+      primaryLabel: 'Refunded To',
+      primaryGroups: ['asset', 'liability'],
+      primaryPlaceholder: 'Choose the cash account or credit card receiving the refund',
+      secondaryLabel: '',
+      secondaryGroups: [],
+      secondaryPlaceholder: '',
+      counterpartyLabel: 'Refunded By',
+      counterpartyKinds: ['merchant', 'biller', 'other'],
       usesCounterparty: true,
       usesCategory: true
     };
@@ -1153,6 +1174,29 @@ function advisorTextHasCardChargeCue(text) {
   );
 }
 
+function advisorTextHasMerchantRefundCue(text) {
+  if (/\b(?:refund(?:ed|s|ing)?|chargebacks?)\b/.test(text)) {
+    return true;
+  }
+  const hasReversalCue = /\brevers(?:e|ed|es|ing|al|als)\b/.test(text);
+  const hasMerchantPurchaseContext = /\b(?:merchant|purchase|order|item|charge|charged)\b/.test(
+    text
+  );
+  if (hasReversalCue && hasMerchantPurchaseContext) return true;
+  const hasReturnedMoneyCue =
+    /\b(?:returned|returning|credited)\b[\s\S]{0,64}\b(?:money|funds?|amount|payment|purchase|charge|card|cash|account)\b/.test(
+      text
+    ) ||
+    /\b(?:money|funds?|amount|payment|purchase|charge)\b[\s\S]{0,64}\b(?:returned|credited)\b/.test(
+      text
+    );
+  const hasNonMerchantMovementContext =
+    /\b(?:bank\s+transfer|transfer(?:red|s|ring)?|card\s+payment|credit\s+card\s+payment|loan\s+payment|debt\s+payment)\b/.test(
+      text
+    );
+  return hasReturnedMoneyCue && (!hasNonMerchantMovementContext || hasMerchantPurchaseContext);
+}
+
 export function advisorPromptImpliesLiabilityPayment(prompt) {
   return advisorTextHasLiabilityPaymentCue(advisorFinanceIntentText(prompt));
 }
@@ -1199,6 +1243,11 @@ export function classifyAdvisorFinanceIntent(prompt, options = {}) {
     kind = ADVISOR_FINANCE_INTENT_KINDS.ENTITY_CREATE;
     confidence = 0.65;
     reason = 'Entity creation language targets workbook setup.';
+  } else if (advisorTextHasMerchantRefundCue(text)) {
+    kind = ADVISOR_FINANCE_INTENT_KINDS.REFUND;
+    template = 'merchant_refund';
+    confidence = 0.9;
+    reason = 'Refund, chargeback, or reversal language describes a merchant refund.';
   } else if (advisorTextHasLiabilityPaymentCue(text)) {
     kind = ADVISOR_FINANCE_INTENT_KINDS.LIABILITY_PAYMENT;
     template = 'debt_payment';
@@ -1676,6 +1725,9 @@ function inferAdvisorTransactionListTemplate(row, accountName) {
   if (/\bcharged\s+to\b/i.test(String(row || '')) && accountText && !accountLooksLikeLiability) {
     return 'expense_paid';
   }
+  if (inferred === 'merchant_refund') {
+    return inferred;
+  }
   if (accountLooksLikeLiability && !rowLooksLikeLiabilityPayment) {
     return 'expense_charged';
   }
@@ -1715,17 +1767,21 @@ function buildAdvisorTransactionListPrompt(row, fields) {
   const action =
     template === 'income_received'
       ? 'I received'
-      : template === 'transfer'
-        ? 'I transferred'
-        : template === 'expense_charged'
-          ? 'I charged'
-          : 'I paid';
+      : template === 'merchant_refund'
+        ? 'I received a refund of'
+        : template === 'transfer'
+          ? 'I transferred'
+          : template === 'expense_charged'
+            ? 'I charged'
+            : 'I paid';
   let normalized = [fields.date, action, amountText].filter(Boolean).join(' ');
   if (fields.description) {
     normalized += ' for ' + fields.description;
   }
   if (fields.primaryAccountName) {
-    normalized += (template === 'expense_charged' ? ' on ' : ' from ') + fields.primaryAccountName;
+    const accountPreposition =
+      template === 'expense_charged' ? ' on ' : template === 'merchant_refund' ? ' to ' : ' from ';
+    normalized += accountPreposition + fields.primaryAccountName;
   }
   return normalized.replace(/\s+/g, ' ').trim() || row;
 }
@@ -2463,6 +2519,9 @@ export function inferAdvisorTransactionTemplateFromText(text, pendingTemplate = 
   const semanticDecision = classifyAdvisorFinanceIntent(raw);
   if (semanticDecision.template === 'debt_payment') {
     return 'debt_payment';
+  }
+  if (semanticDecision.template === 'merchant_refund') {
+    return 'merchant_refund';
   }
   if (semanticDecision.template === 'expense_charged') {
     return 'expense_charged';
@@ -3671,6 +3730,13 @@ export function coerceAdvisorTransactionTemplate(
   const requested = normalizeAdvisorTransactionTemplate(requestedTemplate);
   const inferred = inferAdvisorTransactionTemplateFromText(prompt, pendingTemplate);
   const semanticDecision = classifyAdvisorFinanceIntent(prompt);
+  if (
+    semanticDecision.template === 'merchant_refund' &&
+    (!requested ||
+      ['expense_paid', 'expense_charged', 'income_received', 'merchant_refund'].includes(requested))
+  ) {
+    return 'merchant_refund';
+  }
   if (
     semanticDecision.template === 'debt_payment' &&
     (!requested ||
