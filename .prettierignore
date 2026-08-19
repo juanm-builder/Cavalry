@@ -6,3 +6,7 @@
 package-lock.json
 *.min.js
 **/supabase/.temp/**
+
+**/target/**
+apps/desktop/src-tauri/gen/**
+apps/desktop/src-tauri/binaries/cavalry-host-*

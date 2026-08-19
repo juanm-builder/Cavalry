@@ -1,17 +1,29 @@
 # Continuous integration
 
-Pull-request CI installs the root workspace with `npm ci`, runs `npm run check`, and runs the Electron smoke on macOS. Full CI builds, verifies, and launches the ad-hoc Apple-silicon app on an ARM runner and the Intel app on a native Intel runner before uploading separate architecture-labelled DMGs as workflow artifacts. Every Mach-O file in each packaged app must match its target architecture. These validation workflows run on normal branches but never publish an application update.
+## Desktop CI
 
-The **Security** workflow runs on pull requests, `main`, a weekly schedule, and manual dispatch. It checks the full Git history with Gitleaks, verifies the repository's own privacy/secret/path/workflow rules, enforces a supported Electron patch, and fails on any npm advisory. Workflow artifacts used only between jobs or for CI diagnostics expire after one day.
+`.github/workflows/desktop-ci.yml` runs on pull requests and `main`.
 
-The **Desktop Release** workflow is intentionally separate and has only a `v*` tag trigger. Its first job requires an exact stable tag matching the root app, desktop app, and lockfile versions, rejects versions that are not higher than every published stable release in this repository, validates the public same-repository update feed, and reruns the complete workspace, integration, and Electron smoke gates.
+The workspace job installs with `npm ci`, refreshes the runtime dependency inventory, runs the repository gates, integration tests, renderer smoke, architecture checks, and whitespace validation.
 
-After validation:
+A separate macOS/Windows matrix runs `cargo check` against the Rust/Tauri host. Keeping this separate makes native compilation failures visible without mixing them with finance or renderer failures.
 
-- One macOS job invokes electron-builder once with both `arm64` and `x64`. This is required to merge both architectures into one `latest-mac.yml`. The job requires Developer ID signing, hardened runtime, notarization, stapling, and per-file architecture checks for the app bundles, then separately signs each final DMG with a secure timestamp in an isolated temporary keychain, notarizes, staples, and verifies the containers before upload.
-- The Windows packaging configuration remains in the repository for a future rollout, but no Windows release job runs in the current workflow. Enabling it later requires Authenticode credentials and restoration of Windows asset validation.
-- A final job downloads the macOS build output, verifies the complete metadata-to-asset graph including every declared SHA-512 and file size, writes SHA-256 checksums, and creates or refreshes a draft release in this repository.
+## Full native build
 
-The release job never publishes the draft. A maintainer reviews it and uses GitHub's **Publish release** action as the rollout gate. Failed and retried workflows remain invisible to installed apps, retries clobber only the expected generated asset names, and an already published release is never modified.
+`.github/workflows/desktop-full.yml` is manual and scheduled. It prepares a target-specific Node sidecar, installs the pinned Tauri CLI, builds the requested Rust target, and uploads native bundle output for:
 
-Workflow permissions default to `contents: read`. Only the final draft-release job receives job-scoped `contents: write` through GitHub's short-lived built-in token; there is no cross-repository publication token. The macOS builder receives Apple signing credentials only through the protected `release-signing` environment, while `release-publishing` provides a separate approval gate for the draft. Dormant Windows packaging receives no credentials. No workflow passes a publication token into electron-builder, and every builder command explicitly uses `--publish never`.
+- macOS Apple Silicon;
+- macOS Intel;
+- Windows x64.
+
+These artifacts are for certification and do not publish an update.
+
+## Release
+
+`.github/workflows/desktop-release.yml` runs only for `v*` tags. It validates version agreement, security rules, Cloud build values, tests, and generated notices before entering the protected signing environment. The production channel builds macOS Apple Silicon and Intel from the same immutable tag and uploads a draft release through the pinned Tauri action. Windows remains an unsigned CI/package target and is not published.
+
+The release environment supplies operating-system signing material and Tauri updater keys. No private key is stored in the repository. Drafts must be inspected and certified before publication.
+
+## Security
+
+`.github/workflows/security.yml` runs repository secret, privacy, dependency, and release-configuration checks. Actions are pinned to immutable commits. Workflow permissions default to read-only and are elevated only for the draft-release job.

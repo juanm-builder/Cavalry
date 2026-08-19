@@ -28,7 +28,7 @@ describe('maintained documentation links', () => {
       path.join(WORKSPACE_ROOT, 'CONTRIBUTING.md'),
       path.join(WORKSPACE_ROOT, 'SECURITY.md'),
       path.join(WORKSPACE_ROOT, 'CHANGELOG.md'),
-      path.join(WORKSPACE_ROOT, 'apps/mac/README.md'),
+      path.join(WORKSPACE_ROOT, 'apps/desktop/README.md'),
       ...markdownFiles(path.join(WORKSPACE_ROOT, 'docs')),
       ...markdownFiles(path.join(WORKSPACE_ROOT, 'packages'))
     ];

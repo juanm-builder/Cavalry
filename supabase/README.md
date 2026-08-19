@@ -138,7 +138,7 @@ before distributing either client.
 
 The desktop app needs only the project URL and Supabase publishable key (or the
 legacy `anon` key). Those identify the project but do not bypass RLS. Never ship a
-secret key or `service_role` key in Electron, preload, or renderer code.
+secret key or `service_role` key in the desktop host, renderer bridge, or renderer code.
 
 ## Client query contract
 

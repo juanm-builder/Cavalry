@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const { normalizeCloudConfig } = require(
-  resolve(workspaceRoot, 'apps/mac/src/main/cloud-config.cjs')
+  resolve(workspaceRoot, 'apps/desktop/src/host/cloud-config.cjs')
 );
 
 const config = normalizeCloudConfig({

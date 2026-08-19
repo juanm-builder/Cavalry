@@ -7,6 +7,6 @@ Files:
 - `reporting-service.js` owns report calculations over ledger/domain data.
 - `reports-route-view-model-service.js` shapes route-ready report view models and should remain renderer-safe.
 
-These files should not import Electron, filesystem, provider, server, or preload code. Workbook mutations belong in the relevant account/category/transaction/budget services, not in reports.
+These files should not import Tauri, filesystem, provider, server, or desktop-bridge code. Workbook mutations belong in the relevant account/category/transaction/budget services, not in reports.
 
 Coverage: `tests/application/reporting-service.test.js`, `tests/application/reports-route-view-model-service.test.js`, and dashboard/route interaction tests in the Mac workspace. Run them through the owning workspaces or the root `npm run test` gate.

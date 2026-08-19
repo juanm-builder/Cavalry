@@ -4,7 +4,7 @@ The in-app Cavalry companion discovers feature-owned tool manifests at build tim
 should be available to the model adds this exact file:
 
 ```text
-apps/mac/src/renderer/features/<feature>/cavalry-assistant-capability.js
+apps/desktop/src/renderer/features/<feature>/cavalry-assistant-capability.js
 ```
 
 The file default-exports a provider created with `defineCavalryAssistantCapability`. Each tool entry

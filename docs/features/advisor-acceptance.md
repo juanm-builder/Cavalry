@@ -7,16 +7,16 @@ Advisor is optional and must degrade safely. Read-only questions may return veri
 ```bash
 npm test --workspace @cavalry/advisor
 npm test --workspace @cavalry/action-review
-npm run advisor:certify --workspace @cavalry/mac
+npm run advisor:certify --workspace @cavalry/desktop
 npm run check
 ```
 
-`advisor:certify` launches the Electron UI with controlled transport fixtures and exercises the visible conversation, draft review, apply, and reject paths. It writes ignored evidence under `apps/mac/test-artifacts/advisor-ui-certification/`.
+`advisor:certify` launches the Tauri UI with controlled transport fixtures and exercises the visible conversation, draft review, apply, and reject paths. It writes ignored evidence under `apps/desktop/test-artifacts/advisor-ui-certification/`.
 
 Live provider certification is opt-in:
 
 ```bash
-npm run advisor:live-smoke --workspace @cavalry/mac
+npm run advisor:live-smoke --workspace @cavalry/desktop
 ```
 
 Remote calls require an explicit API key/model; local-model calls require an explicit endpoint/model or opt-in flag. Normal CI must not require either provider.
@@ -31,4 +31,4 @@ Remote calls require an explicit API key/model; local-model calls require an exp
 - Provider secrets remain in privileged adapters and are scrubbed from renderer responses.
 - Source references, workbook facts, and candidate IDs are grounded before model suggestions are presented.
 
-Production semantics and orchestration live in `packages/advisor/`; draft lifecycle, checkpoints, conflict detection, approval, and rollback live in `packages/action-review/`. Electron transport and local-process lifecycle live in `apps/mac/src/main/`.
+Production semantics and orchestration live in `packages/advisor/`; draft lifecycle, checkpoints, conflict detection, approval, and rollback live in `packages/action-review/`. Desktop-host transport and local-process lifecycle live in `apps/desktop/src/host/`.

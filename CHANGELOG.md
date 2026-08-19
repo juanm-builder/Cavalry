@@ -2,7 +2,17 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
-## Unreleased
+## [Unreleased]
+
+## 2.0.0 - 2026-08-19
+
+### Changed
+
+- Replaced the Electron desktop shell with Tauri 2 while preserving the React renderer, finance packages, workbook format, and existing visual design.
+- Added a Rust-owned native boundary and isolated Cavalry host sidecar for workbook, Cloud, Companion API, Advisor, and local-model services.
+- Replaced Electron packaging and update configuration with Tauri capabilities, target overlays, signed updater metadata, and native release workflows.
+- Updated repository structure, tests, security controls, and documentation for the Tauri runtime.
+- Documented the required reauthentication, installed-client handoff, native certification, signing, and updater transition gates.
 
 ## 1.0.26 - 2026-08-16
 

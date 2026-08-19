@@ -1,6 +1,6 @@
 # Dashboard Services
 
-Dashboard services are browser-safe, read-only view-model builders for the React dashboard controller and route. They prepare plain data for cards plus category and flow drilldown modals; they do not render HTML, mutate workbook state, call IPC, or access Node/Electron APIs.
+Dashboard services are browser-safe, read-only view-model builders for the React dashboard controller and route. They prepare plain data for cards plus category and flow drilldown modals; they do not render HTML, mutate workbook state, call IPC, or access Node/Tauri APIs.
 
 Files:
 

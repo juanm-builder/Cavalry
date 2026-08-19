@@ -10,6 +10,6 @@ Browser-safe modules:
 - `transaction-table-service.js`
 - `transaction-route-view-model-service.js`
 
-Renderer-owned behavior lives in `apps/mac/src/renderer/features/transactions/`: table markup, filters, composer/edit/delete modals, explicit confirmations, and controller state. Create/edit/delete mutations flow through `transaction-command-service.js`; the controller returns immutable command results for the workbook session to persist and render.
+Renderer-owned behavior lives in `apps/desktop/src/renderer/features/transactions/`: table markup, filters, composer/edit/delete modals, explicit confirmations, and controller state. Create/edit/delete mutations flow through `transaction-command-service.js`; the controller returns immutable command results for the workbook session to persist and render.
 
-Do not import Electron, Node-only modules, preload bridges, provider calls, or filesystem access here. Transaction posting and balancing rules belong in `src/domain/ledger/`. Package tests cover commands, form intents, filtering, sorting, inline edit models, totals, and empty states; Mac renderer tests cover user interactions.
+Do not import Tauri, Node-only modules, desktop bridges, provider calls, or filesystem access here. Transaction posting and balancing rules belong in `src/domain/ledger/`. Package tests cover commands, form intents, filtering, sorting, inline edit models, totals, and empty states; Mac renderer tests cover user interactions.

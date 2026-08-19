@@ -1,6 +1,6 @@
 # Cavalry LlamaCPP
 
-This separated companion folder builds a double-clickable macOS launcher for Cavalry's embedded local advisor server. It stays outside the Electron app, but its defaults are optimized to match Cavalry's local advisor settings.
+This separated companion folder builds a double-clickable macOS launcher for Cavalry's embedded local advisor server. It stays outside the Tauri app, but its defaults are optimized to match Cavalry's local advisor settings.
 
 Default Cavalry profile:
 

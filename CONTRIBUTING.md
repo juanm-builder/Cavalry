@@ -1,55 +1,69 @@
 # Contributing to Cavalry
 
-Thank you for helping improve Cavalry. Small, focused changes with clear tests are the easiest to review.
+Thank you for helping improve Cavalry. Focused changes with clear ownership, compatibility notes, and tests are easiest to review.
 
-Participation in this repository is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Do not use a public issue or pull request to disclose a vulnerability, credential, financial record, or other sensitive data; follow [SECURITY.md](SECURITY.md) instead.
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Do not use a public issue or pull request to disclose a vulnerability, credential, financial record, or other sensitive information; follow [SECURITY.md](SECURITY.md).
 
 ## Before starting
 
-Search existing issues and pull requests before opening a duplicate. For a substantial feature, public contract change, schema migration, or new external service, open an issue first so the boundary and compatibility impact can be discussed.
+Search existing issues and pull requests. Open an issue before a substantial feature, schema migration, new external service, updater change, or native compatibility change.
 
-Keep each change inside the boundary that owns it. Reusable finance rules belong in workspace packages; Electron, filesystem, process, network, DOM, and React behavior belongs in the desktop app adapter. Cross-package imports must use public export-map paths. Preserve the current product structure and user-data contracts unless the proposal explicitly includes a reviewed migration.
+Choose the owning layer before editing:
+
+- finance and workbook semantics: `packages/finance-core`
+- review/checkpoint behavior: `packages/action-review`
+- Advisor orchestration: `packages/advisor`
+- Companion API contracts/server adapters: `packages/companion-api`
+- sync/conflict rules: `packages/sync-foundation`
+- React product and desktop adapters: `apps/desktop/src/renderer`
+- native lifecycle and sidecar supervision: `apps/desktop/src-tauri`
+- privileged compatibility services: `apps/desktop/src/host`
+
+Cross-package imports must use public export-map paths. Feature code must not import Tauri globals, Node built-ins, Rust sources, or host modules.
 
 ## Local setup
 
-Use Node 22 and install from the repository root:
+Install Node 22, npm 10, the stable Rust toolchain, and native Tauri prerequisites, then run:
 
 ```bash
 npm ci
+npm run licenses:runtime
 npm run dev
 ```
 
-Do not commit a real workbook, credentials, local models, generated builds, package output, logs, or test artifacts. Fixtures must be synthetic and intentionally curated.
+Fixtures must be synthetic. Never commit a real workbook, credential, local model, user-data directory, generated sidecar, installer, signing material, or diagnostic log containing private data.
 
 ## Validation
 
-Before handoff, run:
+Before handoff:
 
 ```bash
+npm run verify:architecture
 npm run check
 npm run test:integration
 npm run test:e2e
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 git diff --check
 ```
 
-`npm run check` is required. Run the integration and E2E gates when the change reaches their boundaries; document any gate that was intentionally not run. Renderer changes should use interaction tests, package mutations should assert the standard immutable command-result contract, and IPC/native-file changes should cover the adapter and Electron contract.
+Run native packaging and the relevant sections of the [native certification checklist](docs/operations/native-certification.md) when a change affects WebView behavior, files, menus, deep links, permissions, secure storage, child processes, signing, installers, or updates.
 
-When production dependencies or `package-lock.json` change, run `npm run licenses:runtime` and commit the refreshed runtime dependency notice. The normal check rejects a missing, incomplete, or stale notice.
+When `package-lock.json` changes, regenerate the runtime inventory with `npm run licenses:runtime`. Do not commit the generated inventory; CI and packaging reproduce and verify it from the lockfile.
 
 ## Pull requests
 
-Keep formatting-only or generated changes separate from behavior changes. A pull request should describe:
+Describe:
 
-- the user-visible outcome and why it is needed;
-- the owning boundaries and public contracts affected;
-- the tests and manual checks run;
-- screenshots only when they help verify an existing interface behavior; and
-- known limitations or follow-up work.
+- the user-visible outcome and reason
+- the owning boundaries and public contracts affected
+- compatibility or migration impact
+- automated and manual checks completed
+- screenshots when they help verify an existing interface
+- known limitations and follow-up work
 
-Review your diff for secrets, personal paths, real data, and accidental build output before pushing. Maintainers may ask for a smaller change or additional regression coverage.
+Keep formatting-only and generated changes separate from behavior changes where practical. Review the final diff for secrets, personal paths, real data, stale platform references, and build output.
 
 ## Contribution license
 
-Unless you explicitly state otherwise, a contribution intentionally submitted for inclusion in Cavalry is licensed under the project's [Apache License 2.0](LICENSE), consistent with section 5 of that license. You must have the right to submit the contribution. Identify any third-party code or assets and preserve their required notices.
-
-See the [development guide](docs/development/README.md), [architecture map](docs/architecture/README.md), and [detailed contribution policy](docs/development/contributing.md).
+Unless explicitly stated otherwise, a contribution intentionally submitted for inclusion in Cavalry is licensed under the project's [Apache License 2.0](LICENSE), consistent with section 5 of that license. You must have the right to submit it and must identify third-party code or assets with required notices.

@@ -22,7 +22,7 @@ export default [
     rules: commonRules
   },
   {
-    files: ['apps/mac/src/renderer/**/*.{js,jsx}'],
+    files: ['apps/desktop/src/renderer/**/*.{js,jsx}'],
     plugins: { 'react-hooks': hooks },
     rules: {
       ...commonRules,

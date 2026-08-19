@@ -56,7 +56,7 @@ try {
   console.log('');
   console.log('External callers can create drafts only. Apply still happens inside Cavalry.');
   console.log(
-    'Live app bridge: run the Cavalry Electron app for the API to see the workbook currently open in the UI.'
+    'Live app bridge: run the Cavalry Tauri desktop app for the API to see the workbook currently open in the UI.'
   );
   console.log(
     'Standalone companion:serve has no open app workbook unless a workbook store is supplied by code/tests.'

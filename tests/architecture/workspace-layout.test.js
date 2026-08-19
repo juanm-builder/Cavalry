@@ -2,27 +2,26 @@ import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
-
 import { WORKSPACE_ROOT } from '../../tools/repo/architecture-report.mjs';
 
 const atRoot = (...parts) => path.join(WORKSPACE_ROOT, ...parts);
 
 describe('workspace layout', () => {
-  it('uses the planned app, package, tool, example, test, and documentation roots', () => {
+  it('contains the Tauri shell, isolated host, renderer, packages, and maintained docs', () => {
     [
-      'apps/mac/src/main',
-      'apps/mac/src/preload',
-      'apps/mac/src/renderer',
+      'apps/desktop/src-tauri/src/lib.rs',
+      'apps/desktop/src/host',
+      'apps/desktop/src/renderer',
+      'apps/desktop/src/renderer/platform/tauri-bridge.js',
       'packages/finance-core',
       'packages/action-review',
       'packages/advisor',
       'packages/companion-api',
       'packages/sync-foundation',
-      'tools/llama-cpp-launcher',
       'tools/repo',
       'examples/workbooks',
       'tests/architecture'
-    ].forEach((directory) => expect(existsSync(atRoot(directory)), directory).toBe(true));
+    ].forEach((entry) => expect(existsSync(atRoot(entry)), entry).toBe(true));
 
     expect(
       readdirSync(atRoot('docs'), { withFileTypes: true })
@@ -32,20 +31,16 @@ describe('workspace layout', () => {
     ).toEqual(['adr', 'architecture', 'development', 'features', 'integrations', 'operations']);
   });
 
-  it('does not retain pre-workspace or duplicate application roots', () => {
+  it('does not retain the Electron application root or privileged preload layer', () => {
     [
-      'Cavalry for Mac',
-      'LlamaCPP',
-      'mock-worksheet.html',
-      'apps/mac/electron',
-      'apps/mac/src/application',
-      'apps/mac/src/domain',
-      'apps/mac/src/server',
-      'apps/mac/src/renderer/routes',
-      'apps/mac/src/renderer/legacy',
-      'apps/mac/src/renderer/compatibility',
-      'apps/mac/app.bundle.js',
-      'apps/mac/dist-renderer'
+      'apps/mac',
+      'apps/desktop/src/preload',
+      'apps/desktop/electron-builder.yml',
+      'apps/desktop/electron-builder.release.yml',
+      'apps/desktop/electron-builder.windows.yml',
+      'apps/desktop/vite.main.config.mjs',
+      'apps/desktop/vite.preload.config.mjs',
+      'apps/desktop/dist-renderer'
     ].forEach((legacyPath) => expect(existsSync(atRoot(legacyPath)), legacyPath).toBe(false));
   });
 });

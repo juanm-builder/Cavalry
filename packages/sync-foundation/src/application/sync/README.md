@@ -12,9 +12,9 @@ Files:
 
 Renderer-owned behavior stays in UI routes and controls; this folder should not decide modal copy, click handlers, route state, or save/rerender timing.
 
-Server/Electron-owned behavior stays outside this directory. Future remote network adapters, credentials, filesystem access, and IPC should live behind explicit adapters rather than inside these core sync rules.
+Server/desktop-adapter-owned behavior stays outside this directory. Future remote network adapters, credentials, filesystem access, and IPC should live behind explicit adapters rather than inside these core sync rules.
 
-Do not import Electron, Node-only modules, preload bridges, filesystem access, provider clients, `window`, or `document` here. Do not change workbook mutation semantics, conflict detection meanings, or readiness status shapes without focused sync coverage.
+Do not import Tauri, Node-only modules, desktop bridges, filesystem access, provider clients, `window`, or `document` here. Do not change workbook mutation semantics, conflict detection meanings, or readiness status shapes without focused sync coverage.
 
 Browser-safe modules:
 

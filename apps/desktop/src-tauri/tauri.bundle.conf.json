@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/cavalry-host"],
+    "resources": [
+      "../packaging/RUNTIME-DEPENDENCY-INVENTORY.txt",
+      "../../../LICENSE",
+      "../../../THIRD_PARTY_NOTICES.md"
+    ]
+  }
+}

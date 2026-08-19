@@ -1,0 +1,13 @@
+{
+  "productName": "Cavalry for Windows",
+  "identifier": "com.local.cavalry.windows",
+  "bundle": {
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ Provider-neutral Advisor semantics and orchestration for Cavalry. This package o
 
 ## Boundary
 
-`advisor` builds on `@cavalry/action-review` and `@cavalry/finance-core`. Neither lower-level package may import Advisor code. Electron transports, provider processes, renderer components, Companion APIs, and persistence adapters stay outside this package.
+`advisor` builds on `@cavalry/action-review` and `@cavalry/finance-core`. Neither lower-level package may import Advisor code. Desktop transports, provider processes, renderer components, Companion APIs, and persistence adapters stay outside this package.
 
 Public modules are available through the package root and the explicit `application/*` and `domain/*` export-map entries:
 
@@ -15,4 +15,4 @@ import { buildAiDraftCardViewModel } from '@cavalry/advisor/application/drafts/d
 
 Advisor remains draft-first: proposed mutations pass through the action-review lifecycle and gate before an application adapter persists workbook changes.
 
-Pure domain and orchestration coverage lives under `tests/` and runs with `npm test --workspace @cavalry/advisor`. Renderer, Electron, and provider-process integration tests remain with their owning adapters.
+Pure domain and orchestration coverage lives under `tests/` and runs with `npm test --workspace @cavalry/advisor`. Renderer, desktop-host, and provider-process integration tests remain with their owning adapters.

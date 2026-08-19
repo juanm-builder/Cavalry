@@ -1,0 +1,4 @@
+/target/
+/gen/
+/tauri.release.conf.json
+/binaries/cavalry-host-*

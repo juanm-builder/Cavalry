@@ -1,7 +1,12 @@
-# Contributing
+# Contributor workflow
 
-Keep changes scoped to one owning boundary and preserve workbook schema version 2, portable HTML/JSON compatibility, ledger semantics, backup behavior, product identity, deep links, and user-data locations unless the change explicitly migrates that contract.
+The canonical contribution guide is [CONTRIBUTING.md](../../CONTRIBUTING.md). This page summarizes the technical handoff expected for desktop changes.
 
-Pull requests should explain the user-visible outcome, changed boundaries, tests run, and known follow-up work. Include fixtures only when they are synthetic and intentionally curated. Do not include local secrets, model weights, real financial data, generated reports, app bundles, or package output.
+1. Identify the owning layer before editing.
+2. Preserve workbook schema and ledger invariants unless the change explicitly includes a migration.
+3. Keep native access behind the Tauri adapter or host protocol.
+4. Add focused tests at the owning layer.
+5. Update relevant documentation and release notes.
+6. Run architecture, JavaScript, Rust, and native checks appropriate to the change.
 
-Prefer package public exports over deep imports. New finance behavior needs deterministic package tests; new renderer behavior needs interaction coverage; native file, preload, or Electron behavior needs adapter or Electron coverage.
+A desktop migration or packaging change is not complete merely because the renderer builds. It must account for platform identities, data directories, deep links, secure storage, updater transition, code signing, and real-WebView behavior.

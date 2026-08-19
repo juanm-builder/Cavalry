@@ -17,6 +17,13 @@ out/
 *.asar
 Portable/
 
+
+# Rust and Tauri output
+target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/tauri.release.conf.json
+apps/desktop/src-tauri/binaries/cavalry-host-*
+
 # Test and generated artifacts
 coverage/
 test-artifacts/
@@ -114,3 +121,4 @@ tools/llama-cpp-launcher/**/*.mlmodel
 
 # Supabase CLI machine-local link state
 supabase/.temp/
+apps/desktop/packaging/RUNTIME-DEPENDENCY-INVENTORY.txt

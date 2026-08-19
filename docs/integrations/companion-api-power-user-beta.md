@@ -22,7 +22,7 @@ Only run a tunnel while actively testing. Anyone with the URL and token can reac
 
 ## Setup Flow
 
-For live app testing, start the Cavalry Electron app with the Companion API environment. The standalone `companion:serve:beta` command is useful for certification, but it does not see the workbook currently open in the app UI.
+For live app testing, start the Cavalry Tauri app with the Companion API environment. The standalone `companion:serve:beta` command is useful for certification, but it does not see the workbook currently open in the app UI.
 
 ```sh
 npm run beta:doctor --workspace @cavalry/companion-api
