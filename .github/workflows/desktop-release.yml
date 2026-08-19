@@ -143,6 +143,42 @@ jobs:
           uploadUpdaterSignatures: true
           args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
+      - name: Smoke test the signed host sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          app_path="$(find "$bundle_dir/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          sidecar="$app_path/Contents/MacOS/cavalry-host"
+          if [ ! -x "$sidecar" ]; then
+            echo "::error::No cavalry-host sidecar found at $sidecar"
+            exit 1
+          fi
+          # The sidecar embeds Node, and the hardened runtime kills V8 at startup unless the JIT
+          # entitlements are present. That failure is invisible to codesign and to notarization, so
+          # the only way to catch it is to actually run the signed binary and wait for its handshake.
+          if ! lipo -archs "$sidecar" | tr ' ' '\n' | grep -qx "$(uname -m)"; then
+            echo "::warning::Skipping sidecar smoke test: $(lipo -archs "$sidecar") cannot run on $(uname -m)"
+            exit 0
+          fi
+          log="$RUNNER_TEMP/host-smoke.log"
+          : > "$log"
+          echo "" | "$sidecar" > "$log" 2>&1 &
+          pid=$!
+          for _ in $(seq 1 90); do
+            grep -q '"type":"ready"' "$log" && break
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          if ! grep -q '"type":"ready"' "$log"; then
+            echo "::error::The signed host sidecar never reported ready. Output follows."
+            cat "$log"
+            exit 1
+          fi
+          echo "Signed host sidecar reached ready."
+
       - name: Notarize and staple the DMG
         shell: bash
         env:

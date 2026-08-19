@@ -4,6 +4,22 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.0.2 - 2026-08-20
+
+### Fixed
+
+- The desktop application no longer hangs on "Opening workbook" and then fails with "Workbook could
+  not be opened". The bundled Cavalry host embeds Node, and Tauri signs every bundled executable
+  with the hardened runtime, but the entitlements granted only microphone access. V8 was therefore
+  killed with SIGTRAP inside `pthread_jit_write_protect_np` the instant it initialised, so the host
+  never started, every workbook request waited for a host that was already dead, and the buttons on
+  the failure screen had nothing to talk to. The `com.apple.security.cs.allow-jit` and
+  `com.apple.security.cs.allow-unsigned-executable-memory` entitlements are now granted. This
+  affected only signed builds, which is why it never appeared in development.
+- The release workflow now runs the signed host sidecar and waits for its ready handshake before
+  publishing. Neither code signing nor notarization can detect a sidecar that dies on launch, so
+  this failure shipped in both 2.0.0 and 2.0.1 without any build reporting a problem.
+
 ## 2.0.1 - 2026-08-19
 
 ### Fixed

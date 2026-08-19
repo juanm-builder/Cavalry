@@ -4,5 +4,16 @@
 <dict>
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!--
+    The cavalry-host sidecar embeds Node, and Tauri signs every bundled executable with the
+    hardened runtime. Without these, V8 is killed with SIGTRAP inside
+    pthread_jit_write_protect_np the moment it initialises, so the host never starts and every
+    workbook operation hangs until it times out. allow-jit covers Apple Silicon;
+    allow-unsigned-executable-memory is additionally required by V8 on the x86_64 slice.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
 </dict>
 </plist>
