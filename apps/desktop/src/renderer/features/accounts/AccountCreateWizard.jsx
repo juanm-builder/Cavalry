@@ -10,6 +10,7 @@ import {
   CURRENCY_OPTIONS,
   DAY_OPTIONS,
   Icon,
+  IconDisc,
   InstitutionField,
   INVESTMENT_TYPE_OPTIONS,
   LIABILITY_TYPE_OPTIONS,
@@ -689,7 +690,7 @@ export function AccountCreateWizard({ defaultDate, defaultCurrency, error, onCan
               style={{ '--account-option-accent': option.accent }}
               type="button"
             >
-              <Icon className="mini-icon" name={option.icon} />
+              <IconDisc className="mini-icon" name={option.icon} />
               <span>
                 <strong>{option.label}</strong>
                 <small>{option.description}</small>

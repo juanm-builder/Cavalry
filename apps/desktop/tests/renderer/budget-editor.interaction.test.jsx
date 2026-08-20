@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BudgetRoute } from '../../src/renderer/features/budgets/BudgetRoute.jsx';
+import { openOptions } from './select-helpers.js';
 
 function model(overrides = {}) {
   return {
@@ -118,12 +119,14 @@ describe('budget editor interactions', () => {
     await user.click(screen.getByRole('option', { name: 'Create new category' }));
     const createDialog = screen.getByRole('dialog', { name: 'Create new category' });
     await user.type(within(createDialog).getByLabelText('Category name'), 'Trip fund');
+    const typePicker = within(createDialog).getByLabelText('Category type');
+    const typeOptions = await openOptions(user, typePicker);
     expect(
-      within(createDialog)
+      within(typeOptions)
         .getAllByRole('option')
         .map((option) => option.textContent)
     ).toEqual(['Expense', 'Savings', 'Debt', 'Income']);
-    await user.selectOptions(within(createDialog).getByLabelText('Category type'), 'savings');
+    await user.click(within(typeOptions).getByRole('option', { name: 'Savings' }));
     await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
 
     expect(screen.getByRole('combobox', { name: 'Budget category' }).textContent).toContain(

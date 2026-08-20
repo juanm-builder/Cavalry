@@ -42,9 +42,9 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
             <span className={`account-transaction-detail-mark ${changeTone}`}>
               <Icon name={transaction.icon || 'receipt_long'} />
             </span>
-            <div>
+            <div className="account-transaction-detail-copy">
               <span className="account-transaction-detail-kicker">Transaction details</span>
-              <h2>{title}</h2>
+              <h2 title={title}>{title}</h2>
               <p>
                 {transaction.date || 'No date'}
                 {transaction.typeLabel ? ` · ${transaction.typeLabel}` : ''}
@@ -54,7 +54,7 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
           <button
             aria-label="Close transaction details"
             autoFocus
-            className="btn btn-icon"
+            className="btn btn-icon account-transaction-detail-close"
             onClick={onClose}
             type="button"
           >

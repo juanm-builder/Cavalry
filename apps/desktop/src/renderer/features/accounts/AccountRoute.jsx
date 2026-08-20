@@ -15,6 +15,7 @@ import {
 } from './AccountModals.jsx';
 import { AccountEditModal } from './AccountEditModal.jsx';
 import { AccountTransactionDetailModal } from './AccountTransactionDetailModal.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
@@ -70,6 +71,97 @@ function StatCard({ label, value, subtitle, icon, tone, binding }) {
   );
 }
 
+const ACCOUNT_TYPE_FILTERS = Object.freeze([
+  { value: 'all', label: 'All Types', icon: 'select_all' },
+  { value: 'bank', label: 'Bank', icon: 'account_balance' },
+  { value: 'cash', label: 'Cash', icon: 'payments' },
+  { value: 'wallet', label: 'E-Wallet', icon: 'account_balance_wallet' },
+  { value: 'credit_card', label: 'Credit Card', icon: 'credit_card' },
+  { value: 'investment', label: 'Investment', icon: 'trending_up' },
+  { value: 'liability', label: 'Liability', icon: 'request_quote' },
+  { value: 'other_asset', label: 'Other Asset', icon: 'savings' }
+]);
+
+const ACCOUNT_GROUPS = Object.freeze([
+  { key: 'asset', label: 'Assets', hint: 'What you own' },
+  { key: 'liability', label: 'Liabilities', hint: 'What you owe' }
+]);
+
+function AccountCard({ row, index, total, groupLabel, view, actions, onSelect }) {
+  const payload = { accountId: row.id };
+  const accessibleLabel = [
+    ...new Set(
+      [
+        `Open ${row.name} account`,
+        groupLabel,
+        row.typeLabel,
+        row.institution,
+        row.balanceCell?.copy ? `Balance ${row.balanceCell.copy}` : '',
+        row.activityCopy,
+        row.isArchived ? 'Archived' : '',
+        `${index + 1} of ${total}`
+      ].filter(Boolean)
+    )
+  ].join(', ');
+  const meta = [
+    ...new Set([row.typeLabel, row.institution, row.isArchived ? 'Archived' : ''].filter(Boolean))
+  ].join(' · ');
+  return (
+    <article
+      className={`account-list-card${row.isArchived ? ' is-archived' : ''}${
+        row.isSelected ? ' is-selected' : ''
+      }`}
+      data-account-group={row.group || 'asset'}
+      data-account-id={row.id}
+      role="listitem"
+      style={row.institutionColor ? { '--account-brand': row.institutionColor } : undefined}
+    >
+      <button
+        aria-current={row.isSelected ? 'true' : undefined}
+        aria-label={accessibleLabel}
+        className="account-list-card-main"
+        type="button"
+        {...withClick(actions.action('select-account', payload), () => onSelect(row.id))}
+      >
+        <InstitutionMark
+          className={`mini-icon ${row.tone || 'info'}`}
+          fallbackIcon={row.icon || 'account_balance'}
+          institutionId={row.logoMode === 'icon' ? '' : row.institutionId}
+        />
+        <span className="account-list-card-copy">
+          <strong>{row.name}</strong>
+          <small>{meta}</small>
+        </span>
+        <span className="account-list-card-financial">
+          <b className={`amount ${row.balanceCell?.tone || ''}`}>{row.balanceCell?.copy}</b>
+          <small className={row.activityTone || 'info'}>{row.activityCopy}</small>
+        </span>
+        {view === 'list' ? (
+          <Icon className="account-list-card-chevron" name="chevron_right" />
+        ) : null}
+      </button>
+    </article>
+  );
+}
+
+function AccountCreateSlot({ view, createBinding }) {
+  return (
+    <article className="account-create-slot" role="listitem">
+      <button
+        className={view === 'grid' ? 'account-create-card' : 'account-create-entry'}
+        type="button"
+        {...createBinding}
+      >
+        <Icon name="add" />
+        <span>
+          <strong>Create account</strong>
+          <small>Add a new account to track balances and transactions</small>
+        </span>
+      </button>
+    </article>
+  );
+}
+
 function AccountCollection({
   rows,
   view,
@@ -78,91 +170,106 @@ function AccountCollection({
   onSelect,
   emptyCopy = 'No accounts yet.'
 }) {
-  return (
-    <div
-      className={view === 'grid' ? 'account-card-grid' : 'account-compact-list'}
-      data-account-view={view}
-      role="list"
-    >
-      <article className="account-create-slot" role="listitem">
-        <button
-          className={view === 'grid' ? 'account-create-card' : 'account-create-entry'}
-          type="button"
-          {...createBinding}
-        >
-          <Icon name="add" />
-          <span>
-            <strong>Create account</strong>
-            <small>Add a new account to track balances and transactions</small>
-          </span>
-        </button>
-      </article>
-      {!rows.length ? (
-        <div className="account-empty-register" role="listitem">
-          <div className="empty-state compact-empty">
-            <Icon name="account_balance" />
-            <strong>{emptyCopy}</strong>
+  const listClassName = view === 'grid' ? 'account-card-grid' : 'account-compact-list';
+  // Assets and liabilities read as different kinds of money, so they get their
+  // own labelled bands instead of one undifferentiated run of cards.
+  const groups = ACCOUNT_GROUPS.map((group) => ({
+    ...group,
+    rows: rows.filter((row) => (row.group === 'liability' ? 'liability' : 'asset') === group.key)
+  })).filter((group) => group.rows.length);
+  if (!groups.length) {
+    return (
+      <div className="account-collection" data-account-view={view}>
+        <div className={listClassName} role="list">
+          <AccountCreateSlot createBinding={createBinding} view={view} />
+          <div className="account-empty-register" role="listitem">
+            <div className="empty-state compact-empty">
+              <Icon name="account_balance" />
+              <strong>{emptyCopy}</strong>
+            </div>
           </div>
         </div>
-      ) : null}
-      {rows.map((row, index) => {
-        const payload = { accountId: row.id };
-        const accessibleLabel = [
-          ...new Set(
-            [
-              `Open ${row.name} account`,
-              row.typeLabel,
-              row.institution,
-              row.balanceCell?.copy ? `Balance ${row.balanceCell.copy}` : '',
-              row.activityCopy,
-              row.isArchived ? 'Archived' : '',
-              `${index + 1} of ${rows.length}`
-            ].filter(Boolean)
-          )
-        ].join(', ');
-        return (
-          <article
-            className={`account-list-card${row.isArchived ? ' is-archived' : ''}${
-              row.isSelected ? ' is-selected' : ''
-            }`}
-            data-account-id={row.id}
-            key={row.id}
-            role="listitem"
-            style={row.institutionColor ? { '--account-brand': row.institutionColor } : undefined}
-          >
-            <button
-              aria-current={row.isSelected ? 'true' : undefined}
-              aria-label={accessibleLabel}
-              className="account-list-card-main"
-              type="button"
-              {...withClick(actions.action('select-account', payload), () => onSelect(row.id))}
-            >
-              <InstitutionMark
-                className={`mini-icon ${row.tone || 'info'}`}
-                fallbackIcon={row.icon || 'account_balance'}
-                institutionId={row.logoMode === 'icon' ? '' : row.institutionId}
+      </div>
+    );
+  }
+  return (
+    <div className="account-collection" data-account-view={view}>
+      {groups.map((group, groupIndex) => (
+        <section aria-label={group.label} className="account-group" key={group.key}>
+          <header className="account-group-heading">
+            <h4>{group.label}</h4>
+            <span className="account-group-count">
+              {group.rows.length} account{group.rows.length === 1 ? '' : 's'}
+            </span>
+            <small>{group.hint}</small>
+          </header>
+          <div className={listClassName} role="list">
+            {groupIndex === 0 ? (
+              <AccountCreateSlot createBinding={createBinding} view={view} />
+            ) : null}
+            {group.rows.map((row, index) => (
+              <AccountCard
+                actions={actions}
+                groupLabel={group.label}
+                index={index}
+                key={row.id}
+                onSelect={onSelect}
+                row={row}
+                total={group.rows.length}
+                view={view}
               />
-              <span className="account-list-card-copy">
-                <strong>{row.name}</strong>
-                <small>
-                  {[row.institution, row.isArchived ? 'Archived' : ''].filter(Boolean).join(' · ')}
-                </small>
-              </span>
-              <span className="account-list-card-financial">
-                <b className={`amount ${row.balanceCell?.tone || ''}`}>{row.balanceCell?.copy}</b>
-                <small className={row.activityTone || 'info'}>{row.activityCopy}</small>
-              </span>
-              <Icon className="account-list-card-chevron" name="chevron_right" />
-            </button>
-          </article>
-        );
-      })}
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
 
+function compactMoney(value, currency) {
+  const amount = Number(value) || 0;
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'PHP',
+      notation: 'compact',
+      maximumFractionDigits: Math.abs(amount) >= 1000 ? 1 : 2
+    }).format(amount);
+  } catch (_error) {
+    return String(Math.round(amount));
+  }
+}
+
+// Axis steps land on 1/2/5 x a power of ten so the labels read as round money
+// instead of whatever the padded data extent happened to be.
+function niceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const residual = raw / magnitude;
+  const factor = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
+function shortAxisDate(value) {
+  const source = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(source)) return source;
+  const timestamp = Date.parse(source);
+  if (!Number.isFinite(timestamp)) return source;
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC'
+    }).format(new Date(timestamp));
+  } catch (_error) {
+    return source;
+  }
+}
+
 function AccountHistoryVisual({
   rows = [],
+  currency = 'PHP',
+  group = 'asset',
   emptyCopy = 'No account history yet.',
   onSelectTransaction
 }) {
@@ -177,33 +284,52 @@ function AccountHistoryVisual({
       </div>
     );
   }
-  const width = 320;
-  const height = 142;
-  const padX = 18;
-  const padY = 20;
+  const width = 360;
+  const height = 178;
+  const padLeft = 54;
+  const padRight = 14;
+  const padTop = 16;
+  const padBottom = 16;
+  const plotHeight = height - padTop - padBottom;
   const balances = chartRows.map((row) => Number(row.runningBalance) || 0);
-  const minBalance = Math.min(...balances, 0);
-  const maxBalance = Math.max(...balances, 0);
-  const spread = Math.max(1, maxBalance - minBalance);
-  const zeroY = Math.max(
-    padY,
-    Math.min(height - padY, padY + (maxBalance / spread) * (height - padY * 2))
-  );
+  // The axis frames the range the balance actually moved through. Forcing zero
+  // into view flattened every busy account into a straight line near the top.
+  const rawMin = Math.min(...balances);
+  const rawMax = Math.max(...balances);
+  const headroom = Math.max((rawMax - rawMin) * 0.2, Math.abs(rawMax) * 0.04, 1);
+  const step = niceStep((rawMax - rawMin + headroom * 2) / 2);
+  const minBalance = Math.floor((rawMin - headroom) / step) * step;
+  const maxBalance = Math.ceil((rawMax + headroom) / step) * step;
+  const spread = Math.max(step, maxBalance - minBalance);
+  const toY = (value) => padTop + ((maxBalance - value) / spread) * plotHeight;
+  const zeroY = toY(0);
+  const areaBaseY = Math.min(height - padBottom, Math.max(padTop, zeroY));
+  const ticks = [];
+  for (let value = maxBalance; value >= minBalance - step / 2; value -= step) {
+    ticks.push({ value, y: toY(value), copy: compactMoney(value, currency) });
+    if (ticks.length >= 6) break;
+  }
   const points = chartRows.map((row, index) => ({
     row,
     x:
       chartRows.length === 1
-        ? width / 2
-        : padX + (width - padX * 2) * (index / (chartRows.length - 1)),
-    y: padY + ((maxBalance - (Number(row.runningBalance) || 0)) / spread) * (height - padY * 2),
+        ? padLeft + (width - padLeft - padRight) / 2
+        : padLeft + (width - padLeft - padRight) * (index / (chartRows.length - 1)),
+    y: toY(Number(row.runningBalance) || 0),
     tone: row.balanceTone || 'neutral'
   }));
   const linePath = points
     .map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
     .join(' ');
-  const areaPath = `${linePath} L${points.at(-1).x.toFixed(1)} ${zeroY.toFixed(1)} L${points[0].x.toFixed(1)} ${zeroY.toFixed(1)} Z`;
+  const areaPath = `${linePath} L${points.at(-1).x.toFixed(1)} ${areaBaseY.toFixed(1)} L${points[0].x.toFixed(1)} ${areaBaseY.toFixed(1)} Z`;
+  const netChange = balances.at(-1) - balances[0];
+  // A climbing liability is bad news even though the number went up, so the
+  // trend follows the same rule the account rows use for balance tone.
+  const risingIsHealthy = group !== 'liability';
+  const trend = netChange === 0 ? 'neutral' : netChange > 0 === risingIsHealthy ? 'good' : 'bad';
+  const gradientId = `account-history-fill-${points.length}-${Math.round(zeroY)}`;
   return (
-    <div className="account-history-visual">
+    <div className="account-history-visual" data-trend={trend}>
       <div className="account-history-plot">
         <svg
           aria-label="Recent account balance history"
@@ -212,30 +338,56 @@ function AccountHistoryVisual({
           role="img"
           viewBox={`0 0 ${width} ${height}`}
         >
+          <defs>
+            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop className="account-history-fill-top" offset="0%" />
+              <stop className="account-history-fill-bottom" offset="100%" />
+            </linearGradient>
+          </defs>
+          {ticks.map((tick) => (
+            <g className="account-history-tick" key={`tick-${tick.y.toFixed(2)}`}>
+              <path
+                className="account-history-grid"
+                d={`M${padLeft} ${tick.y.toFixed(1)}H${width - padRight}`}
+              />
+              <text
+                className="account-history-tick-label"
+                dominantBaseline="middle"
+                textAnchor="end"
+                x={padLeft - 8}
+                y={tick.y.toFixed(1)}
+              >
+                {tick.copy}
+              </text>
+            </g>
+          ))}
+          {zeroY > padTop && zeroY < height - padBottom ? (
+            <path
+              className="account-history-baseline"
+              d={`M${padLeft} ${zeroY.toFixed(1)}H${width - padRight}`}
+            />
+          ) : null}
           <path
-            className="account-history-grid"
-            d={`M${padX} ${padY}H${width - padX}M${padX} ${height / 2}H${width - padX}M${padX} ${height - padY}H${width - padX}`}
+            className="account-history-area"
+            d={areaPath}
+            style={{ fill: `url(#${gradientId})` }}
           />
-          <path
-            className="account-history-baseline"
-            d={`M${padX} ${zeroY.toFixed(1)}H${width - padX}`}
-          />
-          <path className="account-history-area" d={areaPath} />
           <path className="account-history-line" d={linePath} />
-          {points.map((point) => {
-            const tooltipWidth = 146;
-            const tooltipHeight = 70;
+          {points.map((point, index) => {
+            const tooltipWidth = 154;
+            const tooltipHeight = 72;
             const tooltipX = Math.max(
               4,
               Math.min(width - tooltipWidth - 4, point.x - tooltipWidth / 2)
             );
             const tooltipY =
               point.y < height / 2
-                ? Math.min(height - tooltipHeight - 4, point.y + 13)
-                : Math.max(4, point.y - tooltipHeight - 13);
+                ? Math.min(height - tooltipHeight - 4, point.y + 14)
+                : Math.max(4, point.y - tooltipHeight - 14);
             const description = point.row.description || 'Transaction';
             const shortDescription =
               description.length > 23 ? `${description.slice(0, 22)}…` : description;
+            const isLatest = index === points.length - 1;
             return (
               <g
                 aria-label={`${point.row.date}: ${description}, ${point.row.changeCopy || 'change unavailable'}, balance ${point.row.balanceCopy}`}
@@ -255,45 +407,45 @@ function AccountHistoryVisual({
                   className="account-history-hit-area"
                   cx={point.x.toFixed(1)}
                   cy={point.y.toFixed(1)}
-                  r="10"
+                  r="12"
                 />
                 <circle
-                  className={`account-history-dot ${point.tone}`}
+                  className={`account-history-dot ${point.tone}${isLatest ? ' is-latest' : ''}`}
                   cx={point.x.toFixed(1)}
                   cy={point.y.toFixed(1)}
-                  r="4.8"
+                  r={isLatest ? '5' : '3.6'}
                 />
                 <g
                   aria-hidden="true"
                   className="account-history-svg-tooltip"
                   transform={`translate(${tooltipX.toFixed(1)} ${tooltipY.toFixed(1)})`}
                 >
-                  <rect height={tooltipHeight} rx="8" width={tooltipWidth} />
-                  <text className="account-history-svg-title" x="10" y="16">
+                  <rect height={tooltipHeight} rx="6" width={tooltipWidth} />
+                  <text className="account-history-svg-title" x="10" y="17">
                     {shortDescription}
                   </text>
-                  <text className="account-history-svg-date" x="10" y="29">
+                  <text className="account-history-svg-date" x="10" y="30">
                     {point.row.date}
                   </text>
-                  <text className="account-history-svg-label" x="10" y="47">
+                  <text className="account-history-svg-label" x="10" y="48">
                     Change
                   </text>
                   <text
                     className={`account-history-svg-value ${point.row.changeTone || 'neutral'}`}
                     textAnchor="end"
                     x={tooltipWidth - 10}
-                    y="47"
+                    y="48"
                   >
                     {point.row.changeCopy || '—'}
                   </text>
-                  <text className="account-history-svg-label" x="10" y="62">
+                  <text className="account-history-svg-label" x="10" y="63">
                     Balance
                   </text>
                   <text
                     className="account-history-svg-value"
                     textAnchor="end"
                     x={tooltipWidth - 10}
-                    y="62"
+                    y="63"
                   >
                     {point.row.balanceCopy}
                   </text>
@@ -304,9 +456,9 @@ function AccountHistoryVisual({
         </svg>
       </div>
       <div className="account-history-summary">
-        <span>{points[0].row.date || ''}</span>
+        <span>{shortAxisDate(points[0].row.date)}</span>
         <strong>{points.at(-1).row.balanceCopy || ''}</strong>
-        <span>{points.at(-1).row.date || ''}</span>
+        <span>{shortAxisDate(points.at(-1).row.date)}</span>
       </div>
     </div>
   );
@@ -429,6 +581,8 @@ function AccountDetail({
         <span className="tag">{selected.asOfLabel}</span>
       </div>
       <AccountHistoryVisual
+        currency={selected.balanceCurrency || selected.currency}
+        group={selected.group}
         onSelectTransaction={onSelectTransaction}
         rows={asArray(selected.historyRows)}
       />
@@ -636,20 +790,12 @@ function AccountRouteController({
               </div>
             </div>
             <div className="accounts-register-filters">
-              <select
+              <CavalrySelect
                 aria-label="Filter account type"
                 onChange={(event) => setAccountTypeFilter(event.target.value)}
+                options={ACCOUNT_TYPE_FILTERS}
                 value={accountTypeFilter}
-              >
-                <option value="all">All Types</option>
-                <option value="bank">Bank</option>
-                <option value="cash">Cash</option>
-                <option value="wallet">E-Wallet</option>
-                <option value="credit_card">Credit Card</option>
-                <option value="investment">Investment</option>
-                <option value="liability">Liability</option>
-                <option value="other_asset">Other Asset</option>
-              </select>
+              />
               <label className="accounts-search">
                 <Icon name="search" />
                 <input

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 
 import { submitNotesBatchCommand } from './notes-controller.js';
 import { parseNotesWithAi } from './notes-ai-parser.js';
@@ -117,48 +118,47 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         </div>
         <div className="field">
           <label htmlFor={`${entry.id}-currency`}>Currency</label>
-          <select
+          <CavalrySelect
+            aria-label="Currency"
             id={`${entry.id}-currency`}
             onChange={(event) => onChange('currency', event.target.value)}
+            options={currencies.map((currency) => ({ value: currency, label: currency }))}
+            showLeadingIcon={false}
             value={entry.currency}
-          >
-            {currencies.map((currency) => (
-              <option key={currency} value={currency}>
-                {currency}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="field">
           <label htmlFor={`${entry.id}-category`}>Category</label>
-          <select
+          <CavalrySelect
+            aria-label="Category"
             id={`${entry.id}-category`}
+            leadingIcon="category"
             onChange={(event) => onChange('categoryId', event.target.value)}
+            options={categories.map((category) => ({
+              value: category.id,
+              label: category.name,
+              icon: category.icon || 'category',
+              meta: category.type === 'income' ? 'Income' : ''
+            }))}
+            placeholder="Choose category"
             value={entry.categoryId}
-          >
-            <option value="">Choose category</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-                {category.type === 'income' ? ' · Income' : ''}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="field">
           <label htmlFor={`${entry.id}-account`}>Payment account</label>
-          <select
+          <CavalrySelect
+            aria-label="Payment account"
             id={`${entry.id}-account`}
+            leadingIcon="account_balance_wallet"
             onChange={(event) => onChange('primaryAccountId', event.target.value)}
+            options={eligibleAccounts.map((account) => ({
+              value: account.id,
+              label: accountTypeLabel(account),
+              icon: 'account_balance_wallet'
+            }))}
+            placeholder="Choose account"
             value={entry.primaryAccountId}
-          >
-            <option value="">Choose account</option>
-            {eligibleAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {accountTypeLabel(account)}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="field">
           <label htmlFor={`${entry.id}-date`}>Date</label>

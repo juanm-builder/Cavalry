@@ -12,6 +12,7 @@ import {
   cloneFixture,
   makeIncomeAndExpenseWorkbook
 } from '@cavalry/finance-core/test-fixtures/core-workbook-fixtures.js';
+import { chooseOption } from './select-helpers.js';
 
 const TODAY = '2026-06-15';
 
@@ -52,9 +53,10 @@ async function fillRecurringForm(user, values = {}) {
   await user.click(screen.getByRole('combobox', { name: 'Recurring category' }));
   const categoryLabel = values.categoryId === 'food' ? 'Food' : 'Subscriptions';
   await user.click(screen.getByRole('option', { name: categoryLabel }));
-  await user.selectOptions(
+  await chooseOption(
+    user,
     screen.getByLabelText('Recurring payment account'),
-    values.accountId || 'bank'
+    values.accountLabel || 'Bank'
   );
 }
 
@@ -198,10 +200,7 @@ describe('Settings and Bills interactions', () => {
     });
 
     await user.type(container.querySelector('#counterparty-form input[name="name"]'), 'Globe');
-    await user.selectOptions(
-      container.querySelector('#counterparty-form select[name="kind"]'),
-      'biller'
-    );
+    await chooseOption(user, screen.getByRole('combobox', { name: 'Type' }), 'Biller');
     await user.type(container.querySelector('#counterparty-form input[name="note"]'), 'Internet');
     await user.click(
       within(container.querySelector('#counterparty-form')).getByRole('button', { name: /Add/ })

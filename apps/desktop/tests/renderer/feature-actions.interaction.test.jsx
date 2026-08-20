@@ -10,6 +10,7 @@ import { DashboardRoute } from '../../src/renderer/features/dashboard/DashboardR
 import { ImportPreviewModal } from '../../src/renderer/features/import-export/ImportPreviewModal.jsx';
 import { BillsRoute } from '../../src/renderer/features/recurring/BillsRoute.jsx';
 import { SettingsRoute } from '../../src/renderer/features/settings/SettingsRoute.jsx';
+import { chooseOption, selectedOptionLabel } from './select-helpers.js';
 
 function makeWorkbook() {
   return {
@@ -322,12 +323,12 @@ describe('feature action callbacks', () => {
 
     const billsAction = vi.fn();
     render(<BillsRoute onAction={billsAction} model={makeBillsModel()} />);
-    await user.selectOptions(screen.getByLabelText('Bills month'), 'sheet-july');
+    await chooseOption(user, screen.getByLabelText('Bills month'), 'July 2026');
     expect(billsAction).toHaveBeenLastCalledWith({
       type: 'set-bills-sheet',
       payload: { value: 'sheet-july' }
     });
-    await user.selectOptions(screen.getByLabelText('Bills rows per page'), '25');
+    await chooseOption(user, screen.getByLabelText('Bills rows per page'), '25');
     expect(billsAction).toHaveBeenLastCalledWith({
       type: 'set-bills-rows-per-page',
       payload: { value: 25 }
@@ -628,8 +629,8 @@ describe('feature action callbacks', () => {
       />
     );
 
-    const provider = container.querySelector('select[name="provider"]');
     await user.click(screen.getByRole('tab', { name: /Assistant/ }));
+    const provider = screen.getByRole('combobox', { name: 'Connection' });
     await user.click(screen.getByRole('button', { name: 'Clear vision projector' }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'clear-mmproj',
@@ -644,12 +645,12 @@ describe('feature action callbacks', () => {
         mmprojPath: '/models/mmproj.gguf'
       })
     });
-    await user.selectOptions(provider, 'openai');
+    await chooseOption(user, provider, 'ChatGPT / OpenAI');
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'set-advisor-provider',
       payload: { value: 'openai' }
     });
-    expect(provider.value).toBe('custom');
+    expect(selectedOptionLabel(provider)).toBe('Local Model');
 
     await user.click(screen.getByRole('button', { name: /Start Model/ }));
     expect(onAction).toHaveBeenLastCalledWith({

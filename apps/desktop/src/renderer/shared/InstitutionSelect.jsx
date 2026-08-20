@@ -17,7 +17,16 @@ export function InstitutionMark({
 }) {
   const institution = findInstitutionById(institutionId);
   if (!institution) {
-    return <CavalryIcon className={className} name={fallbackIcon} />;
+    // The glyph sits inside the badge rather than being it, so the artwork
+    // keeps its breathing room instead of filling the disc edge to edge.
+    return (
+      <span
+        aria-hidden="true"
+        className={`institution-mark-fallback${className ? ` ${className}` : ''}`}
+      >
+        <CavalryIcon name={fallbackIcon} />
+      </span>
+    );
   }
   const logo = INSTITUTION_LOGOS[institution.id];
   const logoContent = typeof logo === 'string' ? <img alt="" draggable="false" src={logo} /> : logo;

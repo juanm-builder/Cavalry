@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
@@ -294,19 +295,14 @@ function EditableDraftField({
               value={edit.value}
             />
           ) : asArray(row.inputOptions).length ? (
-            <select
+            <CavalrySelect
               aria-label={`Edit ${row.label}`}
-              autoFocus
               className="ai-draft-inline-input"
               onChange={(event) => onChangeEdit(event.target.value)}
+              options={row.inputOptions}
+              showLeadingIcon={false}
               value={edit.value}
-            >
-              {row.inputOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
           ) : row.money ? (
             <FinancialValueInput
               aria-label={`Edit ${row.label}`}

@@ -10,6 +10,7 @@ import {
 } from '@cavalry/finance-core/test-fixtures/core-workbook-fixtures.js';
 import { AppShell } from '../../src/renderer/app/AppShell.jsx';
 import { createNullRendererPorts } from '../../src/renderer/platform/ports.js';
+import { chooseOption, selectedOptionLabel } from './select-helpers.js';
 
 const IMPORT_CSV = [
   'date,description,amount,account,category',
@@ -134,7 +135,7 @@ describe('finance application composition', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '125');
     await user.click(within(dialog).getByRole('combobox', { name: 'Category' }));
     await user.click(screen.getByRole('option', { name: 'Food' }));
-    await user.selectOptions(within(dialog).getByLabelText('Paid with'), 'cash');
+    await chooseOption(user, within(dialog).getByLabelText('Paid with'), 'Cash');
     await user.click(within(dialog).getByRole('button', { name: 'Next' }));
 
     const reviewDialog = screen.getByRole('dialog', { name: 'Review Transaction' });
@@ -161,7 +162,7 @@ describe('finance application composition', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add Transaction' });
     await user.type(within(dialog).getByLabelText('Description'), 'Trip contribution');
     await user.type(within(dialog).getByLabelText('Amount'), '1500');
-    await user.selectOptions(within(dialog).getByLabelText('Paid with'), 'cash');
+    await chooseOption(user, within(dialog).getByLabelText('Paid with'), 'Cash');
     await user.click(within(dialog).getByRole('combobox', { name: 'Category' }));
     await user.click(screen.getByRole('option', { name: 'Create new category' }));
 
@@ -171,7 +172,7 @@ describe('finance application composition', () => {
 
     expect(within(dialog).getByLabelText('Description').value).toBe('Trip contribution');
     expect(within(dialog).getByLabelText('Amount').value).toBe('1,500.00');
-    expect(within(dialog).getByLabelText('Paid from').value).toBe('cash');
+    expect(selectedOptionLabel(within(dialog).getByLabelText('Paid from'))).toContain('Cash');
     expect(within(dialog).getByRole('combobox', { name: 'Category' }).textContent).toContain(
       'Trip savings'
     );
@@ -410,7 +411,11 @@ describe('finance application composition', () => {
         name: /Assistant/
       })
     );
-    await user.selectOptions(document.querySelector('select[name="provider"]'), 'openai');
+    await chooseOption(
+      user,
+      screen.getByRole('combobox', { name: 'Connection' }),
+      'ChatGPT / OpenAI'
+    );
     expect(advisorInvoke).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: /Save Assistant/ }));
     await waitFor(() =>
@@ -444,7 +449,7 @@ describe('finance application composition', () => {
     expect(
       within(editor).getByRole('combobox', { name: 'Recurring category' }).textContent
     ).toContain('Trip Fund');
-    await user.selectOptions(within(editor).getByLabelText('Recurring payment account'), 'cash');
+    await chooseOption(user, within(editor).getByLabelText('Recurring payment account'), 'Cash');
     await user.click(within(editor).getByRole('button', { name: 'Save Bill' }));
 
     expect(screen.queryByRole('dialog', { name: 'Add bill or subscription' })).toBeNull();

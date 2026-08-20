@@ -1,12 +1,17 @@
 import React, { useEffect } from 'react';
 
-import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { findInstitutionById } from '@cavalry/finance-core';
 
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { InstitutionMark, InstitutionSelect } from '../../shared/InstitutionSelect.jsx';
+
+export function IconDisc({ name, className = '' }) {
+  return <CavalryIconDisc className={className} name={name} />;
+}
 
 export function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
@@ -335,21 +340,20 @@ export function SelectField({
   return (
     <div className="field account-flow-field">
       <FieldLabel htmlFor={id} label={label} required={required} />
-      <select
+      <CavalrySelect
         aria-describedby={help ? `${id}-help` : undefined}
+        aria-label={label}
         disabled={disabled}
         id={id}
         onChange={(event) => onChange(event.target.value)}
-        required={required}
+        options={options.map(([optionValue, optionLabel]) => ({
+          value: optionValue,
+          label: optionLabel
+        }))}
+        placeholder={placeholder}
+        showLeadingIcon={false}
         value={value}
-      >
-        <option value="">{placeholder}</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
+      />
       {help ? (
         <small className="account-field-copy" id={`${id}-help`}>
           {help}

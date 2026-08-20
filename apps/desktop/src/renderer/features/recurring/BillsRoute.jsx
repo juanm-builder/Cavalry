@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
-import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { BillsEditorModal } from './BillsEditorModal.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import {
@@ -17,6 +18,15 @@ import {
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
 }
+
+function IconDisc({ name, className = '' }) {
+  return <CavalryIconDisc className={className} name={name} />;
+}
+
+const BILL_PAGE_SIZE_OPTIONS = Object.freeze([
+  { value: '10', label: '10' },
+  { value: '25', label: '25' }
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -48,22 +58,16 @@ function PageHeader({ title, subtitle, children }) {
 
 function ControlSelect({ icon, label, options = [], value, className = '', onChange }) {
   return (
-    <label className={`bill-control-select ${className}`}>
-      {icon ? <Icon name={icon} /> : null}
-      <span className="sr-only">{label}</span>
-      <select
+    <div className={`bill-control-select ${className}`}>
+      <CavalrySelect
         aria-label={label}
-        value={value || ''}
+        leadingIcon={icon || ''}
         onChange={(event) => onChange(event.currentTarget.value)}
-      >
-        {asArray(options).map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <Icon className="select-caret" name="expand_more" />
-    </label>
+        options={asArray(options)}
+        showLeadingIcon={Boolean(icon)}
+        value={value || ''}
+      />
+    </div>
   );
 }
 
@@ -212,7 +216,7 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
       className={`bill-register-row ${displayTone || ''}${reconciliation.state !== 'unmatched' ? ' has-reconciliation' : ''}`}
     >
       <button className="bill-register-main" type="button" onClick={openMain}>
-        <Icon className={`mini-icon ${displayTone || ''}`} name={row.icon || 'receipt_long'} />
+        <IconDisc className={`mini-icon ${displayTone || ''}`} name={row.icon || 'receipt_long'} />
         <span>
           <strong>{row.name}</strong>
           <small>
@@ -395,19 +399,18 @@ function Pagination({ pagination, onAction }) {
           <Icon name="chevron_right" />
         </button>
       </div>
-      <label className="rows-per-page">
+      <span className="rows-per-page">
         Rows per page:
-        <select
+        <CavalrySelect
           aria-label="Bills rows per page"
-          value={String(data.rowsPerPage || 10)}
           onChange={(event) =>
             emit(onAction, 'set-bills-rows-per-page', { value: Number(event.currentTarget.value) })
           }
-        >
-          <option value="10">10</option>
-          <option value="25">25</option>
-        </select>
-      </label>
+          options={BILL_PAGE_SIZE_OPTIONS}
+          showLeadingIcon={false}
+          value={String(data.rowsPerPage || 10)}
+        />
+      </span>
     </div>
   );
 }
@@ -469,16 +472,13 @@ function FilterPanel({ filters, options, onAction }) {
           </div>
           <div className="field">
             <label>Status</label>
-            <select
-              value={draft.status || 'all'}
+            <CavalrySelect
+              aria-label="Status"
               onChange={(event) => update('status', event.currentTarget.value)}
-            >
-              {asArray(options.statuses).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+              options={asArray(options.statuses)}
+              showLeadingIcon={false}
+              value={draft.status || 'all'}
+            />
           </div>
           <div className="field">
             <label>Category</label>
@@ -493,16 +493,16 @@ function FilterPanel({ filters, options, onAction }) {
           </div>
           <div className="field">
             <label>Account</label>
-            <select
-              value={draft.accountId || ''}
+            <CavalrySelect
+              aria-label="Account"
+              leadingIcon="account_balance_wallet"
               onChange={(event) => update('accountId', event.currentTarget.value)}
-            >
-              {asArray(options.accounts).map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+              options={asArray(options.accounts).map((item) => ({
+                ...item,
+                icon: item.icon || (item.value ? 'account_balance_wallet' : 'select_all')
+              }))}
+              value={draft.accountId || ''}
+            />
           </div>
           <div className="bill-filter-actions">
             <button className="btn btn-primary" type="submit">
@@ -628,7 +628,7 @@ function InactiveRecurring({ items, onAction }) {
       <div className="bill-due-queue">
         {items.map((item) => (
           <div className="bill-due-row" key={item.id}>
-            <Icon
+            <IconDisc
               className="mini-icon info"
               name={item.kind === 'subscription' ? 'sync' : 'archive'}
             />
@@ -680,7 +680,7 @@ function DueNext({ groups, onSelect }) {
                   key={row.id}
                   onClick={() => onSelect(row)}
                 >
-                  <Icon
+                  <IconDisc
                     className={`mini-icon ${row.tone || ''}`}
                     name={row.icon || 'receipt_long'}
                   />

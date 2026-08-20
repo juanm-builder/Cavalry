@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
@@ -183,24 +184,23 @@ function AccountField({ disabledOptionId = '', fallbackIcon, field, id, label, o
     <div className="field transaction-edit-field transaction-edit-account-field">
       <label htmlFor={id}>{label}</label>
       <div className="transaction-edit-account-control">
-        <AccountMark account={selected || {}} fallbackIcon={fallbackIcon} />
-        <select
+        <CavalrySelect
+          aria-label={label}
           id={id}
+          leadingIcon={fallbackIcon || 'account_balance_wallet'}
+          options={asArray(options).map((option) => ({
+            value: option.value,
+            label: option.name || option.label,
+            icon: option.icon || fallbackIcon || 'account_balance_wallet',
+            meta: option.hasCurrencyIntegrityIssue
+              ? 'Repair currency first'
+              : option.balanceLabel || '',
+            disabled: option.disabled || option.value === disabledOptionId
+          }))}
+          placeholder="Choose account"
           value={value || ''}
           {...actions.change('transaction-composer-change', { field })}
-        >
-          <option value="">Choose account</option>
-          {asArray(options).map((option) => (
-            <option
-              disabled={option.disabled || option.value === disabledOptionId}
-              key={option.value}
-              value={option.value}
-            >
-              {option.name || option.label} — {option.balanceLabel}
-              {option.hasCurrencyIntegrityIssue ? ' · Repair currency first' : ''}
-            </option>
-          ))}
-        </select>
+        />
         {selected ? (
           <small>
             {selected.contextLabel || selected.institution || selected.label} ·{' '}
@@ -338,13 +338,17 @@ function TransactionEditModalContent({ modal }) {
           <div className="transaction-edit-grid transaction-edit-grid-2">
             <div className="field transaction-edit-field">
               <label htmlFor="transaction-template">Transaction type</label>
-              <select id="transaction-template" value={template} {...fieldBinding('template')}>
-                {asArray(options.templates).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {templateLabel(option, contextKind)}
-                  </option>
-                ))}
-              </select>
+              <CavalrySelect
+                aria-label="Transaction type"
+                id="transaction-template"
+                options={asArray(options.templates).map((option) => ({
+                  value: option.value,
+                  label: templateLabel(option, contextKind)
+                }))}
+                showLeadingIcon={false}
+                value={template}
+                {...fieldBinding('template')}
+              />
             </div>
             <div className="field transaction-edit-field">
               <label htmlFor="transaction-date">Date</label>
@@ -401,17 +405,14 @@ function TransactionEditModalContent({ modal }) {
             </div>
             <div className="field transaction-edit-field transaction-edit-currency-field">
               <label htmlFor="transaction-currency">Currency</label>
-              <select
+              <CavalrySelect
+                aria-label="Currency"
                 id="transaction-currency"
+                options={asArray(options.currencies)}
+                showLeadingIcon={false}
                 value={draft.currency || 'PHP'}
                 {...fieldBinding('currency')}
-              >
-                {asArray(options.currencies).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 

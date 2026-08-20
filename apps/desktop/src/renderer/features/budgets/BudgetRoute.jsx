@@ -227,18 +227,19 @@ function PlanOverview({ summary, currency, onSelect }) {
   );
 }
 
+// Only speaks up when something needs attention. An all-clear banner on every
+// healthy month was noise, but the unresolved-items warning still has to show.
 function TrustNotice({ trust }) {
   const unresolvedCount = Number(trust && trust.unresolvedCount) || 0;
+  if (!unresolvedCount) return null;
   return (
-    <aside className={`monthly-plan-trust ${unresolvedCount ? 'warn' : 'good'}`}>
-      <Icon name={unresolvedCount ? 'warning' : 'verified'} />
+    <aside className="monthly-plan-trust warn">
+      <Icon name="warning" />
       <span>
         <strong>
-          {unresolvedCount
-            ? `${unresolvedCount} item${unresolvedCount === 1 ? '' : 's'} need review`
-            : 'Totals checked'}
+          {unresolvedCount} item{unresolvedCount === 1 ? '' : 's'} need review
         </strong>
-        {unresolvedCount ? <small>Review these before relying on the total.</small> : null}
+        <small>Review these before relying on the total.</small>
       </span>
     </aside>
   );
@@ -445,7 +446,14 @@ function PlanMetricModal({ metricKey, summary, sections, currency, onClose, onSe
   );
 }
 
-function BudgetCategoryTable({ rows, currency, onSelect, type = 'expense', showCreate = false }) {
+function BudgetCategoryTable({
+  rows,
+  currency,
+  onSelect,
+  type = 'expense',
+  showCreate = false,
+  alwaysRender = false
+}) {
   const actions = useActionBindings();
   const copy = getPlanTypeCopy(type);
   const createEntry = showCreate ? (
@@ -466,7 +474,7 @@ function BudgetCategoryTable({ rows, currency, onSelect, type = 'expense', showC
       </span>
     </button>
   ) : null;
-  if (!rows.length && !showCreate) return null;
+  if (!rows.length && !showCreate && !alwaysRender) return null;
   return (
     <section className="budget-categories-section reference-card">
       <div className="budget-section-heading monthly-plan-section-heading">
@@ -569,6 +577,7 @@ function BudgetCategoryTable({ rows, currency, onSelect, type = 'expense', showC
 }
 
 const PLAN_SECTION_TABS = Object.freeze([
+  { key: 'all', label: 'All', sectionKey: 'all' },
   { key: 'expense', label: 'Spending', sectionKey: 'spending' },
   { key: 'income', label: 'Income', sectionKey: 'income' },
   { key: 'savings', label: 'Savings', sectionKey: 'savings' },
@@ -579,7 +588,14 @@ function PlanSectionTabs({ activeType, sections, onChange }) {
   return (
     <div aria-label="Monthly Plan sections" className="monthly-plan-tabs" role="tablist">
       {PLAN_SECTION_TABS.map((tab) => {
-        const count = (sections[tab.sectionKey] || []).length;
+        const count =
+          tab.key === 'all'
+            ? PLAN_SECTION_TABS.reduce(
+                (total, entry) =>
+                  entry.key === 'all' ? total : total + (sections[entry.sectionKey] || []).length,
+                0
+              )
+            : (sections[tab.sectionKey] || []).length;
         return (
           <button
             aria-selected={activeType === tab.key}
@@ -687,7 +703,11 @@ function BudgetRouteView({
   };
 
   function openDetail(row) {
-    if (row?.categoryType && PLAN_SECTION_TABS.some((tab) => tab.key === row.categoryType)) {
+    if (
+      activePlanType !== 'all' &&
+      row?.categoryType &&
+      PLAN_SECTION_TABS.some((tab) => tab.key === row.categoryType)
+    ) {
       setActivePlanType(row.categoryType);
     }
     setSelectedMetric('');
@@ -794,13 +814,29 @@ function BudgetRouteView({
             sections={sections}
           />
         </div>
-        <BudgetCategoryTable
-          currency={currency}
-          onSelect={openDetail}
-          rows={activeRowsByType[activePlanType] || []}
-          showCreate
-          type={activePlanType}
-        />
+        {activePlanType === 'all' ? (
+          <div className="monthly-plan-all-sections">
+            {PLAN_SECTION_TABS.filter((tab) => tab.key !== 'all').map((tab, index) => (
+              <BudgetCategoryTable
+                alwaysRender
+                currency={currency}
+                key={tab.key}
+                onSelect={openDetail}
+                rows={activeRowsByType[tab.key] || []}
+                showCreate={index === 0}
+                type={tab.key}
+              />
+            ))}
+          </div>
+        ) : (
+          <BudgetCategoryTable
+            currency={currency}
+            onSelect={openDetail}
+            rows={activeRowsByType[activePlanType] || []}
+            showCreate
+            type={activePlanType}
+          />
+        )}
       </section>
       <BudgetEditorModal editor={data.editor} categories={data.categoryOptions || []} />
       {selectedMetric ? (

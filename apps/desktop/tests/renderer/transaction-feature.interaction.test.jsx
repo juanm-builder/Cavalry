@@ -10,6 +10,7 @@ import {
 import { makeTransactionTableWorkbook } from '@cavalry/finance-core/test-fixtures/transaction-table-scenarios.js';
 import { TransactionRoute } from '../../src/renderer/features/transactions/TransactionRoute.jsx';
 import { useTransactionController } from '../../src/renderer/features/transactions/transaction-controller.js';
+import { chooseOption, selectedOptionLabel } from './select-helpers.js';
 
 const VALID_CSV = [
   'date,description,amount,account,category',
@@ -163,7 +164,7 @@ describe('controlled transaction feature', () => {
     await user.type(within(createDialog).getByLabelText('Amount'), '125');
     await user.click(within(createDialog).getByRole('combobox', { name: 'Category' }));
     await user.click(screen.getByRole('option', { name: 'Food' }));
-    await user.selectOptions(within(createDialog).getByLabelText('Paid with'), 'cash');
+    await chooseOption(user, within(createDialog).getByLabelText('Paid with'), 'Cash');
 
     const reviewDialog = await advanceToReview(user, createDialog);
     expect(screen.getByLabelText('transaction-count').textContent).toBe('0');
@@ -215,7 +216,7 @@ describe('controlled transaction feature', () => {
     const dialog = await openCreateDetails(user, 'Expense');
     await user.type(within(dialog).getByLabelText('Description'), 'Invalid row');
     await user.type(within(dialog).getByLabelText('Amount'), '20');
-    await user.selectOptions(within(dialog).getByLabelText('Paid with'), 'cash');
+    await chooseOption(user, within(dialog).getByLabelText('Paid with'), 'Cash');
     await user.click(within(dialog).getByRole('button', { name: 'Next' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Pick an expense category.');
@@ -241,7 +242,7 @@ describe('controlled transaction feature', () => {
     );
 
     const detailsDialog = await openCreateDetails(user, 'Income');
-    await user.selectOptions(within(detailsDialog).getByLabelText('To account'), 'cash');
+    await chooseOption(user, within(detailsDialog).getByLabelText('To account'), 'Cash');
     await user.type(within(detailsDialog).getByLabelText('Amount'), '25000');
     await user.click(within(detailsDialog).getByRole('combobox', { name: 'Source' }));
     await user.click(screen.getByRole('option', { name: 'Salary' }));
@@ -281,8 +282,8 @@ describe('controlled transaction feature', () => {
     );
 
     const detailsDialog = await openCreateDetails(user, 'Transfer');
-    await user.selectOptions(within(detailsDialog).getByLabelText('From account'), 'cash');
-    await user.selectOptions(within(detailsDialog).getByLabelText('To account'), 'bank');
+    await chooseOption(user, within(detailsDialog).getByLabelText('From account'), 'Cash');
+    await chooseOption(user, within(detailsDialog).getByLabelText('To account'), 'Bank');
     await user.type(within(detailsDialog).getByLabelText('Amount'), '2000');
     await user.type(within(detailsDialog).getByLabelText('Note (optional)'), 'Transfer to bank');
 
@@ -321,10 +322,10 @@ describe('controlled transaction feature', () => {
     const dialog = await openCreateDetails(user, 'Expense');
     await user.type(within(dialog).getByLabelText('Description'), 'Historical USD purchase');
     await user.type(within(dialog).getByLabelText('Amount'), '10');
-    await user.selectOptions(within(dialog).getByLabelText('Currency'), 'USD');
+    await chooseOption(user, within(dialog).getByLabelText('Currency'), 'USD');
     await user.click(within(dialog).getByRole('combobox', { name: 'Category' }));
     await user.click(screen.getByRole('option', { name: 'Food' }));
-    await user.selectOptions(within(dialog).getByLabelText('Paid with'), 'cash');
+    await chooseOption(user, within(dialog).getByLabelText('Paid with'), 'Cash');
     await user.type(within(dialog).getByLabelText('FX rate to base'), '61.25');
 
     const reviewDialog = await advanceToReview(user, dialog);
@@ -374,7 +375,7 @@ describe('controlled transaction feature', () => {
     await user.click(screen.getByRole('option', { name: 'Shopping' }));
     expect(await screen.findByText('Card groceries')).not.toBeNull();
 
-    await user.selectOptions(screen.getByLabelText('Sort by'), 'amount');
+    await chooseOption(user, screen.getByLabelText('Sort by'), 'Amount');
     await user.click(screen.getByRole('button', { name: 'Sort ascending' }));
     await user.click(screen.getByRole('button', { name: 'Reset' }));
     expect(await screen.findByText('Uncategorized adjustment')).not.toBeNull();
@@ -423,9 +424,9 @@ describe('controlled transaction feature', () => {
 
     await user.click(screen.getByRole('button', { name: 'Filters' }));
     const typeFilter = screen.getByLabelText('Type');
-    await user.selectOptions(typeFilter, 'income');
+    await chooseOption(user, typeFilter, 'Income');
 
-    expect(typeFilter.value).toBe('income');
+    expect(selectedOptionLabel(typeFilter)).toBe('Income');
     expect(await screen.findByText('Salary payroll')).not.toBeNull();
     expect(screen.queryByText('Coffee beans')).toBeNull();
     expect(screen.queryByText('Move to bank')).toBeNull();

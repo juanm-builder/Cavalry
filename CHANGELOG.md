@@ -4,6 +4,44 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.0.3 - 2026-08-20
+
+### Changed
+
+- Every dropdown is now drawn by Cavalry instead of the operating system. Account, category, type,
+  currency, filter, and settings pickers share one menu with leading icons, group headings, a
+  right-aligned detail column, and a check on the current choice. Account menus now show the
+  account type and balance beside each name.
+- Account cards give the account name and its balance the full width of the card rather than making
+  them compete for one row, so neither is truncated. Accounts are grouped into labelled Assets and
+  Liabilities bands in both grid and list view.
+- The balance history chart is readable on the paper canvas: its gridlines and zero baseline were
+  drawn in translucent white and were invisible, and a white plot panel sat inside a cream card.
+  It now has one surface, a labelled value axis with rounded amounts, and colouring that follows
+  account semantics, so a climbing credit-card balance reads as a loss rather than a gain.
+- The Monthly Plan has an All tab that shows spending, income, savings, and debt on one screen.
+- Every route now clears its page-title rule by the same amount, instead of the rule sitting on top
+  of the first card on Accounts and the Monthly Plan.
+- The Monthly Plan no longer shows a "Totals checked" banner when nothing needs attention. The
+  unresolved-items warning still appears.
+
+### Fixed
+
+- Account pickers no longer print their placeholder underneath the leading icon. WebKit ignores
+  padding on a system-drawn `<select>`, so the space reserved for the icon was dropped in the
+  packaged application while looking correct in a development browser. This affected "Paid with",
+  "From account", "To account", "Charged to", and "Refunded to".
+- Icons no longer render as zoomed-in crops. Badge styling was applied to the glyph itself rather
+  than to a container, so artwork filled its badge edge to edge in account rows, the account type
+  picker, bills, and category list view.
+- Pressing Escape to dismiss an open dropdown no longer closes the surrounding dialog and discards
+  a half-completed transaction.
+- Long transaction descriptions in the detail panel no longer slide underneath the close button.
+
+### Notes
+
+- Renderer-only release; no workbook format, host, or updater changes.
+
 ## 2.0.2 - 2026-08-20
 
 ### Fixed

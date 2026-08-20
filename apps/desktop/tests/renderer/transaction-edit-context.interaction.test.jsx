@@ -13,6 +13,7 @@ import {
 } from '../../src/renderer/features/categories/category-controller.js';
 import { TransactionRoute } from '../../src/renderer/features/transactions/TransactionRoute.jsx';
 import { useTransactionController } from '../../src/renderer/features/transactions/transaction-controller.js';
+import { openOptions, selectedOptionLabel } from './select-helpers.js';
 
 function makeContextualEditWorkbook() {
   return {
@@ -330,7 +331,9 @@ describe('contextual transaction editing', () => {
       expect(within(dialog).getByRole('heading', { name: heading })).not.toBeNull();
       expect(within(dialog).getByText(badge, { selector: 'strong' })).not.toBeNull();
       expect(within(dialog).getByText(accountName, { selector: 'strong' })).not.toBeNull();
-      expect(within(dialog).getByLabelText(accountLabel).value).toBe(accountId);
+      expect(selectedOptionLabel(within(dialog).getByLabelText(accountLabel))).toContain(
+        accountName
+      );
       expect(within(dialog).getByRole('button', { name: 'Save Changes' })).not.toBeNull();
     }
   );
@@ -386,7 +389,9 @@ describe('contextual transaction editing', () => {
     await user.click(within(createDialog).getByRole('button', { name: 'Create & select' }));
 
     expect(description.value).toBe('Trip groceries');
-    expect(within(dialog).getByLabelText('Paid from bank account').value).toBe('bank');
+    expect(selectedOptionLabel(within(dialog).getByLabelText('Paid from bank account'))).toContain(
+      'BPI Savings'
+    );
     expect(within(dialog).getByRole('combobox', { name: 'Category' }).textContent).toContain(
       'Trip meals'
     );
@@ -411,9 +416,10 @@ describe('contextual transaction editing', () => {
     const account = within(dialog).getByLabelText('Paid from e-wallet');
 
     expect(dialog.getAttribute('data-account-context')).toBe('wallet');
-    expect(account.value).toBe('old-wallet');
+    expect(selectedOptionLabel(account)).toContain('Old GCash');
     expect(within(dialog).getByText('Old GCash', { selector: 'strong' })).not.toBeNull();
-    expect(within(account).getByRole('option', { name: /Old GCash/ })).not.toBeNull();
+    const accountOptions = await openOptions(user, account);
+    expect(within(accountOptions).getByRole('option', { name: /Old GCash/ })).not.toBeNull();
   });
 
   it.each([
