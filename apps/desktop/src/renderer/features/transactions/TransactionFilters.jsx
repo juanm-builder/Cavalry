@@ -4,6 +4,7 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
@@ -12,6 +13,22 @@ function Icon({ name, className = '' }) {
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
+
+const LEDGER_TYPE_OPTIONS = Object.freeze([
+  { value: 'all', label: 'All transactions', icon: 'select_all' },
+  { value: 'income', label: 'Income', icon: 'arrow_upward' },
+  { value: 'expense', label: 'Expenses', icon: 'arrow_downward' },
+  { value: 'transfer', label: 'Transfers', icon: 'sync_alt' }
+]);
+
+const LEDGER_SORT_OPTIONS = Object.freeze([
+  { value: 'date', label: 'Date' },
+  { value: 'amount', label: 'Amount' },
+  { value: 'description', label: 'Description' },
+  { value: 'account', label: 'Account' },
+  { value: 'category', label: 'Category' },
+  { value: 'type', label: 'Type' }
+]);
 
 function asObject(value) {
   return value && typeof value === 'object' ? value : {};
@@ -144,19 +161,23 @@ function FilterFields({ filters, options }) {
     <>
       <div className="field">
         <label htmlFor="ledger-filter-account">Account</label>
-        <select
+        <CavalrySelect
+          aria-label="Account"
           id="ledger-filter-account"
+          leadingIcon="account_balance_wallet"
           name="accountId"
+          options={[
+            { value: '', label: 'All accounts', icon: 'select_all' },
+            ...asArray(lists.accounts).map((option) => ({
+              value: option.value,
+              label: option.label,
+              icon: option.icon || 'account_balance_wallet'
+            }))
+          ]}
+          placeholder="All accounts"
           value={data.accountId || ''}
           {...actions.change('set-ledger-filter-account')}
-        >
-          <option value="">All accounts</option>
-          {asArray(lists.accounts).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <div className="field">
         <label htmlFor="ledger-filter-category">Category</label>
@@ -173,33 +194,26 @@ function FilterFields({ filters, options }) {
       </div>
       <div className="field">
         <label htmlFor="ledger-filter-type">Type</label>
-        <select
+        <CavalrySelect
+          aria-label="Type"
           id="ledger-filter-type"
+          options={LEDGER_TYPE_OPTIONS}
           value={data.type || 'all'}
           {...actions.change('set-ledger-type')}
-        >
-          <option value="all">All transactions</option>
-          <option value="income">Income</option>
-          <option value="expense">Expenses</option>
-          <option value="transfer">Transfers</option>
-        </select>
+        />
       </div>
       <DateRangeFilter filters={data} range={lists.dateRange} />
       <AmountRangeFilter filters={data} range={lists.amountRange} />
       <div className="field">
         <label htmlFor="ledger-sort-key">Sort by</label>
-        <select
+        <CavalrySelect
+          aria-label="Sort by"
           id="ledger-sort-key"
+          options={LEDGER_SORT_OPTIONS}
+          showLeadingIcon={false}
           value={data.sortKey || 'date'}
           {...actions.change('set-ledger-sort-key')}
-        >
-          <option value="date">Date</option>
-          <option value="amount">Amount</option>
-          <option value="description">Description</option>
-          <option value="account">Account</option>
-          <option value="category">Category</option>
-          <option value="type">Type</option>
-        </select>
+        />
       </div>
     </>
   );

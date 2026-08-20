@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountCreateWizard } from '../../src/renderer/features/accounts/AccountModals.jsx';
+import { chooseOption, selectedOptionLabel } from './select-helpers.js';
 
 const DEFAULT_DATE = '2026-07-12';
 
@@ -229,7 +230,7 @@ describe('account create wizard', () => {
     await enterAmount(user, within(accountDialog).getByLabelText('Credit limit'), '100000');
     expect(within(accountDialog).getByLabelText('Current balance owed').value).toBe('35,000.00');
     expect(within(accountDialog).getByLabelText('Credit limit').value).toBe('100,000.00');
-    await user.selectOptions(within(accountDialog).getByLabelText('Card network'), 'mastercard');
+    await chooseOption(user, within(accountDialog).getByLabelText('Card network'), 'Mastercard');
 
     expect(within(accountDialog).getByRole('status').textContent).toContain('₱65,000.00');
 
@@ -268,7 +269,7 @@ describe('account create wizard', () => {
     await user.type(within(accountDialog).getByLabelText('Liability name'), 'Auto Loan');
     await enterAmount(user, within(accountDialog).getByLabelText('Outstanding balance'), '500000');
     await revealOptionalDetails(user, accountDialog);
-    await user.selectOptions(within(accountDialog).getByLabelText('Liability type'), 'auto_loan');
+    await chooseOption(user, within(accountDialog).getByLabelText('Liability type'), 'Auto Loan');
     await user.click(within(accountDialog).getByRole('button', { name: 'Save Account' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -292,7 +293,7 @@ describe('account create wizard', () => {
     let accountDialog = await chooseAccountType(user, /^Bank Account\b/i);
 
     await user.type(within(accountDialog).getByLabelText('Account name'), 'Travel Account');
-    await user.selectOptions(within(accountDialog).getByLabelText('Currency'), 'USD');
+    await chooseOption(user, within(accountDialog).getByLabelText('Currency'), 'USD');
     await enterAmount(user, within(accountDialog).getByLabelText('Starting balance'), '123');
     const accountDate = within(accountDialog).getByLabelText('Balance as of');
     await user.clear(accountDate);
@@ -325,12 +326,12 @@ describe('account create wizard', () => {
     expect(within(accountDialog).getByLabelText('Notes').value).toBe('Keep this note');
 
     await enterAmount(user, within(accountDialog).getByLabelText('Credit limit'), '120000');
-    await user.selectOptions(within(accountDialog).getByLabelText('Card network'), 'mastercard');
+    await chooseOption(user, within(accountDialog).getByLabelText('Card network'), 'Mastercard');
     await user.click(within(accountDialog).getByRole('button', { name: 'Go back' }));
     accountDialog = await chooseAccountType(user, /^Bank Account\b/i);
 
     expect(within(accountDialog).getByLabelText('Account name').value).toBe('Travel Account');
-    expect(within(accountDialog).getByLabelText('Currency').value).toBe('USD');
+    expect(selectedOptionLabel(within(accountDialog).getByLabelText('Currency'))).toBe('USD');
     expect(within(accountDialog).getByLabelText('Starting balance').value.replace(/,/g, '')).toBe(
       '123.00'
     );

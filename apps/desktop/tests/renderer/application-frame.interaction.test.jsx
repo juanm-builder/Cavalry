@@ -10,6 +10,7 @@ import {
   WorkbookStartupScreen,
   WORKBOOK_STARTUP_STATUS
 } from '../../src/renderer/shell/index.js';
+import { chooseOption } from './select-helpers.js';
 
 const workbook = Object.freeze({
   name: 'Household Plan',
@@ -278,7 +279,7 @@ describe('workbook startup screen', () => {
     await user.type(name, '  Family Ledger  ');
     await user.clear(screen.getByLabelText('2. Year'));
     await user.type(screen.getByLabelText('2. Year'), '2027');
-    await user.selectOptions(screen.getByLabelText('3. Base Currency'), 'USD');
+    await chooseOption(user, screen.getByLabelText('3. Base Currency'), 'USD');
     await user.click(screen.getByRole('button', { name: 'Create Workbook' }));
 
     expect(onCreate).toHaveBeenCalledWith({

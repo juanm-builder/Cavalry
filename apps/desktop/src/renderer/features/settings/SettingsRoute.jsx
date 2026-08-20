@@ -1,11 +1,27 @@
 import React, { useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalrySelect, UncontrolledCavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { useAppearance } from '../../app/AppearanceProvider.jsx';
 import { CUSTOM_COLOR_FIELDS } from '../../app/appearance-preferences.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { FeedbackSettingsPanel } from '../feedback/FeedbackSettingsPanel.jsx';
 import { CloudAccountPanel } from './CloudAccountPanel.jsx';
+
+const COUNTERPARTY_KIND_OPTIONS = Object.freeze([
+  { value: 'employer', label: 'Employer' },
+  { value: 'family', label: 'Family' },
+  { value: 'client', label: 'Client' },
+  { value: 'merchant', label: 'Merchant' },
+  { value: 'biller', label: 'Biller' },
+  { value: 'other', label: 'Other' }
+]);
+
+const ADVISOR_PROVIDER_OPTIONS = Object.freeze([
+  { value: 'local', label: 'Choose a connection…', icon: 'link_off' },
+  { value: 'openai', label: 'ChatGPT / OpenAI', icon: 'auto_awesome' },
+  { value: 'custom', label: 'Local Model', icon: 'memory' }
+]);
 
 function formPayload(form) {
   const payload = {};
@@ -315,14 +331,14 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
           </div>
           <div className="field">
             <label htmlFor="settings-counterparty-kind">Type</label>
-            <select defaultValue="employer" id="settings-counterparty-kind" name="kind">
-              <option value="employer">Employer</option>
-              <option value="family">Family</option>
-              <option value="client">Client</option>
-              <option value="merchant">Merchant</option>
-              <option value="biller">Biller</option>
-              <option value="other">Other</option>
-            </select>
+            <UncontrolledCavalrySelect
+              aria-label="Type"
+              defaultValue="employer"
+              id="settings-counterparty-kind"
+              name="kind"
+              options={COUNTERPARTY_KIND_OPTIONS}
+              showLeadingIcon={false}
+            />
           </div>
           <div className="field">
             <label htmlFor="settings-counterparty-note">
@@ -613,17 +629,16 @@ function AssistantPanel({ advisor, feedback, onAction }) {
           <div className="advisor-copilot-topline">
             <div className="field advisor-mode-field">
               <label htmlFor="settings-advisor-provider">Connection</label>
-              <select
+              <CavalrySelect
+                aria-label="Connection"
                 disabled={advisorLifecyclePending}
                 id="settings-advisor-provider"
                 name="provider"
+                options={ADVISOR_PROVIDER_OPTIONS}
+                placeholder="Choose a connection…"
                 value={advisorProvider}
                 {...actions.change('set-advisor-provider')}
-              >
-                <option value="local">Choose a connection…</option>
-                <option value="openai">ChatGPT / OpenAI</option>
-                <option value="custom">Local Model</option>
-              </select>
+              />
             </div>
             {!advisorUsesRemoteModel ? (
               <div className="advisor-copilot-status">
@@ -752,18 +767,18 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 {advisor.contextDisabled ? (
                   <input name="contextWindowTokens" type="hidden" value={advisorContextValue} />
                 ) : null}
-                <select
-                  defaultValue={advisorContextValue}
+                <UncontrolledCavalrySelect
+                  aria-label="Context Allocation"
+                  defaultValue={String(advisorContextValue)}
                   disabled={advisor.contextDisabled}
                   id="settings-context-allocation"
-                  name="contextWindowTokens"
-                >
-                  {(advisor.contextOptions || []).map((option) => (
-                    <option key={option.value} value={String(option.value)}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  name={advisor.contextDisabled ? '' : 'contextWindowTokens'}
+                  options={(advisor.contextOptions || []).map((option) => ({
+                    value: String(option.value),
+                    label: option.label
+                  }))}
+                  showLeadingIcon={false}
+                />
               </div>
             </div>
           ) : null}

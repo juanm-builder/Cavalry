@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TransactionRoute } from '../../src/renderer/features/transactions/TransactionRoute.jsx';
 import { useTransactionController } from '../../src/renderer/features/transactions/transaction-controller.js';
+import { chooseOption, openOptions, selectedOptionLabel } from './select-helpers.js';
 
 function makeCreditCardExpenseWorkbook() {
   return {
@@ -101,9 +102,9 @@ async function openExpenseDetails(user) {
   return screen.getByRole('dialog', { name: 'Add Transaction' });
 }
 
-async function fillExpenseDetails(user, dialog, { accountId, amount, description }) {
+async function fillExpenseDetails(user, dialog, { accountLabel, accountId, amount, description }) {
   const initialAccountPicker = within(dialog).getByLabelText('Paid with');
-  await user.selectOptions(initialAccountPicker, accountId);
+  await chooseOption(user, initialAccountPicker, accountLabel);
   const amountField = within(dialog).getByLabelText(
     accountId === 'credit-card' ? 'Purchase amount' : 'Amount'
   );
@@ -137,16 +138,21 @@ describe('credit-card expense creation', () => {
 
     const detailsDialog = await openExpenseDetails(user);
     const accountPicker = within(detailsDialog).getByLabelText('Paid with');
-    expect(within(accountPicker).getByRole('option', { name: /Cash/ })).not.toBeNull();
-    expect(within(accountPicker).getByRole('option', { name: /BPI Credit Card/ })).not.toBeNull();
-    expect(within(accountPicker).queryByRole('option', { name: /Personal Loan/ })).toBeNull();
+    const accountOptions = await openOptions(user, accountPicker);
+    expect(within(accountOptions).getByRole('option', { name: /Cash/ })).not.toBeNull();
+    expect(within(accountOptions).getByRole('option', { name: /BPI Credit Card/ })).not.toBeNull();
+    expect(within(accountOptions).queryByRole('option', { name: /Personal Loan/ })).toBeNull();
+    await user.click(accountPicker);
 
     await fillExpenseDetails(user, detailsDialog, {
+      accountLabel: 'Cash',
       accountId: 'cash',
       amount: '125',
       description: 'Cash lunch'
     });
-    expect(within(detailsDialog).getByLabelText('Paid from').value).toBe('cash');
+    expect(selectedOptionLabel(within(detailsDialog).getByLabelText('Paid from'))).toContain(
+      'Cash'
+    );
     await user.click(within(detailsDialog).getByRole('button', { name: 'Next' }));
 
     const reviewDialog = screen.getByRole('dialog', { name: 'Review Transaction' });
@@ -178,12 +184,15 @@ describe('credit-card expense creation', () => {
 
     const detailsDialog = await openExpenseDetails(user);
     await fillExpenseDetails(user, detailsDialog, {
+      accountLabel: 'BPI Credit Card',
       accountId: 'credit-card',
       amount: '900',
       description: 'Card groceries'
     });
 
-    expect(within(detailsDialog).getByLabelText('Charged to').value).toBe('credit-card');
+    expect(selectedOptionLabel(within(detailsDialog).getByLabelText('Charged to'))).toContain(
+      'BPI Credit Card'
+    );
     await user.click(within(detailsDialog).getByRole('button', { name: 'Next' }));
 
     const reviewDialog = screen.getByRole('dialog', { name: 'Review Transaction' });

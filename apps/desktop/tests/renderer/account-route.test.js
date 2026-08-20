@@ -69,6 +69,7 @@ function makeAccountModel() {
         id: 'credit-card',
         name: 'Credit Card',
         currency: 'PHP',
+        group: 'liability',
         isArchived: false,
         isSelected: false,
         icon: 'credit_card',
@@ -175,7 +176,7 @@ describe('AccountRoute', () => {
     expect(html).toContain('is-selected');
     expect(html).toContain('data-institution-id="rcbc"');
     expect(html).toContain(
-      'aria-label="Open Bank Checking account, Asset Account, Bank, Balance PHP 49,501.00'
+      'aria-label="Open Bank Checking account, Assets, Asset Account, Bank, Balance PHP 49,501.00'
     );
     expect(html).toContain('View Transactions</button>');
     expect(html).toContain('class="account-history-line"');
@@ -208,5 +209,33 @@ describe('AccountRoute', () => {
     expect(html).toContain('Create account');
     expect(html).toContain('Select or add an account.');
     expect(html).not.toContain('data-action="select-account"');
+  });
+
+  it('splits accounts into labelled asset and liability bands', () => {
+    const html = renderAccountRoute();
+
+    expect(html).toContain('aria-label="Assets" class="account-group"');
+    expect(html).toContain('aria-label="Liabilities" class="account-group"');
+    expect(html).toContain('<h4>Assets</h4>');
+    expect(html).toContain('<h4>Liabilities</h4>');
+    expect(html).toContain('data-account-group="liability" data-account-id="credit-card"');
+    expect(html).toContain('data-account-group="asset" data-account-id="bank-checking"');
+  });
+
+  it('keeps the balance chart axis, trend, and readout on one surface', () => {
+    const html = renderAccountRoute();
+
+    expect(html).toContain('class="account-history-tick-label"');
+    expect(html).toContain('data-trend="good"');
+    // The readout stays the original start date / latest balance / end date.
+    expect(html).toContain('<div class="account-history-summary">');
+    expect(html).not.toContain('Net over this span');
+  });
+
+  it('wraps a fallback account glyph in its own badge instead of styling the glyph', () => {
+    const html = renderAccountRoute();
+
+    expect(html).toContain('class="institution-mark-fallback mini-icon');
+    expect(html).not.toMatch(/<svg[^>]*class="[^"]*\bmini-icon\b/);
   });
 });

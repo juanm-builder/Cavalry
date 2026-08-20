@@ -47,4 +47,20 @@ export function CavalryIcon({ name, className = '', title = '', ...props }) {
   );
 }
 
+/*
+ * A glyph rendered inside its own disc.
+ *
+ * Disc classes such as `mini-icon` describe a *container* (a sized, tinted,
+ * rounded box that centers its child). Putting one straight on the <svg> made
+ * the artwork the disc, so every icon filled its badge edge to edge and read
+ * as a zoomed-in crop. Wrapping keeps the badge and the glyph separate.
+ */
+export function CavalryIconDisc({ name, className = '', title = '', ...props }) {
+  return (
+    <span className={`icon-disc${className ? ` ${className}` : ''}`}>
+      <CavalryIcon name={name} title={title} {...props} />
+    </span>
+  );
+}
+
 export default CavalryIcon;

@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { CavalryIcon } from './CavalryIcon.jsx';
+import { CavalrySelect } from './CavalrySelect.jsx';
 
 const GROUP_ORDER = [
   'Payments & Debt',
@@ -209,18 +210,18 @@ function InlineCategoryCreateDialog({
           {allowedTypes.length > 1 ? (
             <>
               <label htmlFor={typeInputId}>Category type</label>
-              <select
+              <CavalrySelect
+                aria-label="Category type"
                 disabled={submitting}
                 id={typeInputId}
-                onChange={(event) => setType(normalizedCategoryType(event.target.value))}
+                onChange={(event) => setType(normalizedCategoryType(event.currentTarget.value))}
+                options={allowedTypes.map((option) => ({
+                  value: option,
+                  label: categoryTypeLabel(option)
+                }))}
+                showLeadingIcon={false}
                 value={type}
-              >
-                {allowedTypes.map((option) => (
-                  <option key={option} value={option}>
-                    {categoryTypeLabel(option)}
-                  </option>
-                ))}
-              </select>
+              />
             </>
           ) : null}
           <small>

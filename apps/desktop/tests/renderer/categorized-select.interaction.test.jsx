@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CategorizedSelect } from '../../src/renderer/shared/CategorizedSelect.jsx';
+import { chooseOption } from './select-helpers.js';
 
 const OPTIONS = [
   { value: 'credit-card', label: 'Credit Card Payment', type: 'debt' },
@@ -142,7 +143,7 @@ describe('categorized select', () => {
     await user.click(screen.getByRole('option', { name: 'Create new category' }));
     const dialog = screen.getByRole('dialog', { name: 'Create new category' });
     await user.type(within(dialog).getByLabelText('Category name'), 'Loan payment');
-    await user.selectOptions(within(dialog).getByLabelText('Category type'), 'debt');
+    await chooseOption(user, within(dialog).getByLabelText('Category type'), 'Debt');
     await user.click(within(dialog).getByRole('button', { name: 'Create & select' }));
 
     expect(createCategory).toHaveBeenCalledWith({

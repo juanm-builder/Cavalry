@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../../src/renderer/app/AppShell.jsx';
 import { NotesRoute } from '../../src/renderer/features/notes/NotesRoute.jsx';
 import { createNullRendererPorts } from '../../src/renderer/platform/ports.js';
+import { chooseOption } from './select-helpers.js';
 
 function makeWorkbook() {
   return {
@@ -236,7 +237,7 @@ describe('Notes route', () => {
     expect(screen.getByText('Needs review')).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Edit line 1' }));
-    await user.selectOptions(screen.getByLabelText('Category'), 'food');
+    await chooseOption(user, screen.getByLabelText('Category'), 'Food');
     await user.click(screen.getByRole('button', { name: 'Done' }));
 
     expect(saveButton.disabled).toBe(false);

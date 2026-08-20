@@ -100,7 +100,8 @@ describe('SettingsRoute', () => {
     expect(html).toContain('class="settings-shell"');
     expect(html).toContain('id="advisor-settings-form"');
     expect(html).toContain('Model connection');
-    expect(html).toContain('Choose a connection');
+    expect(html).toContain('id="settings-advisor-provider"');
+    expect(html).toContain('role="combobox"');
     expect(html).toContain('Local Model');
     expect(html).not.toContain('Advisor Model');
     expect(html).toContain('Start Model');

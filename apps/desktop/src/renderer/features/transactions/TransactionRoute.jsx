@@ -5,7 +5,7 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
-import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { ImportPreviewModal } from '../import-export/ImportPreviewModal.jsx';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
@@ -15,6 +15,12 @@ import { FilterSidePanel, InlineFilterToolbar } from './TransactionFilters.jsx';
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
 }
+
+const PAGE_SIZE_OPTIONS = Object.freeze([
+  { value: '12', label: '12' },
+  { value: '25', label: '25' },
+  { value: '50', label: '50' }
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -241,18 +247,16 @@ function Pagination({ pagination }) {
         </button>
       ) : null}
       <span className="table-page-copy">{data.copy}</span>
-      <label className="rows-per-page">
+      <span className="rows-per-page">
         Rows per page:
-        <select
+        <CavalrySelect
           aria-label="Transaction rows per page"
+          options={PAGE_SIZE_OPTIONS}
+          showLeadingIcon={false}
           value={String(data.pageSize || 12)}
           {...actions.change('set-ledger-page-size', {}, { valueType: 'number' })}
-        >
-          <option value="12">12</option>
-          <option value="25">25</option>
-          <option value="50">50</option>
-        </select>
-      </label>
+        />
+      </span>
       <button
         className="btn"
         type="button"
@@ -352,17 +356,14 @@ function LegacyComposerModal({ modal }) {
           <div className="field-grid">
             <div className="field">
               <label htmlFor="transaction-template">Type</label>
-              <select
+              <CavalrySelect
+                aria-label="Type"
                 id="transaction-template"
+                options={asArray(options.templates)}
+                showLeadingIcon={false}
                 value={draft.template || 'expense_paid'}
                 {...fieldBinding('template')}
-              >
-                {asArray(options.templates).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="field">
               <label htmlFor="transaction-date">Date</label>
@@ -394,17 +395,14 @@ function LegacyComposerModal({ modal }) {
             </div>
             <div className="field">
               <label htmlFor="transaction-currency">Currency</label>
-              <select
+              <CavalrySelect
+                aria-label="Currency"
                 id="transaction-currency"
+                options={asArray(options.currencies)}
+                showLeadingIcon={false}
                 value={draft.currency || 'PHP'}
                 {...fieldBinding('currency')}
-              >
-                {asArray(options.currencies).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="field">
               <label htmlFor="transaction-category">Category</label>
@@ -421,34 +419,28 @@ function LegacyComposerModal({ modal }) {
             </div>
             <div className="field">
               <label htmlFor="transaction-primary-account">Primary account</label>
-              <select
+              <CavalrySelect
+                aria-label="Primary account"
                 id="transaction-primary-account"
+                leadingIcon="account_balance_wallet"
+                options={accountSelectOptions(options.accounts)}
+                placeholder="Choose account"
                 value={draft.primaryAccountId || ''}
                 {...fieldBinding('primaryAccountId')}
-              >
-                <option value="">Choose account</option>
-                {asArray(options.accounts).map((option) => (
-                  <option disabled={option.disabled} key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             {needsSecondary ? (
               <div className="field">
                 <label htmlFor="transaction-secondary-account">Secondary account</label>
-                <select
+                <CavalrySelect
+                  aria-label="Secondary account"
                   id="transaction-secondary-account"
+                  leadingIcon="account_balance_wallet"
+                  options={accountSelectOptions(options.accounts)}
+                  placeholder="Choose account"
                   value={draft.secondaryAccountId || ''}
                   {...fieldBinding('secondaryAccountId')}
-                >
-                  <option value="">Choose account</option>
-                  {asArray(options.accounts).map((option) => (
-                    <option disabled={option.disabled} key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             ) : null}
             {showFxRate ? (
@@ -585,6 +577,21 @@ function TransactionTypeStep({ modal }) {
   );
 }
 
+// Accounts read as name + type/balance detail, grouped the way the account
+// register groups them, so the menu matches the rest of the app.
+function accountSelectOptions(options, disabledOptionId = '') {
+  return asArray(options).map((option) => ({
+    value: option.value,
+    label: option.name || option.label,
+    icon: option.icon || 'account_balance_wallet',
+    group: option.groupLabel || '',
+    meta: option.hasCurrencyIntegrityIssue
+      ? 'Repair currency first'
+      : [option.contextLabel, option.balanceLabel].filter(Boolean).join(' · '),
+    disabled: option.disabled || option.value === disabledOptionId
+  }));
+}
+
 function TransactionAccountField({
   field,
   id,
@@ -600,29 +607,15 @@ function TransactionAccountField({
     <div className="field transaction-account-field">
       <label htmlFor={id}>{label}</label>
       <div className="transaction-account-control">
-        <span className="transaction-create-account-mark">
-          <InstitutionMark
-            fallbackIcon={selected?.icon || 'account_balance_wallet'}
-            institutionId={selected?.institutionId}
-          />
-        </span>
-        <select
+        <CavalrySelect
+          aria-label={label}
           id={id}
+          leadingIcon="account_balance_wallet"
+          options={accountSelectOptions(options, disabledOptionId)}
+          placeholder={placeholder}
           value={value || ''}
           {...actions.change('transaction-composer-change', { field })}
-        >
-          <option value="">{placeholder}</option>
-          {asArray(options).map((option) => (
-            <option
-              disabled={option.disabled || option.value === disabledOptionId}
-              key={option.value}
-              value={option.value}
-            >
-              {option.name || option.label} · {option.contextLabel} — {option.balanceLabel}
-              {option.hasCurrencyIntegrityIssue ? ' · Repair currency first' : ''}
-            </option>
-          ))}
-        </select>
+        />
         {selected ? (
           <small>
             {selected.contextLabel} · {selected.balanceLabel}
@@ -695,17 +688,14 @@ function TransactionDetailsStep({ modal }) {
           {data.showCurrency ? (
             <div className="field transaction-currency-field">
               <label htmlFor="transaction-currency">Currency</label>
-              <select
+              <CavalrySelect
+                aria-label="Currency"
                 id="transaction-currency"
+                options={asArray(options.currencies)}
+                showLeadingIcon={false}
                 value={draft.currency || 'PHP'}
                 {...fieldBinding('currency')}
-              >
-                {asArray(options.currencies).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           ) : null}
         </div>
@@ -945,16 +935,16 @@ function DetailSidePanel({ modal }) {
           <span className="transaction-detail-mark">
             <Icon name={data.icon || 'receipt_long'} />
           </span>
-          <div>
+          <div className="transaction-detail-heading-copy">
             <div className="transaction-detail-title-row">
-              <h2>{data.title}</h2>
+              <h2 title={data.title}>{data.title}</h2>
             </div>
             <small>{data.displayDate || data.date}</small>
           </div>
         </div>
         <button
           aria-label="Close transaction detail"
-          className="btn btn-icon"
+          className="btn btn-icon transaction-detail-close"
           type="button"
           {...actions.action('close-modal')}
         >

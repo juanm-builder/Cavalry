@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountRoute } from '../../src/renderer/features/accounts/AccountRoute.jsx';
+import { chooseOption } from './select-helpers.js';
 
 function makeWorkbook() {
   return {
@@ -226,7 +227,7 @@ describe('account management interactions', () => {
     await user.click(
       within(dialog).getByRole('option', { name: /BPI.*Bank of the Philippine Islands/ })
     );
-    await user.selectOptions(within(dialog).getByLabelText('Currency'), 'USD');
+    await chooseOption(user, within(dialog).getByLabelText('Currency'), 'USD');
     await user.click(within(dialog).getByRole('button', { name: 'Save Account' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('USD to PHP rate');

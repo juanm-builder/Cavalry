@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import cavalryMark from '../assets/cavalry-mark.png';
 import { AppleOAuthButton } from '../shared/AppleOAuthButton.jsx';
 import { CavalryIcon } from '../shared/CavalryIcon.jsx';
+import { CavalrySelect } from '../shared/CavalrySelect.jsx';
 import { formatUiDateTime } from '../shared/date-format.js';
 
 export const WORKBOOK_STARTUP_STATUS = Object.freeze({
@@ -374,20 +375,16 @@ export function WorkbookLandingScreen({
                 <span aria-hidden="true" className="landing-currency-badge">
                   {CURRENCY_SYMBOLS[currency] || String(currency).charAt(0)}
                 </span>
-                <select
+                <CavalrySelect
+                  aria-label="Base Currency"
                   disabled={busy}
                   id="workbook-currency"
                   name="currency"
                   onChange={(event) => setCurrency(event.target.value)}
+                  options={currencies.map((option) => ({ value: option, label: option }))}
+                  showLeadingIcon={false}
                   value={currency}
-                >
-                  {currencies.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                <CavalryIcon className="landing-select-chevron" name="expand_more" />
+                />
               </div>
             </div>
           </div>

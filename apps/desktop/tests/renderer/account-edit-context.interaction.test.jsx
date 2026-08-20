@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountRoute } from '../../src/renderer/features/accounts/AccountRoute.jsx';
+import { selectedOptionLabel } from './select-helpers.js';
 
 const ACCOUNT_CONTEXTS = [
   {
@@ -54,6 +55,7 @@ const ACCOUNT_CONTEXTS = [
     nameLabel: 'Investment name',
     detailLabel: 'Investment type',
     detailValue: 'brokerage',
+    detailLabelText: 'Brokerage',
     balanceLabel: 'Current market value',
     balanceCopy: '₱15,000.00'
   },
@@ -64,6 +66,7 @@ const ACCOUNT_CONTEXTS = [
     nameLabel: 'Liability name',
     detailLabel: 'Liability type',
     detailValue: 'auto_loan',
+    detailLabelText: 'Auto Loan',
     balanceLabel: 'Outstanding balance',
     balanceCopy: '₱8,000.00'
   }
@@ -309,7 +312,13 @@ describe('account-aware editing', () => {
       expect(within(dialog).getByRole('heading', { name: context.title })).not.toBeNull();
       expect(within(dialog).getByText(context.badge, { selector: 'strong' })).not.toBeNull();
       expect(within(dialog).getByLabelText(context.nameLabel).value).toBe(accountBefore.name);
-      expect(within(dialog).getByLabelText(context.detailLabel).value).toBe(context.detailValue);
+      if (context.detailLabelText) {
+        expect(selectedOptionLabel(within(dialog).getByLabelText(context.detailLabel))).toBe(
+          context.detailLabelText
+        );
+      } else {
+        expect(within(dialog).getByLabelText(context.detailLabel).value).toBe(context.detailValue);
+      }
       expect(within(dialog).getByRole('group', { name: 'Account icon / logo' })).not.toBeNull();
 
       const summary = within(dialog).getByRole('region', { name: 'Account summary' });

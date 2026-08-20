@@ -1,3 +1,15 @@
+export const RULE_OPERATOR_OPTIONS = Object.freeze([
+  { value: 'contains', label: 'Description contains' },
+  { value: 'starts_with', label: 'Description starts with' },
+  { value: 'equals', label: 'Description equals' }
+]);
+
+export const CATEGORY_GROUP_BY_OPTIONS = Object.freeze([
+  { value: 'type', label: 'Type' },
+  { value: 'spending', label: 'Spending' },
+  { value: 'name', label: 'Name' }
+]);
+
 export const CATEGORY_ICONS = Object.freeze([
   'category',
   'payments',

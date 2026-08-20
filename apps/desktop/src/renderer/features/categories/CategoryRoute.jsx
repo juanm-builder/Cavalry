@@ -8,7 +8,13 @@ import {
   CATEGORY_ACTIONS,
   executeCategoryCommand
 } from './category-controller.js';
-import { CATEGORY_COLORS, CATEGORY_ICONS } from './category-options.js';
+import {
+  CATEGORY_COLORS,
+  CATEGORY_GROUP_BY_OPTIONS,
+  CATEGORY_ICONS,
+  RULE_OPERATOR_OPTIONS
+} from './category-options.js';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { asArray, normalizeCurrency } from './category-route-utils.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
@@ -507,18 +513,18 @@ function CategoryFormModal({
           <label className="category-field-label" htmlFor="category-group">
             Group <span>(optional)</span>
           </label>
-          <select
+          <CavalrySelect
+            aria-label="Group"
             id="category-group"
             onChange={(event) => setPlannerBucketId(event.target.value)}
+            options={[
+              { value: '', label: 'Unassigned' },
+              ...plannerBuckets.map((bucket) => ({ value: bucket.id, label: bucket.name }))
+            ]}
+            placeholder="Unassigned"
+            showLeadingIcon={false}
             value={plannerBucketId}
-          >
-            <option value="">Unassigned</option>
-            {plannerBuckets.map((bucket) => (
-              <option key={bucket.id} value={bucket.id}>
-                {bucket.name}
-              </option>
-            ))}
-          </select>
+          />
 
           <label className="category-field-label" htmlFor="category-description">
             Description <span>(optional)</span>
@@ -543,15 +549,13 @@ function CategoryFormModal({
           <div className="category-rule-list">
             {rules.map((rule) => (
               <div className="category-rule-row" key={rule.id}>
-                <select
+                <CavalrySelect
                   aria-label="Rule condition"
                   onChange={(event) => updateRule(rule.id, { operator: event.target.value })}
+                  options={RULE_OPERATOR_OPTIONS}
+                  showLeadingIcon={false}
                   value={rule.operator}
-                >
-                  <option value="contains">Description contains</option>
-                  <option value="starts_with">Description starts with</option>
-                  <option value="equals">Description equals</option>
-                </select>
+                />
                 <input
                   aria-label="Rule value"
                   onChange={(event) => updateRule(rule.id, { value: event.target.value })}
@@ -951,16 +955,13 @@ function CategoryRouteController({
         <div className="categories-header-actions">
           <label className="categories-group-select">
             <span>Group by</span>
-            <select
+            <CavalrySelect
               aria-label="Group categories by"
               onChange={(event) => setGroupBy(event.target.value)}
+              options={CATEGORY_GROUP_BY_OPTIONS}
+              showLeadingIcon={false}
               value={groupBy}
-            >
-              <option value="type">Type</option>
-              <option value="spending">Spending</option>
-              <option value="name">Name</option>
-            </select>
-            <Icon name="expand_more" />
+            />
           </label>
           <div className="categories-view-toggle" aria-label="Category view" role="group">
             <button

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
-import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
+import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
 import { FinancialValueInput, formatFinancialValue } from '../../shared/FinancialValueInput.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
@@ -165,18 +166,17 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
               </div>
               <div className="field">
                 <label>{isSubscription ? 'Billing Cycle *' : 'Frequency *'}</label>
-                <select
+                <CavalrySelect
                   aria-label="Recurring frequency"
                   name="frequency"
                   onChange={(event) => update('frequency', event.currentTarget.value)}
+                  options={asArray(options.frequencies).map((frequency) => ({
+                    value: frequency,
+                    label: frequency
+                  }))}
+                  showLeadingIcon={false}
                   value={values.frequency || 'Monthly'}
-                >
-                  {asArray(options.frequencies).map((frequency) => (
-                    <option key={frequency} value={frequency}>
-                      {frequency}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="field">
                 <label>Category *</label>
@@ -194,19 +194,22 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
               </div>
               <div className="field">
                 <label>Payment Method</label>
-                <select
+                <CavalrySelect
                   aria-label="Recurring payment account"
+                  leadingIcon="account_balance_wallet"
                   name="accountId"
                   onChange={(event) => update('accountId', event.currentTarget.value)}
+                  options={[
+                    { value: '', label: 'Not set', icon: 'select_all' },
+                    ...asArray(options.accounts).map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                      icon: option.icon || 'account_balance_wallet'
+                    }))
+                  ]}
+                  placeholder="Not set"
                   value={values.accountId || ''}
-                >
-                  <option value="">Not set</option>
-                  {asArray(options.accounts).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               {isSubscription ? (
                 <label className="bill-auto-renew-toggle bill-form-full">
@@ -237,7 +240,7 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
             <aside className="bill-preview-panel">
               <span className="tag">Preview</span>
               <div className="bill-preview-row">
-                <CavalryIcon
+                <CavalryIconDisc
                   className={`mini-icon ${isSubscription ? 'info' : 'warn'}`}
                   name={isSubscription ? 'sync' : 'receipt_long'}
                 />
