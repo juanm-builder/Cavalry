@@ -19,6 +19,16 @@ const {
 const EXPECTED_ADVISOR_CHANNELS = [
   'cavalry-advisor:get-settings',
   'cavalry-advisor:save-settings',
+  'cavalry-advisor:get-memory',
+  'cavalry-advisor:refresh-memory',
+  'cavalry-advisor:save-memory',
+  'cavalry-advisor:clear-memory',
+  'cavalry-advisor:create-memory-item',
+  'cavalry-advisor:update-memory-item',
+  'cavalry-advisor:delete-memory-item',
+  'cavalry-advisor:open-memory-file',
+  'cavalry-advisor:open-memory-folder',
+  'cavalry-advisor:reveal-memory',
   'cavalry-advisor:get-server-status',
   'cavalry-advisor:start-server',
   'cavalry-advisor:stop-server',
@@ -975,6 +985,95 @@ describe('Advisor runtime controller', () => {
     expect([...fs.files.keys()]).toEqual([
       '/tmp/cavalry-advisor-controller-test/cavalry-advisor-settings.json'
     ]);
+  });
+
+  it('rereads memory.md for Companion requests without injecting it into unrelated model work', async () => {
+    const { controller, fs } = createController();
+    const memoryPath = '/tmp/cavalry-advisor-controller-test/memory.md';
+    await controller.saveAdvisorMemory({
+      memoryEnabled: true,
+      allowAutomaticMemory: false,
+      content: 'The first local preference.'
+    });
+
+    const unrelatedPayload = {
+      messages: [{ role: 'user', content: 'Parse these notes.' }]
+    };
+    await expect(
+      controller.addAdvisorMemoryContext(unrelatedPayload, 'chat_completions')
+    ).resolves.toEqual(unrelatedPayload);
+
+    fs.files.set(memoryPath, 'This was edited outside Cavalry.');
+    const request = {
+      connection: { provider: 'custom' },
+      messages: [{ role: 'user', content: 'What was edited outside Cavalry?' }]
+    };
+    await expect(controller.addAdvisorMemoryContext(request, 'chat_completions')).resolves.toEqual(
+      request
+    );
+
+    const external = await controller.loadAdvisorMemory();
+    expect(external).toMatchObject({
+      content: 'This was edited outside Cavalry.',
+      memoryEnabled: false
+    });
+    await controller.saveAdvisorMemory({
+      expectedRevision: external.revision,
+      content: external.content,
+      memoryEnabled: true,
+      allowAutomaticMemory: false
+    });
+    const companionPayload = await controller.addAdvisorMemoryContext(request, 'chat_completions');
+    expect(companionPayload.messages[0]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining('This was edited outside Cavalry.')
+    });
+  });
+
+  it('removes host-only memory metadata when the local memory file cannot be loaded', async () => {
+    const fs = createMemoryFs();
+    fs.files.set(
+      '/tmp/cavalry-advisor-controller-test/memory.md',
+      'oversized private memory\n'.repeat(4_000)
+    );
+    const { controller } = createController({ fs });
+    const request = {
+      connection: { provider: 'openai' },
+      _cavalryMemoryQuery: 'Review my emergency fund.',
+      input: [{ role: 'user', content: 'How am I doing?' }]
+    };
+
+    await expect(controller.addAdvisorMemoryContext(request, 'responses')).resolves.toEqual({
+      connection: { provider: 'openai' },
+      input: [{ role: 'user', content: 'How am I doing?' }]
+    });
+    expect(request).toHaveProperty('_cavalryMemoryQuery', 'Review my emergency fund.');
+  });
+
+  it('can open an oversized memory file for manual repair without parsing or overwriting it', async () => {
+    const fs = createMemoryFs();
+    const memoryPath = '/tmp/cavalry-advisor-controller-test/memory.md';
+    const oversized = 'private external memory\n'.repeat(4_000);
+    fs.files.set(memoryPath, oversized);
+    const shell = {
+      openPath: vi.fn(async () => ''),
+      showItemInFolder: vi.fn()
+    };
+    const { controller } = createController({ fs, shell });
+
+    await expect(controller.loadAdvisorMemory()).rejects.toMatchObject({
+      code: 'ADVISOR_MEMORY_TOO_LARGE'
+    });
+    await expect(controller.openAdvisorMemoryFile()).resolves.toMatchObject({
+      path: memoryPath,
+      fileName: 'memory.md'
+    });
+    await expect(controller.openAdvisorMemoryFolder()).resolves.toMatchObject({
+      path: memoryPath
+    });
+    expect(shell.openPath).toHaveBeenCalledWith(memoryPath);
+    expect(shell.showItemInFolder).toHaveBeenCalledWith(memoryPath);
+    expect(fs.files.get(memoryPath)).toBe(oversized);
   });
 
   it('does not apply GGUF validation to OpenAI settings', async () => {

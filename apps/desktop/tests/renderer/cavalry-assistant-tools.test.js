@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  CAVALRY_ASSISTANT_TOOLS,
   executeCavalryAssistantTool,
+  getCavalryAssistantCapabilityManifest,
   getCavalryAssistantToolDefinitions
 } from '../../src/renderer/features/assistant/cavalry-assistant-tools.js';
 import {
   commitCommand,
   transactionArguments
 } from '../../src/renderer/features/assistant/cavalry-assistant-tool-support.js';
+import {
+  confirmationReplayArguments,
+  pendingConfirmationFromResult
+} from '../../src/renderer/features/assistant/cavalry-assistant-confirmations.js';
 
 function makeWorkbook() {
   return {
@@ -205,7 +209,16 @@ function makeHarness(initialWorkbook = makeWorkbook()) {
   let sequence = 0;
   const commitCommandResult = vi.fn((result) => {
     workbook = result.workbook;
-    return result;
+    return {
+      ...result,
+      commitStatus: 'committed',
+      verificationStatus: 'verified',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-07-10T12:00:00.000Z',
+        durable: true
+      }
+    };
   });
   const navigate = vi.fn();
   const saveWorkbook = vi.fn(() => ({ ok: true, savedAt: '2026-07-10T12:00:00.000Z' }));
@@ -281,6 +294,175 @@ describe('Cavalry assistant tool catalog', () => {
       ])
     });
     expect(commitCommandResult).not.toHaveBeenCalled();
+  });
+
+  it('carries the durable adapter commit and verification receipt into the tool envelope', async () => {
+    const workbook = makeWorkbook();
+    const nextWorkbook = structuredClone(workbook);
+    nextWorkbook.name = 'Durably committed';
+    const commitCommandResult = vi.fn(async () => ({
+      commitStatus: 'committed',
+      verificationStatus: 'verified',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-08-21T06:00:00.000Z',
+        durable: true
+      }
+    }));
+
+    const result = await commitCommand(
+      {
+        toolName: 'test_mutation',
+        toolCallId: 'durable-call',
+        workbook,
+        context: { commitCommandResult }
+      },
+      { ok: true, workbook: nextWorkbook, events: [], warnings: [], errors: [] },
+      'test_mutation'
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      commitStatus: 'committed',
+      verificationStatus: 'verified',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-08-21T06:00:00.000Z',
+        durable: true
+      }
+    });
+  });
+
+  it('fails closed when a changed result has no durable commit receipt', async () => {
+    const workbook = makeWorkbook();
+    const nextWorkbook = structuredClone(workbook);
+    nextWorkbook.name = 'Unknown persistence state';
+    const commitCommandResult = vi.fn(async () => ({ workbook: nextWorkbook }));
+
+    const result = await commitCommand(
+      {
+        toolName: 'test_mutation',
+        toolCallId: 'unproven-call',
+        workbook,
+        context: { commitCommandResult }
+      },
+      { ok: true, workbook: nextWorkbook, events: [], warnings: [], errors: [] },
+      'test_mutation'
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'commit_unconfirmed',
+      changed: true,
+      commitStatus: 'unknown',
+      verificationStatus: 'unknown',
+      errors: [expect.objectContaining({ code: 'durable_commit_receipt_required' })]
+    });
+  });
+
+  it('reports a saved workbook as committed but unverified when post-save reconciliation fails', async () => {
+    const workbook = makeWorkbook();
+    const nextWorkbook = structuredClone(workbook);
+    nextWorkbook.name = 'Saved before reconciliation failed';
+    const reconciliationError = new Error('The updated view could not be reconciled.');
+    reconciliationError.code = 'assistant_post_commit_reconciliation_failed';
+    reconciliationError.commitStatus = 'committed';
+    reconciliationError.verificationStatus = 'failed';
+    reconciliationError.persistence = {
+      status: 'saved',
+      savedAt: '2026-08-21T06:00:00.000Z',
+      durable: true
+    };
+    const commitCommandResult = vi.fn(async () => {
+      throw reconciliationError;
+    });
+
+    const result = await commitCommand(
+      {
+        toolName: 'test_mutation',
+        toolCallId: 'saved-unverified-call',
+        workbook,
+        context: { commitCommandResult }
+      },
+      { ok: true, workbook: nextWorkbook, events: [], warnings: [], errors: [] },
+      'test_mutation',
+      (candidate) => ({ record: { id: candidate.id, name: candidate.name } })
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'verification_failed',
+      changed: true,
+      commitStatus: 'committed',
+      verificationStatus: 'failed',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-08-21T06:00:00.000Z',
+        durable: true
+      },
+      data: {
+        record: {
+          id: 'assistant-tools-workbook',
+          name: 'Saved before reconciliation failed'
+        }
+      },
+      errors: [expect.objectContaining({ code: 'assistant_post_commit_reconciliation_failed' })]
+    });
+  });
+
+  it('never reports rollback or no change when committed-workbook projection fails after save', async () => {
+    const workbook = makeWorkbook();
+    const nextWorkbook = structuredClone(workbook);
+    nextWorkbook.name = 'Candidate workbook';
+    const committedWorkbook = structuredClone(nextWorkbook);
+    committedWorkbook.name = 'Persisted workbook';
+    const commitCommandResult = vi.fn(async () => ({
+      workbook: committedWorkbook,
+      commitStatus: 'committed',
+      verificationStatus: 'verified',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-08-21T06:00:00.000Z',
+        durable: true
+      }
+    }));
+    const dataFactory = vi.fn((candidate) => {
+      if (candidate.name === 'Persisted workbook') {
+        throw new Error('Persisted projection failed.');
+      }
+      return { workbookName: candidate.name };
+    });
+
+    const result = await commitCommand(
+      {
+        toolName: 'test_mutation',
+        toolCallId: 'saved-projection-call',
+        workbook,
+        context: { commitCommandResult }
+      },
+      { ok: true, workbook: nextWorkbook, events: [], warnings: [], errors: [] },
+      'test_mutation',
+      dataFactory
+    );
+
+    expect(commitCommandResult).toHaveBeenCalledOnce();
+    expect(dataFactory).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'verification_failed',
+      changed: true,
+      commitStatus: 'committed',
+      verificationStatus: 'failed',
+      persistence: {
+        status: 'saved',
+        savedAt: '2026-08-21T06:00:00.000Z',
+        durable: true
+      },
+      errors: [expect.objectContaining({ code: 'assistant_post_commit_projection_failed' })]
+    });
+    expect(result).not.toMatchObject({ changed: false });
+    expect(result.commitStatus).not.toBe('rolled_back');
   });
 
   it('pauses a currency-converting command until the user explicitly approves it', async () => {
@@ -392,37 +574,11 @@ describe('Cavalry assistant tool catalog', () => {
   it('exports Responses-style function definitions, including explicit confirmations', () => {
     const definitions = getCavalryAssistantToolDefinitions();
     const names = definitions.map((definition) => definition.name);
-
-    expect(definitions).toEqual(CAVALRY_ASSISTANT_TOOLS);
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'read_workspace_context',
-        'read_workspace_summary',
-        'search_transactions',
-        'list_accounts',
-        'list_categories',
-        'read_budgets',
-        'list_recurring_bills',
-        'analyze_recurring_expenses',
-        'list_counterparties',
-        'create_transaction',
-        'create_refund',
-        'search_refunds',
-        'update_transaction',
-        'delete_transaction',
-        'create_account',
-        'update_account',
-        'update_category',
-        'auto_assign_category_icons',
-        'set_budget',
-        'create_bill',
-        'pay_bill',
-        'create_counterparty',
-        'set_exchange_rate',
-        'navigate_app',
-        'save_workbook'
-      ])
+    const manifestNames = getCavalryAssistantCapabilityManifest().flatMap(
+      (capability) => capability.tools
     );
+
+    expect([...names].sort()).toEqual([...manifestNames].sort());
     definitions.forEach((definition) => {
       expect(definition).toMatchObject({
         type: 'function',
@@ -432,9 +588,7 @@ describe('Cavalry assistant tool catalog', () => {
     });
     const destructive = definitions.find((definition) => definition.name === 'delete_transaction');
     expect(destructive.description).toMatch(/confirmation is required/i);
-    expect(destructive.parameters.properties.confirmed.description).toMatch(
-      /user explicitly confirms/i
-    );
+    expect(destructive.parameters.properties).not.toHaveProperty('confirmed');
     const navigation = definitions.find((definition) => definition.name === 'navigate_app');
     expect(navigation.parameters.properties.routeId.enum).not.toContain('advisor');
     expect(navigation.parameters.properties.routeId.enum).not.toContain('ai-drafts');
@@ -459,17 +613,62 @@ describe('Cavalry assistant tool catalog', () => {
     expect(transactionCreate.parameters.properties.date.description).toMatch(
       /optional.*current date/i
     );
-    expect(transactionCreate.parameters.properties.allowCurrencyConversion.description).toMatch(
-      /user explicitly confirms/i
-    );
+    expect(transactionCreate.parameters.properties).not.toHaveProperty('allowCurrencyConversion');
+    expect(transactionCreate.parameters.properties).not.toHaveProperty('allowDuplicate');
     expect(transactionCreate.parameters.properties.template.enum).toContain('merchant_refund');
     const createRefund = definitions.find((definition) => definition.name === 'create_refund');
     expect(createRefund).toMatchObject({
       cavalry: {
-        capabilityId: 'transactions.refunds',
+        capabilityId: 'transactions.ledger',
         approvalFields: ['allowDuplicate', 'allowCurrencyConversion']
       },
       parameters: { required: ['amount', 'description'] }
+    });
+    const replaceTransaction = definitions.find(
+      (definition) => definition.name === 'replace_transaction'
+    );
+    expect(replaceTransaction.parameters.properties).not.toHaveProperty('confirmed');
+    expect(replaceTransaction.parameters.properties).not.toHaveProperty('operationKey');
+    expect(replaceTransaction.parameters.properties).not.toHaveProperty('proposalFingerprint');
+    expect(replaceTransaction.parameters.properties).not.toHaveProperty('targetFingerprint');
+    const replacementProperties =
+      replaceTransaction.parameters.properties.replacements.items.properties;
+    expect(replacementProperties).not.toHaveProperty('transactionId');
+    expect(replacementProperties).not.toHaveProperty('recurringItemId');
+    expect(replacementProperties).not.toHaveProperty('allowDuplicate');
+    expect(replacementProperties).not.toHaveProperty('allowCurrencyConversion');
+    expect(replaceTransaction.cavalry).toMatchObject({
+      capabilityId: 'transactions.ledger',
+      access: 'write',
+      entityRequirements: [
+        { type: 'transaction', role: 'target', required: true, ambiguity: 'clarify' },
+        { type: 'account', role: 'primary', required: true, ambiguity: 'clarify' },
+        { type: 'account', role: 'secondary', required: false, ambiguity: 'clarify' }
+      ],
+      confirmation: {
+        mode: 'always',
+        fields: ['confirmed', 'allowDuplicate', 'allowCurrencyConversion']
+      },
+      atomicity: 'single-workbook-commit',
+      idempotency: 'operation-key',
+      version: '2.1.0',
+      compatibility: { minimumAppVersion: '2.1.0', workbookSchema: '2' }
+    });
+    const setBudget = definitions.find((definition) => definition.name === 'set_budget');
+    expect(setBudget.parameters.required).toEqual(['planned', 'operation']);
+    expect(setBudget.parameters.properties.operation.description).toMatch(/required operation/i);
+    expect(setBudget.cavalry).toMatchObject({
+      capabilityId: 'budgets.planning',
+      access: 'write',
+      entityRequirements: [
+        { type: 'category', role: 'budget-category', required: true, ambiguity: 'clarify' },
+        { type: 'budget-period', role: 'sheet-or-month', required: true, ambiguity: 'clarify' }
+      ],
+      confirmation: { mode: 'none' },
+      atomicity: 'single-workbook-commit',
+      idempotency: 'stable-category-sheet',
+      version: '2.1.0',
+      compatibility: { minimumAppVersion: '2.1.0', workbookSchema: '2' }
     });
   });
 });
@@ -1148,7 +1347,12 @@ describe('Cavalry assistant mutations', () => {
           template: 'expense_paid',
           description: 'Groceries',
           categoryId: 'food',
-          counterpartyId: 'market'
+          counterpartyId: 'market',
+          primaryAccount: { id: 'cash', name: 'Cash', role: 'funding' },
+          accounts: [{ id: 'cash', name: 'Cash', role: 'funding' }],
+          lines: expect.arrayContaining([
+            expect.objectContaining({ accountId: 'cash', accountName: 'Cash' })
+          ])
         },
         inferredFields: {
           date: { value: '2026-07-10', reason: 'current_date_default' },
@@ -1721,6 +1925,44 @@ describe('Cavalry assistant mutations', () => {
     expect(harness.workbook.transactions).toHaveLength(1);
   });
 
+  it('corrects a paid-expense tool call when its explicit account is a credit card', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_paid',
+          amount: 350,
+          description: 'Groceries',
+          category: 'Food',
+          primaryAccount: 'Credit Card'
+        }
+      },
+      {
+        ...harness.context,
+        question: 'Record my 350 groceries purchase'
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          template: 'expense_charged',
+          categoryId: 'food'
+        }
+      }
+    });
+    expect(
+      harness.workbook.transactions
+        .filter((transaction) => transaction.description === 'Groceries')
+        .at(-1)
+        ?.lines.some((line) => line.accountId === 'card' && line.direction === 'credit')
+    ).toBe(true);
+  });
+
   it('uses the grammatical funding account when multiple asset accounts are mentioned', async () => {
     const harness = makeHarness();
 
@@ -1775,6 +2017,156 @@ describe('Cavalry assistant mutations', () => {
       status: 'validation_failed',
       errors: expect.arrayContaining([expect.objectContaining({ field: 'primaryAccountId' })])
     });
+  });
+
+  it('stops on an ambiguous explicit account instead of honoring a conflicting model ID', async () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'cash-secondary',
+      name: 'Cash',
+      group: 'asset',
+      subtype: 'cash',
+      currency: 'PHP',
+      isActive: true
+    });
+    const harness = makeHarness(workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        id: 'ambiguous-cash-action',
+        name: 'create_transaction',
+        arguments: {
+          amount: 100,
+          description: 'Lunch',
+          category: 'Food',
+          primaryAccountId: 'bank'
+        }
+      },
+      { ...harness.context, question: 'Pay 100 for lunch from Cash' }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'ambiguous_reference',
+      changed: false,
+      errors: [expect.objectContaining({ code: 'ambiguous_reference', field: 'primaryAccountId' })]
+    });
+    expect(harness.commitCommandResult).not.toHaveBeenCalled();
+    expect(harness.workbook.transactions).toHaveLength(1);
+  });
+
+  it('stops on an unknown explicitly named card instead of honoring a conflicting model ID', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        id: 'unknown-card-action',
+        name: 'create_transaction',
+        arguments: {
+          template: 'expense_charged',
+          amount: 500,
+          description: 'Dinner',
+          category: 'Food',
+          primaryAccountId: 'card'
+        }
+      },
+      { ...harness.context, question: 'Charge 500 to Moonstone for dinner' }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'validation_failed',
+      changed: false,
+      errors: [
+        expect.objectContaining({
+          code: 'reference_not_found',
+          field: 'primaryAccountId',
+          message: expect.stringContaining('Moonstone')
+        })
+      ]
+    });
+    expect(harness.commitCommandResult).not.toHaveBeenCalled();
+    expect(harness.workbook.transactions).toHaveLength(1);
+  });
+
+  it('never substitutes model IDs for unknown explicit refund, income, transfer, or debt destinations', async () => {
+    const cases = [
+      {
+        id: 'unknown-refund-destination',
+        arguments: {
+          template: 'merchant_refund',
+          amount: 500,
+          description: 'Merchant refund',
+          category: 'Food',
+          primaryAccountId: 'bank'
+        },
+        question: 'Refund 500 to Moonstone',
+        field: 'primaryAccountId'
+      },
+      {
+        id: 'unknown-income-destination',
+        arguments: {
+          template: 'income_received',
+          amount: 500,
+          description: 'Salary',
+          category: 'Salary',
+          primaryAccountId: 'bank'
+        },
+        question: 'Salary paid into Moonstone',
+        field: 'primaryAccountId'
+      },
+      {
+        id: 'unknown-transfer-destination',
+        arguments: {
+          template: 'transfer',
+          amount: 500,
+          description: 'Transfer',
+          primaryAccountId: 'cash',
+          secondaryAccountId: 'bank'
+        },
+        question: 'Wire 500 from Cash into Moonstone',
+        field: 'secondaryAccountId'
+      },
+      {
+        id: 'unknown-debt-destination',
+        arguments: {
+          template: 'debt_payment',
+          amount: 500,
+          description: 'Debt payment',
+          primaryAccountId: 'bank',
+          secondaryAccountId: 'card'
+        },
+        question: 'Pay Moonstone from Main Bank',
+        field: 'secondaryAccountId'
+      }
+    ];
+
+    for (const testCase of cases) {
+      const harness = makeHarness();
+      const result = await executeCavalryAssistantTool(
+        {
+          id: testCase.id,
+          name: 'create_transaction',
+          arguments: testCase.arguments
+        },
+        { ...harness.context, question: testCase.question }
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        status: 'validation_failed',
+        changed: false,
+        errors: [
+          expect.objectContaining({
+            code: 'reference_not_found',
+            field: testCase.field,
+            message: expect.stringContaining('Moonstone')
+          })
+        ]
+      });
+      expect(harness.commitCommandResult).not.toHaveBeenCalled();
+      expect(harness.workbook.transactions).toHaveLength(1);
+    }
   });
 
   it('applies description rules only to the transaction description field', async () => {
@@ -2046,7 +2438,7 @@ describe('Cavalry assistant mutations', () => {
         name: 'create_transaction',
         arguments: { ...transactionArgumentsValue, allowCurrencyConversion: true }
       },
-      harness.context
+      { ...harness.context, approvedByUser: true }
     );
 
     expect(approved).toMatchObject({ ok: true, changed: true });
@@ -2108,6 +2500,45 @@ describe('Cavalry assistant mutations', () => {
     expect(harness.commitCommandResult.mock.calls[0][1]).toEqual({
       reason: 'assistant_transaction_created'
     });
+  });
+
+  it('moves one existing transaction to the explicitly named account without replacing its ID', async () => {
+    const harness = makeHarness();
+    harness.context.question = 'Move Groceries from Cash to Main Bank';
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'update_transaction',
+        arguments: {
+          transaction: 'Groceries',
+          primaryAccount: 'Cash'
+        }
+      },
+      harness.context
+    );
+    const moved = harness.workbook.transactions.find(
+      (transaction) => transaction.id === 'txn-groceries'
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        transaction: {
+          id: 'txn-groceries',
+          date: '2026-07-01',
+          amount: 100,
+          primaryAccount: { id: 'bank', name: 'Main Bank', role: 'funding' }
+        }
+      }
+    });
+    expect(harness.workbook.transactions).toHaveLength(1);
+    expect(moved.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: 'bank', direction: 'credit', amount: 100 })
+      ])
+    );
+    expect(moved.lines.some((line) => line.accountId === 'cash')).toBe(false);
   });
 
   it('resolves an account by name and preserves unspecified fields during partial update', async () => {
@@ -2178,7 +2609,6 @@ describe('Cavalry assistant mutations', () => {
       },
       harness.context
     );
-
     expect(updated).toMatchObject({
       ok: true,
       changed: true,
@@ -2259,7 +2689,12 @@ describe('Cavalry assistant mutations', () => {
       commitCommandResult: vi.fn((result) => {
         persistedWorkbook = structuredClone(result.workbook);
         persistedWorkbook.categories.find((category) => category.id === 'food').icon = 'restaurant';
-        return result;
+        return {
+          ...result,
+          commitStatus: 'committed',
+          verificationStatus: 'verified',
+          persistence: { status: 'saved', durable: true }
+        };
       })
     };
 
@@ -2322,14 +2757,24 @@ describe('Cavalry assistant mutations', () => {
     const existing = await executeCavalryAssistantTool(
       {
         name: 'set_budget',
-        arguments: { sheet: 'July', category: 'Food', planned: 6000 }
+        arguments: {
+          sheet: 'July',
+          category: 'Food',
+          planned: 6000,
+          operation: 'upsert'
+        }
       },
       harness.context
     );
     const created = await executeCavalryAssistantTool(
       {
         name: 'set_budget',
-        arguments: { month: '2026-08', category: 'Food', planned: 7000 }
+        arguments: {
+          month: '2026-08',
+          category: 'Food',
+          planned: 7000,
+          operation: 'create'
+        }
       },
       harness.context
     );
@@ -2337,16 +2782,34 @@ describe('Cavalry assistant mutations', () => {
     expect(existing).toMatchObject({
       ok: true,
       changed: true,
-      data: { budget: { sheetId: 'july', categoryId: 'food', planned: 6000 } }
+      data: {
+        budget: {
+          id: 'budget:july:food',
+          sheetId: 'july',
+          categoryId: 'food',
+          operation: 'updated',
+          planned: 6000
+        }
+      }
     });
     expect(harness.workbook.sheets.find((sheet) => sheet.id === 'july').budgets[0]).toMatchObject({
       planned: 6000,
       createdAt: '2026-07-10'
     });
+    expect(
+      harness.workbook.sheets.find((sheet) => sheet.id === 'july').budgets[0]
+    ).not.toHaveProperty('operation');
     expect(created).toMatchObject({
       ok: true,
       changed: true,
-      data: { budget: { categoryId: 'food', planned: 7000 } }
+      data: {
+        budget: {
+          id: expect.stringMatching(/^budget:.+:food$/),
+          categoryId: 'food',
+          operation: 'created',
+          planned: 7000
+        }
+      }
     });
     const august = harness.workbook.sheets.find((sheet) => sheet.monthIndex === 7);
     expect(august).toMatchObject({ monthKey: '2026-08' });
@@ -2355,6 +2818,375 @@ describe('Cavalry assistant mutations', () => {
       planned: 7000,
       createdAt: '2026-07-10'
     });
+  });
+
+  it('creates expected-income budgets through the feature-owned budget capability', async () => {
+    const harness = makeHarness();
+
+    const result = await executeCavalryAssistantTool(
+      {
+        name: 'set_budget',
+        arguments: {
+          sheet: 'July',
+          category: 'Salary',
+          planned: 30000,
+          operation: 'create',
+          note: 'Expected salary'
+        }
+      },
+      harness.context
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        budget: {
+          sheetId: 'july',
+          sheetName: 'July',
+          month: '2026-07',
+          id: 'budget:july:salary',
+          categoryId: 'salary',
+          categoryName: 'Salary',
+          categoryType: 'income',
+          operation: 'created',
+          amount: 30000,
+          planned: 30000,
+          currency: 'PHP',
+          note: 'Expected salary'
+        }
+      }
+    });
+    expect(harness.workbook.sheets[0].budgets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          categoryId: 'salary',
+          planned: 30000,
+          note: 'Expected salary'
+        })
+      ])
+    );
+  });
+
+  it('requires an explicit budget operation and period and rejects recurrence or period conflicts', async () => {
+    const cases = [
+      {
+        arguments: { sheet: 'July', category: 'Salary', planned: 30000 },
+        code: 'budget_operation_invalid',
+        field: 'operation'
+      },
+      {
+        arguments: { category: 'Salary', planned: 30000, operation: 'create' },
+        code: 'budget_period_required',
+        field: 'month'
+      },
+      {
+        arguments: {
+          sheet: 'July',
+          month: '2026-08',
+          category: 'Salary',
+          planned: 30000,
+          operation: 'create'
+        },
+        code: 'budget_period_conflict',
+        field: 'month'
+      },
+      {
+        arguments: {
+          sheet: 'July',
+          category: 'Salary',
+          planned: 30000,
+          operation: 'create',
+          recurrence: 'monthly'
+        },
+        code: 'budget_recurrence_unsupported',
+        field: 'recurrence'
+      }
+    ];
+
+    for (const testCase of cases) {
+      const harness = makeHarness();
+      const result = await executeCavalryAssistantTool(
+        { name: 'set_budget', arguments: testCase.arguments },
+        harness.context
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        changed: false,
+        errors: [expect.objectContaining({ code: testCase.code, field: testCase.field })]
+      });
+      expect(harness.commitCommandResult).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not overwrite direct budgets on create or shadow legacy expected-income plans', async () => {
+    const directHarness = makeHarness();
+    const directBefore = structuredClone(directHarness.workbook);
+    const direct = await executeCavalryAssistantTool(
+      {
+        name: 'set_budget',
+        arguments: {
+          sheet: 'July',
+          category: 'Food',
+          planned: 6000,
+          operation: 'create'
+        }
+      },
+      directHarness.context
+    );
+
+    expect(direct).toMatchObject({
+      ok: false,
+      changed: false,
+      errors: [expect.objectContaining({ code: 'budget.save.already-exists' })]
+    });
+    expect(directHarness.workbook).toEqual(directBefore);
+    expect(directHarness.commitCommandResult).not.toHaveBeenCalled();
+
+    const legacyWorkbook = makeWorkbook();
+    legacyWorkbook.sheets[0].budgetLineItems.push({
+      id: 'expected-salary-line',
+      categoryId: 'salary',
+      name: 'Expected salary',
+      planned: 28000,
+      currency: 'PHP',
+      isActive: true,
+      note: 'Keep the existing expected-income plan'
+    });
+    const legacyHarness = makeHarness(legacyWorkbook);
+    const legacyBefore = structuredClone(legacyHarness.workbook);
+
+    for (const operation of ['create', 'upsert']) {
+      const result = await executeCavalryAssistantTool(
+        {
+          name: 'set_budget',
+          arguments: {
+            sheet: 'July',
+            category: 'Salary',
+            planned: 30000,
+            operation
+          }
+        },
+        legacyHarness.context
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        changed: false,
+        errors: [expect.objectContaining({ code: 'budget.save.legacy-overlap' })]
+      });
+    }
+    expect(legacyHarness.workbook).toEqual(legacyBefore);
+    expect(legacyHarness.commitCommandResult).not.toHaveBeenCalled();
+  });
+
+  it('atomically replaces one transaction with multiple validated records', async () => {
+    const harness = makeHarness();
+    const replacements = [
+      {
+        template: 'expense_paid',
+        amount: 80,
+        date: '2026-07-01',
+        description: 'Groceries principal',
+        category: 'Food',
+        primaryAccount: 'Cash'
+      },
+      {
+        template: 'expense_paid',
+        amount: 20,
+        date: '2026-07-01',
+        description: 'Groceries fee',
+        category: 'Food',
+        primaryAccount: 'Cash'
+      }
+    ];
+
+    const blocked = await executeCavalryAssistantTool(
+      {
+        id: 'replace-groceries-operation',
+        name: 'replace_transaction',
+        arguments: { transaction: 'Groceries', replacements }
+      },
+      harness.context
+    );
+    expect(blocked).toMatchObject({
+      ok: false,
+      status: 'confirmation_required',
+      changed: false,
+      confirmation: {
+        field: 'confirmed',
+        proposal: {
+          operationKey: 'replace-groceries-operation',
+          targetTransactionId: 'txn-groceries',
+          fingerprint: expect.any(String),
+          targetFingerprint: expect.any(String),
+          replacements: [
+            expect.objectContaining({ primaryAccountId: 'cash' }),
+            expect.objectContaining({ primaryAccountId: 'cash' })
+          ],
+          arguments: {
+            transactionId: 'txn-groceries',
+            replacements: [
+              expect.objectContaining({ primaryAccountId: 'cash' }),
+              expect.objectContaining({ primaryAccountId: 'cash' })
+            ],
+            operationKey: 'replace-groceries-operation',
+            proposalFingerprint: expect.any(String),
+            targetFingerprint: expect.any(String)
+          }
+        }
+      },
+      data: {
+        preview: {
+          replacedTransaction: { id: 'txn-groceries' },
+          replacements: [
+            expect.objectContaining({
+              description: 'Groceries principal',
+              primaryAccount: { id: 'cash', name: 'Cash', role: 'funding' }
+            }),
+            expect.objectContaining({ description: 'Groceries fee' })
+          ],
+          atomic: true
+        }
+      }
+    });
+    expect(harness.workbook.transactions).toHaveLength(1);
+
+    const pending = pendingConfirmationFromResult({
+      toolResults: [
+        {
+          callId: 'replace-groceries-operation',
+          toolName: 'replace_transaction',
+          arguments: { transaction: 'Groceries', replacements },
+          result: blocked
+        }
+      ]
+    });
+    const replayArguments = confirmationReplayArguments(pending);
+    expect(replayArguments).toMatchObject({
+      transactionId: 'txn-groceries',
+      operationKey: 'replace-groceries-operation',
+      proposalFingerprint: blocked.confirmation.proposal.fingerprint,
+      targetFingerprint: blocked.confirmation.proposal.targetFingerprint,
+      confirmed: true
+    });
+    expect(replayArguments).not.toHaveProperty('transaction');
+
+    const replaced = await executeCavalryAssistantTool(
+      {
+        id: 'replace-groceries-operation',
+        name: 'replace_transaction',
+        arguments: replayArguments
+      },
+      { ...harness.context, approvedByUser: true }
+    );
+
+    expect(replaced).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        replacedTransaction: { id: 'txn-groceries' },
+        replacements: [
+          expect.objectContaining({
+            description: 'Groceries principal',
+            primaryAccount: { id: 'cash', name: 'Cash', role: 'funding' },
+            lines: expect.arrayContaining([
+              expect.objectContaining({ accountId: 'cash', accountName: 'Cash' })
+            ])
+          }),
+          expect.objectContaining({ description: 'Groceries fee' })
+        ],
+        operationKey: 'replace-groceries-operation',
+        operationReference: expect.stringMatching(
+          /^advisor:companion:replace-groceries-operation:replace:txn-groceries:fingerprint:/
+        ),
+        receipt: {
+          targetTransactionId: 'txn-groceries',
+          replacementTransactionIds: [expect.any(String), expect.any(String)]
+        },
+        idempotent: false,
+        atomic: true
+      }
+    });
+    expect(harness.commitCommandResult).toHaveBeenCalledTimes(1);
+    expect(harness.workbook.transactions.map((transaction) => transaction.description)).toEqual([
+      'Groceries principal',
+      'Groceries fee'
+    ]);
+    const retried = await executeCavalryAssistantTool(
+      {
+        id: 'replace-groceries-operation',
+        name: 'replace_transaction',
+        arguments: replayArguments
+      },
+      { ...harness.context, approvedByUser: true }
+    );
+    expect(retried).toMatchObject({
+      ok: true,
+      changed: false,
+      commitStatus: 'committed',
+      verificationStatus: 'verified',
+      persistence: { status: 'previously_committed', durable: true },
+      data: {
+        idempotent: true,
+        receipt: {
+          targetTransactionId: 'txn-groceries',
+          replacementTransactionIds: replaced.data.receipt.replacementTransactionIds
+        }
+      }
+    });
+    expect(harness.commitCommandResult).toHaveBeenCalledTimes(1);
+    expect(harness.workbook.transactions).toHaveLength(2);
+  });
+
+  it('rejects a confirmed replacement proposal after its target changed', async () => {
+    const harness = makeHarness();
+    const replacements = [
+      {
+        template: 'expense_paid',
+        amount: 100,
+        date: '2026-07-01',
+        description: 'Corrected groceries',
+        category: 'Food',
+        primaryAccount: 'Cash'
+      }
+    ];
+    const blocked = await executeCavalryAssistantTool(
+      {
+        id: 'stale-replacement-operation',
+        name: 'replace_transaction',
+        arguments: { transaction: 'Groceries', replacements }
+      },
+      harness.context
+    );
+    const pending = pendingConfirmationFromResult({
+      toolResults: [
+        {
+          callId: 'stale-replacement-operation',
+          toolName: 'replace_transaction',
+          arguments: { transaction: 'Groceries', replacements },
+          result: blocked
+        }
+      ]
+    });
+    harness.workbook.transactions[0].note = 'Edited while confirmation was pending';
+    const before = structuredClone(harness.workbook);
+
+    const result = await executeCavalryAssistantTool(
+      {
+        id: 'stale-replacement-operation',
+        name: 'replace_transaction',
+        arguments: confirmationReplayArguments(pending)
+      },
+      { ...harness.context, approvedByUser: true }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      errors: [expect.objectContaining({ code: 'transaction.replacement_precondition_failed' })]
+    });
+    expect(harness.commitCommandResult).not.toHaveBeenCalled();
+    expect(harness.workbook).toEqual(before);
   });
 
   it('requires explicit confirmation before destructive commands and commits only after retry', async () => {
@@ -2373,12 +3205,27 @@ describe('Cavalry assistant mutations', () => {
     expect(harness.workbook.transactions).toHaveLength(1);
     expect(harness.commitCommandResult).not.toHaveBeenCalled();
 
-    const deleted = await executeCavalryAssistantTool(
+    const forgedApproval = await executeCavalryAssistantTool(
       {
         name: 'delete_transaction',
         arguments: { transaction: 'GROCERIES', confirmed: true }
       },
       harness.context
+    );
+    expect(forgedApproval).toMatchObject({
+      ok: false,
+      status: 'confirmation_required',
+      changed: false
+    });
+    expect(harness.workbook.transactions).toHaveLength(1);
+    expect(harness.commitCommandResult).not.toHaveBeenCalled();
+
+    const deleted = await executeCavalryAssistantTool(
+      {
+        name: 'delete_transaction',
+        arguments: { transaction: 'GROCERIES', confirmed: true }
+      },
+      { ...harness.context, approvedByUser: true }
     );
     expect(deleted).toMatchObject({ ok: true, status: 'completed', changed: true });
     expect(harness.workbook.transactions).toHaveLength(0);
@@ -2730,7 +3577,7 @@ describe('Cavalry assistant mutations', () => {
         name: 'update_bill',
         arguments: { bill: 'Internet', isActive: false, confirmed: true }
       },
-      harness.context
+      { ...harness.context, approvedByUser: true }
     );
     expect(updated).toMatchObject({
       ok: true,

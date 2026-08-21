@@ -1,6 +1,6 @@
 {
   "name": "cavalry-workspace",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "description": "Cavalry local-first desktop finance app and supporting workspaces.",
   "license": "Apache-2.0",
   "repository": {
@@ -39,8 +39,7 @@
     "package:release:mac": "npm run tauri:release:mac --workspace @cavalry/desktop",
     "package:release:mac:intel": "npm run tauri:release:mac:intel --workspace @cavalry/desktop",
     "release:validate": "node tools/release/validate-release.mjs",
-    "release:security": "node tools/release/security-check.mjs",
-    "release:manifest": "node tools/release/generate-update-manifest.mjs"
+    "release:security": "node tools/release/security-check.mjs"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

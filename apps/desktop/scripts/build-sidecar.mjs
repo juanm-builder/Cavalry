@@ -49,7 +49,8 @@ const result = spawnSync(
   npx,
   [
     '--yes',
-    '@yao-pkg/pkg@6.22.0',
+    '--package=@yao-pkg/pkg@6.22.0',
+    'pkg',
     input,
     '--target',
     targetConfig.pkg,

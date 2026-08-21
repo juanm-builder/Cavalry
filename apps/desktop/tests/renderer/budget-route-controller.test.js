@@ -417,6 +417,213 @@ describe('budget controller', () => {
     expect(archived.workbook.sheets[1].budgets).toEqual([]);
   });
 
+  it('creates an expected-income budget with the same coherent save command', () => {
+    const workbook = makeBudgetWorkbook();
+    const original = cloneFixture(workbook);
+    const controller = createBudgetController({ currentDate: FIXED_DATE });
+
+    const saved = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          sheetId: 'sheet-july',
+          categoryId: 'salary',
+          planned: 30000,
+          operation: 'create',
+          createdAt: FIXED_DATE,
+          note: 'Expected salary'
+        }
+      },
+      { workbook }
+    );
+
+    expect(saved.ok).toBe(true);
+    expect(workbook).toEqual(original);
+    expect(saved.workbook.sheets[1].budgets).toEqual([
+      {
+        categoryId: 'salary',
+        planned: 30000,
+        createdAt: FIXED_DATE,
+        note: 'Expected salary'
+      }
+    ]);
+    expect(saved.events[0]).toMatchObject({
+      type: BUDGET_EVENT_TYPES.budgetSaved,
+      payload: {
+        budgetId: 'budget:sheet-july:salary',
+        sheetId: 'sheet-july',
+        categoryId: 'salary',
+        operation: 'created'
+      }
+    });
+    expect(saved.workbook.sheets[1].budgets[0]).not.toHaveProperty('id');
+    expect(saved.workbook.sheets[1].budgets[0]).not.toHaveProperty('operation');
+    expect(saved.events.map((event) => event.type)).toEqual([
+      BUDGET_EVENT_TYPES.budgetSaved,
+      BUDGET_EVENT_TYPES.closeEditor,
+      BUDGET_EVENT_TYPES.scheduleSave
+    ]);
+  });
+
+  it('refuses create over an existing expected-income budget and reports explicit upsert', () => {
+    const workbook = makeBudgetWorkbook();
+    workbook.sheets[1].budgets = [
+      {
+        categoryId: 'salary',
+        planned: 25000,
+        createdAt: '2026-06-01',
+        note: 'Manually entered expected salary'
+      }
+    ];
+    const original = cloneFixture(workbook);
+    const controller = createBudgetController({ currentDate: FIXED_DATE });
+
+    const duplicate = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          sheetId: 'sheet-july',
+          categoryId: 'salary',
+          planned: 30000,
+          operation: 'create',
+          createdAt: FIXED_DATE
+        }
+      },
+      { workbook }
+    );
+
+    expect(duplicate).toMatchObject({
+      ok: false,
+      errors: [{ code: 'budget.save.already-exists' }]
+    });
+    expect(duplicate).not.toHaveProperty('workbook');
+    expect(workbook).toEqual(original);
+
+    const updated = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          sheetId: 'sheet-july',
+          categoryId: 'salary',
+          planned: 30000,
+          operation: 'upsert',
+          createdAt: '2026-06-01',
+          note: 'Manually entered expected salary'
+        }
+      },
+      { workbook }
+    );
+
+    expect(updated.ok).toBe(true);
+    expect(updated.events[0]).toMatchObject({
+      type: BUDGET_EVENT_TYPES.budgetSaved,
+      payload: {
+        budgetId: 'budget:sheet-july:salary',
+        operation: 'updated'
+      }
+    });
+    expect(updated.workbook.sheets[1].budgets).toEqual([
+      {
+        categoryId: 'salary',
+        planned: 30000,
+        createdAt: '2026-06-01',
+        note: 'Manually entered expected salary'
+      }
+    ]);
+    expect(workbook).toEqual(original);
+  });
+
+  it('does not shadow or migrate a legacy expected-income budget line item', () => {
+    const workbook = makeBudgetWorkbook();
+    workbook.sheets[1].budgetLineItems = [
+      {
+        id: 'expected-salary-line',
+        categoryId: 'salary',
+        name: 'Expected salary',
+        planned: 28000,
+        currency: 'PHP',
+        isActive: true,
+        note: 'Keep this legacy plan intact'
+      }
+    ];
+    const original = cloneFixture(workbook);
+    const controller = createBudgetController({ currentDate: FIXED_DATE });
+
+    for (const operation of ['create', 'upsert']) {
+      const result = controller.handleAction(
+        {
+          type: 'save-budget',
+          payload: {
+            sheetId: 'sheet-july',
+            categoryId: 'salary',
+            planned: 30000,
+            operation,
+            createdAt: FIXED_DATE
+          }
+        },
+        { workbook }
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        errors: [{ code: 'budget.save.legacy-overlap' }]
+      });
+      expect(result).not.toHaveProperty('workbook');
+    }
+    expect(workbook).toEqual(original);
+    expect(workbook.sheets[1].budgets).toEqual([]);
+  });
+
+  it('requires an explicit period, rejects period conflicts, and rejects recurrence', () => {
+    const workbook = makeBudgetWorkbook();
+    const original = cloneFixture(workbook);
+    const controller = createBudgetController({ currentDate: FIXED_DATE });
+    const basePayload = {
+      categoryId: 'salary',
+      planned: 30000,
+      operation: 'create',
+      createdAt: FIXED_DATE
+    };
+
+    const missingPeriod = controller.handleAction(
+      { type: 'save-budget', payload: basePayload },
+      { workbook }
+    );
+    const conflictingPeriod = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          ...basePayload,
+          sheetId: 'sheet-june',
+          rangeStart: '2026-07-01',
+          rangeEnd: '2026-07-31'
+        }
+      },
+      { workbook }
+    );
+    const recurrence = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: { ...basePayload, sheetId: 'sheet-july', recurrence: 'Monthly' }
+      },
+      { workbook }
+    );
+
+    expect(missingPeriod).toMatchObject({
+      ok: false,
+      errors: [{ code: 'budget.save.month-required' }]
+    });
+    expect(conflictingPeriod).toMatchObject({
+      ok: false,
+      errors: [{ code: 'budget.save.period-conflict' }]
+    });
+    expect(recurrence).toMatchObject({
+      ok: false,
+      errors: [{ code: 'budget.save.recurrence-unsupported' }]
+    });
+    expect(workbook).toEqual(original);
+  });
+
   it('archives category budgets backed by manual budget line items', () => {
     const workbook = makeBudgetWorkbook();
     workbook.sheets[1].budgetLineItems = [
@@ -454,19 +661,39 @@ describe('budget controller', () => {
 
   it('rejects invalid budget mutations without changing the workbook', () => {
     const workbook = makeBudgetWorkbook();
+    const original = cloneFixture(workbook);
     const controller = createBudgetController({ currentDate: FIXED_DATE });
-    const result = controller.handleAction(
+    const invalidAmount = controller.handleAction(
       {
         type: 'save-budget',
         payload: { sheetId: 'sheet-june', categoryId: 'food', planned: 0 }
       },
       { workbook }
     );
+    const invalidCategory = controller.handleAction(
+      {
+        type: 'save-budget',
+        payload: {
+          sheetId: 'sheet-june',
+          categoryId: 'missing-income-category',
+          planned: 1000,
+          operation: 'create',
+          createdAt: FIXED_DATE
+        }
+      },
+      { workbook }
+    );
 
-    expect(result).toMatchObject({
+    expect(invalidAmount).toMatchObject({
       ok: false,
       errors: [{ code: 'budget.save.amount-required' }]
     });
-    expect(result).not.toHaveProperty('workbook');
+    expect(invalidAmount).not.toHaveProperty('workbook');
+    expect(invalidCategory).toMatchObject({
+      ok: false,
+      errors: [{ code: 'budget.save.category-invalid' }]
+    });
+    expect(invalidCategory).not.toHaveProperty('workbook');
+    expect(workbook).toEqual(original);
   });
 });

@@ -5,6 +5,10 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { formatUiDateTime } from '../../shared/date-format.js';
 import { MarkdownText } from '../../shared/MarkdownText.jsx';
 import { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
+import {
+  cavalryAssistantActionReceiptMessage,
+  isCavalryAssistantSuccessfulNoOpWriteReceipt
+} from './cavalry-assistant-action-results.js';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -275,6 +279,67 @@ function groupedClaimReferences(references) {
       }
     ];
   });
+}
+
+function ActionReceipt({ receipt }) {
+  const source = asObject(receipt);
+  const lifecycle = asText(source.lifecycle);
+  const committed = asText(source.commitStatus) === 'committed';
+  const verification = asText(source.verificationStatus);
+  const durable = asObject(source.persistence).durable === true;
+  const verifiedDurable = committed && verification === 'verified' && durable;
+  const noOpWrite = isCavalryAssistantSuccessfulNoOpWriteReceipt(source);
+  const summary = cavalryAssistantActionReceiptMessage(source);
+  const itemLabels = asArray(source.items)
+    .map((item) => asText(asObject(item).label || asObject(item).id))
+    .filter(Boolean)
+    .slice(0, 4);
+  const cardDetail =
+    itemLabels.join(' · ') ||
+    asText(asObject(source.entity).label || asObject(source.entity).id) ||
+    (noOpWrite
+      ? 'Already current'
+      : asObject(source.persistence).durable === true
+        ? 'Durable workbook change'
+        : 'Structured action result');
+  const stateLabel =
+    lifecycle === 'rolled_back'
+      ? 'Rolled back'
+      : lifecycle === 'cancelled'
+        ? 'Cancelled'
+        : noOpWrite
+          ? 'No change needed'
+          : verifiedDurable
+            ? 'Saved · verified'
+            : committed && verification === 'verified'
+              ? 'Committed · durability unverified'
+              : committed && verification === 'failed'
+                ? 'Saved · verification failed'
+                : committed
+                  ? 'Saved · verification pending'
+                  : lifecycle === 'failed'
+                    ? 'Failed'
+                    : lifecycle.replace(/_/g, ' ');
+  const iconName =
+    verifiedDurable || noOpWrite
+      ? 'check_circle'
+      : lifecycle === 'failed' || lifecycle === 'rolled_back' || verification === 'failed'
+        ? 'error'
+        : 'info';
+  if (!summary && !lifecycle) return null;
+  return (
+    <section
+      aria-label="Action result"
+      className={`cavalry-assistant-action-receipt ${verifiedDurable ? 'committed' : lifecycle}`}
+    >
+      <Icon name={iconName} />
+      <span>
+        <strong>{asText(source.title || source.actionVerb) || 'Action result'}</strong>
+        <small>{cardDetail}</small>
+      </span>
+      <span className="cavalry-assistant-action-receipt-state">{stateLabel}</span>
+    </section>
+  );
 }
 
 function compactReferenceId(reference) {
@@ -552,6 +617,9 @@ export function Message({
   );
   const clarification = asObject(message.clarification);
   const presentationReferences = groupedClaimReferences(message.references);
+  const receipts = asArray(message.receipts).filter(
+    (receipt) => receipt && typeof receipt === 'object'
+  );
   const [referencesExpanded, setReferencesExpanded] = useState(false);
   const [expandedReferenceId, setExpandedReferenceId] = useState('');
   const clarificationActive =
@@ -590,6 +658,16 @@ export function Message({
         ) : (
           <p>{message.text}</p>
         )}
+        {assistant && receipts.length ? (
+          <div className="cavalry-assistant-action-receipts">
+            {receipts.map((receipt, index) => (
+              <ActionReceipt
+                key={asText(receipt.actionId || receipt.toolName) || `receipt-${index}`}
+                receipt={receipt}
+              />
+            ))}
+          </div>
+        ) : null}
         {assistant ? (
           <ReferencedRecords
             expanded={referencesExpanded}
@@ -704,3 +782,5 @@ export function ConversationHistory({ activeConversationId, conversations, onSel
     </section>
   );
 }
+
+export { AssistantSettings } from './CavalryAssistantSettings.jsx';

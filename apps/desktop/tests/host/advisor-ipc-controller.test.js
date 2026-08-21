@@ -39,6 +39,40 @@ function createRuntime(overrides = {}) {
     callAdvisorAgentTurn: vi.fn(async () => ({
       output_text: 'Model test passed.'
     })),
+    loadAdvisorMemory: vi.fn(async () => ({
+      content: '',
+      memoryEnabled: false,
+      allowAutomaticMemory: false,
+      path: '/local/Cavalry/memory.md'
+    })),
+    refreshAdvisorMemory: vi.fn(async () => ({
+      content: '',
+      items: [],
+      revision: 'revision-1',
+      path: '/local/Cavalry/memory.md'
+    })),
+    saveAdvisorMemory: vi.fn(async (memory) => ({
+      ...memory,
+      path: '/local/Cavalry/memory.md'
+    })),
+    clearAdvisorMemory: vi.fn(async (memory) => ({
+      ...memory,
+      content: '',
+      path: '/local/Cavalry/memory.md'
+    })),
+    createAdvisorMemoryItem: vi.fn(async (payload) => ({
+      items: [{ id: 'memory-1', text: payload.item?.text }],
+      revision: 'revision-2'
+    })),
+    updateAdvisorMemoryItem: vi.fn(async (payload) => ({
+      items: [{ id: payload.itemId, text: payload.item?.text }],
+      revision: 'revision-3'
+    })),
+    deleteAdvisorMemoryItem: vi.fn(async () => ({ items: [], revision: 'revision-4' })),
+    openAdvisorMemoryFile: vi.fn(async () => ({ path: '/local/Cavalry/memory.md' })),
+    openAdvisorMemoryFolder: vi.fn(async () => ({ path: '/local/Cavalry/memory.md' })),
+    revealAdvisorMemory: vi.fn(async () => ({ path: '/local/Cavalry/memory.md' })),
+    addAdvisorMemoryContext: vi.fn(async (payload) => payload),
     callAdvisorTranscription: vi.fn(),
     cancelAdvisorRequest: vi.fn(),
     normalizeAdvisorRequestId: vi.fn((value) => String(value || '')),
@@ -66,6 +100,106 @@ function registerRuntime(
 }
 
 describe('Advisor lifecycle IPC', () => {
+  it('exposes local memory controls and contextualizes every model request', async () => {
+    const runtime = createRuntime({
+      loadAdvisorMemory: vi.fn(async () => ({
+        content: 'Keep six months of expenses in reserve.',
+        memoryEnabled: true,
+        allowAutomaticMemory: false,
+        path: '/local/Cavalry/memory.md'
+      })),
+      addAdvisorMemoryContext: vi.fn(async (payload, format) => ({
+        ...payload,
+        memoryFormat: format
+      })),
+      callAdvisorModel: vi.fn(async () => 'A grounded reply.'),
+      callAdvisorAgentTurn: vi.fn(async () => ({ output_text: 'A grounded reply.' }))
+    });
+    const handlers = registerRuntime(runtime);
+
+    await expect(handlers.get('cavalry-advisor:get-memory')(null)).resolves.toMatchObject({
+      ok: true,
+      memory: {
+        memoryEnabled: true,
+        path: '/local/Cavalry/memory.md'
+      }
+    });
+    await expect(handlers.get('cavalry-advisor:refresh-memory')(null)).resolves.toMatchObject({
+      ok: true,
+      refreshed: true,
+      memory: { revision: 'revision-1' }
+    });
+    await expect(
+      handlers.get('cavalry-advisor:save-memory')(null, {
+        content: 'Updated locally.',
+        memoryEnabled: true,
+        allowAutomaticMemory: false
+      })
+    ).resolves.toMatchObject({ ok: true, message: 'Companion memory saved locally.' });
+    await expect(
+      handlers.get('cavalry-advisor:clear-memory')(null, { memoryEnabled: false })
+    ).resolves.toMatchObject({ ok: true, memory: { content: '' } });
+    await expect(
+      handlers.get('cavalry-advisor:create-memory-item')(null, {
+        expectedRevision: 'revision-1',
+        item: { text: 'Keep answers concise.' }
+      })
+    ).resolves.toMatchObject({ ok: true, memory: { revision: 'revision-2' } });
+    await expect(
+      handlers.get('cavalry-advisor:update-memory-item')(null, {
+        expectedRevision: 'revision-2',
+        itemId: 'memory-1',
+        item: { text: 'Keep answers very concise.' }
+      })
+    ).resolves.toMatchObject({ ok: true, memory: { revision: 'revision-3' } });
+    await expect(
+      handlers.get('cavalry-advisor:delete-memory-item')(null, {
+        expectedRevision: 'revision-3',
+        itemId: 'memory-1'
+      })
+    ).resolves.toMatchObject({ ok: true, memory: { revision: 'revision-4' } });
+    await expect(handlers.get('cavalry-advisor:open-memory-file')(null)).resolves.toMatchObject({
+      ok: true,
+      message: 'Opened memory.md.'
+    });
+    await expect(handlers.get('cavalry-advisor:open-memory-folder')(null)).resolves.toMatchObject({
+      ok: true,
+      message: 'Opened the memory.md folder.'
+    });
+    await expect(handlers.get('cavalry-advisor:reveal-memory')(null)).resolves.toMatchObject({
+      ok: true,
+      memory: { path: '/local/Cavalry/memory.md' }
+    });
+
+    await handlers.get('cavalry-advisor:chat')(null, {
+      messages: [],
+      connection: { provider: 'custom' }
+    });
+    expect(runtime.addAdvisorMemoryContext).toHaveBeenLastCalledWith(
+      { messages: [], connection: { provider: 'custom' } },
+      'chat_completions'
+    );
+    expect(runtime.callAdvisorModel).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ memoryFormat: 'chat_completions' }),
+      null
+    );
+
+    await handlers.get('cavalry-advisor:agent')(null, {
+      input: 'Review this.',
+      connection: { provider: 'openai' }
+    });
+    expect(runtime.addAdvisorMemoryContext).toHaveBeenLastCalledWith(
+      { input: 'Review this.', connection: { provider: 'openai' } },
+      'responses'
+    );
+    expect(runtime.callAdvisorAgentTurn).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ memoryFormat: 'responses' }),
+      null
+    );
+  });
+
   it('normalizes desktop bridge errors into a concise result', () => {
     expect(
       normalizeAdvisorIpcError(
@@ -77,6 +211,20 @@ describe('Advisor lifecycle IPC', () => {
       ok: false,
       error: 'Projector is incompatible.',
       code: 'ADVISOR_OPERATION_FAILED'
+    });
+    expect(
+      normalizeAdvisorIpcError(
+        Object.assign(new Error('memory.md changed outside Cavalry.'), {
+          code: 'ADVISOR_MEMORY_REVISION_CONFLICT',
+          conflict: true,
+          memory: { revision: 'latest', content: 'External edit' }
+        })
+      )
+    ).toMatchObject({
+      ok: false,
+      code: 'ADVISOR_MEMORY_REVISION_CONFLICT',
+      conflict: true,
+      memory: { revision: 'latest', content: 'External edit' }
     });
   });
 

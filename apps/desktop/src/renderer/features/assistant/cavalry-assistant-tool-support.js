@@ -7,12 +7,22 @@ import {
   getAccountBalances,
   getAssetLiabilityTotalsAsOf,
   getAccountUsage,
-  submitManualTransactionCommand,
-  validateLedgerInvariants
+  replaceLedgerTransactionCommand,
+  submitManualTransactionCommand
 } from '@cavalry/finance-core';
 
 import { ACCOUNT_ACTIONS, executeAccountCommand } from '../accounts/account-controller.js';
 import { buildTransactionComposerDraft } from '../transactions/transaction-model.js';
+import {
+  collection,
+  commitCommand,
+  confirmationRequired,
+  envelope,
+  errorItem,
+  failure,
+  normalizeIssue,
+  toolCallParts
+} from './cavalry-assistant-command-result-support.js';
 import { inferCavalryAssistantTransactionArguments } from './cavalry-assistant-transaction-inference.js';
 import {
   ACCOUNT_UPDATE_PROPERTIES,
@@ -40,8 +50,23 @@ import {
   entitySuggestionLabel,
   fuzzyEntitySuggestions
 } from './cavalry-assistant-entity-matching.js';
+import {
+  cavalryAssistantAccountResolutionError,
+  resolveCavalryAssistantTransactionAccount
+} from './cavalry-assistant-entity-resolution.js';
 
 export { fuzzyEntitySuggestions } from './cavalry-assistant-entity-matching.js';
+
+export {
+  collection,
+  commitCommand,
+  confirmationRequired,
+  envelope,
+  errorItem,
+  failure,
+  normalizeIssue,
+  toolCallParts
+};
 
 const EVIDENCE_RECORD_PREVIEW_LIMIT = 50;
 
@@ -54,126 +79,6 @@ export {
   summarizeTransaction,
   transactionRow
 } from './cavalry-assistant-tool-presenters.js';
-
-export function toolCallParts(toolCall) {
-  const source = asObject(toolCall);
-  const functionShape = asObject(source.function);
-  const name = asText(source.name || source.tool || source.toolName || functionShape.name);
-  const rawArguments =
-    source.arguments ??
-    source.args ??
-    source.input ??
-    functionShape.arguments ??
-    functionShape.input;
-  if (typeof rawArguments === 'string') {
-    try {
-      const parsed = JSON.parse(rawArguments);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Tool arguments must be a JSON object.');
-      }
-      return {
-        name,
-        arguments: parsed,
-        toolCallId: asText(source.call_id || source.id || source.toolCallId)
-      };
-    } catch (error) {
-      return {
-        name,
-        arguments: {},
-        toolCallId: asText(source.call_id || source.id || source.toolCallId),
-        parseError: asText(error && error.message) || 'Tool arguments must be valid JSON.'
-      };
-    }
-  }
-  return {
-    name,
-    arguments: asObject(rawArguments),
-    toolCallId: asText(source.call_id || source.id || source.toolCallId)
-  };
-}
-
-export function errorItem(code, message, field = '') {
-  return { code, message, ...(field ? { field } : {}) };
-}
-
-export function envelope(toolName, toolCallId, options = {}) {
-  return {
-    ok: options.ok !== false,
-    toolName,
-    ...(toolCallId ? { toolCallId } : {}),
-    status: options.status || 'completed',
-    changed: options.changed === true,
-    data: options.data || null,
-    ...(options.referenceData ? { referenceData: options.referenceData } : {}),
-    warnings: asArray(options.warnings).map(normalizeIssue),
-    errors: asArray(options.errors).map(normalizeIssue),
-    ...(options.confirmation ? { confirmation: options.confirmation } : {})
-  };
-}
-
-export function normalizeIssue(issue) {
-  const source = asObject(issue);
-  const details = { ...asObject(source.details), ...source };
-  const normalized = {
-    code: asText(source.code) || 'unknown',
-    message: asText(source.message) || asText(issue) || 'The action could not be completed.',
-    ...(source.field ? { field: asText(source.field) } : {})
-  };
-  ['accountId', 'accountName', 'configuredCurrency', 'transactionCurrency', 'baseCurrency'].forEach(
-    (field) => {
-      if (asText(details[field])) normalized[field] = asText(details[field]);
-    }
-  );
-  if (Number(details.fxRateToBase) > 0) {
-    normalized.fxRateToBase = Number(details.fxRateToBase);
-  }
-  ['postingCurrencies', 'affectedTransactionIds'].forEach((field) => {
-    if (Array.isArray(details[field])) normalized[field] = clonePlain(details[field]);
-  });
-  if (Array.isArray(details.accounts)) {
-    normalized.accounts = details.accounts.map((account) => {
-      const item = asObject(account);
-      return {
-        accountId: asText(item.accountId),
-        accountName: asText(item.accountName),
-        accountCurrency: asText(item.accountCurrency)
-      };
-    });
-  }
-  return normalized;
-}
-
-export function failure(environment, status, code, message, field = '') {
-  return envelope(environment.toolName, environment.toolCallId, {
-    ok: false,
-    status,
-    errors: [errorItem(code, message, field)]
-  });
-}
-
-export function confirmationRequired(environment, actionLabel) {
-  return envelope(environment.toolName, environment.toolCallId, {
-    ok: false,
-    status: 'confirmation_required',
-    errors: [
-      errorItem(
-        'confirmation_required',
-        `Explicit user confirmation is required before Cavalry can ${actionLabel}.`,
-        'confirmed'
-      )
-    ],
-    confirmation: {
-      required: true,
-      field: 'confirmed',
-      action: actionLabel,
-      message: `Confirm that you want Cavalry to ${actionLabel}, then retry with confirmed set to true.`
-    }
-  });
-}
-
-export function collection(workbook, name) {
-  return asArray(workbook && workbook[name]);
-}
 
 export function resolveEntity(items, reference, options = {}) {
   const ref = asText(reference);
@@ -271,177 +176,7 @@ export function currentDate(workbook, services) {
   return `${Number(workbook && workbook.year) || new Date().getFullYear()}-01-01`;
 }
 
-function ledgerIssueKey(issue) {
-  return [issue?.code, issue?.message, issue?.detail].map(asText).join('\u0000');
-}
-
-function introducedLedgerErrors(previousWorkbook, nextWorkbook) {
-  const previousErrors = new Set(
-    asArray(validateLedgerInvariants(previousWorkbook).errors).map(ledgerIssueKey)
-  );
-  return asArray(validateLedgerInvariants(nextWorkbook).errors).filter(
-    (issue) => !previousErrors.has(ledgerIssueKey(issue))
-  );
-}
-
-const CURRENCY_CONVERSION_CONFIRMATION_CODES = new Set([
-  'currency_conversion_confirmation_required',
-  'account_currency_conversion_required',
-  'account_currency_conversion_confirmation_required'
-]);
-
-function currencyConversionDisclosure(warning) {
-  const source = asObject(warning);
-  const transactionCurrency = asText(source.transactionCurrency).toUpperCase();
-  const accountCopy = asArray(source.accounts)
-    .map((account) => {
-      const item = asObject(account);
-      const name = asText(item.accountName) || asText(item.accountId) || 'account';
-      const currency = asText(item.accountCurrency).toUpperCase();
-      return currency ? `${name} (${currency})` : name;
-    })
-    .filter(Boolean)
-    .join(', ');
-  const rate = Number(source.fxRateToBase) || 0;
-  return [
-    asText(source.message) || 'This transaction would convert money between currencies.',
-    transactionCurrency ? `Transaction currency: ${transactionCurrency}.` : '',
-    accountCopy
-      ? `Affected account${asArray(source.accounts).length === 1 ? '' : 's'}: ${accountCopy}.`
-      : '',
-    rate > 0 ? `Exchange rate: ${rate}.` : ''
-  ]
-    .filter(Boolean)
-    .join(' ');
-}
-
-export async function commitCommand(environment, result, reason, dataFactory) {
-  if (!(result && result.ok)) {
-    return envelope(environment.toolName, environment.toolCallId, {
-      ok: false,
-      status: 'validation_failed',
-      errors: asArray(result && result.errors),
-      warnings: asArray(result && result.warnings)
-    });
-  }
-  const changed = !!(result.workbook && result.workbook !== environment.workbook);
-  const conversionWarning = asArray(result.warnings).find((warning) =>
-    CURRENCY_CONVERSION_CONFIRMATION_CODES.has(asText(warning && warning.code))
-  );
-  if (conversionWarning && asObject(environment.arguments).allowCurrencyConversion !== true) {
-    const warningMessage = currencyConversionDisclosure(conversionWarning);
-    const confirmationMessage =
-      asText(conversionWarning.confirmMessage) || 'Confirm this currency conversion to continue.';
-    return envelope(environment.toolName, environment.toolCallId, {
-      ok: false,
-      status: 'confirmation_required',
-      changed: false,
-      errors: [
-        errorItem(
-          asText(conversionWarning.code) || 'currency_conversion_confirmation_required',
-          warningMessage,
-          'allowCurrencyConversion'
-        )
-      ],
-      warnings: [conversionWarning],
-      confirmation: {
-        required: true,
-        field: 'allowCurrencyConversion',
-        action: 'post this transaction with the disclosed currency conversion',
-        message: `${warningMessage} ${confirmationMessage}`
-      }
-    });
-  }
-  const duplicateWarning = asArray(result.warnings).find(
-    (warning) => asText(warning && warning.code) === 'possible_duplicate_transaction'
-  );
-  if (!changed && duplicateWarning) {
-    return envelope(environment.toolName, environment.toolCallId, {
-      ok: false,
-      status: 'confirmation_required',
-      errors: [
-        errorItem(
-          'possible_duplicate_transaction',
-          asText(duplicateWarning.message) || 'Confirm the possible duplicate before posting.',
-          'allowDuplicate'
-        )
-      ],
-      warnings: [duplicateWarning],
-      confirmation: {
-        required: true,
-        field: 'allowDuplicate',
-        action: 'post a possible duplicate transaction',
-        message: 'Confirm the duplicate, then retry with allowDuplicate set to true.'
-      }
-    });
-  }
-  if (changed) {
-    const previousTransactionIds = new Set(
-      collection(environment.workbook, 'transactions').map((transaction) => asText(transaction?.id))
-    );
-    const originId = (asText(environment.toolCallId) || asText(environment.toolName) || 'action')
-      .replace(/\s+/g, '_')
-      .slice(0, 120);
-    collection(result.workbook, 'transactions').forEach((transaction) => {
-      if (!previousTransactionIds.has(asText(transaction?.id))) {
-        transaction.source = 'advisor';
-        transaction.reference = `advisor:companion:${originId}`;
-      }
-    });
-  }
-  if (changed) {
-    const integrityErrors = introducedLedgerErrors(environment.workbook, result.workbook);
-    if (integrityErrors.length) {
-      return envelope(environment.toolName, environment.toolCallId, {
-        ok: false,
-        status: 'verification_failed',
-        changed: false,
-        errors: integrityErrors.map((issue) =>
-          errorItem(
-            asText(issue?.code) || 'ledger_integrity_failed',
-            `Cavalry stopped this change because it would make the ledger inconsistent: ${
-              asText(issue?.message) || 'ledger validation failed.'
-            }`
-          )
-        ),
-        warnings: asArray(result.warnings)
-      });
-    }
-  }
-  if (changed) {
-    if (typeof environment.context.commitCommandResult !== 'function') {
-      return failure(
-        environment,
-        'context_error',
-        'commit_unavailable',
-        'The assistant command-result commit adapter is unavailable.'
-      );
-    }
-    try {
-      await environment.context.commitCommandResult(result, { reason });
-    } catch (error) {
-      return failure(
-        environment,
-        'commit_failed',
-        'commit_failed',
-        asText(error && error.message) || 'The workbook change could not be committed.'
-      );
-    }
-  }
-  let data = null;
-  if (typeof dataFactory === 'function') {
-    data = dataFactory(result.workbook || environment.workbook, result);
-  } else if (dataFactory) {
-    data = dataFactory;
-  }
-  return envelope(environment.toolName, environment.toolCallId, {
-    changed,
-    data: data || { events: safeEventList(result.events) },
-    warnings: asArray(result.warnings)
-  });
-}
-
-export function transactionArguments(workbook, args, base = {}) {
+export function transactionArguments(workbook, args, base = {}, options = {}) {
   const payload = { ...base };
   const fields = [
     'template',
@@ -471,26 +206,6 @@ export function transactionArguments(workbook, args, base = {}) {
       }
     },
     {
-      output: 'primaryAccountId',
-      options: {
-        collection: 'accounts',
-        keys: ['primaryAccountId', 'primaryAccount'],
-        label: 'Primary account',
-        optional: true,
-        allowEmpty: true
-      }
-    },
-    {
-      output: 'secondaryAccountId',
-      options: {
-        collection: 'accounts',
-        keys: ['secondaryAccountId', 'secondaryAccount'],
-        label: 'Secondary account',
-        optional: true,
-        allowEmpty: true
-      }
-    },
-    {
       output: 'counterpartyId',
       options: {
         collection: 'counterparties',
@@ -505,6 +220,44 @@ export function transactionArguments(workbook, args, base = {}) {
     const resolution = resolveArgument(workbook, args, descriptor.options);
     if (!resolution.ok) return { ok: false, resolution };
     if (resolution.provided) payload[descriptor.output] = resolution.id;
+  }
+
+  const template = asText(payload.template) || 'expense_paid';
+  for (const descriptor of [
+    {
+      output: 'primaryAccountId',
+      keys: ['primaryAccountId', 'primaryAccount'],
+      label: 'Primary account',
+      secondary: false
+    },
+    {
+      output: 'secondaryAccountId',
+      keys: ['secondaryAccountId', 'secondaryAccount'],
+      label: 'Secondary account',
+      secondary: true
+    }
+  ]) {
+    const provided = hasAnyArgument(args, descriptor.keys);
+    const reference = provided ? firstArgument(args, descriptor.keys) : '';
+    const resolution = resolveCavalryAssistantTransactionAccount(workbook, {
+      template,
+      secondary: descriptor.secondary,
+      reference,
+      prompt: asText(options.question),
+      assignment: options.assignment === true && provided
+    });
+    if (resolution.status === 'ambiguous' || resolution.status === 'not_found') {
+      return {
+        ok: false,
+        resolution: cavalryAssistantAccountResolutionError(
+          resolution,
+          descriptor.keys[0],
+          descriptor.label
+        )
+      };
+    }
+    if (resolution.status === 'resolved') payload[descriptor.output] = resolution.id;
+    else if (provided && !asText(reference)) payload[descriptor.output] = '';
   }
   return { ok: true, payload };
 }
@@ -606,11 +359,13 @@ export async function createTransaction(environment) {
   const defaults = buildTransactionComposerDraft(workbook, '', {
     defaultDate: date
   });
-  const prepared = transactionArguments(workbook, inferred.arguments, defaults);
+  const prepared = transactionArguments(workbook, inferred.arguments, defaults, {
+    question: inferred.localQuestion
+  });
   if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
   const result = submitManualTransactionCommand(workbook, prepared.payload, environment.services);
-  return commitCommand(environment, result, 'assistant_transaction_created', (_next, command) => ({
-    transaction: summarizeTransaction(command.transaction),
+  return commitCommand(environment, result, 'assistant_transaction_created', (next, command) => ({
+    transaction: summarizeTransaction(command.transaction, next),
     inferredFields: clonePlain(inferred.inferredFields),
     events: safeEventList(command.events)
   }));
@@ -627,7 +382,10 @@ export async function updateTransaction(environment) {
   const defaults = buildTransactionComposerDraft(environment.workbook, resolved.id, {
     defaultDate: currentDate(environment.workbook, environment.services)
   });
-  const prepared = transactionArguments(environment.workbook, environment.arguments, defaults);
+  const prepared = transactionArguments(environment.workbook, environment.arguments, defaults, {
+    question: asText(environment.context && environment.context.question),
+    assignment: true
+  });
   if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
   prepared.payload.transactionId = resolved.id;
   const result = submitManualTransactionCommand(
@@ -635,8 +393,206 @@ export async function updateTransaction(environment) {
     prepared.payload,
     environment.services
   );
-  return commitCommand(environment, result, 'assistant_transaction_updated', (_next, command) => ({
-    transaction: summarizeTransaction(command.transaction),
+  return commitCommand(environment, result, 'assistant_transaction_updated', (next, command) => ({
+    transaction: summarizeTransaction(command.transaction, next),
+    events: safeEventList(command.events)
+  }));
+}
+
+export async function replaceTransaction(environment) {
+  const normalizedOperationKey = (value) => asText(value).replace(/\s+/g, '_').slice(0, 120);
+  const toolOperationKey = normalizedOperationKey(environment.toolCallId);
+  const argumentOperationKey = normalizedOperationKey(environment.arguments.operationKey);
+  const expectedReplacementFingerprint = asText(environment.arguments.proposalFingerprint);
+  const expectedTargetFingerprint = asText(environment.arguments.targetFingerprint);
+  const canonicalReplay = !!(
+    argumentOperationKey &&
+    expectedReplacementFingerprint &&
+    expectedTargetFingerprint
+  );
+  if (
+    argumentOperationKey &&
+    toolOperationKey &&
+    argumentOperationKey !== toolOperationKey &&
+    !canonicalReplay
+  ) {
+    return failure(
+      environment,
+      'validation_failed',
+      'transaction_operation_key_conflict',
+      'The replacement operation key does not match this tool call.',
+      'operationKey'
+    );
+  }
+  if (
+    [argumentOperationKey, expectedReplacementFingerprint, expectedTargetFingerprint].some(
+      Boolean
+    ) &&
+    !canonicalReplay
+  ) {
+    return failure(
+      environment,
+      'validation_failed',
+      'transaction_replacement_proposal_incomplete',
+      'The replacement approval is missing part of its canonical proposal contract.',
+      'operationKey'
+    );
+  }
+  const operationKey = argumentOperationKey || toolOperationKey;
+  const priorOperationPrefix = operationKey ? `advisor:companion:${operationKey}:replace:` : '';
+  if (
+    priorOperationPrefix &&
+    collection(environment.workbook, 'transactions').some((transaction) =>
+      asText(transaction?.reference).startsWith(priorOperationPrefix)
+    )
+  ) {
+    const replay = replaceLedgerTransactionCommand(
+      environment.workbook,
+      asText(firstArgument(environment.arguments, ['transactionId', 'transaction'])),
+      asArray(environment.arguments.replacements),
+      {
+        ...asObject(environment.services),
+        operationKey,
+        ...(expectedReplacementFingerprint ? { expectedReplacementFingerprint } : {}),
+        ...(expectedTargetFingerprint ? { expectedTargetFingerprint } : {})
+      }
+    );
+    return commitCommand(
+      environment,
+      replay,
+      'assistant_transaction_replaced',
+      (next, command) => ({
+        replacedTransaction: summarizeTransaction(
+          command.originalTransaction,
+          environment.workbook
+        ),
+        replacements: asArray(command.createdTransactions).map((transaction) =>
+          summarizeTransaction(transaction, next)
+        ),
+        operationKey: asText(command.operationKey),
+        operationReference: asText(command.operationReference),
+        fingerprint: asText(command.fingerprint),
+        targetFingerprint: asText(command.targetFingerprint),
+        receipt: clonePlain(command.receipt),
+        idempotent: command.idempotent === true,
+        atomic: command.atomic === true,
+        events: safeEventList(command.events)
+      })
+    );
+  }
+  const resolved = resolveArgument(environment.workbook, environment.arguments, {
+    collection: 'transactions',
+    keys: ['transactionId', 'transaction'],
+    label: 'Transaction',
+    names: ['description']
+  });
+  if (!resolved.ok) return resolutionFailure(environment, resolved);
+  const replacements = asArray(environment.arguments.replacements);
+  if (!replacements.length) {
+    return failure(
+      environment,
+      'validation_failed',
+      'transaction_replacements_required',
+      'Provide at least one replacement transaction.',
+      'replacements'
+    );
+  }
+
+  const preparedReplacements = [];
+  const inferredFields = [];
+  for (const replacement of replacements) {
+    const date = currentDate(environment.workbook, environment.services);
+    const inferred = inferCavalryAssistantTransactionArguments(
+      environment.workbook,
+      asObject(replacement),
+      {
+        currentDate: date,
+        question: canonicalReplay ? '' : asText(environment.context && environment.context.question)
+      }
+    );
+    const defaults = buildTransactionComposerDraft(environment.workbook, '', {
+      defaultDate: date
+    });
+    const prepared = transactionArguments(environment.workbook, inferred.arguments, defaults, {
+      question: inferred.localQuestion
+    });
+    if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
+    preparedReplacements.push({
+      ...prepared.payload,
+      allowDuplicate: environment.arguments.allowDuplicate === true,
+      allowCurrencyConversion: environment.arguments.allowCurrencyConversion === true
+    });
+    inferredFields.push(clonePlain(inferred.inferredFields));
+  }
+
+  const result = replaceLedgerTransactionCommand(
+    environment.workbook,
+    resolved.id,
+    preparedReplacements,
+    {
+      ...asObject(environment.services),
+      ...(operationKey ? { operationKey } : {}),
+      ...(expectedReplacementFingerprint ? { expectedReplacementFingerprint } : {}),
+      ...(expectedTargetFingerprint ? { expectedTargetFingerprint } : {})
+    }
+  );
+  if (!(result && result.ok)) {
+    return commitCommand(environment, result, 'assistant_transaction_replaced');
+  }
+  if (result.confirmationPending === true) {
+    return commitCommand(environment, result, 'assistant_transaction_replaced');
+  }
+  if (result.idempotent !== true && environment.arguments.confirmed !== true) {
+    const proposal = {
+      operationKey: asText(result.operationKey),
+      operationReference: asText(result.operationReference),
+      fingerprint: asText(result.fingerprint),
+      targetFingerprint: asText(result.targetFingerprint),
+      targetTransactionId: resolved.id,
+      replacements: clonePlain(preparedReplacements),
+      arguments: {
+        transactionId: resolved.id,
+        replacements: clonePlain(preparedReplacements),
+        operationKey: asText(result.operationKey),
+        proposalFingerprint: asText(result.fingerprint),
+        targetFingerprint: asText(result.targetFingerprint),
+        ...(environment.arguments.allowDuplicate === true ? { allowDuplicate: true } : {}),
+        ...(environment.arguments.allowCurrencyConversion === true
+          ? { allowCurrencyConversion: true }
+          : {})
+      }
+    };
+    return confirmationRequired(environment, `atomically replace “${resolved.value.description}”`, {
+      proposal,
+      warnings: result.warnings,
+      data: {
+        proposal,
+        preview: {
+          replacedTransaction: summarizeTransaction(
+            result.originalTransaction,
+            environment.workbook
+          ),
+          replacements: asArray(result.createdTransactions).map((transaction) =>
+            summarizeTransaction(transaction, result.workbook)
+          ),
+          atomic: result.atomic === true
+        }
+      }
+    });
+  }
+  return commitCommand(environment, result, 'assistant_transaction_replaced', (next, command) => ({
+    replacedTransaction: summarizeTransaction(command.originalTransaction, environment.workbook),
+    replacements: asArray(command.createdTransactions).map((transaction) =>
+      summarizeTransaction(transaction, next)
+    ),
+    inferredFields,
+    operationKey: asText(command.operationKey),
+    operationReference: asText(command.operationReference),
+    fingerprint: asText(command.fingerprint),
+    targetFingerprint: asText(command.targetFingerprint),
+    receipt: clonePlain(command.receipt),
+    idempotent: command.idempotent === true,
+    atomic: command.atomic === true,
     events: safeEventList(command.events)
   }));
 }
@@ -654,7 +610,7 @@ export async function deleteTransaction(environment) {
   }
   const result = deleteLedgerTransactionCommand(environment.workbook, resolved.id);
   return commitCommand(environment, result, 'assistant_transaction_deleted', (_next, command) => ({
-    deletedTransaction: summarizeTransaction(command.transaction),
+    deletedTransaction: summarizeTransaction(command.transaction, environment.workbook),
     events: safeEventList(command.events)
   }));
 }

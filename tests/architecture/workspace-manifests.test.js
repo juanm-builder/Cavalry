@@ -39,4 +39,12 @@ describe('workspace manifests', () => {
     expect(source.type).toBe('module');
     expect(source.exports['.']).toBe('./src/index.js');
   });
+
+  it('invokes the pinned scoped sidecar packager through an explicit npm package and binary', () => {
+    const source = readFileSync(resolve('apps/desktop/scripts/build-sidecar.mjs'), 'utf8');
+
+    expect(source).toContain("'--package=@yao-pkg/pkg@6.22.0'");
+    expect(source).toMatch(/'--package=@yao-pkg\/pkg@6\.22\.0',\s*'pkg',/u);
+    expect(source).not.toMatch(/'--yes',\s*'@yao-pkg\/pkg@/u);
+  });
 });

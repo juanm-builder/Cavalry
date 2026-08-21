@@ -184,7 +184,28 @@ function createAdvisorPort(bridge) {
         : { ok: false, unavailable: true, error: `Assistant command ${command} is unavailable.` };
     },
     subscribe(callback) {
-      return bridge && typeof bridge.onStatus === 'function' ? bridge.onStatus(callback) : () => {};
+      if (!(bridge && typeof bridge.onStatus === 'function') || typeof callback !== 'function') {
+        return () => {};
+      }
+      return bridge.onStatus((status) => {
+        if (String(status?.phase || '').trim() === 'stream') {
+          const requestId = String(status?.requestId || '').trim();
+          const delta = String(status?.delta ?? '').slice(0, 16_384);
+          // Stream text stays an ephemeral status event. The assistant view owns the
+          // request-scoped accumulator and public-output sanitizer; this port never stores it.
+          if (!requestId || (!delta && status?.reset !== true)) return;
+          callback({
+            phase: 'stream',
+            requestId,
+            delta,
+            segment: Number(status?.segment) || 0,
+            reset: status?.reset === true,
+            final: status?.final === true
+          });
+          return;
+        }
+        callback(status);
+      });
     }
   };
 }

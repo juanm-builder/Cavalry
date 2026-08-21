@@ -4,6 +4,71 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.1.0 - 2026-08-21
+
+### Added
+
+- Added transparent, device-local Companion memory backed by a human-readable `memory.md`. Chat
+  settings can view, add, edit, forget, clear, reload, and open the file or its folder. Revisioned
+  atomic writes, external-edit refresh, conflict handling, and bounded relevance selection keep the
+  user-editable file authoritative without uploading or synchronizing it as a standalone file.
+- Added a supported Companion action for creating or updating an expected-income plan for a
+  specific month and stable income category. It validates the amount, period, and category, uses
+  Cavalry's normal persistence boundary without a separate confirmation prompt, and leaves existing
+  manually entered expected-income plans unchanged.
+- Added feature-owned, auto-discovered Companion capability contracts. Callable definitions,
+  validation, entity requirements, access and confirmation policy, compatibility metadata,
+  execution, and structured results now come from one inspectable registry instead of a separate
+  prompt inventory.
+
+### Changed
+
+- Companion turns now keep request-scoped streaming text transient and persist only the final
+  user-facing message and deliberately designed components. Tool preambles, reasoning, progress,
+  raw payloads, and other protocol artifacts are excluded from the transcript; cancellation and
+  failures reconcile to one readable terminal response.
+- Financial completion messages now come from structured Cavalry action receipts. Requested,
+  proposed, awaiting-confirmation, committed, cancelled, failed, rolled-back, and
+  committed-but-unverified outcomes remain distinct, and a write is described as complete only
+  with explicit durable save and verification evidence.
+- Explicit account, wallet, source, destination, and credit-card names are resolved to stable
+  Cavalry identifiers before execution. Role-aware matching preserves a confidently named target,
+  rejects ambiguous matches for clarification, and includes the resolved account in the receipt.
+- Transaction replacement is staged and validated as one operation, uses a proposal fingerprint
+  and operation key, and is idempotent on retry. A failure keeps the original record; a replay with
+  changed inputs or workbook state is rejected instead of creating a partial or duplicate result.
+- Companion guidance is more conversational about decisions and tradeoffs while keeping advice,
+  reads, proposed changes, and confirmed writes distinct.
+- Chat messages have more breathing room, clearer separation for receipts and warnings, and
+  horizontally scrolling wide tables with roomier cells at narrow and wide window sizes.
+- The macOS release matrix now runs Apple Silicon and Intel sidecars on matching GitHub-hosted
+  architectures. Draft asset verification checks the exact seven uploaded application archives,
+  disk images, detached updater-signature files, and updater manifest before publication;
+  cryptographic signing and notarization remain separate workflow and manual certification gates.
+
+### Compatibility and release notes
+
+- No workbook schema migration is required. Existing financial data, manually entered
+  expected-income plans, and reimbursement behavior remain unchanged; reimbursement compatibility
+  is covered by a frozen regression fixture.
+- Local memory is opt-in and stored only in the application's local user-data directory. Relevant
+  memory snippets can become part of a provider request when memory is enabled, following the same
+  selected-context disclosure boundary as other Companion context.
+- Validation: repository formatting, lint, type checks, production builds, unit/renderer/host,
+  integration, end-to-end, architecture, license, Rust, release-metadata, and native certification
+  gates must pass before publication. Exact results will be recorded in the v2.1.0 GitHub release
+  draft before publication.
+- Signing/notarization status: the GitHub `release-signing` environment supplies signing credentials,
+  while Developer ID signing, Apple notarization and stapling, Gatekeeper and
+  architecture checks, updater metadata verification, and manual target-architecture certification
+  remain publication gates. Independent second-reviewer sign-off is also required, but the
+  environment currently has no configured non-self reviewer and does not enforce that sign-off. The
+  workflow creates a draft release; it must not be published until every gate passes and a second
+  reviewer is obtained.
+- Known limitation: memory relevance selection is intentionally local, bounded, and lexical rather
+  than a hidden remote semantic index. Users can inspect and correct the exact source file at any
+  time.
+
 ## 2.0.3 - 2026-08-20
 
 ### Changed

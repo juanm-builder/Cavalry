@@ -7,6 +7,16 @@ const nodePath = require('path');
 const ADVISOR_IPC_CHANNELS = Object.freeze([
   'cavalry-advisor:get-settings',
   'cavalry-advisor:save-settings',
+  'cavalry-advisor:get-memory',
+  'cavalry-advisor:refresh-memory',
+  'cavalry-advisor:save-memory',
+  'cavalry-advisor:clear-memory',
+  'cavalry-advisor:create-memory-item',
+  'cavalry-advisor:update-memory-item',
+  'cavalry-advisor:delete-memory-item',
+  'cavalry-advisor:open-memory-file',
+  'cavalry-advisor:open-memory-folder',
+  'cavalry-advisor:reveal-memory',
   'cavalry-advisor:get-server-status',
   'cavalry-advisor:start-server',
   'cavalry-advisor:stop-server',
@@ -76,6 +86,10 @@ function normalizeAdvisorIpcError(error) {
     ok: false,
     error: message || 'Assistant operation failed.',
     code: String(source.code || 'ADVISOR_OPERATION_FAILED').slice(0, 120),
+    ...(source.conflict === true ? { conflict: true } : {}),
+    ...(source.memory && typeof source.memory === 'object'
+      ? { memory: scrubAdvisorSecretsForRenderer(source.memory) }
+      : {}),
     ...(source.detail ? { detail: String(source.detail).slice(0, 2000) } : {}),
     ...(source.logPath ? { logPath: String(source.logPath).slice(0, 1000) } : {})
   };
@@ -137,6 +151,118 @@ function createAdvisorIpcController({
           // Preserve the validation failure when status reconciliation also fails.
         }
         return failure;
+      }
+    });
+
+    handle('cavalry-advisor:get-memory', async () => {
+      try {
+        return { ok: true, memory: await runtime.loadAdvisorMemory() };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:refresh-memory', async () => {
+      try {
+        return { ok: true, memory: await runtime.refreshAdvisorMemory(), refreshed: true };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:save-memory', async (_event, payload) => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.saveAdvisorMemory(payload || {}),
+          message: 'Companion memory saved locally.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:clear-memory', async (_event, payload) => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.clearAdvisorMemory(payload || {}),
+          message: 'Companion memory cleared.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:create-memory-item', async (_event, payload) => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.createAdvisorMemoryItem(payload || {}),
+          message: 'Memory item added.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:update-memory-item', async (_event, payload) => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.updateAdvisorMemoryItem(payload || {}),
+          message: 'Memory item updated.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:delete-memory-item', async (_event, payload) => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.deleteAdvisorMemoryItem(payload || {}),
+          message: 'Memory item deleted.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:open-memory-file', async () => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.openAdvisorMemoryFile(),
+          message: 'Opened memory.md.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:open-memory-folder', async () => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.openAdvisorMemoryFolder(),
+          message: 'Opened the memory.md folder.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
+      }
+    });
+
+    handle('cavalry-advisor:reveal-memory', async () => {
+      try {
+        return {
+          ok: true,
+          memory: await runtime.revealAdvisorMemory(),
+          message: 'Revealed memory.md in its local folder.'
+        };
+      } catch (error) {
+        return normalizeAdvisorIpcError(error);
       }
     });
 
@@ -338,7 +464,11 @@ function createAdvisorIpcController({
         return { ok: false, local: true, error: 'The built-in rules advisor is selected.' };
       }
       try {
-        const result = await runtime.callAdvisorModel(settings, payload || {}, event);
+        const contextualPayload = await runtime.addAdvisorMemoryContext(
+          payload || {},
+          'chat_completions'
+        );
+        const result = await runtime.callAdvisorModel(settings, contextualPayload, event);
         if (result && typeof result === 'object') {
           return scrubAdvisorSecretsForRenderer({
             ok: true,
@@ -377,7 +507,8 @@ function createAdvisorIpcController({
       }
       try {
         // A provider response is untrusted input. Strip credential-shaped fields before IPC crosses into the renderer.
-        const response = await runtime.callAdvisorAgentTurn(settings, payload || {}, event);
+        const contextualPayload = await runtime.addAdvisorMemoryContext(payload || {}, 'responses');
+        const response = await runtime.callAdvisorAgentTurn(settings, contextualPayload, event);
         return { ok: true, response: scrubAdvisorSecretsForRenderer(response) };
       } catch (error) {
         if (runtime.isAdvisorCancellationError(error)) {

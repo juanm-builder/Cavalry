@@ -11,8 +11,71 @@ function collection(workbook, name) {
   return asArray(workbook && workbook[name]);
 }
 
-export function summarizeTransaction(transaction) {
+function transactionAccountReceipts(transaction, workbook) {
+  const accountById = new Map(
+    collection(workbook, 'accounts').map((account) => [asText(account?.id), account])
+  );
+  const lines = asArray(transaction?.lines);
+  const balanceLine = (direction, groups = ['asset', 'liability']) =>
+    lines.find((line) => {
+      const account = accountById.get(asText(line?.accountId));
+      return (
+        account &&
+        groups.includes(asText(account.group)) &&
+        (!direction || asText(line?.direction) === direction)
+      );
+    });
+  const template = asText(transaction?.template);
+  let primaryLine = null;
+  let secondaryLine = null;
+  let primaryRole = 'account';
+  let secondaryRole = '';
+  if (template === 'income_received') {
+    primaryLine = balanceLine('debit', ['asset']);
+    primaryRole = 'receiving';
+  } else if (template === 'merchant_refund') {
+    primaryLine = balanceLine('debit');
+    primaryRole = 'receiving';
+  } else if (template === 'expense_charged') {
+    primaryLine = balanceLine('credit', ['liability']);
+    primaryRole = 'charged';
+  } else if (template === 'transfer') {
+    primaryLine = balanceLine('credit');
+    secondaryLine = balanceLine('debit');
+    primaryRole = 'source';
+    secondaryRole = 'destination';
+  } else if (template === 'debt_payment' || template === 'liability_payment') {
+    primaryLine = balanceLine('credit', ['asset']);
+    secondaryLine = balanceLine('debit', ['liability']);
+    primaryRole = 'funding';
+    secondaryRole = 'destination';
+  } else if (template === 'opening_balance') {
+    primaryLine = balanceLine('');
+  } else {
+    primaryLine = balanceLine('credit', ['asset']) || balanceLine('');
+    primaryRole = 'funding';
+  }
+  const receipt = (line, role) => {
+    if (!line) return null;
+    const account = accountById.get(asText(line.accountId));
+    return {
+      id: asText(line.accountId),
+      name: asText(account?.name),
+      role
+    };
+  };
+  return {
+    primaryAccount: receipt(primaryLine, primaryRole),
+    secondaryAccount: receipt(secondaryLine, secondaryRole)
+  };
+}
+
+export function summarizeTransaction(transaction, workbook = null) {
   if (!transaction) return null;
+  const accountNames = new Map(
+    collection(workbook, 'accounts').map((account) => [asText(account?.id), asText(account?.name)])
+  );
+  const routing = transactionAccountReceipts(transaction, workbook);
   return {
     id: asText(transaction.id),
     date: asText(transaction.date),
@@ -28,9 +91,13 @@ export function summarizeTransaction(transaction) {
     note: asText(transaction.note),
     reference: asText(transaction.reference),
     source: asText(transaction.source),
+    ...(routing.primaryAccount ? { primaryAccount: routing.primaryAccount } : {}),
+    ...(routing.secondaryAccount ? { secondaryAccount: routing.secondaryAccount } : {}),
+    accounts: [routing.primaryAccount, routing.secondaryAccount].filter(Boolean),
     lines: asArray(transaction.lines).map((line) => ({
       id: asText(line?.id),
       accountId: asText(line?.accountId),
+      accountName: accountNames.get(asText(line?.accountId)) || '',
       direction: asText(line?.direction),
       amount: Number(line?.amount) || 0,
       baseAmount: Number(line?.baseAmount) || 0,

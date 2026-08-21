@@ -7,6 +7,15 @@ import {
   buildCavalryAssistantInstructions,
   runCavalryAssistantTurn
 } from '../../src/renderer/features/assistant/cavalry-assistant-runtime.js';
+import {
+  loadCavalryAssistantConversationState,
+  saveCavalryAssistantConversationState,
+  updateActiveCavalryAssistantConversation
+} from '../../src/renderer/features/assistant/cavalry-assistant-conversations.js';
+import {
+  assistantVisibleText,
+  normalizeHistory
+} from '../../src/renderer/features/assistant/cavalry-assistant-runtime-content.js';
 
 const SEARCH_TOOL = Object.freeze({
   type: 'function',
@@ -47,6 +56,7 @@ const CONVERTING_TRANSACTION_TOOL = Object.freeze({
     required: ['amount'],
     additionalProperties: false
   },
+  cavalry: { approvalFields: ['allowCurrencyConversion'] },
   strict: true
 });
 
@@ -76,12 +86,15 @@ describe('Cavalry assistant runtime', () => {
     expect(instructions.length).toBeLessThan(9000);
 
     // Safety contract: approval flags, no unverified success claims, untrusted image text.
-    expect(instructions).toContain('without host approval arguments');
-    expect(instructions).toContain('confirmed, allowDuplicate, allowCurrencyConversion');
-    expect(instructions).toContain('never set them yourself');
+    expect(instructions).toContain('Do not set host approval arguments yourself');
+    expect(instructions).not.toContain('allowCurrencyConversion');
     expect(instructions).toContain('Never claim an action succeeded unless a tool result confirms');
+    expect(instructions).toContain('what is awaiting confirmation');
+    expect(instructions).toContain('successful tool result says were persisted');
+    expect(instructions).toContain('do not soften it into “no changes were needed.”');
     expect(instructions).toMatch(/images? .*untrusted|untrusted evidence/i);
     expect(instructions).toContain('Do not reveal chain-of-thought');
+    expect(instructions).toContain('citation troubleshooting');
 
     // Grounding contract: no invention, machine citation markers, absence windows.
     expect(instructions).toMatch(/Never invent amounts/i);
@@ -94,20 +107,93 @@ describe('Cavalry assistant runtime', () => {
     expect(instructions).toMatch(/make the assumption/i);
     expect(instructions).toContain('request_clarification');
     expect(instructions).toContain('Never combine request_clarification with another tool call.');
+    expect(instructions).toContain('Infer the conversational mode');
+    expect(instructions).toContain('ordinary conversation, opinions, and financial exploration');
+    expect(instructions).toContain('For explanation or diagnosis');
 
-    // Tool discovery: the discovery entry point and the aggregation shortcut are named.
-    expect(instructions).toContain('read_workspace_context');
-    expect(instructions).toContain('summarize_spending');
-    expect(instructions).toContain('analyze_recurring_expenses');
-    expect(instructions).toContain('auto_assign_category_icons');
-    expect(instructions).toContain('until hasMore is false');
+    // Capability names come only from the live registry, never a duplicated prompt catalog.
+    expect(instructions).not.toContain('read_workspace_context');
+    expect(instructions).not.toContain('summarize_spending');
+    expect(instructions).not.toContain('auto_assign_category_icons');
 
-    // Turn-context digests are explained and never echoed.
-    expect(instructions).toContain('⟦turn-context:');
+    // Runtime activity records are not described as hidden conversation history.
+    expect(instructions).not.toContain('⟦turn-context:');
 
     // No snapshot block and no pending-confirmation block when neither was supplied.
     expect(instructions).not.toContain('Workspace snapshot');
     expect(instructions).not.toContain('confirmation card is currently showing');
+  });
+
+  it('keeps only user-facing content across typed reasoning, private tags, and scratch tails', () => {
+    expect(
+      assistantVisibleText([
+        { type: 'reasoning_text', text: 'Need to inspect the tool result first.' },
+        { type: 'output_text', text: 'The RCBC charge is recorded.' }
+      ])
+    ).toBe('The RCBC charge is recorded.');
+    expect(
+      assistantVisibleText(
+        '<think>I should inspect the schema and citations.</think>\nThe RCBC charge is recorded.'
+      )
+    ).toBe('The RCBC charge is recorded.');
+    expect(
+      assistantVisibleText(
+        '<|start|>assistant<|channel|>analysis<|message|>Check tool evidence.<|end|>' +
+          '<|start|>assistant<|channel|>final<|message|>The RCBC charge is recorded.<|end|>'
+      )
+    ).toBe('The RCBC charge is recorded.');
+    expect(
+      assistantVisibleText(
+        'For this purchase, For Others is the right category.\n\n' +
+          "I couldn't verify that from the workbook. Wait citation invalid. Need no cite? " +
+          'Tool records do not have an evidenceSet.\n\n' +
+          "Need ask one focused question. Let's craft."
+      )
+    ).toBe(
+      "For this purchase, For Others is the right category.\n\nI couldn't verify that from the workbook."
+    );
+  });
+
+  it('does not mistake ordinary conversational wording for private scratch text', () => {
+    expect(
+      assistantVisibleText(
+        "Wait, citation requirements aren't the main issue here. Let's craft a budget that fits your actual month."
+      )
+    ).toBe(
+      "Wait, citation requirements aren't the main issue here. Let's craft a budget that fits your actual month."
+    );
+    expect(assistantVisibleText('Need a citation for the tax form? Keep the receipt.')).toBe(
+      'Need a citation for the tax form? Keep the receipt.'
+    );
+  });
+
+  it('projects raw assistant history conservatively and drops non-conversation roles', () => {
+    const normalized = normalizeHistory([
+      { role: 'system', content: 'Private system event.' },
+      {
+        role: 'assistant',
+        content: '<think>Inspect hidden state.</think>\nYour balance is steady.'
+      },
+      { role: 'tool', content: '{"raw":"technical result"}' },
+      { role: 'user', content: 'Need a citation for the tax form? Keep the receipt.' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning_text', text: 'Private typed reasoning.' },
+          { type: 'output_text', text: 'Keep the ordinary receipt.' }
+        ]
+      }
+    ]);
+
+    expect(normalized).toEqual({
+      messages: [
+        { role: 'assistant', content: 'Your balance is steady.' },
+        { role: 'user', content: 'Need a citation for the tax form? Keep the receipt.' },
+        { role: 'assistant', content: 'Keep the ordinary receipt.' }
+      ],
+      imageCount: 0,
+      error: ''
+    });
   });
 
   it('injects the workspace snapshot and pending confirmation state when supplied', () => {
@@ -241,6 +327,7 @@ describe('Cavalry assistant runtime', () => {
     expect(advisor.invoke.mock.calls[0][0]).toBe('runAgentTurn');
     expect(advisor.invoke.mock.calls[0][1]).toMatchObject({
       requestId: 'assistant_turn_1',
+      _cavalryMemoryQuery: 'Find my coffee purchase.',
       connection: {
         provider: 'openai',
         apiMode: 'responses',
@@ -259,6 +346,7 @@ describe('Cavalry assistant runtime', () => {
     expect(advisor.invoke.mock.calls[1][0]).toBe('runAgentTurn');
     expect(advisor.invoke.mock.calls[1][1]).toMatchObject({
       requestId: 'assistant_turn_1',
+      _cavalryMemoryQuery: 'Find my coffee purchase.',
       previous_response_id: 'response_1',
       input: [
         {
@@ -465,6 +553,45 @@ describe('Cavalry assistant runtime', () => {
     expect(answer.references[0].detail.records).toHaveLength(2);
   });
 
+  it('does not restore an all-technical activity reply after filtering', async () => {
+    const advisor = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          response: {
+            id: 'response_activity_tool',
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'activity_search',
+                name: 'search_transactions',
+                arguments: '{"query":"coffee"}'
+              }
+            ]
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          response: {
+            id: 'response_activity_only',
+            output_text: 'Search Transactions completed.'
+          }
+        })
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'Find coffee.',
+      settings: { provider: 'openai', apiMode: 'responses', hasApiKey: true },
+      advisor,
+      tools: [SEARCH_TOOL],
+      executeTool: vi.fn(async () => ({ ok: true, data: { transactions: [] } }))
+    });
+
+    expect(answer).toMatchObject({ ok: true, text: '' });
+    expect(answer.text).not.toContain('completed');
+  });
+
   it('runs a custom local-model Chat Completions tool loop and converts tool schemas', async () => {
     const advisor = {
       invoke: vi
@@ -618,6 +745,82 @@ describe('Cavalry assistant runtime', () => {
       cancelled: false
     });
     expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it('scrubs reasoning parts and citation scratch before returning a Responses answer', async () => {
+    const advisor = {
+      invoke: vi.fn(async () => ({
+        ok: true,
+        response: {
+          id: 'response_with_private_content',
+          output: [
+            { type: 'reasoning', summary: [{ text: 'Inspect the records.' }] },
+            {
+              type: 'message',
+              content: [
+                { type: 'reasoning_text', text: 'Need to decide whether a citation is valid.' },
+                {
+                  type: 'output_text',
+                  text:
+                    "I couldn't verify that total from the workbook. Wait citation invalid. " +
+                    'Need no cite? Could omit it. Need ask one focused question.'
+                }
+              ]
+            }
+          ]
+        }
+      }))
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'Can you verify that total?',
+      settings: { provider: 'openai', apiMode: 'responses', hasApiKey: true },
+      advisor
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      text: "I couldn't verify that total from the workbook."
+    });
+    expect(answer.text).not.toMatch(/citation invalid|need no cite|focused question/i);
+  });
+
+  it('retries when a Chat Completions response contains only private reasoning', async () => {
+    const advisor = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: '<think>I need to inspect the prompt before answering.</think>',
+            tool_calls: []
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: 'I can help you think that decision through.',
+            tool_calls: []
+          }
+        })
+    };
+
+    const answer = await runCavalryAssistantTurn({
+      question: 'Can we talk through this decision?',
+      settings: { provider: 'custom' },
+      advisor
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      text: 'I can help you think that decision through.'
+    });
+    expect(advisor.invoke).toHaveBeenCalledTimes(2);
+    expect(advisor.invoke.mock.calls[1][1].messages.at(-1).content).toContain(
+      'only the polished final answer'
+    );
   });
 
   it('requires configuration for the old built-in local provider without invoking it', async () => {
@@ -972,7 +1175,8 @@ describe('Cavalry assistant runtime', () => {
             type: 'object',
             properties: { confirmed: { type: 'boolean' } },
             additionalProperties: false
-          }
+          },
+          cavalry: { approvalFields: ['confirmed'] }
         }
       ],
       executeTool
@@ -1132,15 +1336,15 @@ describe('Cavalry assistant runtime', () => {
 
     expect(executeTool).toHaveBeenCalledWith(
       'future_mutation',
-      { value: 'change', userApproved: false, confirmed: false, allowDuplicate: false },
+      { value: 'change', userApproved: false, confirmed: true, allowDuplicate: true },
       expect.objectContaining({ callId: 'future_call', tool })
     );
     expect(answer.toolResults[0]).toMatchObject({
       arguments: {
         value: 'change',
         userApproved: false,
-        confirmed: false,
-        allowDuplicate: false
+        confirmed: true,
+        allowDuplicate: true
       },
       result: { confirmation: { field: 'userApproved' } }
     });
@@ -1302,6 +1506,79 @@ describe('Cavalry assistant runtime', () => {
       content: 'Should I use the first receipt, second receipt, or both?'
     });
     expect(input[2]).toEqual({ role: 'user', content: 'Use both.' });
+  });
+
+  it('keeps unavailable persisted attachment metadata but excludes it from later model history', async () => {
+    const entries = new Map();
+    const storage = {
+      getItem: (key) => entries.get(key) || null,
+      setItem: (key, value) => entries.set(key, value)
+    };
+    const workbook = { id: 'unavailable-image-history' };
+    let state = loadCavalryAssistantConversationState(workbook, { storage });
+    state = updateActiveCavalryAssistantConversation(
+      state,
+      [
+        {
+          id: 'receipt-question',
+          role: 'user',
+          text: 'Review this receipt.',
+          attachments: [
+            {
+              id: 'historic-receipt',
+              filename: 'receipt.png',
+              mimeType: 'image/png',
+              dataUrl: 'data:image/png;base64,AAAA'
+            }
+          ]
+        },
+        {
+          id: 'receipt-answer',
+          role: 'assistant',
+          text: 'The receipt total is 42.'
+        }
+      ],
+      { createId: () => 'receipt-conversation', now: () => '2026-08-21T00:00:00.000Z' }
+    );
+    expect(saveCavalryAssistantConversationState(state, { storage })).toEqual({
+      ok: true,
+      degraded: true
+    });
+
+    const restored = loadCavalryAssistantConversationState(workbook, { storage });
+    const restoredMessages = restored.conversations[0].messages;
+    expect(restoredMessages[0].attachments).toEqual([
+      expect.objectContaining({
+        id: 'historic-receipt',
+        name: 'receipt.png',
+        mimeType: 'image/png',
+        dataUrl: '',
+        storageUnavailable: true
+      })
+    ]);
+    const advisor = {
+      invoke: vi.fn(async () => ({
+        ok: true,
+        response: { id: 'response_after_reload', output_text: 'The saved total was 42.' }
+      }))
+    };
+    const answer = await runCavalryAssistantTurn({
+      question: 'What total did you find?',
+      history: restoredMessages.map(({ role, text, attachments }) => ({
+        role,
+        content: text,
+        images: attachments
+      })),
+      settings: { provider: 'openai', apiMode: 'responses', hasApiKey: true },
+      advisor
+    });
+
+    expect(answer).toMatchObject({ ok: true, text: 'The saved total was 42.' });
+    expect(advisor.invoke.mock.calls[0][1].input).toEqual([
+      { role: 'user', content: 'Review this receipt.' },
+      { role: 'assistant', content: 'The receipt total is 42.' },
+      { role: 'user', content: 'What total did you find?' }
+    ]);
   });
 
   it('requires a local vision projector before sending image data', async () => {

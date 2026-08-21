@@ -305,4 +305,271 @@ describe('Cavalry assistant conversations', () => {
       source_refs: ['account:cash']
     });
   });
+
+  it('persists only allowlisted user and final records without runtime or provider fields', () => {
+    const storage = createMemoryStorage();
+    const state = {
+      scopeKey: 'allowlisted-history',
+      activeConversationId: 'conversation',
+      conversations: [
+        {
+          id: 'conversation',
+          title: 'Allowlist',
+          createdAt: '2026-08-21T00:00:00.000Z',
+          updatedAt: '2026-08-21T00:00:02.000Z',
+          privateConversationField: 'drop me',
+          messages: [
+            {
+              id: 'user',
+              role: 'user',
+              text: 'Review this.',
+              providerPayload: { secret: 'drop me' },
+              activities: [{ message: 'drop me' }]
+            },
+            {
+              id: 'stream',
+              role: 'assistant',
+              recordType: 'transient',
+              text: 'Partial draft'
+            },
+            {
+              id: 'final',
+              role: 'assistant',
+              recordType: 'final',
+              text: 'Here is the review.',
+              activities: [{ toolName: 'inspect', raw: 'drop me' }],
+              toolResults: [{ raw: 'drop me' }],
+              providerPayload: { raw: 'drop me' }
+            }
+          ]
+        }
+      ]
+    };
+
+    saveCavalryAssistantConversationState(state, { storage });
+    const serialized = JSON.parse(storage.entries.get(state.scopeKey));
+
+    expect(serialized.conversations[0]).not.toHaveProperty('privateConversationField');
+    expect(serialized.conversations[0].messages.map((message) => message.id)).toEqual([
+      'user',
+      'final'
+    ]);
+    expect(JSON.stringify(serialized)).not.toMatch(
+      /providerPayload|toolResults|activities|Partial draft|drop me/
+    );
+  });
+
+  it('round-trips the safe fields of multi-item action receipts and strips private fields', () => {
+    const storage = createMemoryStorage();
+    const workbook = { id: 'receipt-history' };
+    let state = loadCavalryAssistantConversationState(workbook, { storage });
+    state = updateActiveCavalryAssistantConversation(
+      state,
+      [
+        {
+          id: 'receipt-message',
+          role: 'assistant',
+          text: 'Replaced the transfer.',
+          receipts: [
+            {
+              kind: 'action_receipt',
+              access: 'write',
+              lifecycle: 'completed',
+              commitStatus: 'committed',
+              verificationStatus: 'verified',
+              changed: true,
+              privatePayload: { raw: 'drop me' },
+              persistence: {
+                status: 'saved',
+                durable: true,
+                savedAt: '2026-08-21T00:00:00.000Z',
+                revision: 'revision-2',
+                filePath: '/private/path',
+                raw: 'drop me'
+              },
+              items: [
+                {
+                  id: 'replacement-1',
+                  label: 'Checking side',
+                  amount: 1250,
+                  currency: 'php',
+                  date: '2026-08-20',
+                  raw: 'drop me',
+                  accounts: [
+                    {
+                      id: 'checking',
+                      name: 'Checking',
+                      role: 'source',
+                      balance: 99_999
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      { createId: () => 'receipt-conversation', now: () => '2026-08-21T00:00:00.000Z' }
+    );
+
+    saveCavalryAssistantConversationState(state, { storage });
+    const restored = loadCavalryAssistantConversationState(workbook, { storage });
+    const [receipt] = restored.conversations[0].messages[0].receipts;
+
+    expect(receipt.items).toEqual([
+      {
+        id: 'replacement-1',
+        label: 'Checking side',
+        amount: 1250,
+        currency: 'PHP',
+        date: '2026-08-20',
+        accounts: [{ id: 'checking', name: 'Checking', role: 'source' }]
+      }
+    ]);
+    expect(receipt.persistence).toEqual({
+      status: 'saved',
+      durable: true,
+      savedAt: '2026-08-21T00:00:00.000Z',
+      revision: 'revision-2'
+    });
+    expect(receipt.access).toBe('write');
+    expect(JSON.stringify(receipt)).not.toMatch(
+      /privatePayload|filePath|raw|balance|drop me|private\/path/
+    );
+  });
+
+  it('sanitizes contaminated receipt messages while restoring a transcript', () => {
+    const storage = createMemoryStorage();
+    const workbook = { id: 'unsafe-receipt-history' };
+    const credential = `${'s'}${'k'}-${'B'.repeat(24)}`;
+    const privatePath = ['', 'Users', 'private-user', 'provider.js:17'].join('/');
+    storage.setItem(
+      getCavalryAssistantConversationStorageKey(workbook),
+      JSON.stringify({
+        version: 2,
+        activeConversationId: 'conversation',
+        conversations: [
+          {
+            id: 'conversation',
+            messages: [
+              {
+                id: 'failed-action',
+                role: 'assistant',
+                text: 'The action did not complete.',
+                receipts: [
+                  {
+                    kind: 'action_receipt',
+                    lifecycle: 'failed',
+                    errors: [
+                      {
+                        code: 'provider_failure',
+                        message: `<html>${credential}</html>\n    at ${privatePath}`
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      })
+    );
+
+    const loaded = loadCavalryAssistantConversationState(workbook, { storage });
+    const restoredError = loaded.conversations[0].messages[0].receipts[0].errors[0];
+
+    expect(restoredError.message).toBe('Cavalry could not complete that action.');
+    expect(JSON.stringify(loaded)).not.toContain(credential);
+    expect(JSON.stringify(loaded)).not.toContain(privatePath);
+    expect(JSON.stringify(loaded)).not.toMatch(/<html|provider\.js/i);
+  });
+
+  it('projects known private legacy assistant blocks and quarantines technical records', () => {
+    const storage = createMemoryStorage();
+    const workbook = { id: 'legacy-private-history' };
+    storage.setItem(
+      getCavalryAssistantConversationStorageKey(workbook),
+      JSON.stringify({
+        activeConversationId: 'conversation',
+        conversations: [
+          {
+            id: 'conversation',
+            messages: [
+              {
+                id: 'private-tag',
+                role: 'assistant',
+                text: '<think>Inspect hidden state.</think>\nYour balance is steady.'
+              },
+              {
+                id: 'technical',
+                role: 'assistant',
+                type: 'stream',
+                text: 'raw provider delta'
+              },
+              {
+                id: 'ordinary',
+                role: 'assistant',
+                text: 'Need a citation for the tax form? Keep the receipt.'
+              }
+            ]
+          }
+        ]
+      })
+    );
+
+    const loaded = loadCavalryAssistantConversationState(workbook, { storage });
+    expect(loaded.conversations[0].messages.map((message) => message.text)).toEqual([
+      'Your balance is steady.',
+      'Need a citation for the tax form? Keep the receipt.'
+    ]);
+  });
+
+  it('reconciles a persisted trailing user turn without claiming that no write occurred', () => {
+    const storage = createMemoryStorage();
+    const workbook = { id: 'interrupted-history' };
+    storage.setItem(
+      getCavalryAssistantConversationStorageKey(workbook),
+      JSON.stringify({
+        version: 2,
+        activeConversationId: 'conversation',
+        conversations: [
+          {
+            id: 'conversation',
+            messages: [
+              {
+                id: 'earlier-result',
+                role: 'assistant',
+                recordType: 'final',
+                text: 'Recorded “Coffee”.',
+                receipts: [
+                  {
+                    kind: 'action_receipt',
+                    lifecycle: 'completed',
+                    commitStatus: 'committed',
+                    verificationStatus: 'verified',
+                    changed: true,
+                    persistence: { status: 'saved', durable: true },
+                    entity: { id: 'coffee', label: 'Coffee', type: 'transaction' }
+                  }
+                ]
+              },
+              { id: 'interrupted-user', role: 'user', recordType: 'user', text: 'Add lunch too.' }
+            ]
+          }
+        ]
+      })
+    );
+
+    const loaded = loadCavalryAssistantConversationState(workbook, { storage });
+    expect(loaded.conversations[0].messages.map((message) => message.text)).toEqual([
+      'Recorded “Coffee”.',
+      'Add lunch too.',
+      'This request was interrupted before Cavalry completed it. No completion was confirmed.'
+    ]);
+    expect(loaded.conversations[0].messages[0].receipts[0].persistence).toMatchObject({
+      status: 'saved',
+      durable: true
+    });
+    expect(loaded.conversations[0].messages.at(-1).text).not.toMatch(/no changes/i);
+  });
 });

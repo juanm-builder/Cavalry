@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { verifyGitHubReleaseSnapshot } from '../../tools/release/verify-release-assets.mjs';
+
 const temporaryDirectories = [];
 const generatedReleaseConfig = resolve('apps/desktop/src-tauri/tauri.release.conf.json');
 const currentVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
@@ -26,9 +28,14 @@ function createUpdaterAssets({
 } = {}) {
   const directory = mkdtempSync(resolve(tmpdir(), 'cavalry-tauri-release-'));
   temporaryDirectories.push(directory);
-  const asset = `Cavalry_${version}_${platform}.app.tar.gz`;
+  const architecture = platform === 'darwin-aarch64' ? 'aarch64' : 'x64';
+  const asset = `Cavalry.for.Mac_${version}_${architecture}.app.tar.gz`;
   writeFileSync(resolve(directory, asset), `synthetic:${asset}`);
   writeFileSync(resolve(directory, `${asset}.sig`), `${signatureFile}\n`);
+  writeFileSync(
+    resolve(directory, `Cavalry.for.Mac_${version}_${architecture}.dmg`),
+    'synthetic dmg'
+  );
   writeFileSync(
     resolve(directory, 'latest.json'),
     `${JSON.stringify(
@@ -48,6 +55,71 @@ function createUpdaterAssets({
     )}\n`
   );
   return { directory, asset, platform };
+}
+
+function createGitHubReleaseSnapshot({
+  version = currentVersion,
+  commit = 'a'.repeat(40),
+  repository = 'juanm-builder/Cavalry',
+  draft = true,
+  includeAliases = true
+} = {}) {
+  let id = 500;
+  const assets = [];
+  const byName = {};
+  const addAsset = (name) => {
+    id += 1;
+    const asset = {
+      id,
+      name,
+      size: 100,
+      state: 'uploaded',
+      url: `https://api.github.com/repos/${repository}/releases/assets/${id}`
+    };
+    assets.push(asset);
+    byName[name] = asset;
+    return asset;
+  };
+  const platformEntries = {};
+  const downloadedAssetText = {};
+  [
+    ['darwin-aarch64', 'aarch64'],
+    ['darwin-x86_64', 'x64']
+  ].forEach(([platform, architecture]) => {
+    const prefix = `Cavalry.for.Mac_${version}_${architecture}`;
+    const archive = addAsset(`${prefix}.app.tar.gz`);
+    const signatureName = `${prefix}.app.tar.gz.sig`;
+    addAsset(signatureName);
+    addAsset(`${prefix}.dmg`);
+    downloadedAssetText[signatureName] = `${platform}-signature`;
+    platformEntries[platform] = {
+      signature: `${platform}-signature`,
+      url: archive.url
+    };
+    if (includeAliases) platformEntries[`${platform}-app`] = platformEntries[platform];
+  });
+  addAsset('latest.json');
+  const metadata = {
+    version,
+    pub_date: '2026-08-21T00:00:00.000Z',
+    platforms: platformEntries
+  };
+  downloadedAssetText['latest.json'] = JSON.stringify(metadata);
+  return {
+    repository,
+    tag: `v${version}`,
+    commit,
+    tagCommit: commit,
+    release: {
+      tag_name: `v${version}`,
+      target_commitish: commit,
+      draft,
+      assets
+    },
+    metadata,
+    downloadedAssetText,
+    byName
+  };
 }
 
 afterEach(() => {
@@ -167,5 +239,67 @@ describe('Tauri desktop release tooling', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('signature does not match');
+  });
+
+  it('verifies the real draft asset convention and immutable GitHub asset-ID URLs', () => {
+    const snapshot = createGitHubReleaseSnapshot();
+
+    expect(verifyGitHubReleaseSnapshot(snapshot)).toMatchObject({
+      version: currentVersion,
+      tag: `v${currentVersion}`,
+      commit: snapshot.commit,
+      platforms: ['darwin-aarch64', 'darwin-x86_64']
+    });
+  });
+
+  it('rejects unknown or cross-repository updater asset IDs', () => {
+    const unknown = createGitHubReleaseSnapshot();
+    unknown.metadata.platforms['darwin-aarch64'].url =
+      'https://api.github.com/repos/juanm-builder/Cavalry/releases/assets/999999';
+    expect(() => verifyGitHubReleaseSnapshot(unknown)).toThrow(/unknown release asset ID/i);
+
+    const foreign = createGitHubReleaseSnapshot();
+    foreign.metadata.platforms['darwin-aarch64'].url = foreign.metadata.platforms[
+      'darwin-aarch64'
+    ].url.replace('juanm-builder/Cavalry', 'someone-else/Other');
+    expect(() => verifyGitHubReleaseSnapshot(foreign)).toThrow(/belongs to .* expected/i);
+  });
+
+  it('rejects an incomplete, unexpected, stale, or already-public release inventory', () => {
+    const missingIntel = createGitHubReleaseSnapshot();
+    missingIntel.release.assets = missingIntel.release.assets.filter(
+      (asset) => !asset.name.endsWith('_x64.dmg')
+    );
+    expect(() => verifyGitHubReleaseSnapshot(missingIntel)).toThrow(/missing assets/i);
+
+    const unexpected = createGitHubReleaseSnapshot();
+    unexpected.release.assets.push({
+      id: 999,
+      name: 'debug.log',
+      size: 1,
+      state: 'uploaded',
+      url: 'https://api.github.com/repos/juanm-builder/Cavalry/releases/assets/999'
+    });
+    expect(() => verifyGitHubReleaseSnapshot(unexpected)).toThrow(/unexpected assets/i);
+
+    const stale = createGitHubReleaseSnapshot();
+    stale.tagCommit = 'b'.repeat(40);
+    expect(() => verifyGitHubReleaseSnapshot(stale)).toThrow(/points to .* expected/i);
+
+    const published = createGitHubReleaseSnapshot({ draft: false });
+    expect(() => verifyGitHubReleaseSnapshot(published)).toThrow(/must remain a draft/i);
+  });
+
+  it('pins native ARM and Intel runners and verifies the uploaded draft after both builds', () => {
+    const workflow = readFileSync(resolve('.github/workflows/desktop-release.yml'), 'utf8');
+
+    expect(workflow).toContain('runner: macos-15');
+    expect(workflow).toContain('runner: macos-15-intel');
+    expect(workflow).toContain('max-parallel: 1');
+    expect(workflow).toContain('asset_arch: aarch64');
+    expect(workflow).toContain('asset_arch: x64');
+    expect(workflow).toContain('Cavalry.for.Mac_${version}_${{ matrix.asset_arch }}.dmg');
+    expect(workflow).toContain('Verify uploaded release assets');
+    expect(workflow).not.toContain('Skipping sidecar smoke test');
   });
 });
