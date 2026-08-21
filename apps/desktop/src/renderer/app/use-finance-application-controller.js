@@ -23,6 +23,7 @@ import {
 } from './advisor-application-adapter.js';
 import { useCommandExecutor } from './CommandExecutor.jsx';
 import { useWorkbookSession } from './WorkbookProvider.jsx';
+import { commitAssistantCommandResultDurably } from './assistant-command-commit.js';
 import { useAdvisorRuntimeState } from './use-advisor-runtime-state.js';
 import { useCategoryAwareRouteActions } from './use-category-aware-route-actions.js';
 import {
@@ -574,7 +575,7 @@ export function useFinanceApplicationController({
   );
 
   const commitAssistantCommandResult = useCallback(
-    (result, options = {}) => {
+    async (result, options = {}) => {
       if (!(result && result.ok)) {
         if (asArray(result?.errors).length) {
           reportError(
@@ -586,44 +587,35 @@ export function useFinanceApplicationController({
         return result;
       }
       setApplicationErrors([]);
-      const nextWorkbook = result.workbook;
-      const applied = applyCommandResult(result, {
-        saveMutation: true,
-        reason: options.reason || 'assistant_changed'
-      });
-      if (nextWorkbook) {
-        // Tool calls in the same model turn must observe the just-committed workbook,
-        // even before React has rendered the replacement state.
-        workbookRef.current = nextWorkbook;
+      try {
+        return await commitAssistantCommandResultDurably({
+          result,
+          currentWorkbook: workbookRef.current,
+          saveWorkbook,
+          isSaveEvent: (event) => hasSaveEvent([translatedEvent(event)]),
+          applyCommandResult: (committedResult) =>
+            applyCommandResult(committedResult, {
+              saveMutation: false,
+              reason: options.reason || 'assistant_changed'
+            }),
+          updateCurrentWorkbook(nextWorkbook) {
+            // The durable write completed before the state swap, so later tool calls in this turn
+            // can treat this exact workbook as committed rather than merely proposed.
+            workbookRef.current = nextWorkbook;
+          }
+        });
+      } catch (error) {
+        const message = asString(error?.message) || 'The workbook change could not be saved.';
+        reportError('assistant', message, asString(error?.code) || 'assistant.persistence_failed');
+        throw error;
       }
-      return applied;
     },
-    [applyCommandResult, reportError]
+    [applyCommandResult, reportError, saveWorkbook]
   );
 
   const executeAssistantTool = useCallback(
     (name, args = {}, metadata = {}) => {
       const suppliedArguments = asObject(args);
-      const approvedArguments = { ...suppliedArguments };
-      if (metadata.approvedByUser !== true) {
-        const toolDefinition = asObject(metadata.tool);
-        const declaredApprovalFields = asArray(asObject(toolDefinition.cavalry).approvalFields)
-          .map(asString)
-          .filter((field) => /^[a-z][a-zA-Z0-9]*$/.test(field));
-        const approvalFields = Array.from(
-          new Set([
-            ...declaredApprovalFields,
-            'confirmed',
-            'allowDuplicate',
-            'allowCurrencyConversion'
-          ])
-        );
-        approvalFields.forEach((field) => {
-          if (Object.prototype.hasOwnProperty.call(approvedArguments, field)) {
-            approvedArguments[field] = false;
-          }
-        });
-      }
       if (metadata.signal?.aborted) {
         return {
           ok: false,
@@ -636,21 +628,23 @@ export function useFinanceApplicationController({
         {
           id: metadata.callId,
           name,
-          arguments: approvedArguments
+          arguments: suppliedArguments
         },
         {
           getWorkbook: () => workbookRef.current,
           services: featureServices,
+          advisor: ports.advisor,
           commitCommandResult: commitAssistantCommandResult,
           navigate,
           saveWorkbook,
           question: asString(metadata.question),
           today: asString(metadata.today),
-          activeRouteId: asString(metadata.activeRouteId)
+          activeRouteId: asString(metadata.activeRouteId),
+          approvedByUser: metadata.approvedByUser === true
         }
       );
     },
-    [commitAssistantCommandResult, featureServices, navigate, saveWorkbook]
+    [commitAssistantCommandResult, featureServices, navigate, ports.advisor, saveWorkbook]
   );
 
   const openAssistantSettings = useCallback(

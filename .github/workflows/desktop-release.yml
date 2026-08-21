@@ -57,14 +57,21 @@ jobs:
     environment: release-signing
     strategy:
       fail-fast: false
+      # tauri-action merges latest.json with a read/delete/re-upload sequence. Serialize the
+      # architectures so one job cannot overwrite the other job's updater platform entry.
+      max-parallel: 1
       matrix:
         include:
           - label: macOS Apple Silicon
-            runner: macos-latest
+            runner: macos-15
+            host_arch: arm64
+            asset_arch: aarch64
             target: aarch64-apple-darwin
             sidecar: sidecar:prepare:mac
           - label: macOS Intel
-            runner: macos-latest
+            runner: macos-15-intel
+            host_arch: x86_64
+            asset_arch: x64
             target: x86_64-apple-darwin
             sidecar: sidecar:prepare:mac:intel
     steps:
@@ -141,6 +148,7 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
+          releaseAssetNamePattern: Cavalry.for.Mac_[version]_[arch][ext]
           args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
       - name: Smoke test the signed host sidecar
@@ -157,9 +165,14 @@ jobs:
           # The sidecar embeds Node, and the hardened runtime kills V8 at startup unless the JIT
           # entitlements are present. That failure is invisible to codesign and to notarization, so
           # the only way to catch it is to actually run the signed binary and wait for its handshake.
-          if ! lipo -archs "$sidecar" | tr ' ' '\n' | grep -qx "$(uname -m)"; then
-            echo "::warning::Skipping sidecar smoke test: $(lipo -archs "$sidecar") cannot run on $(uname -m)"
-            exit 0
+          actual_host="$(uname -m)"
+          if [ "$actual_host" != "${{ matrix.host_arch }}" ]; then
+            echo "::error::Expected host ${{ matrix.host_arch }}, got $actual_host"
+            exit 1
+          fi
+          if ! lipo -archs "$sidecar" | tr ' ' '\n' | grep -qx "${{ matrix.host_arch }}"; then
+            echo "::error::Sidecar architectures $(lipo -archs "$sidecar") do not contain ${{ matrix.host_arch }}"
+            exit 1
           fi
           log="$RUNNER_TEMP/host-smoke.log"
           : > "$log"
@@ -234,5 +247,35 @@ jobs:
           shopt -s nullglob
           bundle_dir="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
           for dmg in "$bundle_dir"/dmg/*.dmg; do
-            gh release upload "${{ github.ref_name }}" "$dmg" --clobber --repo "$GITHUB_REPOSITORY"
+            version="${GITHUB_REF_NAME#v}"
+            release_dmg="$RUNNER_TEMP/Cavalry.for.Mac_${version}_${{ matrix.asset_arch }}.dmg"
+            cp "$dmg" "$release_dmg"
+            gh release upload "${{ github.ref_name }}" "$release_dmg" --clobber --repo "$GITHUB_REPOSITORY"
           done
+
+  verify-release-assets:
+    name: Verify uploaded release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+
+      - name: Verify uploaded draft release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node tools/release/verify-release-assets.mjs \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA"

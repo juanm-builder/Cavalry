@@ -1,11 +1,11 @@
 import { buildCavalryAssistantCitations } from './cavalry-assistant-references.js';
 import {
+  assistantVisibleText,
   buildChatHistory,
   buildChatUserContent,
   buildResponsesHistory,
   buildResponsesUserContent,
   CAVALRY_ASSISTANT_MAX_IMAGES,
-  contentText,
   normalizeHistory,
   normalizeImages,
   uniqueContextImages
@@ -115,7 +115,7 @@ function stripActivityLogLines(text, activities) {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return visible || sourceText;
+  return visible;
 }
 
 function stripTurnContextNotes(text) {
@@ -154,7 +154,7 @@ function result({
   cancelled = false,
   clarification = null
 }) {
-  const rawText = asString(text);
+  const rawText = assistantVisibleText(text);
   const visibleText = stripTurnContextNotes(stripActivityLogLines(rawText, activities));
   const citations = Array.isArray(references)
     ? { text: visibleText, references }
@@ -308,6 +308,10 @@ function errorMessage(value, fallback) {
   );
 }
 
+function unexpectedErrorMessage(value, fallback) {
+  return asString(asObject(value).userMessage).slice(0, 600) || fallback;
+}
+
 function isCancellation(value) {
   const source = asObject(value);
   const status = asString(source.status).toLowerCase();
@@ -365,14 +369,15 @@ function responseToolCalls(response) {
 }
 
 function responseOutputText(response) {
-  const direct = contentText(response && response.output_text);
+  const direct = assistantVisibleText(response && response.output_text);
   if (direct) return direct;
-  return asArray(response && response.output)
-    .filter((item) => item && ['message', 'output_text', 'text'].includes(item.type))
-    .map((item) => contentText(item.content || item.text))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+  return assistantVisibleText(
+    asArray(response && response.output)
+      .filter((item) => item && ['message', 'output_text', 'text'].includes(item.type))
+      .map((item) => assistantVisibleText(item.content || item.text))
+      .filter(Boolean)
+      .join('\n')
+  );
 }
 
 function chatMessage(response) {
@@ -404,9 +409,9 @@ function chatToolCalls(message) {
 
 function chatOutputText(invocation, response, message) {
   return (
-    contentText(message && message.content) ||
-    contentText(response && response.text) ||
-    contentText(invocation && invocation.text)
+    assistantVisibleText(message && message.content) ||
+    assistantVisibleText(response && response.text) ||
+    assistantVisibleText(invocation && invocation.text)
   );
 }
 
@@ -421,22 +426,10 @@ function findOriginalTool(tools, toolName) {
 
 function toolHostApprovalFields(tools, toolName) {
   const definition = asObject(findOriginalTool(tools, toolName));
-  const functionDefinition = asObject(definition.function);
-  const parameters = asObject(
-    definition.parameters || definition.inputSchema || functionDefinition.parameters
-  );
-  const properties = asObject(parameters.properties);
   const declared = asArray(asObject(definition.cavalry).approvalFields)
     .map(asString)
     .filter((field) => /^[a-z][a-zA-Z0-9]*$/.test(field));
-  const candidates = Array.from(
-    new Set([...declared, 'confirmed', 'allowDuplicate', 'allowCurrencyConversion'])
-  );
-  return candidates.filter((field, index) => {
-    return (
-      candidates.indexOf(field) === index && Object.prototype.hasOwnProperty.call(properties, field)
-    );
-  });
+  return declared.filter((field, index) => declared.indexOf(field) === index);
 }
 
 function isTurnCancelled(context) {
@@ -489,7 +482,7 @@ async function executeCalls(calls, context) {
         }
       } catch (error) {
         cancelled = isCancellation(error);
-        executionError = errorMessage(error, `${call.name} did not complete.`);
+        executionError = unexpectedErrorMessage(error, `${call.name} did not complete.`);
       }
     } else if (parsed.ok) {
       executionError = 'No tool executor is available.';
@@ -576,7 +569,7 @@ async function invokeModel(context, command, payload, iteration) {
     const cancelled = isTurnCancelled(context) || isCancellation(error);
     const message = cancelled
       ? cancelledMessage()
-      : errorMessage(error, 'The selected model could not complete the request.');
+      : unexpectedErrorMessage(error, 'The selected model could not complete the request.');
     modelActivity.status = cancelled ? 'cancelled' : 'failed';
     modelActivity.message = message;
     return { ok: false, invocation: null, cancelled, message };
@@ -593,10 +586,12 @@ async function runResponsesLoop(context) {
   for (let iteration = 1; iteration <= context.maxIterations; iteration += 1) {
     const payload = {
       requestId: context.requestId,
+      _cavalryMemoryQuery: context.question,
       instructions: context.instructions,
       input,
       tools: context.responseTools,
       stream: true,
+      streamSegment: iteration,
       connection: context.connection
     };
     if (previousResponseId) payload.previous_response_id = previousResponseId;
@@ -690,10 +685,12 @@ async function runResponsesWrapUp(context, input, previousResponseId) {
   if (!previousResponseId || !asArray(input).length) return null;
   const payload = {
     requestId: context.requestId,
+    _cavalryMemoryQuery: context.question,
     instructions: `${context.instructions}\n\n${WRAP_UP_NOTE}`,
     input,
     tools: [],
     stream: true,
+    streamSegment: context.maxIterations + 1,
     previous_response_id: previousResponseId,
     connection: context.connection
   };
@@ -745,6 +742,7 @@ async function runChatCompletionsLoop(context) {
       tool_choice: 'auto',
       temperature: chatTemperature(context.connection),
       stream: true,
+      streamSegment: iteration,
       connection: context.connection
     };
     const invoked = await invokeModel(context, 'chat', payload, iteration);
@@ -788,7 +786,7 @@ async function runChatCompletionsLoop(context) {
     if (clarification) {
       return result({
         ok: true,
-        text: contentText(message && message.content) || clarification.question,
+        text: assistantVisibleText(message && message.content) || clarification.question,
         activities: context.activities,
         toolResults: context.toolResults,
         clarification
@@ -812,7 +810,7 @@ async function runChatCompletionsLoop(context) {
     }));
     messages.push({
       role: 'assistant',
-      content: contentText(message && message.content) || null,
+      content: assistantVisibleText(message && message.content) || null,
       tool_calls: assistantToolCalls
     });
     const executed = await executeCalls(callsWithIds, { ...context, iteration });
@@ -858,6 +856,7 @@ async function runChatWrapUp(context, messages) {
     tool_choice: 'none',
     temperature: chatTemperature(context.connection),
     stream: true,
+    streamSegment: context.maxIterations + 1,
     connection: context.connection
   };
   const invoked = await invokeModel(context, 'chat', payload, context.maxIterations + 1);

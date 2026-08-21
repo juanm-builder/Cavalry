@@ -1,4 +1,6 @@
 import { normalizeCavalryAssistantReferences } from './cavalry-assistant-references.js';
+import { projectLegacyAssistantText } from './cavalry-assistant-runtime-content.js';
+import { sanitizeCavalryAssistantPublicMessage } from './cavalry-assistant-action-results.js';
 
 const STORAGE_PREFIX = 'cavalry.assistant.conversations.v1.';
 const STORAGE_VERSION = 2;
@@ -8,6 +10,8 @@ const MAX_STORED_CONVERSATIONS = 24;
 const MAX_STORED_MESSAGES_PER_CONVERSATION = 160;
 const FALLBACK_STORED_CONVERSATIONS = 8;
 const FALLBACK_STORED_MESSAGES_PER_CONVERSATION = 80;
+const INTERRUPTED_TURN_MESSAGE =
+  'This request was interrupted before Cavalry completed it. No completion was confirmed.';
 
 export const CAVALRY_ASSISTANT_CONVERSATIONS_EVENT = 'cavalry-assistant-conversations-changed';
 
@@ -65,31 +69,147 @@ function normalizeAttachment(attachment, index, options = {}) {
   const dataUrl = asText(source.dataUrl);
   const includeImageData = options.includeImageData !== false;
   const hasImageData = dataUrl.startsWith('data:image/');
-  return {
-    ...plain(source, {}),
+  const normalized = {
     id: asText(source.id) || `assistant_attachment_${index + 1}`,
     name: asText(source.name || source.filename) || `Image ${index + 1}`,
     kind: asText(source.kind) || 'image',
-    dataUrl: includeImageData && hasImageData ? dataUrl : '',
-    ...(hasImageData && !includeImageData ? { storageUnavailable: true } : {})
+    mimeType: asText(source.mimeType || source.mime_type),
+    dataUrl: includeImageData && hasImageData ? dataUrl : ''
+  };
+  ['size', 'width', 'height'].forEach((field) => {
+    const number = Number(source[field]);
+    if (Number.isFinite(number) && number >= 0) normalized[field] = number;
+  });
+  if (source.storageUnavailable === true || (hasImageData && !includeImageData)) {
+    normalized.storageUnavailable = true;
+  }
+  return normalized;
+}
+
+function normalizeReceipt(value) {
+  const source = asObject(value);
+  if (asText(source.kind) !== 'action_receipt' && !asText(source.lifecycle)) return null;
+  const normalizeAccounts = (accounts) =>
+    asArray(accounts).map((account) => ({
+      id: asText(asObject(account).id),
+      name: asText(asObject(account).name),
+      role: asText(asObject(account).role)
+    }));
+  const persistenceSource = asObject(source.persistence);
+  const persistence = {
+    status: asText(persistenceSource.status),
+    durable: persistenceSource.durable === true,
+    ...(asText(persistenceSource.savedAt || persistenceSource.saved_at)
+      ? { savedAt: asText(persistenceSource.savedAt || persistenceSource.saved_at) }
+      : {}),
+    ...(asText(persistenceSource.revision) ? { revision: asText(persistenceSource.revision) } : {})
+  };
+  const receipt = {
+    kind: 'action_receipt',
+    actionId: asText(source.actionId),
+    toolName: asText(source.toolName),
+    title: asText(source.title),
+    actionVerb: asText(source.actionVerb),
+    access: asText(source.access) === 'read' ? 'read' : 'write',
+    lifecycle: asText(source.lifecycle),
+    commitStatus: asText(source.commitStatus),
+    verificationStatus: asText(source.verificationStatus),
+    changed: source.changed === true,
+    entity: {
+      id: asText(asObject(source.entity).id),
+      type: asText(asObject(source.entity).type),
+      label: asText(asObject(source.entity).label)
+    },
+    amount: Number.isFinite(Number(source.amount)) ? Number(source.amount) : null,
+    currency: asText(source.currency).toUpperCase(),
+    date: asText(source.date),
+    accounts: normalizeAccounts(source.accounts),
+    items: asArray(source.items)
+      .map((item) => {
+        const itemSource = asObject(item);
+        return {
+          id: asText(itemSource.id),
+          label: asText(itemSource.label),
+          amount: Number.isFinite(Number(itemSource.amount)) ? Number(itemSource.amount) : null,
+          currency: asText(itemSource.currency).toUpperCase(),
+          date: asText(itemSource.date),
+          accounts: normalizeAccounts(itemSource.accounts)
+        };
+      })
+      .filter((item) => item.id || item.label),
+    persistence
+  };
+  const normalizeIssues = (issues, fallback) =>
+    asArray(issues).map((issue) => ({
+      code: asText(asObject(issue).code),
+      message: sanitizeCavalryAssistantPublicMessage(asObject(issue).message, fallback),
+      ...(asText(asObject(issue).field) ? { field: asText(asObject(issue).field) } : {})
+    }));
+  receipt.warnings = normalizeIssues(source.warnings, 'Cavalry omitted an unsafe warning message.');
+  receipt.errors = normalizeIssues(source.errors, 'Cavalry could not complete that action.');
+  return receipt;
+}
+
+function normalizeClarification(value) {
+  const source = asObject(value);
+  const id = asText(source.id);
+  if (!id) return null;
+  return {
+    id,
+    question: asText(source.question).slice(0, 500),
+    options: asArray(source.options)
+      .map((option) => ({
+        id: asText(asObject(option).id),
+        label: asText(asObject(option).label).slice(0, 80),
+        description: asText(asObject(option).description).slice(0, 160)
+      }))
+      .filter((option) => option.label)
+      .slice(0, 5),
+    allowFreeText: source.allowFreeText !== false
   };
 }
 
 function normalizeMessage(message, index, options = {}) {
   const source = asObject(message);
-  const role = source.role === 'user' ? 'user' : 'assistant';
-  return {
-    ...plain(source, {}),
+  const role = source.role === 'user' ? 'user' : source.role === 'assistant' ? 'assistant' : '';
+  const technicalType = asText(source.type || source.kind || source.phase).toLocaleLowerCase();
+  if (
+    role === 'assistant' &&
+    [
+      'activity',
+      'delta',
+      'progress',
+      'status',
+      'stream',
+      'technical',
+      'tool',
+      'tool_result'
+    ].includes(technicalType)
+  ) {
+    return null;
+  }
+  const rawText = source.text || source.content;
+  const text = role === 'assistant' ? projectLegacyAssistantText(rawText) : asText(rawText);
+  if (!role || (!text && !asArray(source.attachments).length)) return null;
+  const normalized = {
     id: asText(source.id) || `assistant_message_${index + 1}`,
     role,
-    text: asText(source.text || source.content),
+    recordType: role === 'user' ? 'user' : 'final',
+    text,
     createdAt: asText(source.createdAt || source.created_at),
     attachments: asArray(source.attachments).map((attachment, attachmentIndex) =>
       normalizeAttachment(attachment, attachmentIndex, options)
     ),
-    activities: plain(asArray(source.activities), []),
-    references: normalizeCavalryAssistantReferences(source.references)
+    references: role === 'assistant' ? normalizeCavalryAssistantReferences(source.references) : [],
+    receipts:
+      role === 'assistant' ? asArray(source.receipts).map(normalizeReceipt).filter(Boolean) : []
   };
+  const clarification = role === 'assistant' ? normalizeClarification(source.clarification) : null;
+  if (clarification) normalized.clarification = clarification;
+  if (options.includeRuntimeFields !== false) {
+    normalized.activities = plain(asArray(source.activities), []);
+  }
+  return normalized;
 }
 
 export function getCavalryAssistantConversationTitle(messages = []) {
@@ -103,9 +223,30 @@ export function getCavalryAssistantConversationTitle(messages = []) {
 
 function normalizeConversation(conversation, index, options = {}) {
   const source = asObject(conversation);
-  const messages = asArray(source.messages).map((message, messageIndex) =>
-    normalizeMessage(message, messageIndex, options)
-  );
+  let messages = asArray(source.messages)
+    .map((message, messageIndex) => normalizeMessage(message, messageIndex, options))
+    .filter(Boolean);
+  if (options.reconcileInterruptedTurn === true && messages.at(-1)?.role === 'user') {
+    const trailingUser = messages.at(-1);
+    const usedIds = new Set(messages.map((message) => message.id));
+    const baseId = `${asText(trailingUser.id) || `assistant_message_${messages.length}`}_interrupted`;
+    let interruptedId = baseId;
+    let suffix = 2;
+    while (usedIds.has(interruptedId)) {
+      interruptedId = `${baseId}_${suffix}`;
+      suffix += 1;
+    }
+    messages = messages.concat({
+      id: interruptedId,
+      role: 'assistant',
+      recordType: 'final',
+      text: INTERRUPTED_TURN_MESSAGE,
+      createdAt: asText(trailingUser.createdAt),
+      attachments: [],
+      references: [],
+      receipts: []
+    });
+  }
   const createdAt = asText(source.createdAt || source.created_at || messages[0]?.createdAt);
   const updatedAt = asText(
     source.updatedAt || source.updated_at || messages.at(-1)?.createdAt || createdAt
@@ -147,7 +288,11 @@ export function createCavalryAssistantConversationState(workbook = {}) {
 function normalizeState(source, workbook) {
   const raw = asObject(source);
   const conversations = asArray(raw.conversations).map((conversation, index) =>
-    normalizeConversation(conversation, index, { includeImageData: false })
+    normalizeConversation(conversation, index, {
+      includeImageData: false,
+      includeRuntimeFields: false,
+      reconcileInterruptedTurn: true
+    })
   );
   const hasActiveConversation = Object.prototype.hasOwnProperty.call(raw, 'activeConversationId');
   const requestedActiveId = asText(raw.activeConversationId);
@@ -230,6 +375,21 @@ function stateHasUserMessage(state) {
   );
 }
 
+function messageForStorage(message, index) {
+  const source = asObject(message);
+  if (
+    source.transient === true ||
+    source.final === false ||
+    (asText(source.recordType) && !['user', 'final'].includes(asText(source.recordType)))
+  ) {
+    return null;
+  }
+  return normalizeMessage(source, index, {
+    includeImageData: false,
+    includeRuntimeFields: false
+  });
+}
+
 function compactConversations(state, limits = {}) {
   const conversationLimit = limits.conversationLimit || MAX_STORED_CONVERSATIONS;
   const messageLimit = limits.messageLimit || MAX_STORED_MESSAGES_PER_CONVERSATION;
@@ -246,19 +406,16 @@ function compactConversations(state, limits = {}) {
   const retainedIds = new Set(retained.map((conversation) => asText(conversation?.id)));
   return source
     .filter((conversation) => retainedIds.has(asText(conversation?.id)))
-    .map((conversation) => ({
-      ...conversation,
+    .map((conversation, conversationIndex) => ({
+      id: asText(conversation?.id) || `assistant_conversation_${conversationIndex + 1}`,
+      title:
+        asText(conversation?.title) || getCavalryAssistantConversationTitle(conversation?.messages),
+      createdAt: asText(conversation?.createdAt || conversation?.created_at),
+      updatedAt: asText(conversation?.updatedAt || conversation?.updated_at),
       messages: asArray(conversation.messages)
+        .map(messageForStorage)
+        .filter(Boolean)
         .slice(-messageLimit)
-        .map((message) => ({
-          ...message,
-          references: normalizeCavalryAssistantReferences(message.references),
-          attachments: asArray(message.attachments).map((attachment) => ({
-            ...attachment,
-            dataUrl: '',
-            ...(attachment?.dataUrl ? { storageUnavailable: true } : {})
-          }))
-        }))
     }));
 }
 
@@ -359,9 +516,13 @@ export function updateActiveCavalryAssistantConversation(state, updater, options
   const updatedMessages = asArray(
     typeof updater === 'function' ? updater(currentMessages) : updater
   );
-  const nextMessages = updatedMessages.map((message, index) =>
-    message === currentMessages[index] ? message : normalizeMessage(message, index)
-  );
+  const nextMessages = updatedMessages
+    .map((message, index) =>
+      message === currentMessages[index]
+        ? message
+        : normalizeMessage(message, index, { includeRuntimeFields: true })
+    )
+    .filter(Boolean);
 
   if (!active && !nextMessages.length) return current;
   if (!active) {

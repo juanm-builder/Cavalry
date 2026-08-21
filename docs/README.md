@@ -19,6 +19,7 @@ This documentation describes the current Tauri desktop architecture and the comp
 - [Cavalry Cloud](features/cavalry-cloud.md)
 - [Advisor acceptance](features/advisor-acceptance.md)
 - [AI companion capabilities](features/ai-companion-capabilities.md)
+- [Companion trust architecture](features/companion-trust-architecture.md)
 
 ## Repository policies
 

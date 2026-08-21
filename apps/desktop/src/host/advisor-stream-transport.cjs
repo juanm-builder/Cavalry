@@ -4,6 +4,44 @@
 'use strict';
 
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const EVENT_STREAM_DONE = Object.freeze({ cavalryEventStreamDone: true });
+
+function providerStatusMessage(status) {
+  const code = Number(status);
+  if (code === 401 || code === 403) {
+    return 'The model provider rejected the connection credentials. Check the connection in Settings.';
+  }
+  if (code === 404) {
+    return 'The configured model or endpoint was not found. Check the connection in Settings.';
+  }
+  if (code === 408 || code === 429) {
+    return 'The model provider is busy or rate-limited. Try again in a moment.';
+  }
+  if (code >= 500 && code <= 599) {
+    return 'The model provider is temporarily unavailable. Try again in a moment.';
+  }
+  return Number.isFinite(code) && code > 0
+    ? `The model provider could not complete the request (HTTP ${code}).`
+    : 'The model provider could not complete the request.';
+}
+
+function boundedProviderErrorMessage(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw || /<(?:!doctype|html|head|body|script|style)\b/i.test(raw)) return '';
+  return raw
+    .split(/\r?\n\s*(?:at\b|stack(?:\s+trace)?\b|traceback\b)/i)[0]
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}\b/g, '[redacted]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(
+      /\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret)\s*[:=]\s*\S+/gi,
+      '$1=[redacted]'
+    )
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 600);
+}
 
 function isEventStream(response) {
   const headers = response && response.headers;
@@ -27,30 +65,78 @@ async function* readEventStream(response) {
   if (!body || typeof body.getReader !== 'function') return;
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = { buffer: '', eventLines: [] };
+  const consumeText = (text, final = false) => {
+    parser.buffer += text;
+    const frames = [];
+    const consumeLine = (line) => {
+      if (line !== '') {
+        parser.eventLines.push(line);
+        return;
+      }
+      if (parser.eventLines.length) frames.push(parser.eventLines.splice(0));
+    };
+    let lineStart = 0;
+    let cursor = 0;
+    while (cursor < parser.buffer.length) {
+      const character = parser.buffer[cursor];
+      if (character !== '\r' && character !== '\n') {
+        cursor += 1;
+        continue;
+      }
+      if (character === '\r' && cursor + 1 === parser.buffer.length && !final) break;
+      consumeLine(parser.buffer.slice(lineStart, cursor));
+      cursor += character === '\r' && parser.buffer[cursor + 1] === '\n' ? 2 : 1;
+      lineStart = cursor;
+    }
+    parser.buffer = parser.buffer.slice(lineStart);
+    if (final) {
+      if (parser.buffer) consumeLine(parser.buffer);
+      parser.buffer = '';
+      if (parser.eventLines.length) frames.push(parser.eventLines.splice(0));
+    }
+    return frames;
+  };
+  const frameData = (lines) =>
+    lines
+      .map((line) => {
+        const separator = line.indexOf(':');
+        const field = separator === -1 ? line : line.slice(0, separator);
+        if (field !== 'data') return null;
+        const value = separator === -1 ? '' : line.slice(separator + 1);
+        return value.startsWith(' ') ? value.slice(1) : value;
+      })
+      .filter((line) => line !== null)
+      .join('\n');
+  const parsedFrames = function* (frames) {
+    for (const lines of frames) {
+      const data = frameData(lines);
+      if (!data) continue;
+      if (data.trim() === '[DONE]') {
+        yield EVENT_STREAM_DONE;
+        continue;
+      }
+      try {
+        yield JSON.parse(data);
+      } catch (_error) {
+        // Ignore keep-alive comments and malformed frames.
+      }
+    }
+  };
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += typeof value === 'string' ? value : decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        const data = rawEvent
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim())
-          .join('\n');
-        if (data && data !== '[DONE]') {
-          try {
-            yield JSON.parse(data);
-          } catch (_error) {
-            // Ignore keep-alive comments and malformed frames.
-          }
-        }
-        boundary = buffer.indexOf('\n\n');
+      const decoded =
+        typeof value === 'string'
+          ? `${decoder.decode()}${value}`
+          : decoder.decode(value, { stream: true });
+      for (const parsed of parsedFrames(consumeText(decoded))) {
+        yield parsed;
       }
+    }
+    for (const parsed of parsedFrames(consumeText(decoder.decode(), true))) {
+      yield parsed;
     }
   } finally {
     if (typeof reader.releaseLock === 'function') reader.releaseLock();
@@ -84,7 +170,12 @@ async function readChatCompletionStream(response, onDelta) {
   let role = 'assistant';
   let usage = null;
   let finishReason = '';
+  let sawDone = false;
   for await (const chunk of readEventStream(response)) {
+    if (chunk === EVENT_STREAM_DONE) {
+      sawDone = true;
+      continue;
+    }
     if (chunk.usage) usage = chunk.usage;
     const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : null;
     if (!choice) continue;
@@ -93,13 +184,31 @@ async function readChatCompletionStream(response, onDelta) {
     if (delta.role) role = String(delta.role);
     if (typeof delta.content === 'string' && delta.content) {
       content += delta.content;
-      if (typeof onDelta === 'function') onDelta(delta.content);
     }
     if (delta.tool_calls) mergeToolCallDeltas(toolCallsByIndex, delta.tool_calls);
   }
   const toolCalls = Array.from(toolCallsByIndex.entries())
     .sort((left, right) => left[0] - right[0])
     .map(([, call]) => call);
+  if (!sawDone && !finishReason) {
+    throw new Error('The model stream ended before completing the response.');
+  }
+  if (finishReason === 'length') {
+    throw new Error(
+      'The model stopped before completing the response because it reached its output limit.'
+    );
+  }
+  if (finishReason === 'content_filter') {
+    throw new Error('The model stopped before completing the response.');
+  }
+  if ((finishReason === 'tool_calls' || finishReason === 'function_call') && !toolCalls.length) {
+    throw new Error('The model stream ended before completing its requested action.');
+  }
+  // Chat providers may emit prose before revealing that the same message contains a tool call.
+  // Buffer the invocation and publish it only when the completed message is terminal/no-tool.
+  if (!toolCalls.length && content && typeof onDelta === 'function') {
+    onDelta(content, { final: true, reset: true });
+  }
   return { content, role, toolCalls, usage, finishReason };
 }
 
@@ -107,33 +216,64 @@ async function readChatCompletionStream(response, onDelta) {
 async function readResponsesStream(response, onDelta) {
   let finalResponse = null;
   let text = '';
-  for await (const chunk of readEventStream(response)) {
-    const type = String(chunk.type || '');
-    if (type === 'response.output_text.delta' && typeof chunk.delta === 'string' && chunk.delta) {
-      text += chunk.delta;
-      if (typeof onDelta === 'function') onDelta(chunk.delta);
-      continue;
+  let published = false;
+  const clearPublishedText = () => {
+    if (published && typeof onDelta === 'function') {
+      onDelta('', { final: true, reset: true });
+      published = false;
     }
-    if (type === 'response.completed' || type === 'response.incomplete') {
-      finalResponse = chunk.response || finalResponse;
-      continue;
+  };
+  try {
+    for await (const chunk of readEventStream(response)) {
+      const type = String(chunk.type || '');
+      if (type === 'response.output_text.delta' && typeof chunk.delta === 'string' && chunk.delta) {
+        text += chunk.delta;
+        if (typeof onDelta === 'function') {
+          onDelta(chunk.delta, { final: false, reset: !published });
+          published = true;
+        }
+        continue;
+      }
+      if (type === 'response.completed') {
+        finalResponse = chunk.response || finalResponse;
+        continue;
+      }
+      if (type === 'response.incomplete') {
+        const reason = String(chunk.response?.incomplete_details?.reason || '').trim();
+        throw new Error(
+          reason === 'max_output_tokens'
+            ? 'The model stopped before completing the response because it reached its output limit.'
+            : 'The model stopped before completing the response.'
+        );
+      }
+      if (type === 'response.failed' || type === 'error') {
+        const message =
+          (chunk.response && chunk.response.error && chunk.response.error.message) ||
+          (chunk.error && chunk.error.message) ||
+          chunk.message ||
+          'The model stream failed.';
+        throw new Error(
+          boundedProviderErrorMessage(message) || 'The model provider stream failed.'
+        );
+      }
+      if (chunk.response && !finalResponse && type === 'response.created') {
+        finalResponse = null;
+      }
     }
-    if (type === 'response.failed' || type === 'error') {
-      const message =
-        (chunk.response && chunk.response.error && chunk.response.error.message) ||
-        (chunk.error && chunk.error.message) ||
-        chunk.message ||
-        'The model stream failed.';
-      throw new Error(String(message));
-    }
-    if (chunk.response && !finalResponse && type === 'response.created') {
-      finalResponse = null;
-    }
+  } catch (error) {
+    clearPublishedText();
+    throw error;
   }
-  if (!finalResponse && text) {
-    finalResponse = { output_text: text, output: [] };
+  if (!finalResponse) {
+    clearPublishedText();
+    throw new Error('The model stream ended before completing the response.');
   }
-  return finalResponse || {};
+  const completed = finalResponse || {};
+  const hasToolCall = (Array.isArray(completed.output) ? completed.output : []).some(
+    (item) => item && item.type === 'function_call'
+  );
+  if (hasToolCall) clearPublishedText();
+  return completed;
 }
 
 function parseJsonSafe(value) {
@@ -145,9 +285,11 @@ function parseJsonSafe(value) {
 }
 
 function responseErrorMessage(responseText, parsedBody, status) {
-  return parsedBody && parsedBody.error && parsedBody.error.message
-    ? parsedBody.error.message
-    : responseText || `Model request failed with HTTP ${status}.`;
+  void responseText;
+  const parsedMessage = boundedProviderErrorMessage(
+    parsedBody && parsedBody.error && parsedBody.error.message
+  );
+  return parsedMessage || providerStatusMessage(status);
 }
 
 function isOpenAIChatCompletionsEndpoint(endpoint) {
@@ -221,10 +363,8 @@ function createRequestFailureRethrower(requestState) {
 }
 
 function openAiUnreachableError(error) {
-  const reason = String((error && (error.cause?.message || error.message)) || '').trim();
-  return new Error(
-    `Could not reach the OpenAI API. Check your internet connection and try again${reason ? ` (${reason}).` : '.'}`
-  );
+  void error;
+  return new Error('Could not reach the OpenAI API. Check your internet connection and try again.');
 }
 
 // Shapes both the streamed and buffered chat results into the one contract the renderer reads.
@@ -282,11 +422,14 @@ function createRetryingPost({ delay, retryDelaysMs }) {
 // Binds the SSE readers to one controller's request lifecycle so the runtime controller only
 // has to decide whether a turn wants streaming, not how streaming works.
 function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, timeoutMs }) {
-  function emitDelta(event, requestState, delta) {
+  function emitDelta(event, requestState, delta, options = {}, segment = 0) {
     sendStatus(event, {
       phase: 'stream',
       requestId: requestState ? requestState.requestId : '',
-      delta
+      delta,
+      segment: Number(segment) || 0,
+      reset: options.reset === true,
+      final: options.final === true
     });
   }
 
@@ -299,7 +442,8 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     requestInit,
     requestSignal,
     requestState,
-    rethrowRequestFailure
+    rethrowRequestFailure,
+    segment
   }) {
     let streamed = null;
     try {
@@ -319,9 +463,9 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     }
     let emitted = false;
     try {
-      const collected = await readChatCompletionStream(response, (delta) => {
+      const collected = await readChatCompletionStream(response, (delta, options) => {
         emitted = true;
-        emitDelta(event, requestState, delta);
+        emitDelta(event, requestState, delta, options, segment);
       });
       return {
         handled: true,
@@ -347,7 +491,8 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     requestInit,
     requestSignal,
     requestState,
-    unreachable
+    unreachable,
+    segment
   }) {
     let streamed = null;
     try {
@@ -363,9 +508,9 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     }
     let emitted = false;
     try {
-      const finalResponse = await readResponsesStream(response, (delta) => {
+      const finalResponse = await readResponsesStream(response, (delta, options) => {
         emitted = true;
-        emitDelta(event, requestState, delta);
+        emitDelta(event, requestState, delta, options, segment);
       });
       return { handled: true, response: finalResponse };
     } catch (error) {

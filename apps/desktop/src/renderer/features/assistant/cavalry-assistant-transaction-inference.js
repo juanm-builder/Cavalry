@@ -1,15 +1,18 @@
 import {
   ADVISOR_FINANCE_INTENT_KINDS,
-  advisorPromptMentionsName,
   classifyAdvisorFinanceIntent,
   extractAdvisorAmountMentions,
   inferAdvisorCategoryNameFromPrompt,
   inferAdvisorCounterpartyNameFromPrompt,
-  inferAdvisorDescriptionFromPrompt,
-  inferAdvisorTransferAccountNamesFromPrompt
+  inferAdvisorDescriptionFromPrompt
 } from '@cavalry/advisor/domain/advisor/transaction-drafts.js';
 import { splitAdvisorTransactionPrompts } from '@cavalry/advisor/domain/advisor/transaction-prompt-splitter.js';
 import { getLedgerTransactionTemplateConfig } from '@cavalry/finance-core';
+import {
+  cavalryAssistantAccountResolutionError,
+  resolveCavalryAssistantAccount,
+  resolveCavalryAssistantTransactionAccount
+} from './cavalry-assistant-entity-resolution.js';
 
 function templateConfig(template) {
   return getLedgerTransactionTemplateConfig(asText(template));
@@ -433,62 +436,9 @@ function explicitlyMentionedCategory(items, prompt) {
   };
 }
 
-function uniquelyMentionedEntity(items, prompt) {
-  const matches = asArray(items).filter(
-    (item) => asText(item && item.name) && advisorPromptMentionsName(prompt, item.name)
-  );
-  return matches.length === 1 ? matches[0] : null;
-}
-
 function accountNamePattern(name) {
   const tokens = asText(name).split(/\s+/).filter(Boolean).map(escapeRegExp);
   return tokens.length ? tokens.join('\\s+') : '';
-}
-
-function accountMentionedForRole(account, prompt, role) {
-  const name = accountNamePattern(account && account.name);
-  if (!name) return false;
-  const rolePrefix = {
-    funding: '(?:from|use|using|with|via|out\\s+of)',
-    destination: '(?:to|into|toward|towards|onto|in)',
-    charged: '(?:on|to|using|with)'
-  }[role];
-  if (!rolePrefix) return false;
-  const raw = asText(prompt);
-  const expression = new RegExp(`\\b${rolePrefix}\\s+(?:my\\s+|the\\s+)?${name}(?:\\b|$)`, 'gi');
-  return [...raw.matchAll(expression)].some((match) => !mentionIsNegated(raw, match.index || 0));
-}
-
-function accountRole(template, secondary) {
-  if (template === 'expense_paid') return 'funding';
-  if (template === 'expense_charged') return 'charged';
-  if (template === 'income_received' || template === 'merchant_refund') return 'destination';
-  if (template === 'debt_payment' || template === 'liability_payment') {
-    return secondary ? 'destination' : 'funding';
-  }
-  return '';
-}
-
-function roleMentionedAccount(accounts, prompt, role) {
-  const matches = asArray(accounts).filter((account) =>
-    accountMentionedForRole(account, prompt, role)
-  );
-  return matches.length === 1 ? matches[0] : null;
-}
-
-function accountHasDifferentRole(account, prompt, expectedRole) {
-  return ['funding', 'destination', 'charged'].some(
-    (role) => role !== expectedRole && accountMentionedForRole(account, prompt, role)
-  );
-}
-
-function accountMentionIsExcluded(account, prompt) {
-  const name = accountNamePattern(account && account.name);
-  if (!name) return false;
-  const raw = asText(prompt);
-  const expression = new RegExp(`(?:^|\\b)${name}(?=\\b|$)`, 'gi');
-  const matches = [...raw.matchAll(expression)];
-  return matches.length > 0 && matches.every((match) => mentionIsNegated(raw, match.index || 0));
 }
 
 function liabilityDescriptor(account) {
@@ -499,19 +449,18 @@ function isCardAccount(account) {
   return /\b(?:credit\s+card|card|visa|mastercard|amex)\b/.test(liabilityDescriptor(account));
 }
 
-function isLoanAccount(account) {
-  return /\b(?:loan|mortgage|credit\s+line|line\s+of\s+credit)\b/.test(
-    liabilityDescriptor(account)
+function explicitlySelectedLiabilityAccount(workbook, args, prompt) {
+  const resolved = resolveCavalryAssistantAccount(workbook, {
+    reference: asText(args.primaryAccountId || args.primaryAccount),
+    prompt,
+    groups: ['liability'],
+    role: 'charged'
+  });
+  return (
+    resolved.status === 'resolved' ||
+    resolved.status === 'ambiguous' ||
+    /\b(?:credit\s+card|card|visa|mastercard|amex|jcb)\b/.test(textKey(prompt))
   );
-}
-
-function compatibleLiabilityAccounts(accounts, prompt) {
-  const text = textKey(prompt);
-  const cardRequested = /\b(?:credit\s+card|card|visa|mastercard|amex)\b/.test(text);
-  const loanRequested = /\b(?:loan|mortgage|credit\s+line|line\s+of\s+credit)\b/.test(text);
-  if (cardRequested && !loanRequested) return accounts.filter(isCardAccount);
-  if (loanRequested && !cardRequested) return accounts.filter(isLoanAccount);
-  return accounts;
 }
 
 function categoryFromRules(categories, descriptionText) {
@@ -735,30 +684,37 @@ function inferAccount(workbook, args, template, prompt, secondary = false, userP
   if (!groups.length) return null;
   let accounts = activeAccounts(workbook, groups);
   if (!accounts.length) return null;
-  if (groups.includes('liability')) {
-    accounts = compatibleLiabilityAccounts(accounts, prompt);
-    if (!accounts.length) return null;
+  const reference = secondary
+    ? asText(args.secondaryAccountId || args.secondaryAccount)
+    : asText(args.primaryAccountId || args.primaryAccount);
+  const explicit = resolveCavalryAssistantTransactionAccount(workbook, {
+    template,
+    secondary,
+    reference,
+    prompt: userPrompt
+  });
+  if (explicit.status === 'resolved') {
+    const reason =
+      explicit.provenance === 'explicit_role'
+        ? 'explicit_account_role'
+        : explicit.provenance === 'explicit_mention'
+          ? 'explicit_account_mention'
+          : explicit.provenance || 'canonical_account_reference';
+    return {
+      item: explicit.account,
+      reason,
+      userAuthoritative: ['explicit_role', 'explicit_mention'].includes(explicit.provenance)
+    };
   }
-
-  if (template === 'transfer') {
-    const transfer = inferAdvisorTransferAccountNamesFromPrompt(workbook || {}, userPrompt);
-    const transferName = secondary
-      ? asText(transfer.secondaryAccountName)
-      : asText(transfer.primaryAccountName);
-    const transferAccount = exactEntity(accounts, transferName);
-    if (transferAccount) return { item: transferAccount, reason: 'transfer_account_mention' };
-  }
-
-  const expectedRole = accountRole(template, secondary);
-  const roleAccount = roleMentionedAccount(accounts, userPrompt, expectedRole);
-  if (roleAccount) return { item: roleAccount, reason: 'explicit_account_role' };
-
-  const mentioned = uniquelyMentionedEntity(
-    accounts.filter((account) => !accountMentionIsExcluded(account, userPrompt)),
-    userPrompt
-  );
-  if (mentioned && !accountHasDifferentRole(mentioned, userPrompt, expectedRole)) {
-    return { item: mentioned, reason: 'explicit_account_mention' };
+  if (explicit.status === 'ambiguous' || explicit.status === 'not_found') {
+    const field = secondary ? 'secondaryAccountId' : 'primaryAccountId';
+    return {
+      resolution: cavalryAssistantAccountResolutionError(
+        explicit,
+        field,
+        secondary ? 'Secondary account' : 'Primary account'
+      )
+    };
   }
 
   const counterpartyId = resolveCounterpartyId(workbook, args, prompt);
@@ -819,21 +775,32 @@ export function inferCavalryAssistantTransactionArguments(
   const result = {
     arguments: args,
     inferredFields: {},
-    semanticDecision: semantic
+    semanticDecision: semantic,
+    localQuestion,
+    resolutionIssues: []
   };
 
-  const template = forcedTemplate
+  let template = forcedTemplate
     ? forcedTemplate
     : userPromptHasExplicitTemplateCue(localQuestion, userSemantic)
       ? userSemantic.template
       : templateFromSemanticDecision(semantic, args.template);
+  let templateReason = forcedTemplate ? 'capability_contract' : 'finance_intent';
+  if (
+    !forcedTemplate &&
+    template === 'expense_paid' &&
+    [
+      ADVISOR_FINANCE_INTENT_KINDS.PURCHASE,
+      ADVISOR_FINANCE_INTENT_KINDS.CARD_CHARGE,
+      ADVISOR_FINANCE_INTENT_KINDS.UNKNOWN
+    ].includes(semantic.kind) &&
+    explicitlySelectedLiabilityAccount(workbook, args, localQuestion)
+  ) {
+    template = 'expense_charged';
+    templateReason = 'liability_account_routing';
+  }
   if (template !== asText(args.template)) {
-    setInferred(
-      result,
-      'template',
-      template,
-      forcedTemplate ? 'capability_contract' : 'finance_intent'
-    );
+    setInferred(result, 'template', template, templateReason);
   } else if (forcedTemplate) {
     result.inferredFields.template = {
       value: forcedTemplate,
@@ -912,11 +879,8 @@ export function inferCavalryAssistantTransactionArguments(
       localQuestion
     );
     const argumentProvided = hasNonBlankArgument(args, ['primaryAccount', 'primaryAccountId']);
-    const explicitlyRequested =
-      inferred &&
-      ['transfer_account_mention', 'explicit_account_role', 'explicit_account_mention'].includes(
-        inferred.reason
-      );
+    const explicitlyRequested = inferred && inferred.userAuthoritative === true;
+    if (inferred && inferred.resolution) result.resolutionIssues.push(inferred.resolution);
     if (inferred && inferred.item) {
       if (!argumentProvided || explicitlyRequested) {
         setInferredEntityId(
@@ -940,11 +904,8 @@ export function inferCavalryAssistantTransactionArguments(
       localQuestion
     );
     const argumentProvided = hasNonBlankArgument(args, ['secondaryAccount', 'secondaryAccountId']);
-    const explicitlyRequested =
-      inferred &&
-      ['transfer_account_mention', 'explicit_account_role', 'explicit_account_mention'].includes(
-        inferred.reason
-      );
+    const explicitlyRequested = inferred && inferred.userAuthoritative === true;
+    if (inferred && inferred.resolution) result.resolutionIssues.push(inferred.resolution);
     if (inferred && inferred.item) {
       const inferredId = asText(inferred.item.id);
       if (

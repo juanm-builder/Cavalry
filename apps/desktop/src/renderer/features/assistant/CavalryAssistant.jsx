@@ -2,14 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getRouteById } from '../../app/routes.js';
 import {
-  COMPANION_IMAGE_ATTACHMENT_ACCEPT,
   COMPANION_IMAGE_ATTACHMENT_MAX_COUNT,
   processCompanionImageAttachments
 } from './companion-image-attachments.js';
-import {
-  getCavalryAssistantToolDefinitions,
-  CAVALRY_ASSISTANT_TOOLS
-} from './cavalry-assistant-tools.js';
+import { getCavalryAssistantToolDefinitions } from './cavalry-assistant-tools.js';
 import {
   createCavalryAssistantConversationState,
   getCavalryAssistantConversationStorageKey,
@@ -20,33 +16,26 @@ import {
   updateActiveCavalryAssistantConversation
 } from './cavalry-assistant-conversations.js';
 import { runCavalryAssistantTurn } from './cavalry-assistant-runtime.js';
+import { assistantVisibleText } from './cavalry-assistant-runtime-content.js';
+import {
+  cavalryAssistantActionReceiptMessage,
+  isCavalryAssistantSuccessfulNoOpWriteReceipt
+} from './cavalry-assistant-action-results.js';
 import { buildCavalryAssistantWorkspaceSnapshot } from './cavalry-assistant-workspace-snapshot.js';
 import {
   chainedPendingConfirmation,
   committedToolResults,
-  confirmedActionMessage,
+  confirmationReplayArguments,
   isConfirmationDecline,
   isConfirmationReply,
-  narrateConfirmedAction,
   pendingConfirmationFromResult,
   readableToolName,
-  toolFailureMessage,
-  turnContextDigest
+  toolFailureMessage
 } from './cavalry-assistant-confirmations.js';
-import { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
-import {
-  AssistantHeaderMenu,
-  ConversationHistory,
-  Icon,
-  Message,
-  serializeConversationMarkdown
-} from './CavalryAssistantPresentation.jsx';
-import {
-  PANEL_DEFAULT_WIDTH,
-  useCavalryAssistantPanelResize
-} from './useCavalryAssistantPanelResize.js';
+import { CavalryAssistantPanel } from './CavalryAssistantPanel.jsx';
+import { serializeConversationMarkdown } from './CavalryAssistantPresentation.jsx';
+import { useCavalryAssistantPanelResize } from './useCavalryAssistantPanelResize.js';
 import { useCompanionVoice } from './useCompanionVoice.js';
-import { CompanionFeedbackPanel } from '../feedback/CompanionFeedbackPanel.jsx';
 
 export { CavalryAssistantMark } from './CavalryAssistantMark.jsx';
 
@@ -60,6 +49,72 @@ function asObject(value) {
 
 function asText(value) {
   return String(value == null ? '' : value).trim();
+}
+
+function unexpectedFailureMessage(error, fallback) {
+  return asText(error?.userMessage).slice(0, 600) || fallback;
+}
+
+function structuredFailureMessage(value, fallback) {
+  const source = asObject(value);
+  const raw = asText(source.userMessage || source.error);
+  if (
+    !raw ||
+    /<(?:!doctype|html|head|body|script|style)\b/i.test(raw) ||
+    /^\s*(?:HTTP\/\d|[\[{])/i.test(raw) ||
+    /\r?\n\s*(?:at\b|stack(?:\s+trace)?\b|traceback\b)/i.test(raw)
+  ) {
+    return fallback;
+  }
+  return raw
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}\b/g, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .slice(0, 600);
+}
+
+const UNVERIFIED_COMMIT_MESSAGE =
+  'Cavalry received a committed action result without a verified durable receipt. Review the affected record before relying on it.';
+
+function actionReceipts(toolResults) {
+  return asArray(toolResults)
+    .map((toolResult) => asObject(toolResult?.result).receipt)
+    .filter((receipt) => receipt && typeof receipt === 'object');
+}
+
+function isDurablyVerifiedReceipt(receiptValue) {
+  const receipt = asObject(receiptValue);
+  return (
+    asText(receipt.lifecycle) === 'completed' &&
+    asText(receipt.commitStatus) === 'committed' &&
+    asText(receipt.verificationStatus) === 'verified' &&
+    asObject(receipt.persistence).durable === true
+  );
+}
+
+function receiptSummary(receipts) {
+  return asArray(receipts)
+    .map((receipt) => {
+      const deterministic = asText(cavalryAssistantActionReceiptMessage(receipt));
+      if (isDurablyVerifiedReceipt(receipt)) {
+        return deterministic || 'Cavalry verified that the change was durably saved.';
+      }
+      if (deterministic) return deterministic;
+      if (asText(receipt?.commitStatus) === 'committed') return UNVERIFIED_COMMIT_MESSAGE;
+      return 'Cavalry could not confirm that this action completed. Review the affected record before relying on it.';
+    })
+    .map(asText)
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function isWriteOutcomeReceipt(receiptValue) {
+  const receipt = asObject(receiptValue);
+  const commitStatus = asText(receipt.commitStatus);
+  return (
+    asText(receipt.access) === 'write' ||
+    receipt.changed === true ||
+    (commitStatus && commitStatus !== 'not_applicable')
+  );
 }
 
 function providerPresentation(settings = {}) {
@@ -140,6 +195,7 @@ export function CavalryAssistant({
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
   const [composer, setComposer] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attachmentNotice, setAttachmentNotice] = useState('');
@@ -169,6 +225,7 @@ export function CavalryAssistant({
   const requestIdRef = useRef('');
   const requestAbortRef = useRef(null);
   const requestVersionRef = useRef(0);
+  const streamBufferRef = useRef({ requestId: '', rawText: '' });
   const conversationScopeRef = useRef(conversationScopeKey);
   const loadedConversationScopeRef = useRef('');
   const conversationStateRef = useRef(conversationState);
@@ -209,14 +266,11 @@ export function CavalryAssistant({
   const cancelVoice = voice.cancel;
   const history = useMemo(
     () =>
-      messages.map(({ role, text, attachments: messageAttachments, activities }) => {
-        const digest = role === 'assistant' ? turnContextDigest(activities) : '';
-        return {
-          role,
-          content: digest ? `${asText(text)}\n\n${digest}` : text,
-          images: asArray(messageAttachments)
-        };
-      }),
+      messages.map(({ role, text, attachments: messageAttachments }) => ({
+        role,
+        content: text,
+        images: asArray(messageAttachments)
+      })),
     [messages]
   );
 
@@ -248,6 +302,7 @@ export function CavalryAssistant({
     );
     setHistoryOpen(false);
     setFeedbackOpen(false);
+    setAssistantSettingsOpen(false);
     setComposer('');
     setAttachments([]);
     setAttachmentNotice('');
@@ -256,6 +311,8 @@ export function CavalryAssistant({
     setPendingClarification(null);
     setError('');
     setLiveStatus('');
+    setStreamingText('');
+    streamBufferRef.current = { requestId: '', rawText: '' };
   }, [conversationScopeKey, conversationStorage, isOpen, workbook]);
 
   useEffect(() => {
@@ -284,20 +341,40 @@ export function CavalryAssistant({
       top: messageListRef.current.scrollHeight,
       behavior: 'smooth'
     });
-  }, [historyOpen, messages, pending, liveStatus]);
+  }, [assistantSettingsOpen, historyOpen, messages, pending, liveStatus]);
 
   useEffect(() => {
     if (!(advisor && typeof advisor.subscribe === 'function')) return undefined;
     return advisor.subscribe((status) => {
       const requestId = asText(status?.requestId);
-      if (requestId && requestIdRef.current && requestId !== requestIdRef.current) return;
-      if (asText(status?.phase) === 'stream') {
+      // A status without the exact active id is stale or belongs to another assistant request.
+      if (!requestId || requestId !== requestIdRef.current) return;
+      const phase = asText(status?.phase);
+      if (phase === 'stream') {
         const delta = String(status?.delta ?? '');
-        if (delta) setStreamingText((current) => (current + delta).slice(-8000));
+        const current = streamBufferRef.current;
+        const segment = Number(status?.segment) || 0;
+        if (!delta && status?.reset === true) {
+          streamBufferRef.current = { requestId, rawText: '', segment };
+          setStreamingText('');
+          return;
+        }
+        if (!delta) return;
+        const rawText =
+          current.requestId === requestId && current.segment === segment && status?.reset !== true
+            ? `${current.rawText}${delta}`.slice(0, 64 * 1024)
+            : delta.slice(0, 64 * 1024);
+        streamBufferRef.current = { requestId, rawText, segment };
+        setStreamingText(assistantVisibleText(rawText).slice(0, 8000));
         return;
       }
+      // Each provider invocation starts a fresh ephemeral stream. Tool-call preambles and
+      // partial failures never become transcript messages.
+      if (phase === 'request') {
+        streamBufferRef.current = { requestId, rawText: '' };
+        setStreamingText('');
+      }
       setLiveStatus(asText(status?.message));
-      setStreamingText('');
     });
   }, [advisor]);
 
@@ -321,12 +398,13 @@ export function CavalryAssistant({
         else onOpen?.();
       } else if (event.key === 'Escape' && isOpen) {
         if (feedbackOpen) setFeedbackOpen(false);
+        else if (assistantSettingsOpen) setAssistantSettingsOpen(false);
         else onClose?.();
       }
     };
     document.addEventListener('keydown', handleShortcut);
     return () => document.removeEventListener('keydown', handleShortcut);
-  }, [feedbackOpen, isOpen, onClose, onOpen]);
+  }, [assistantSettingsOpen, feedbackOpen, isOpen, onClose, onOpen]);
 
   async function addImageFiles(files) {
     if (processingImages || pending || !files?.length) return;
@@ -404,6 +482,7 @@ export function CavalryAssistant({
     const abortController = new AbortController();
     requestIdRef.current = requestId;
     requestAbortRef.current = abortController;
+    streamBufferRef.current = { requestId, rawText: '' };
     const userMessage = {
       id: makeId('assistant_message'),
       role: 'user',
@@ -440,40 +519,63 @@ export function CavalryAssistant({
         signal: abortController.signal,
         settings,
         today: todayValue,
-        tools:
-          typeof getCavalryAssistantToolDefinitions === 'function'
-            ? getCavalryAssistantToolDefinitions()
-            : CAVALRY_ASSISTANT_TOOLS,
+        tools: getCavalryAssistantToolDefinitions({
+          activeRouteId: route.id,
+          advisor,
+          question,
+          settings,
+          workbook
+        }),
         workspaceSnapshot
       });
       if (version !== requestVersionRef.current) return;
       const confirmation = pendingConfirmationFromResult(result);
       const committedResults = committedToolResults(result);
+      const receipts = actionReceipts(result?.toolResults);
+      const writeOutcomeReceipts = receipts.filter(isWriteOutcomeReceipt);
+      const hasWriteOutcome = committedResults.length > 0 || writeOutcomeReceipts.length > 0;
+      const deterministicSummary = receiptSummary(writeOutcomeReceipts);
+      const confirmationTerminalText = [
+        deterministicSummary,
+        'This action needs your confirmation. If you leave or reload this chat, ask Cavalry to prepare it again before confirming.'
+      ]
+        .map(asText)
+        .filter(Boolean)
+        .join('\n\n');
       const toolActivities = asArray(result?.activities).filter(
         (activity) => activity.type === 'tool'
       );
+      streamBufferRef.current = { requestId, rawText: '' };
+      setStreamingText('');
       if (confirmation) setPendingConfirmation(confirmation);
       if (!(result && result.ok)) {
-        if (committedResults.length || confirmation || result?.cancelled) {
-          setMessages((current) =>
-            current.concat({
-              id: makeId('assistant_message'),
-              role: 'assistant',
-              text: result?.cancelled
-                ? committedResults.length
-                  ? `${committedResults.length === 1 ? 'A workbook change completed' : `${committedResults.length} workbook changes completed`} before the request stopped. The ${committedResults.length === 1 ? 'change was' : 'changes were'} saved; review the action result before retrying.`
-                  : 'Stopped. No further actions were run.'
-                : committedResults.length
-                  ? `${committedResults.length === 1 ? 'A workbook change was' : `${committedResults.length} workbook changes were`} completed and saved, but the model could not finish its reply. Review the action result before retrying.`
-                  : 'This action is waiting for your confirmation.',
-              activities: toolActivities,
-              createdAt: now()
-            })
-          );
-        }
-        if (!result?.cancelled) {
-          setError(asText(result?.error) || 'Cavalry could not complete that request.');
-        }
+        const failure = structuredFailureMessage(
+          result,
+          'Cavalry could not complete that request.'
+        );
+        if (!result?.cancelled && !confirmation) setError(failure);
+        const terminalText = confirmation
+          ? confirmationTerminalText
+          : hasWriteOutcome
+            ? [
+                deterministicSummary || UNVERIFIED_COMMIT_MESSAGE,
+                result?.cancelled
+                  ? 'The request then stopped. No further actions were run.'
+                  : 'The remaining reply could not be completed.'
+              ].join('\n\n')
+            : result?.cancelled
+              ? 'Stopped. No completed change was confirmed.'
+              : failure;
+        setMessages((current) =>
+          current.concat({
+            id: makeId('assistant_message'),
+            role: 'assistant',
+            text: terminalText,
+            ...(receipts.length ? { receipts } : {}),
+            activities: toolActivities,
+            createdAt: now()
+          })
+        );
         return;
       }
       const assistantMessageId = makeId('assistant_message');
@@ -482,7 +584,14 @@ export function CavalryAssistant({
         current.concat({
           id: assistantMessageId,
           role: 'assistant',
-          text: asText(result.text) || 'Done.',
+          text:
+            (confirmation
+              ? confirmationTerminalText
+              : hasWriteOutcome
+                ? deterministicSummary || UNVERIFIED_COMMIT_MESSAGE
+                : asText(result.text)) ||
+            'Cavalry could not produce a user-facing answer for that request.',
+          ...(receipts.length ? { receipts } : {}),
           references: asArray(result.references),
           activities: toolActivities,
           ...(clarification.id ? { clarification } : {}),
@@ -494,13 +603,30 @@ export function CavalryAssistant({
       }
     } catch (turnError) {
       if (version === requestVersionRef.current) {
-        setError(asText(turnError?.message) || 'Cavalry could not complete that request.');
+        const failureMessage = unexpectedFailureMessage(
+          turnError,
+          'Cavalry could not complete that request.'
+        );
+        if (!abortController.signal.aborted) {
+          setError(failureMessage);
+        }
+        setMessages((current) =>
+          current.concat({
+            id: makeId('assistant_message'),
+            role: 'assistant',
+            text: abortController.signal.aborted
+              ? 'Stopped. No completed change was confirmed.'
+              : failureMessage,
+            createdAt: now()
+          })
+        );
       }
     } finally {
       if (version === requestVersionRef.current) {
         setPending(false);
         setLiveStatus('');
         setStreamingText('');
+        streamBufferRef.current = { requestId: '', rawText: '' };
         requestIdRef.current = '';
         if (requestAbortRef.current === abortController) requestAbortRef.current = null;
       }
@@ -515,6 +641,7 @@ export function CavalryAssistant({
     const abortController = new AbortController();
     requestIdRef.current = requestId;
     requestAbortRef.current = abortController;
+    streamBufferRef.current = { requestId, rawText: '' };
     setPending(true);
     setError('');
     setLiveStatus('Applying your confirmed action…');
@@ -527,18 +654,33 @@ export function CavalryAssistant({
       })
     );
     try {
-      const approvedArguments = {
-        ...confirmation.arguments,
-        [confirmation.approvalField]: true
-      };
+      const approvedArguments = confirmationReplayArguments(confirmation);
       const toolResult = await executeTool(confirmation.toolName, approvedArguments, {
         approvedByUser: true,
         callId: confirmation.id,
+        ...(confirmation.proposal ? { proposal: confirmation.proposal } : {}),
         requestId,
         signal: abortController.signal
       });
       if (version !== requestVersionRef.current) return;
+      const receipt = asObject(asObject(toolResult).receipt);
+      const deterministicMessage = cavalryAssistantActionReceiptMessage(receipt);
       if (!(toolResult && toolResult.ok)) {
+        if (asText(receipt.commitStatus) === 'committed') {
+          setPendingConfirmation(null);
+          const committedMessage = receiptSummary([receipt]) || UNVERIFIED_COMMIT_MESSAGE;
+          setError(committedMessage);
+          setMessages((current) =>
+            current.concat({
+              id: makeId('assistant_message'),
+              role: 'assistant',
+              text: committedMessage,
+              receipts: [receipt],
+              createdAt: now()
+            })
+          );
+          return;
+        }
         const nextConfirmation = chainedPendingConfirmation(
           toolResult,
           confirmation,
@@ -546,47 +688,88 @@ export function CavalryAssistant({
         );
         if (nextConfirmation) {
           setPendingConfirmation(nextConfirmation);
+          setMessages((current) =>
+            current.concat({
+              id: makeId('assistant_message'),
+              role: 'assistant',
+              text: 'A second confirmation is required before Cavalry can continue. If you leave or reload this chat, ask Cavalry to prepare it again before confirming.',
+              createdAt: now()
+            })
+          );
           return;
         }
-        setError(
+        setPendingConfirmation(null);
+        const failureMessage =
+          asText(deterministicMessage) ||
           toolFailureMessage(
             toolResult,
-            `${readableToolName(confirmation.toolName)} did not complete.`
-          )
+            `${readableToolName(confirmation.toolName)} did not complete. No change was confirmed.`
+          );
+        setError(failureMessage);
+        setMessages((current) =>
+          current.concat({
+            id: makeId('assistant_message'),
+            role: 'assistant',
+            text: failureMessage,
+            ...(Object.keys(receipt).length ? { receipts: [receipt] } : {}),
+            createdAt: now()
+          })
         );
         return;
       }
       setPendingConfirmation(null);
-      setLiveStatus('Saved. Summarizing…');
-      const narrated = await narrateConfirmedAction({
-        advisor,
-        settings,
-        confirmation,
-        toolResult,
-        requestId
-      });
-      if (version !== requestVersionRef.current) return;
+      if (
+        !isDurablyVerifiedReceipt(receipt) &&
+        !isCavalryAssistantSuccessfulNoOpWriteReceipt(receipt)
+      ) {
+        const verificationMessage =
+          'Cavalry could not verify that the confirmed change was durably saved. Review the affected record before relying on it.';
+        setError(verificationMessage);
+        setMessages((current) =>
+          current.concat({
+            id: makeId('assistant_message'),
+            role: 'assistant',
+            text: verificationMessage,
+            ...(Object.keys(receipt).length ? { receipts: [receipt] } : {}),
+            createdAt: now()
+          })
+        );
+        return;
+      }
       setMessages((current) =>
         current.concat({
           id: makeId('assistant_message'),
           role: 'assistant',
-          text:
-            asText(narrated) ||
-            confirmedActionMessage(confirmation.toolName, toolResult, approvedArguments),
+          text: asText(deterministicMessage) || 'The confirmed change was saved and verified.',
+          ...(Object.keys(receipt).length ? { receipts: [receipt] } : {}),
           createdAt: now()
         })
       );
     } catch (confirmationError) {
       if (version === requestVersionRef.current) {
-        setError(
-          asText(confirmationError?.message) ||
-            `${readableToolName(confirmation.toolName)} did not complete.`
+        setPendingConfirmation(null);
+        const failureMessage = abortController.signal.aborted
+          ? 'Stopped. No completed change was confirmed.'
+          : unexpectedFailureMessage(
+              confirmationError,
+              `${readableToolName(confirmation.toolName)} did not complete. No change was confirmed.`
+            );
+        if (!abortController.signal.aborted) setError(failureMessage);
+        setMessages((current) =>
+          current.concat({
+            id: makeId('assistant_message'),
+            role: 'assistant',
+            text: failureMessage,
+            createdAt: now()
+          })
         );
       }
     } finally {
       if (version === requestVersionRef.current) {
         setPending(false);
         setLiveStatus('');
+        setStreamingText('');
+        streamBufferRef.current = { requestId: '', rawText: '' };
         requestIdRef.current = '';
         if (requestAbortRef.current === abortController) requestAbortRef.current = null;
       }
@@ -596,11 +779,27 @@ export function CavalryAssistant({
   async function cancel() {
     const requestId = requestIdRef.current;
     requestAbortRef.current?.abort();
+    streamBufferRef.current = { requestId: '', rawText: '' };
+    setStreamingText('');
     setLiveStatus('Stopping…');
     setError('');
     if (requestId && advisor && typeof advisor.invoke === 'function') {
       await advisor.invoke('cancel', { requestId }).catch(() => {});
     }
+  }
+
+  function cancelPendingAction() {
+    if (!pendingConfirmation || pending) return;
+    setPendingConfirmation(null);
+    setError('');
+    setMessages((current) =>
+      current.concat({
+        id: makeId('assistant_message'),
+        role: 'assistant',
+        text: 'Cancelled. No changes were made.',
+        createdAt: now()
+      })
+    );
   }
 
   function clearConversationDraft() {
@@ -619,6 +818,7 @@ export function CavalryAssistant({
     setConversationState((current) => startNewCavalryAssistantConversation(current));
     setHistoryOpen(false);
     setFeedbackOpen(false);
+    setAssistantSettingsOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
 
@@ -628,6 +828,7 @@ export function CavalryAssistant({
     setConversationState((current) => selectCavalryAssistantConversation(current, conversationId));
     setHistoryOpen(false);
     setFeedbackOpen(false);
+    setAssistantSettingsOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
 
@@ -654,358 +855,64 @@ export function CavalryAssistant({
   }
 
   return (
-    <>
-      <button
-        aria-expanded={isOpen}
-        aria-label={isOpen ? 'Close Cavalry assistant' : 'Ask Cavalry'}
-        className={`cavalry-assistant-launcher${isOpen ? ' open' : ''}${pending ? ' working' : ''}`}
-        onClick={isOpen ? onClose : onOpen}
-        title="Ask Cavalry (⌘J)"
-        type="button"
-      >
-        <CavalryAssistantMark working={pending} />
-        {error ? <span aria-hidden="true" className="cavalry-assistant-launcher-alert" /> : null}
-      </button>
-      {isOpen ? (
-        <aside
-          aria-label="Cavalry assistant"
-          className={`cavalry-assistant-panel${draggingImages ? ' dragging-images' : ''}`}
-          onDragEnter={(event) => {
-            if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
-              event.preventDefault();
-              setDraggingImages(true);
-            }
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setDraggingImages(false);
-          }}
-          onDragOver={(event) => {
-            if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'copy';
-            }
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDraggingImages(false);
-            void addImageFiles(Array.from(event.dataTransfer?.files || []));
-          }}
-          role="dialog"
-          style={{ '--cavalry-assistant-panel-width': `${panelWidth}px` }}
-        >
-          <div
-            aria-label="Resize the assistant panel"
-            aria-orientation="vertical"
-            aria-valuemax={maxPanelWidth}
-            aria-valuemin={PANEL_DEFAULT_WIDTH}
-            aria-valuenow={panelWidth}
-            className={`cavalry-assistant-resize-handle${resizingPanel ? ' active' : ''}`}
-            onDoubleClick={() => applyPanelWidth(PANEL_DEFAULT_WIDTH)}
-            onKeyDown={resizePanelWithKeyboard}
-            onPointerCancel={cancelPanelResize}
-            onPointerDown={beginPanelResize}
-            onPointerMove={movePanelResize}
-            onPointerUp={endPanelResize}
-            role="separator"
-            tabIndex={0}
-            title="Drag to resize · double-click to reset"
-          />
-          <header className="cavalry-assistant-header">
-            <CavalryAssistantMark className="cavalry-assistant-header-mark" working={pending} />
-            <div className="cavalry-assistant-header-copy">
-              <strong>Cavalry</strong>
-              <span className={`cavalry-assistant-provider ${provider.tone}`}>
-                <Icon name={provider.icon} />
-                {provider.label}
-              </span>
-            </div>
-            <button
-              aria-label="New conversation"
-              className="btn btn-icon"
-              disabled={pending || !messages.length || feedbackOpen}
-              onClick={startConversation}
-              title="New conversation"
-              type="button"
-            >
-              <Icon name="add_comment" />
-            </button>
-            <AssistantHeaderMenu
-              canExport={Boolean(downloads) && messages.length > 0 && !pending}
-              historyOpen={historyOpen}
-              onExportChat={exportConversation}
-              onOpenFeedback={() => {
-                void voice.cancel();
-                setHistoryOpen(false);
-                setFeedbackOpen(true);
-              }}
-              onOpenSettings={onOpenSettings}
-              onToggleHistory={() => {
-                setFeedbackOpen(false);
-                setHistoryOpen((current) => !current);
-              }}
-              pending={pending}
-            />
-            <button
-              aria-label="Close Cavalry assistant"
-              className="btn btn-icon"
-              onClick={onClose}
-              title="Close"
-              type="button"
-            >
-              <Icon name="close" />
-            </button>
-          </header>
-
-          <div className="cavalry-assistant-context-bar">
-            <Icon name={route.icon} />
-            <span>
-              {feedbackOpen ? 'Reporting from' : 'Working with'} {route.label}
-            </span>
-            <small>{workbook?.name || 'Current workbook'}</small>
-          </div>
-
-          {feedbackOpen ? (
-            <CompanionFeedbackPanel
-              createId={makeId}
-              feedback={feedback}
-              key={feedback?.model?.sessionKey || 'feedback-session'}
-              onBack={() => setFeedbackOpen(false)}
-              onOpenSettings={onOpenSettings}
-              routeId={route.id}
-            />
-          ) : null}
-          {historyOpen && !feedbackOpen ? (
-            <ConversationHistory
-              activeConversationId={conversationState.activeConversationId}
-              conversations={conversations}
-              onSelect={resumeConversation}
-            />
-          ) : null}
-          <div
-            className="cavalry-assistant-messages"
-            hidden={historyOpen || feedbackOpen}
-            ref={messageListRef}
-          >
-            {messages.length ? (
-              messages.map((message) => (
-                <Message
-                  activeClarificationId={pendingClarification?.id || ''}
-                  key={message.id}
-                  message={message}
-                  onAnswerClarification={(answer) => submit(answer)}
-                  onComposeAnswer={() => composerRef.current?.focus()}
-                  onOpenReference={onOpenReference}
-                />
-              ))
-            ) : (
-              <div className="cavalry-assistant-empty">
-                <CavalryAssistantMark className="cavalry-assistant-empty-mark" />
-                <h2>What do you want to do?</h2>
-                <p>Ask anything about this workbook.</p>
-                <div className="cavalry-assistant-suggestions">
-                  {suggestions.map((suggestion) => (
-                    <button key={suggestion} onClick={() => submit(suggestion)} type="button">
-                      <span>{suggestion}</span>
-                      <Icon name="north_east" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {pendingConfirmation && !pending ? (
-              <section
-                aria-label="Confirm Cavalry action"
-                className="cavalry-assistant-confirmation"
-              >
-                <Icon name="warning" />
-                <div>
-                  <strong>Confirm this action</strong>
-                  <p>{pendingConfirmation.message}</p>
-                </div>
-                <div className="cavalry-assistant-confirmation-actions">
-                  <button
-                    className="btn"
-                    onClick={() => setPendingConfirmation(null)}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                  <button className="btn btn-primary" onClick={confirmPendingAction} type="button">
-                    Confirm
-                  </button>
-                </div>
-              </section>
-            ) : null}
-            {pending && streamingText ? (
-              <div className="cavalry-assistant-message assistant cavalry-assistant-streaming">
-                <CavalryAssistantMark className="cavalry-assistant-message-avatar" working />
-                <div className="cavalry-assistant-message-content">
-                  <p>{streamingText}</p>
-                </div>
-              </div>
-            ) : null}
-            {pending ? (
-              <div className="cavalry-assistant-live-status" role="status">
-                <span aria-hidden="true" className="cavalry-assistant-thinking-dots">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span>{streamingText ? 'Writing…' : liveStatus || 'Working…'}</span>
-              </div>
-            ) : null}
-          </div>
-
-          <footer className="cavalry-assistant-composer-wrap" hidden={historyOpen || feedbackOpen}>
-            {draggingImages ? (
-              <div className="cavalry-assistant-drop-overlay">Drop images to attach them</div>
-            ) : null}
-            {error ? (
-              <div className="cavalry-assistant-error" role="alert">
-                <Icon name="error" />
-                <span>{error}</span>
-                {!provider.connected ? (
-                  <button onClick={onOpenSettings} type="button">
-                    Open settings
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {attachments.length ? (
-              <div className="cavalry-assistant-composer-images" aria-label="Images ready to send">
-                {attachments.map((attachment, index) => (
-                  <div className="cavalry-assistant-composer-image" key={attachment.id}>
-                    <img alt={attachment.name || `Image ${index + 1}`} src={attachment.dataUrl} />
-                    <button
-                      aria-label={`Remove ${attachment.name || `image ${index + 1}`}`}
-                      onClick={() => removeImage(attachment.id)}
-                      type="button"
-                    >
-                      <Icon name="close" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {processingImages || attachmentNotice ? (
-              <div className="cavalry-assistant-attachment-summary" role="status">
-                <Icon name={processingImages ? 'progress_activity' : 'imagesmode'} />
-                <span>
-                  {processingImages
-                    ? 'Preparing images…'
-                    : `${attachments.length}/${COMPANION_IMAGE_ATTACHMENT_MAX_COUNT} attached. ${attachmentNotice}`}
-                </span>
-              </div>
-            ) : null}
-            {voice.statusMessage ? (
-              <div className={`cavalry-assistant-voice-status ${voice.status}`} role="status">
-                <Icon name={voice.isRecording ? 'graphic_eq' : 'mic'} />
-                <span>
-                  {voice.statusMessage} {voice.timerCopy}
-                </span>
-                {voice.canOpenMicrophoneSettings ? (
-                  <button onClick={voice.openMicrophoneSettings} type="button">
-                    Open settings
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            <form
-              className="cavalry-assistant-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submit();
-              }}
-            >
-              <input
-                accept={COMPANION_IMAGE_ATTACHMENT_ACCEPT}
-                aria-label="Choose images"
-                hidden
-                multiple
-                onChange={(event) => void addImageFiles(Array.from(event.target.files || []))}
-                ref={imageInputRef}
-                type="file"
-              />
-              <textarea
-                aria-label="Message Cavalry"
-                disabled={pending || processingImages}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    submit();
-                  }
-                }}
-                placeholder={
-                  pendingClarification
-                    ? 'Answer Cavalry’s question…'
-                    : attachments.length
-                      ? 'Ask about these images…'
-                      : 'Ask or tell Cavalry what to do…'
-                }
-                ref={composerRef}
-                rows="2"
-                value={composer}
-              />
-              <div className="cavalry-assistant-composer-actions">
-                <button
-                  aria-label="Attach images"
-                  className="btn btn-icon"
-                  disabled={
-                    pending ||
-                    processingImages ||
-                    attachments.length >= COMPANION_IMAGE_ATTACHMENT_MAX_COUNT
-                  }
-                  onClick={() => imageInputRef.current?.click()}
-                  title={`Attach up to ${COMPANION_IMAGE_ATTACHMENT_MAX_COUNT} images`}
-                  type="button"
-                >
-                  <Icon name="add_photo_alternate" />
-                </button>
-                <button
-                  aria-label={voice.button.ariaLabel}
-                  className={`btn btn-icon${voice.isRecording ? ' recording' : ''}`}
-                  disabled={voice.button.disabled}
-                  onClick={voice.toggle}
-                  title={voice.button.title}
-                  type="button"
-                >
-                  <Icon name={voice.button.icon} />
-                </button>
-                {pending ? (
-                  <button
-                    aria-label="Stop Cavalry"
-                    className="btn btn-icon"
-                    onClick={cancel}
-                    type="button"
-                  >
-                    <Icon name="stop" />
-                  </button>
-                ) : (
-                  <button
-                    aria-label="Send message"
-                    className="btn btn-primary btn-icon"
-                    disabled={
-                      (!asText(composer) && !attachments.length) ||
-                      processingImages ||
-                      voice.isBusy ||
-                      voice.isRecording
-                    }
-                    type="submit"
-                  >
-                    <Icon name="arrow_upward" />
-                  </button>
-                )}
-              </div>
-            </form>
-            <small>
-              {pendingClarification
-                ? 'Pick an option or keep typing — Cavalry continues either way.'
-                : 'Cavalry verifies tool results and asks before changing anything.'}
-            </small>
-          </footer>
-        </aside>
-      ) : null}
-    </>
+    <CavalryAssistantPanel
+      addImageFiles={addImageFiles}
+      advisor={advisor}
+      applyPanelWidth={applyPanelWidth}
+      assistantSettingsOpen={assistantSettingsOpen}
+      attachmentNotice={attachmentNotice}
+      attachments={attachments}
+      beginPanelResize={beginPanelResize}
+      cancel={cancel}
+      cancelPanelResize={cancelPanelResize}
+      cancelPendingAction={cancelPendingAction}
+      composer={composer}
+      composerRef={composerRef}
+      confirmPendingAction={confirmPendingAction}
+      conversationState={conversationState}
+      conversations={conversations}
+      downloads={downloads}
+      draggingImages={draggingImages}
+      endPanelResize={endPanelResize}
+      error={error}
+      exportConversation={exportConversation}
+      feedback={feedback}
+      feedbackOpen={feedbackOpen}
+      historyOpen={historyOpen}
+      imageInputRef={imageInputRef}
+      isOpen={isOpen}
+      liveStatus={liveStatus}
+      makeId={makeId}
+      maxPanelWidth={maxPanelWidth}
+      messageListRef={messageListRef}
+      messages={messages}
+      movePanelResize={movePanelResize}
+      onClose={onClose}
+      onOpen={onOpen}
+      onOpenReference={onOpenReference}
+      onOpenSettings={onOpenSettings}
+      panelWidth={panelWidth}
+      pending={pending}
+      pendingClarification={pendingClarification}
+      pendingConfirmation={pendingConfirmation}
+      processingImages={processingImages}
+      provider={provider}
+      removeImage={removeImage}
+      resizePanelWithKeyboard={resizePanelWithKeyboard}
+      resizingPanel={resizingPanel}
+      resumeConversation={resumeConversation}
+      route={route}
+      setAssistantSettingsOpen={setAssistantSettingsOpen}
+      setComposer={setComposer}
+      setDraggingImages={setDraggingImages}
+      setFeedbackOpen={setFeedbackOpen}
+      setHistoryOpen={setHistoryOpen}
+      startConversation={startConversation}
+      streamingText={streamingText}
+      submit={submit}
+      suggestions={suggestions}
+      voice={voice}
+      workbook={workbook}
+    />
   );
 }

@@ -1,6 +1,6 @@
 # Privacy and data handling
 
-Last updated: 2026-08-04
+Last updated: 2026-08-21
 
 Cavalry is local-first, but optional features can send selected data to external services. This document describes the current repository behavior; it does not replace the privacy terms of Apple, Supabase, Google, GitHub, OpenAI, a configured model provider, or a tunnel provider.
 
@@ -30,6 +30,41 @@ not contain workbook contents, account balances, transactions, or Cloud tokens.
 Deleting a cloud workbook removes its cloud snapshots and related audit records under the current database contract; it does not delete the local workbook. The iOS Cloud screen also provides **Delete Cloud account**. After confirmation—and fresh Apple confirmation when Apple is connected—the trusted Supabase function removes feedback attachments, deletes the Supabase Auth user, and cascades the user's active Cloud profile, workbook snapshots, versions, feedback metadata, and audit records. It also asks Apple's server to revoke the connected Apple token before deleting an Apple-backed account. Local workbook files on the user's devices are not deleted. Provider and infrastructure backup-retention rules may continue to apply; a self-service account export is not currently implemented.
 
 See [Cavalry Cloud](docs/features/cavalry-cloud.md) for the maintained product and data boundary.
+
+## Companion local memory
+
+Companion personalization is optional and stored in a transparent `memory.md` file in Cavalry's
+local application-data directory. It is separate from the portable workbook and saved chat history,
+is disabled when first created, and is not uploaded by Cavalry Cloud. The Companion settings surface
+shows the full path and provides separate controls to open the file, open its folder, and reload it.
+You may also edit the Markdown file with another application.
+
+The file can contain free-form background context and structured records. A structured record has a
+stable local ID, text, optional tags, an `always` or `relevant` scope, and created/updated timestamps.
+Settings and explicit chat actions can create, update, and delete individual records. Clear memory
+removes the remembered content and records after confirmation but does not delete the workbook or
+chat history. Ordinary conversation is not silently converted into long-term memory. Chat-based
+remember/update/forget actions also require the separate **Allow approved updates from chats**
+preference.
+
+Memory writes are serialized and use a temporary file plus rename so a failed write does not replace
+the last complete document. Cavalry hashes the document as a revision. If the file changed after an
+in-app edit began, a revision-checked write reports a conflict and asks you to reload rather than
+overwriting the external edit. Cavalry rereads the file when settings refresh and before preparing a
+model request, so external edits can take effect without an app restart. The file has a 64 KB limit.
+Malformed front matter is reported in settings and is not added to model requests or silently
+overwritten by ordinary memory actions.
+
+When memory is enabled, Cavalry selects a bounded, relevance-ranked portion for the current request.
+Records marked `always` are prioritized; other records are selected from tag and text overlap with
+recent user messages. The injected context is capped and labeled as user-controlled background, not
+as instructions, financial evidence, or authorization to take an action. Disabling memory prevents
+this context from being added.
+
+If the configured Advisor endpoint is OpenAI or another remote/custom network service, the selected
+memory context is sent to that endpoint with the request and is governed by that service's retention
+and training terms. A custom endpoint can be local or remote, so verify its URL. Memory remains in
+the local file until you edit or clear it; Cavalry does not provide a separate memory sync service.
 
 ## Advisor providers and local models
 

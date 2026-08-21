@@ -67,6 +67,13 @@ function normalizeTemplate(value) {
   return raw || 'expense_paid';
 }
 
+function routeExpenseTemplateByAccount(workbook, template, primaryAccountId) {
+  const normalized = normalizeTemplate(template);
+  if (normalized !== 'expense_paid') return normalized;
+  const primaryAccount = getWorkbookAccount(workbook, primaryAccountId);
+  return primaryAccount && primaryAccount.group === 'liability' ? 'expense_charged' : normalized;
+}
+
 function buildAssignmentIssue(workbook, composerInput) {
   const template = normalizeTemplate(composerInput.template);
   const category = composerInput.categoryId
@@ -417,8 +424,13 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
     'fxRateToBase',
     getRawValue(rawInput, 'usdExpenseRate', '')
   );
+  const primaryAccountId = asLegacyId(getRawValue(rawInput, 'primaryAccountId', ''));
   const composerInput = {
-    template: getRawValue(rawInput, 'template', 'expense_paid'),
+    template: routeExpenseTemplateByAccount(
+      workbook,
+      getRawValue(rawInput, 'template', 'expense_paid'),
+      primaryAccountId
+    ),
     amount: getRawValue(rawInput, 'amount', ''),
     currency: getRawValue(rawInput, 'currency', ''),
     date: getRawValue(rawInput, 'date', ''),
@@ -426,7 +438,7 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
     usdExpenseRate: getRawValue(rawInput, 'usdExpenseRate', rawFxRateToBase),
     description: asString(getRawValue(rawInput, 'description', '')),
     categoryId: asLegacyId(getRawValue(rawInput, 'categoryId', '')),
-    primaryAccountId: asLegacyId(getRawValue(rawInput, 'primaryAccountId', '')),
+    primaryAccountId,
     secondaryAccountId: asLegacyId(getRawValue(rawInput, 'secondaryAccountId', '')),
     counterpartyId: asLegacyId(getRawValue(rawInput, 'counterpartyId', '')),
     counterpartyName: asString(getRawValue(rawInput, 'counterpartyName', '')),

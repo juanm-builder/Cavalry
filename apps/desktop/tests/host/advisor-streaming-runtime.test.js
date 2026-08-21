@@ -148,7 +148,8 @@ describe('advisor streaming runtime', () => {
     expect(body).toMatchObject({ stream: true, stream_options: { include_usage: true } });
 
     const streamEvents = events.filter((entry) => entry.phase === 'stream');
-    expect(streamEvents.map((entry) => entry.delta)).toEqual(['Your net worth ', 'is steady.']);
+    expect(streamEvents.map((entry) => entry.delta)).toEqual(['Your net worth is steady.']);
+    expect(streamEvents[0]).toMatchObject({ reset: true, final: true });
     // Every delta must be attributable, or concurrent turns cross-talk in the renderer.
     expect(streamEvents.every((entry) => entry.requestId === 'stream_turn')).toBe(true);
   });
@@ -252,6 +253,7 @@ describe('advisor streaming runtime', () => {
       { ...OPENAI_SETTINGS, endpoint: 'https://api.openai.com/v1/responses' },
       {
         requestId: 'agent_stream',
+        _cavalryMemoryQuery: 'Review my spending.',
         input: [{ role: 'user', content: 'Review my spending.' }],
         stream: true
       },
@@ -259,9 +261,20 @@ describe('advisor streaming runtime', () => {
     );
 
     expect(result).toMatchObject({ id: 'resp_9' });
-    expect(events.filter((entry) => entry.phase === 'stream').map((entry) => entry.delta)).toEqual([
-      'Checking',
-      ' your books'
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).not.toHaveProperty('_cavalryMemoryQuery');
+    expect(events.filter((entry) => entry.phase === 'stream')).toEqual([
+      expect.objectContaining({
+        requestId: 'agent_stream',
+        delta: 'Checking',
+        reset: true,
+        final: false
+      }),
+      expect.objectContaining({
+        requestId: 'agent_stream',
+        delta: ' your books',
+        reset: false,
+        final: false
+      })
     ]);
   });
 

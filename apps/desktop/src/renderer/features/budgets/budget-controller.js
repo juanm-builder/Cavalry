@@ -21,6 +21,8 @@ export const BUDGET_EVENT_TYPES = Object.freeze({
 });
 
 const FLOW_TYPES = new Set(['inflow', 'income', 'expense', 'outflow', 'debt', 'savings', 'both']);
+export const BUDGET_CATEGORY_TYPES = Object.freeze(['income', 'expense', 'debt', 'savings']);
+const BUDGET_CATEGORY_TYPE_SET = new Set(BUDGET_CATEGORY_TYPES);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -65,6 +67,25 @@ function failure(code, message, handled = true) {
 
 function findById(items, id) {
   return asArray(items).find((item) => asString(item && item.id) === id) || null;
+}
+
+function monthKeyFromDate(value) {
+  const date = asString(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : '';
+}
+
+function sheetMonthKey(workbook, sheet) {
+  const direct = asString(sheet && sheet.monthKey);
+  if (/^\d{4}-\d{2}$/.test(direct)) return direct;
+  const year = Number(workbook && workbook.year);
+  const monthIndex = Number(sheet && sheet.monthIndex);
+  return Number.isInteger(year) && Number.isInteger(monthIndex)
+    ? `${String(year).padStart(4, '0')}-${String(monthIndex + 1).padStart(2, '0')}`
+    : '';
+}
+
+function stableBudgetId(sheetId, categoryId) {
+  return `budget:${asString(sheetId)}:${asString(categoryId)}`;
 }
 
 function resolveRange(payload, fallbackRange) {
@@ -245,10 +266,50 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   const planned = Number(payload.planned);
   const createdAt = asString(payload.createdAt);
   const note = asString(payload.note);
-  if (!sheetId && !/^\d{4}-\d{2}-\d{2}$/.test(rangeStart)) {
+  const operation = asString(payload.operation || 'upsert').toLowerCase();
+  const recurrence = asString(payload.recurrence);
+  const hasRange = Boolean(rangeStart || rangeEnd);
+  const rangeStartMonth = monthKeyFromDate(rangeStart);
+  const rangeEndMonth = monthKeyFromDate(rangeEnd);
+  if (!sheetId && !hasRange) {
     return failure('budget.save.month-required', 'Choose the month this budget applies to.');
   }
+  if (
+    hasRange &&
+    (!rangeStartMonth ||
+      !rangeEndMonth ||
+      rangeStartMonth !== rangeEndMonth ||
+      rangeStart > rangeEnd)
+  ) {
+    return failure(
+      'budget.save.period-invalid',
+      'Budget periods require complete ISO dates within one month.'
+    );
+  }
+  if (!['create', 'upsert'].includes(operation)) {
+    return failure(
+      'budget.save.operation-invalid',
+      'Budget operation must be either "create" or "upsert".'
+    );
+  }
+  if (recurrence) {
+    return failure(
+      'budget.save.recurrence-unsupported',
+      'Category budgets are monthly plans and do not support recurrence.'
+    );
+  }
   if (!categoryId) return failure('budget.save.category-required', 'Select a category.');
+  const category = findById(context.workbook && context.workbook.categories, categoryId);
+  if (
+    !category ||
+    category.isActive === false ||
+    !BUDGET_CATEGORY_TYPE_SET.has(asString(category.type))
+  ) {
+    return failure(
+      'budget.save.category-invalid',
+      'Choose an active income, expense, debt, or savings category.'
+    );
+  }
   if (!Number.isFinite(planned) || planned <= 0) {
     return failure(
       'budget.save.amount-required',
@@ -264,6 +325,15 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   if (sheetId && !sheet) {
     return failure('budget.save.sheet-not-found', `Budget sheet "${sheetId}" was not found.`);
   }
+  if (sheet && hasRange) {
+    const resolvedMonth = sheetMonthKey(workbook, sheet);
+    if (!resolvedMonth || resolvedMonth !== rangeStartMonth) {
+      return failure(
+        'budget.save.period-conflict',
+        'The budget sheet and requested month must identify the same period.'
+      );
+    }
+  }
   if (!sheet) {
     const year = Number(rangeStart.slice(0, 4));
     const month = Number(rangeStart.slice(5, 7));
@@ -272,13 +342,9 @@ function handleSaveBudget(payload, context, dependencies = {}) {
     }
     const monthIndex = month - 1;
     const monthKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
-    sheet = asArray(workbook.sheets).find((candidate) => {
-      const candidateMonthKey = asString(candidate && candidate.monthKey);
-      if (candidateMonthKey) return candidateMonthKey === monthKey;
-      return (
-        Number(workbook.year) === year && Number(candidate && candidate.monthIndex) === monthIndex
-      );
-    });
+    sheet = asArray(workbook.sheets).find(
+      (candidate) => sheetMonthKey(workbook, candidate) === monthKey
+    );
     if (!sheet) {
       const requestedId =
         typeof dependencies.createId === 'function'
@@ -315,6 +381,25 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   const existing = asArray(sheet.budgets).find(
     (budget) => asString(budget && budget.categoryId) === categoryId
   );
+  const legacyOverlap = asArray(sheet.budgetLineItems).find(
+    (item) =>
+      asString(item && item.categoryId) === categoryId &&
+      item.isActive !== false &&
+      !asString(item && item.recurringItemId)
+  );
+  if (operation === 'create' && existing) {
+    return failure(
+      'budget.save.already-exists',
+      'A direct budget already exists for this category and month. Use upsert to update it.'
+    );
+  }
+  if (!existing && legacyOverlap) {
+    return failure(
+      'budget.save.legacy-overlap',
+      'A manually entered legacy budget already exists for this category and month and cannot be silently replaced.'
+    );
+  }
+  const resultOperation = existing ? 'updated' : 'created';
   const budget = existing
     ? editCoreBudget(workbook, resolvedSheetId, categoryId, { planned, createdAt, note })
     : createCoreBudget(workbook, resolvedSheetId, { categoryId, planned, createdAt, note });
@@ -324,8 +409,10 @@ function handleSaveBudget(payload, context, dependencies = {}) {
   return mutationSuccess(workbook, {
     type: BUDGET_EVENT_TYPES.budgetSaved,
     payload: {
+      budgetId: stableBudgetId(resolvedSheetId, categoryId),
       sheetId: resolvedSheetId,
       categoryId,
+      operation: resultOperation,
       budget: savedBudget || budget
     }
   });

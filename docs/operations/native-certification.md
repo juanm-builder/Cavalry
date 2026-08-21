@@ -16,14 +16,17 @@ This checklist is the release gate for Cavalry's Tauri desktop runtime. Complete
 
 Certify every published target independently:
 
-- [ ] macOS Apple Silicon (`aarch64-apple-darwin`).
-- [ ] macOS Intel (`x86_64-apple-darwin`).
+- [ ] macOS Apple Silicon (`aarch64-apple-darwin`) built on `macos-15` with an `arm64` host.
+- [ ] macOS Intel (`x86_64-apple-darwin`) built on `macos-15-intel` with an `x86_64` host.
 
 For each target:
 
 - [ ] Build the renderer and Node host bundle.
 - [ ] Package the target-specific `cavalry-host` sidecar.
-- [ ] Confirm the sidecar is present once, executable, and outside renderer access.
+- [ ] Confirm the sidecar is present once, executable, has the target architecture, and is outside
+      renderer access.
+- [ ] Execute the signed packaged sidecar on the matching native host and capture its ready
+      handshake. Do not accept a cross-architecture skip.
 - [ ] Build the Tauri application using the signed release overlay.
 - [ ] Confirm the application launches without a developer toolchain installed.
 - [ ] Confirm no Electron, Chromium, Node source tree, development server URL, or source map is bundled unintentionally.
@@ -65,8 +68,46 @@ Use a copy of a production-like workbook containing accounts, cards, transfers, 
 
 - [ ] Companion API starts, stops, reports status, enforces authentication, and exposes the expected OpenAPI surface.
 - [ ] Companion transaction, refund, budget, bill, subscription, workbook, and analysis tools operate against the correct workbook.
+- [ ] Capability discovery reflects feature-owned manifests without a second prompt or handler
+      catalog. Add, deprecate, make unavailable, and remove a synthetic capability and confirm the
+      exposed definitions and execution behavior update together.
+- [ ] Capability metadata exposes bounded input/output schemas, entity requirements, access,
+      confirmation, validation, handler, result presentation, availability, deprecation, version,
+      compatibility, atomicity, and idempotency fields.
+- [ ] Explicit accounts and cards resolve to their stable IDs; aliases resolve only when unique, and
+      ambiguous candidates ask for clarification instead of choosing one.
+- [ ] A confirmation replay preserves the canonical proposal, operation key, IDs, and fingerprint.
+- [ ] An income-budget request creates the intended income budget for the explicit period without
+      modifying an existing manual expected-income budget unless that budget was targeted.
+- [ ] Replacement, correction, and move succeed atomically, roll back completely on every injected
+      failure, and do not duplicate work when the same operation is retried.
+- [ ] Existing reimbursement records retain the established income treatment and warning; Companion
+      correction does not silently convert them to merchant refunds.
+- [ ] Completed, cancelled, failed, rolled-back, and committed-but-unverified action receipts display
+      language that agrees with commit, verification, entity, account, amount, date, and persistence
+      fields.
+- [ ] Inject a workbook save failure and confirm the old in-memory workbook remains current and no
+      completed receipt is shown.
 - [ ] Advisor provider credentials save, load, update, and clear securely.
-- [ ] Streaming, cancellation, timeout, error, and retry paths work.
+- [ ] Streaming is transient and request-scoped; a tool-call preamble, stale delta, protocol frame,
+      or partial provider response never becomes saved transcript content.
+- [ ] A successful turn saves one coherent assistant message. Cancellation, timeout, error, and retry
+      clear transient output and leave a clean terminal notice without duplicated messages.
+- [ ] Wide and narrow Companion layouts preserve readable padding, responsive tables, composer
+      spacing, action receipts, confirmations, and memory controls.
+- [ ] `memory.md` is visible in settings with separate controls to open the file, open its folder, and
+      reload it. The displayed path matches the application-data file.
+- [ ] Create, update, and delete individual memory records; confirm clear-all; toggle memory use and
+      approved chat updates; and use explicit chat remember and forget actions.
+- [ ] Edit `memory.md` externally and confirm safe automatic refresh and explicit reload. Attempt to
+      save an older revision and confirm Cavalry reports a conflict without overwriting the external
+      edit.
+- [ ] Interrupt a memory write and confirm the previous file remains readable and no temporary file
+      is treated as the current memory document.
+- [ ] Introduce malformed front matter and confirm settings show a diagnostic, model requests omit
+      memory, and ordinary mutations do not overwrite the malformed file.
+- [ ] Confirm only bounded relevant memory records reach the selected provider, the injected section
+      is labeled untrusted background context, and disabling memory sends none of it.
 - [ ] Microphone permission prompts, recording, cancellation, transcription, and denied-permission behavior work.
 - [ ] Image and multimodal inputs work where supported.
 - [ ] GGUF inspection and model/projector selection work.
@@ -90,7 +131,14 @@ Follow [the Electron-to-Tauri migration runbook](electron-to-tauri-migration.md)
 - [ ] macOS notarization succeeds and the ticket is stapled; `spctl` and `codesign --verify --deep --strict` pass.
 - [ ] Tauri updater artifacts and `latest.json` are signed with the release updater key.
 - [ ] The updater public key in the build matches the private key used to sign artifacts.
-- [ ] HTTPS updater URLs, versions, platform keys, signatures, and filenames pass `tools/release/verify-release-assets.mjs`.
+- [ ] The tag resolves to the recorded immutable commit and the draft release targets that exact
+      source revision.
+- [ ] The draft has exactly seven assets: two `.app.tar.gz` archives, their two `.sig` files, two
+      DMGs, and `latest.json`; there are no missing, duplicate, incomplete, or unexpected files.
+- [ ] Both updater platform entries use immutable same-repository GitHub API release asset IDs and
+      resolve to the expected uploaded archive.
+- [ ] HTTPS updater URLs, versions, platform keys, signatures, filenames, complete inventory, and
+      immutable asset references pass `tools/release/verify-release-assets.mjs` in GitHub mode.
 - [ ] Test update from the previous Tauri version to the candidate, including cancellation, interrupted download, relaunch, and retained data.
 - [ ] Confirm an installed Electron client is not pointed directly at the incompatible Tauri feed.
 - [ ] Test clean install, repair/reinstall, update, and uninstall without deleting user workbooks.
@@ -114,3 +162,10 @@ A release is ready only when:
 - [ ] Any accepted exception has an owner, impact statement, mitigation, and follow-up issue.
 - [ ] The exact commit, hashes, signing identities, updater manifest, test evidence, and rollback instructions are archived.
 - [ ] A second reviewer verifies the release artifacts before the draft release is published.
+- [ ] The second reviewer records that both native sidecars executed, the seven-asset inventory
+      passed, updater URLs resolved by immutable asset ID, and no artifact changed after
+      certification.
+
+Do not publish the draft until every blocking item above passes for both targets. An artifact
+replacement after sign-off invalidates the affected evidence and requires the inventory verification,
+native checks, and second-reviewer sign-off to be repeated.

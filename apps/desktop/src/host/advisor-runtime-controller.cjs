@@ -69,6 +69,7 @@ const {
   redactAdvisorLogText
 } = require('./advisor-process-log.cjs');
 const { createAdvisorSettingsStorage } = require('./advisor-settings-storage.cjs');
+const { createAdvisorMemoryRuntime } = require('./advisor-memory-runtime.cjs');
 
 const {
   getAdvisorMediaPermissionTypes,
@@ -198,6 +199,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
     normalizeSettings: normalizeAdvisorSettings,
     getPersistentSettings: getPersistentAdvisorSettings
   });
+  const advisorMemoryRuntime = createAdvisorMemoryRuntime({ app, fs, path, shell });
 
   async function pathExists(filePath) {
     try {
@@ -1048,7 +1050,8 @@ function createAdvisorRuntimeController(dependencies = {}) {
           requestInit,
           requestSignal: getAdvisorRequestSignal(requestState),
           requestState,
-          rethrowRequestFailure
+          rethrowRequestFailure,
+          segment: payload.streamSegment
         });
         if (streamed.handled) {
           sendAdvisorStatus(event, {
@@ -1072,6 +1075,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
           generationStatusTimer = setInterval(() => {
             sendAdvisorStatus(event, {
               phase: 'request',
+              requestId: requestState ? requestState.requestId : '',
               message: 'Local model is generating a response.',
               progressPercent: advisorElapsedProgress(startedAt, ADVISOR_REQUEST_TIMEOUT_MS, 70, 94)
             });
@@ -1087,6 +1091,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       }
       sendAdvisorStatus(event, {
         phase: 'response',
+        requestId: requestState ? requestState.requestId : '',
         message: 'Cavalry finished.',
         progressPercent: 100
       });
@@ -1106,13 +1111,13 @@ function createAdvisorRuntimeController(dependencies = {}) {
           sendAdvisorStatus(event, {
             phase: 'request',
             requestId: requestState ? requestState.requestId : '',
-            message:
-              'Local endpoint rejected structured JSON mode; retrying with prompt-only JSON instructions.',
+            message: 'Adjusting the local model request…',
             progressPercent: 72
           });
           response = await postAdvisorRequest(retryBody);
           sendAdvisorStatus(event, {
             phase: 'response',
+            requestId: requestState ? requestState.requestId : '',
             message: 'Cavalry finished.',
             progressPercent: 100
           });
@@ -1231,7 +1236,8 @@ function createAdvisorRuntimeController(dependencies = {}) {
           requestInit: agentRequestInit,
           requestSignal: getAdvisorRequestSignal(requestState),
           requestState,
-          unreachable
+          unreachable,
+          segment: payload.streamSegment
         });
         if (streamedTurn.handled) {
           sendAdvisorStatus(event, {
@@ -1265,14 +1271,12 @@ function createAdvisorRuntimeController(dependencies = {}) {
         parsed = null;
       }
       if (!response.ok) {
-        const message =
-          parsed && parsed.error && parsed.error.message
-            ? parsed.error.message
-            : text || `Model request failed with HTTP ${response.status}.`;
+        const message = getAdvisorResponseErrorMessage(text, parsed, response.status);
         throw new Error(message);
       }
       sendAdvisorStatus(event, {
         phase: 'response',
+        requestId: requestState ? requestState.requestId : '',
         message: 'Cavalry finished.',
         progressPercent: 100
       });
@@ -1327,6 +1331,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       callAdvisorModel,
       callAdvisorAgentTurn,
       callAdvisorTranscription,
+      ...advisorMemoryRuntime,
       cancelAdvisorRequest,
       normalizeAdvisorRequestId,
       isAdvisorCancellationError,
@@ -1347,6 +1352,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
     callAdvisorModel,
     callAdvisorAgentTurn,
     callAdvisorTranscription,
+    ...advisorMemoryRuntime,
     cancelAdvisorRequest,
     ensureLocalAdvisorServer,
     findAdjacentMmprojPath,

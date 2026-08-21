@@ -144,6 +144,29 @@ describe('Cavalry assistant transaction inference authority', () => {
     expect(result.arguments).not.toHaveProperty('primaryAccount');
   });
 
+  it('routes a purchase to expense charged when the selected account is a liability', () => {
+    const result = infer(
+      {
+        template: 'expense_paid',
+        amount: 350,
+        description: 'Groceries',
+        category: 'Food',
+        primaryAccount: 'card'
+      },
+      'I purchased groceries for 350'
+    );
+
+    expect(result.arguments).toMatchObject({
+      template: 'expense_charged',
+      category: 'Food',
+      primaryAccount: 'card'
+    });
+    expect(result.inferredFields.template).toEqual({
+      value: 'expense_charged',
+      reason: 'liability_account_routing'
+    });
+  });
+
   it('treats blank optional entity keys as absent and fills deterministic values', () => {
     const result = infer(
       {
@@ -218,6 +241,92 @@ describe('Cavalry assistant transaction inference authority', () => {
 
     expect(result.arguments.primaryAccountId).toBe('cash');
     expect(result.inferredFields.primaryAccountId.reason).toBe('explicit_account_role');
+  });
+
+  it('reports generic-card ambiguity even when the model supplied one candidate ID', () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'travel-card',
+      name: 'Travel Card',
+      group: 'liability',
+      subtype: 'credit_card',
+      currency: 'PHP',
+      isActive: true
+    });
+
+    const result = inferCavalryAssistantTransactionArguments(
+      workbook,
+      {
+        template: 'expense_paid',
+        amount: 500,
+        description: 'Groceries',
+        category: 'Food',
+        primaryAccountId: 'card'
+      },
+      { currentDate: '2026-07-29', question: 'Charge 500 of groceries to my card' }
+    );
+
+    expect(result.arguments.template).toBe('expense_charged');
+    expect(result.resolutionIssues).toEqual([
+      expect.objectContaining({
+        status: 'ambiguous_reference',
+        error: expect.objectContaining({
+          code: 'ambiguous_reference',
+          field: 'primaryAccountId'
+        })
+      })
+    ]);
+    expect(result.inferredFields).not.toHaveProperty('primaryAccountId');
+  });
+
+  it('does not replace an unknown explicit account with transaction history or a default', () => {
+    const workbook = makeWorkbook();
+    const result = inferCavalryAssistantTransactionArguments(
+      workbook,
+      {
+        template: 'expense_paid',
+        amount: 100,
+        description: 'Groceries',
+        category: 'Food',
+        primaryAccount: 'Moonstone Bank'
+      },
+      { currentDate: '2026-07-29', question: 'Record my 100 groceries purchase' }
+    );
+
+    expect(result.arguments.primaryAccount).toBe('Moonstone Bank');
+    expect(result.arguments).not.toHaveProperty('primaryAccountId');
+    expect(result.resolutionIssues[0]).toMatchObject({
+      status: 'validation_failed',
+      error: { code: 'reference_not_found', field: 'primaryAccountId' }
+    });
+  });
+
+  it('does not route to an archived account even by its exact stable ID', () => {
+    const workbook = makeWorkbook();
+    workbook.accounts.push({
+      id: 'archived-cash',
+      name: 'Archived Cash',
+      group: 'asset',
+      subtype: 'cash',
+      currency: 'PHP',
+      isActive: false
+    });
+    const result = inferCavalryAssistantTransactionArguments(
+      workbook,
+      {
+        template: 'expense_paid',
+        amount: 100,
+        description: 'Groceries',
+        category: 'Food',
+        primaryAccountId: 'archived-cash'
+      },
+      { currentDate: '2026-07-29', question: 'Record my 100 groceries purchase' }
+    );
+
+    expect(result.resolutionIssues[0]).toMatchObject({
+      status: 'validation_failed',
+      error: { code: 'reference_not_found', field: 'primaryAccountId' }
+    });
   });
 
   it('uses an existing counterparty id and never invents a dangling name reference', () => {
