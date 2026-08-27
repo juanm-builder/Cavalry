@@ -149,6 +149,36 @@ describe('Tauri desktop release tooling', () => {
     expect(invalidUrl.status).not.toBe(0);
   });
 
+  it('fails the release when the built host omits the validated Cloud configuration', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'cavalry-cloud-build-'));
+    temporaryDirectories.push(directory);
+    const bundlePath = resolve(directory, 'index.cjs');
+    const environment = {
+      CAVALRY_SUPABASE_URL: 'https://project.supabase.co',
+      CAVALRY_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-key'
+    };
+    writeFileSync(
+      bundlePath,
+      `const url = ${JSON.stringify(environment.CAVALRY_SUPABASE_URL)}; const key = ${JSON.stringify(environment.CAVALRY_SUPABASE_PUBLISHABLE_KEY)};`
+    );
+
+    const embedded = runScript(
+      'tools/release/validate-cloud-config.mjs',
+      ['--bundle', bundlePath],
+      environment
+    );
+    writeFileSync(bundlePath, 'const cloud = "";');
+    const missing = runScript(
+      'tools/release/validate-cloud-config.mjs',
+      ['--bundle', bundlePath],
+      environment
+    );
+
+    expect(embedded.status, embedded.stderr).toBe(0);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('does not contain the validated public Cloud configuration');
+  });
+
   it('accepts only the exact stable tag matching npm, Cargo, and Tauri versions', () => {
     const [major, minor, patch] = currentVersion.split('.').map(Number);
 
@@ -300,6 +330,16 @@ describe('Tauri desktop release tooling', () => {
     expect(workflow).toContain('asset_arch: x64');
     expect(workflow).toContain('Cavalry.for.Mac_${version}_${{ matrix.asset_arch }}.dmg');
     expect(workflow).toContain('Verify uploaded release assets');
+    expect(
+      workflow.match(/CAVALRY_SUPABASE_URL: \$\{\{ vars\.CAVALRY_SUPABASE_URL \}\}/g)
+    ).toHaveLength(2);
+    expect(
+      workflow.match(
+        /CAVALRY_SUPABASE_PUBLISHABLE_KEY: \$\{\{ vars\.CAVALRY_SUPABASE_PUBLISHABLE_KEY \}\}/g
+      )
+    ).toHaveLength(2);
+    expect(workflow).toContain('validate-cloud-config.mjs --bundle dist/host/index.cjs');
+    expect(workflow).toContain('--expect-cloud-configured');
     expect(workflow).not.toContain('Skipping sidecar smoke test');
   });
 });

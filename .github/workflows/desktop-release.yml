@@ -55,6 +55,9 @@ jobs:
     permissions:
       contents: write
     environment: release-signing
+    env:
+      CAVALRY_SUPABASE_URL: ${{ vars.CAVALRY_SUPABASE_URL }}
+      CAVALRY_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CAVALRY_SUPABASE_PUBLISHABLE_KEY }}
     strategy:
       fail-fast: false
       # tauri-action merges latest.json with a read/delete/re-upload sequence. Serialize the
@@ -107,6 +110,7 @@ jobs:
           npm run licenses:runtime
           npm run build:host
           npm run "${{ matrix.sidecar }}"
+          node ../../tools/release/validate-cloud-config.mjs --bundle dist/host/index.cjs
           npm run release:config
 
       - name: Prepare Apple API key
@@ -174,23 +178,9 @@ jobs:
             echo "::error::Sidecar architectures $(lipo -archs "$sidecar") do not contain ${{ matrix.host_arch }}"
             exit 1
           fi
-          log="$RUNNER_TEMP/host-smoke.log"
-          : > "$log"
-          echo "" | "$sidecar" > "$log" 2>&1 &
-          pid=$!
-          for _ in $(seq 1 90); do
-            grep -q '"type":"ready"' "$log" && break
-            kill -0 "$pid" 2>/dev/null || break
-            sleep 1
-          done
-          kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
-          if ! grep -q '"type":"ready"' "$log"; then
-            echo "::error::The signed host sidecar never reported ready. Output follows."
-            cat "$log"
-            exit 1
-          fi
-          echo "Signed host sidecar reached ready."
+          node apps/desktop/scripts/sidecar-smoke.mjs \
+            --binary "$sidecar" \
+            --expect-cloud-configured
 
       - name: Notarize and staple the DMG
         shell: bash

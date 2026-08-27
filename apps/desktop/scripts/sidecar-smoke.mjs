@@ -9,20 +9,47 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hostPath = resolve(appRoot, 'dist/host/index.cjs');
 const userDataDir = mkdtempSync(resolve(tmpdir(), 'cavalry-tauri-host-'));
 const prefix = 'CAVALRY_IPC_V1:';
-const requestId = 'sidecar-smoke-status';
+const infoRequestId = 'sidecar-smoke-info';
+const cloudRequestId = 'sidecar-smoke-cloud';
+const argumentsList = process.argv.slice(2);
+const binaryOptionIndex = argumentsList.indexOf('--binary');
+const binaryPath =
+  binaryOptionIndex >= 0 && argumentsList[binaryOptionIndex + 1]
+    ? resolve(argumentsList[binaryOptionIndex + 1])
+    : '';
+const expectCloudConfigured = argumentsList.includes('--expect-cloud-configured');
+const recognizedArguments = new Set([
+  '--binary',
+  ...(binaryPath ? [argumentsList[binaryOptionIndex + 1]] : []),
+  '--expect-cloud-configured'
+]);
 
-const child = spawn(process.execPath, [hostPath], {
+if (
+  (binaryOptionIndex >= 0 && !binaryPath) ||
+  (expectCloudConfigured && !binaryPath) ||
+  argumentsList.some((argument) => !recognizedArguments.has(argument))
+) {
+  throw new Error(
+    'Usage: sidecar-smoke.mjs [--binary <packaged-host>] [--expect-cloud-configured]'
+  );
+}
+
+const child = spawn(binaryPath || process.execPath, binaryPath ? [] : [hostPath], {
   cwd: appRoot,
   stdio: ['pipe', 'pipe', 'pipe'],
   env: {
     ...process.env,
     CAVALRY_APP_NAME: 'Cavalry Test',
     CAVALRY_APP_VERSION: '1.0.26',
-    CAVALRY_IS_PACKAGED: '0',
+    CAVALRY_IS_PACKAGED: binaryPath ? '1' : '0',
     CAVALRY_USER_DATA_DIR: userDataDir,
     CAVALRY_COMPANION_API_ENABLED: '0',
-    CAVALRY_SUPABASE_URL: '',
-    CAVALRY_SUPABASE_PUBLISHABLE_KEY: ''
+    ...(binaryPath
+      ? {}
+      : {
+          CAVALRY_SUPABASE_URL: '',
+          CAVALRY_SUPABASE_PUBLISHABLE_KEY: ''
+        })
   }
 });
 
@@ -90,14 +117,31 @@ lines.on('line', (line) => {
   }
   if (message.type === 'ready' && !ready) {
     ready = true;
-    write({ type: 'request', id: requestId, channel: 'cavalry-host:get-info', payload: {} });
+    write({ type: 'request', id: infoRequestId, channel: 'cavalry-host:get-info', payload: {} });
     return;
   }
-  if (message.type === 'response' && message.id === requestId) {
+  if (message.type === 'response' && message.id === infoRequestId) {
     if (!message.ok || !message.result || message.result.protocolVersion !== 1) {
       finish(
         new Error(`Desktop host returned an invalid status response: ${JSON.stringify(message)}`)
       );
+      return;
+    }
+    if (expectCloudConfigured) {
+      write({
+        type: 'request',
+        id: cloudRequestId,
+        channel: 'cavalry-cloud:get-state',
+        payload: {}
+      });
+      return;
+    }
+    finish();
+  }
+  if (message.type === 'response' && message.id === cloudRequestId) {
+    const state = message && message.result && message.result.state;
+    if (!message.ok || !state || state.configured !== true) {
+      finish(new Error('The packaged desktop host reports that Cavalry Cloud is not configured.'));
       return;
     }
     finish();
