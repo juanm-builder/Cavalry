@@ -258,8 +258,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # GitHub omits draft releases from the REST release listing for a read-only job token.
+    # This job does not mutate the draft, but it needs release-author visibility to inspect it.
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Check out tagged source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
