@@ -4,6 +4,37 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.1.1 - 2026-08-27
+
+### Changed
+
+- Reissued Cavalry for Mac as a fix-forward release so the existing Cavalry Cloud Apple sign-in
+  and identity-linking experience is delivered with complete updater packages for both Apple
+  Silicon and Intel Macs. Apple authentication opens in the system browser and returns through the
+  exact `cavalry://auth/callback` installed-app callback.
+- Signed-in Cloud owners can connect Apple to the same immutable Supabase owner used by Google and
+  mobile, including when Apple Hide My Email is selected. Cavalry does not merge owners by email or
+  create a second Cloud library for an explicitly linked identity.
+
+### Fixed
+
+- Restored the complete seven-file macOS release inventory. The public 2.1.0 release was missing the
+  Intel updater archive and detached signature after an earlier duplicate-release collision; 2.1.1
+  publishes fresh signed updater archives, signatures, disk images, and one updater manifest under
+  a new immutable version.
+
+### Compatibility and release notes
+
+- No workbook schema migration is required. Cavalry remains local-first, and signing in alone does
+  not upload or replace the open workbook; subsequent successful saves enter the existing Cloud
+  synchronization queue.
+- The production Cloud configuration must redirect Apple authorization to
+  `appleid.apple.com` with Services ID `com.juanmbuilder.cavalry.auth`. Provider secrets remain in
+  Supabase and are not embedded in the application or release metadata.
+- The GitHub release remains a draft until signed and notarized packages pass the cross-application
+  Apple identity checks in the Cloud OAuth runbook and an independent reviewer approves
+  publication.
+
 ## 2.1.0 - 2026-08-21
 
 ### Added
