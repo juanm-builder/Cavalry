@@ -4,6 +4,27 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ## [Unreleased]
 
+## 2.1.2 - 2026-08-27
+
+### Fixed
+
+- Production Mac builds now compile the validated Supabase project URL and publishable key into
+  the isolated desktop host, restoring Cavalry Cloud, Google sign-in, Apple sign-in, identity
+  linking, and cross-device workbook synchronization. The 2.1.1 draft validated these public
+  values in its release-input job but did not expose them to the separate native build jobs, so an
+  installed 2.1.1 package reported that Cavalry Cloud was not configured.
+- The native release matrix now fails before signing if either Cloud value is absent or if the
+  generated host bundle does not contain both validated values. This checks the artifact input
+  rather than only the workflow environment and prevents a signed but Cloud-disabled build from
+  reaching the draft again.
+
+### Compatibility and release notes
+
+- No workbook schema or Cloud ownership migration is required. Existing local files and securely
+  stored Cloud sessions remain compatible after replacing 2.1.1 with 2.1.2.
+- The 2.1.1 draft must not be published or installed. Version 2.1.2 supersedes it with fresh signed
+  and notarized packages for Apple Silicon and Intel Macs.
+
 ## 2.1.1 - 2026-08-27
 
 ### Changed
