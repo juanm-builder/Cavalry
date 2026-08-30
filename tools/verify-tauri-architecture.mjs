@@ -132,6 +132,8 @@ requireCondition(
 );
 requireCondition(
   codesignShim.includes('entitlements.sidecar.plist') &&
+    codesignShim.includes('is_signing') &&
+    codesignShim.includes('"--sign"') &&
     appPackage.scripts['tauri:build:mac'].includes('macos-codesign-shim') &&
     appPackage.scripts['tauri:release:mac'].includes('macos-codesign-shim'),
   'Mac packaging must sign the host sidecar with its dedicated entitlements.'
