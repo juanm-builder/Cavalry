@@ -2,6 +2,23 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.1 - 2026-08-30
+
+### Fixed
+
+- Fixed the Developer ID release pipeline so it can use a locally generated, encrypted Mac direct
+  distribution profile when the notarization API key is not permitted to manage certificates and
+  profiles. The workflow still validates the profile's app identity, distribution scope,
+  production CloudKit environment, shared container, and CloudKit service before signing.
+
+### Compatibility and release notes
+
+- This fix-forward release supersedes the unpublished `v2.2.0` build attempt and includes the full
+  Apple-native, local-first feature set documented below. It does not change workbook data or
+  require a migration.
+- GitHub release artifacts remain drafts until both Mac architectures pass Developer ID signing,
+  sidecar execution, notarization, stapling, updater-signature, and release-inventory checks.
+
 ## 2.2.0 - 2026-08-30
 
 ### Added
