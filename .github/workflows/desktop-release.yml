@@ -176,7 +176,10 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" | grep -Fqx 'true'
           /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-identifiers' "$profile_plist" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
           /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-environment' "$profile_plist" | grep -Fq 'Production'
-          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Fq 'CloudKit'
+          # Xcode-generated Developer ID profiles authorize the registered iCloud services with
+          # `*`; API-generated profiles may enumerate `CloudKit`. The app's signed entitlements
+          # are checked below and must still request CloudKit explicitly.
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Eq 'CloudKit|^[[:space:]]*\*[[:space:]]*$'
 
       - name: Build, sign, and upload Tauri release
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
