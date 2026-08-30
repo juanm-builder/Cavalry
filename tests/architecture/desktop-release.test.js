@@ -286,7 +286,9 @@ describe('Tauri desktop release tooling', () => {
     expect(workflow).toContain('Cavalry.for.Mac_${version}_${{ matrix.asset_arch }}.dmg');
     expect(workflow).toContain('Verify uploaded release assets');
     expect(workflow).toContain('--expect-icloud-enabled');
-    expect(workflow).toContain('MAC_PROVISIONING_PROFILE_BASE64');
+    expect(workflow).toContain('tools/release/prepare-mac-profile.mjs');
+    expect(workflow).toContain('APPLE_SIGNING_CERTIFICATE_SERIAL');
+    expect(workflow).not.toContain('MAC_PROVISIONING_PROFILE_BASE64');
     expect(workflow).toContain('embedded.provisionprofile');
     expect(workflow).toContain('scripts/macos-codesign-shim');
     expect(workflow).toContain(
