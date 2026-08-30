@@ -29,17 +29,42 @@ describe('cloud workbook sync state', () => {
 
     writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
       revision: 7,
-      conflict: true
+      conflict: true,
+      conflictNoticeId: 'conflict-iphone-1',
+      conflictRemoteRevision: 8
     });
     expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
       known: true,
       revision: 7,
-      conflict: true
+      conflict: true,
+      conflictNoticeId: 'conflict-iphone-1',
+      conflictRemoteRevision: 8
     });
     expect(readCloudWorkbookSyncState(storage, 'user-2', 'workbook-1').known).toBe(false);
 
     removeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1');
     expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1').known).toBe(false);
+  });
+
+  it('removes the cross-device adoption marker after a conflict is resolved', () => {
+    const storage = createStorage();
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: 7,
+      conflict: true,
+      conflictNoticeId: 'conflict-iphone-1',
+      conflictRemoteRevision: 8
+    });
+
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: 9,
+      conflict: false
+    });
+
+    expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
+      known: true,
+      revision: 9,
+      conflict: false
+    });
   });
 
   it('fails closed for malformed state without storing workbook contents', () => {
@@ -54,6 +79,30 @@ describe('cloud workbook sync state', () => {
       conflict: true
     });
     expect(storage.values.get(key)).not.toMatch(/portable|workbook contents/i);
+  });
+
+  it('retains the last confirmed merge base when a newer revision is only queued', () => {
+    const storage = createStorage();
+    const baseWorkbook = { id: 'workbook-1', name: 'Confirmed copy', transactions: [] };
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: 4,
+      conflict: false,
+      baseRevision: 4,
+      baseWorkbook
+    });
+
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: 5,
+      conflict: false
+    });
+
+    expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
+      known: true,
+      revision: 5,
+      conflict: false,
+      baseRevision: 4,
+      baseWorkbook
+    });
   });
 
   it('retains a session fallback when durable application storage is blocked', () => {

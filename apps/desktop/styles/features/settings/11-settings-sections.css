@@ -520,66 +520,6 @@
   min-width: 176px;
 }
 
-.settings-google-sign-in {
-  width: 100%;
-  min-height: 42px;
-  white-space: nowrap;
-}
-
-.apple-oauth-button {
-  width: 176px;
-  height: 42px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.apple-oauth-button img {
-  display: block;
-  width: 176px;
-  height: 42px;
-  pointer-events: none;
-  user-select: none;
-}
-
-.apple-oauth-button-light-surface {
-  display: none !important;
-}
-
-html[data-color-scheme='light'] .apple-oauth-button-dark-surface {
-  display: none;
-}
-
-html[data-color-scheme='light'] .apple-oauth-button-light-surface {
-  display: block !important;
-}
-
-.apple-oauth-button:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 62%, transparent);
-  outline-offset: 3px;
-}
-
-.apple-oauth-button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.settings-google-mark {
-  width: 21px;
-  height: 21px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  color: #1a73e8;
-  background: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-}
-
 .settings-cloud-identity {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr) auto;
@@ -785,36 +725,9 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   justify-content: space-between;
 }
 
-.landing-cloud-provider-actions {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 0.5rem;
-  min-width: 11rem;
-}
-
-.landing-cloud-provider-actions .btn,
-.landing-cloud-provider-actions .apple-oauth-button {
-  width: 100%;
-}
-
-.landing-cloud-provider-actions .apple-oauth-button img {
-  width: 100%;
-}
-
 .landing-cloud-signed-out p,
 .landing-cloud-empty {
   margin: 0;
-}
-
-.landing-google-mark {
-  background: #fff;
-  border-radius: 999px;
-  color: #4285f4;
-  display: grid;
-  font-weight: 800;
-  height: 1.25rem;
-  place-items: center;
-  width: 1.25rem;
 }
 
 .landing-cloud-workbooks {
@@ -849,10 +762,6 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
     align-items: stretch;
     flex-direction: column;
   }
-
-  .landing-cloud-provider-actions {
-    width: 100%;
-  }
 }
 
 @media (max-width: 420px) {
@@ -884,6 +793,10 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--surface-subtle);
 }
 
+.settings-cloud-current.has-conflict {
+  background: color-mix(in srgb, var(--surface) 82%, var(--surface-subtle));
+}
+
 .settings-cloud-current-icon {
   width: 42px;
   height: 42px;
@@ -895,11 +808,324 @@ html[data-color-scheme='light'] .apple-oauth-button-light-surface {
   background: var(--good-soft);
 }
 
+.settings-cloud-current.has-conflict .settings-cloud-current-icon {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.settings-cloud-current-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.settings-cloud-current-title > strong {
+  font-size: 12.5px;
+}
+
+.settings-cloud-current-title .settings-status-pill {
+  color: var(--warn);
+  text-transform: uppercase;
+}
+
 .settings-cloud-current-action {
   width: auto;
   min-width: 116px;
   min-height: 42px;
   white-space: nowrap;
+}
+
+.settings-cloud-current-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-cloud-conflict-refresh {
+  grid-column: 1 / -1;
+}
+
+.settings-cloud-conflict-review {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-cloud-conflict-entry {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-cloud-conflict-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-cloud-conflict-entry-header > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-cloud-conflict-number {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.settings-cloud-conflict-versions {
+  display: grid;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-cloud-conflict-version {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(90px, 140px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 62px;
+  padding: 10px 5px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-cloud-conflict-version:first-child {
+  border-top: 0;
+}
+
+.settings-cloud-conflict-version-label {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.settings-cloud-conflict-version-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.settings-cloud-conflict-version-copy b {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-cloud-conflict-version-copy small {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-cloud-conflict-version.is-deleted .settings-cloud-conflict-version-copy b {
+  color: var(--text-soft);
+  text-decoration-color: var(--bad);
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.settings-cloud-conflict-version-status {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.settings-cloud-conflict-decision {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-cloud-conflict-decision > strong {
+  font-size: 0.82rem;
+}
+
+.settings-cloud-conflict-sides {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-cloud-conflict-side {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+}
+
+button.settings-cloud-conflict-side {
+  cursor: pointer;
+}
+
+button.settings-cloud-conflict-side:hover {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent-soft) 20%, var(--surface));
+}
+
+.settings-cloud-conflict-side.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface));
+}
+
+.settings-cloud-conflict-side > strong {
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.settings-cloud-conflict-radio {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--text);
+  border-radius: 50%;
+}
+
+.settings-cloud-conflict-side.is-selected .settings-cloud-conflict-radio::after {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: '';
+}
+
+.settings-cloud-conflict-finish {
+  color: var(--warn);
+  font-size: 0.72rem;
+}
+
+.settings-cloud-conflict-queue {
+  display: grid;
+  gap: 7px;
+}
+
+.settings-cloud-conflict-queue-label {
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-cloud-conflict-queue-list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+}
+
+.settings-cloud-conflict-queue-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.settings-cloud-conflict-queue-row:first-child {
+  border-top: 0;
+}
+
+.settings-cloud-conflict-queue-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.settings-cloud-conflict-queue-copy strong,
+.settings-cloud-conflict-queue-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-cloud-conflict-queue-copy strong {
+  font-size: 0.76rem;
+}
+
+.settings-cloud-conflict-queue-copy small {
+  color: var(--text-soft);
+  font-size: 0.66rem;
+}
+
+.settings-cloud-conflict-queue-row .btn {
+  width: auto;
+  min-height: 36px;
+}
+
+.settings-cloud-conflict-apply {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-cloud-conflict-apply > strong {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-cloud-conflict-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.settings-cloud-conflict-footer-actions .btn {
+  width: auto;
+  min-width: 136px;
+}
+
+.settings-cloud-conflict-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-cloud-conflict-confirm > span {
+  color: var(--text-soft);
+  font-size: 0.72rem;
 }
 
 .settings-cloud-workbook-list {
@@ -1707,6 +1933,7 @@ html[data-density='compact'] .settings-setting-row {
 
   .settings-cloud-provider-actions,
   .settings-cloud-identity-actions,
+  .settings-cloud-current-actions,
   .settings-cloud-current-action,
   .settings-cloud-workbook-actions {
     width: 100%;
@@ -1714,9 +1941,61 @@ html[data-density='compact'] .settings-setting-row {
   }
 
   .settings-cloud-identity-actions,
+  .settings-cloud-current-actions,
   .settings-cloud-workbook-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-cloud-conflict-sides {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-cloud-conflict-version {
+    grid-template-columns: 1fr auto;
+    gap: 5px 10px;
+  }
+
+  .settings-cloud-conflict-version-label {
+    grid-column: 1;
+  }
+
+  .settings-cloud-conflict-version-copy {
+    grid-column: 1;
+  }
+
+  .settings-cloud-conflict-version-status {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .settings-cloud-conflict-queue-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+  }
+
+  .settings-cloud-conflict-queue-row .settings-status-pill {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .settings-cloud-conflict-queue-row .btn {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .settings-cloud-conflict-apply,
+  .settings-cloud-conflict-confirm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-cloud-conflict-footer-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .settings-cloud-conflict-footer-actions .btn {
+    width: 100%;
   }
 
   .settings-cloud-identity-actions .btn,

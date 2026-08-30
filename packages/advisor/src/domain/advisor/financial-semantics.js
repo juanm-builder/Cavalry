@@ -222,11 +222,7 @@ function classifyPurpose(workbook, transaction, economicFlow) {
   if (/\b(reimburse|reimbursable|to reimburse|expense report)\b/.test(text)) {
     return EXPENSE_PURPOSE.REIMBURSABLE;
   }
-  if (
-    /\b(work|business|client|office|company|project|vercel|supabase|github|hosting|domain)\b/.test(
-      text
-    )
-  ) {
+  if (/\b(work|business|client|office|company|project|vercel|github|hosting|domain)\b/.test(text)) {
     return EXPENSE_PURPOSE.WORK;
   }
   if (/\b(grocery|groceries|rent|utilities|household|family)\b/.test(text)) {
@@ -254,7 +250,7 @@ function classifyRecurrence(workbook, transaction) {
   }
   const text = getTransactionSearchText(workbook, transaction);
   if (
-    /\b(subscription|monthly|annual|annually|recurring|installment|netflix|spotify|icloud|adobe|chatgpt|vercel|supabase)\b/.test(
+    /\b(subscription|monthly|annual|annually|recurring|installment|netflix|spotify|icloud|adobe|chatgpt|vercel)\b/.test(
       text
     )
   ) {

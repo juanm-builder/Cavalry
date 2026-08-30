@@ -45,13 +45,9 @@ jobs:
           git diff --check
 
   rust-host:
-    name: Rust host (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Rust and Swift Mac host
+    runs-on: macos-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -71,7 +67,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/desktop/src-tauri/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('apps/desktop/src-tauri/Cargo.toml') }}
+          key: cargo-macos-${{ hashFiles('apps/desktop/src-tauri/Cargo.toml', 'apps/desktop/src-tauri/src/cloudkit/*.swift') }}
 
       - name: Check Rust host
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml

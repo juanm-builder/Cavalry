@@ -27,9 +27,12 @@ Production builds require:
 
 - Tauri updater public key in `CAVALRY_UPDATER_PUBLIC_KEY`;
 - updater private key in `TAURI_SIGNING_PRIVATE_KEY` and optional password;
+- the base64-encoded Developer ID provisioning profile for `com.juanmbuilder.cavalry.mac` in
+  `MAC_PROVISIONING_PROFILE_BASE64`; it must authorize CloudKit and
+  `iCloud.com.juanmbuilder.cavalry`;
 - Apple Developer ID certificate in `MAC_CSC_LINK`, its password in `MAC_CSC_KEY_PASSWORD`, and notarization API credentials in `APPLE_API_KEY_P8_BASE64`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`.
 
-The production release workflow is macOS-only. Windows development packages and CI checks remain available, but no Windows installer is signed or published by this release channel.
+The production release workflow publishes only the Apple Silicon and Intel Mac applications.
 
 `apps/desktop/scripts/write-release-config.mjs` fails if the updater public key is absent and writes an ignored `tauri.release.conf.json` from the tracked template. The private key is never written into source configuration.
 
@@ -43,15 +46,19 @@ The production release workflow is macOS-only. Windows development packages and 
    - Intel on `macos-15-intel`, whose host must report `x86_64`.
 5. Build the target-specific `cavalry-host-<triple>` sidecar on its matching native host. There is no
    cross-architecture skip path.
-6. Generate the updater release overlay.
+6. Decode and validate the CloudKit provisioning profile, then generate the updater release overlay
+   with production CloudKit/push entitlements and `embedded.provisionprofile`.
 7. Run the pinned Tauri CLI build for the target.
-8. Verify app and DMG OS signatures, notarization/timestamp status, and architectures, then execute
+8. The repository's codesign shim applies the production app entitlements to Cavalry and the
+   dedicated JIT-only entitlements to `cavalry-host`; verify that the helper has no CloudKit or push
+   entitlement.
+9. Verify app and DMG OS signatures, notarization/timestamp status, and architectures, then execute
    the signed packaged sidecar on its matching native host.
-9. Upload both architectures serially to one draft release. The pinned Tauri action updates
-   `latest.json` with a read/delete/re-upload sequence, so the release matrix permits only one
-   updater-manifest writer at a time.
-10. Verify the complete uploaded draft inventory and updater metadata against the GitHub release API.
-11. Run the full native certification checklist and obtain second-reviewer sign-off before publishing.
+10. Upload both architectures serially to one draft release. The pinned Tauri action updates
+    `latest.json` with a read/delete/re-upload sequence, so the release matrix permits only one
+    updater-manifest writer at a time.
+11. Verify the complete uploaded draft inventory and updater metadata against the GitHub release API.
+12. Run the full native certification checklist and obtain second-reviewer sign-off before publishing.
 
 ## Draft asset gate
 

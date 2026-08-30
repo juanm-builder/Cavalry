@@ -253,7 +253,6 @@ function SessionContent({ routeId, routeModels, onAction }) {
         createId={ports.ids.create}
         downloads={ports.downloads}
         executeTool={application.assistant.executeTool}
-        feedback={application.routeProps.settings.feedback}
         isOpen={assistantOpen}
         onClose={() => setAssistantOpen(false)}
         onOpen={() => setAssistantOpen(true)}

@@ -44,18 +44,11 @@ describe('release security content scanner', () => {
   it('detects high-entropy hard-coded credentials and local machine paths', () => {
     const credential = 'V9r!aQ2#Lm7$Kx4@Nz8';
     const localPath = ['/', 'Users', 'developer', 'private-workbook.html'].join('/');
-    const windowsPath = ['C:', 'Users', 'developer', 'private-workbook.html'].join('\\');
-    const contents = [
-      `const password = "${credential}";`,
-      `const path = "${localPath}";`,
-      `const windowsPath = "${windowsPath}";`
-    ].join('\n');
+    const contents = [`const password = "${credential}";`, `const path = "${localPath}";`].join(
+      '\n'
+    );
 
-    expect(rulesFor(contents)).toEqual([
-      'hard-coded credential',
-      'local user path',
-      'local user path'
-    ]);
+    expect(rulesFor(contents)).toEqual(['hard-coded credential', 'local user path']);
   });
 
   it('allows only the exact reviewed synthetic OpenAI-shaped fixture value', () => {

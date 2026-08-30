@@ -6,6 +6,5 @@ This directory intentionally contains no committed executable binaries.
 
 - `cavalry-host-aarch64-apple-darwin`
 - `cavalry-host-x86_64-apple-darwin`
-- `cavalry-host-x86_64-pc-windows-msvc.exe`
 
 Generated sidecars are ignored by Git. Release CI must rebuild them from source for each target before invoking Tauri.

@@ -39,7 +39,7 @@ Compare the Tauri build against the accepted Cavalry reference on representative
 - [ ] Fonts, icons, spacing, shadows, dialogs, overlays, and dark/light appearance remain correct.
 - [ ] Keyboard navigation, focus rings, tab order, copy/paste, undo/redo, and menu shortcuts work.
 - [ ] Window restore, maximize, fullscreen, minimize, close, and macOS reopen behavior work.
-- [ ] Scrolling, sticky regions, drag behavior, dropdown layering, and responsive drill-down panels work in WKWebView and WebView2.
+- [ ] Scrolling, sticky regions, drag behavior, dropdown layering, and responsive drill-down panels work in WKWebView.
 - [ ] Accessibility names, roles, contrast, reduced motion, and screen-reader navigation are verified.
 
 ## 4. Workbook and finance behavior
@@ -54,14 +54,13 @@ Use a copy of a production-like workbook containing accounts, cards, transfers, 
 - [ ] File dialogs, downloads, and paths containing Unicode, spaces, and long names work.
 - [ ] A forced host-sidecar failure does not corrupt the workbook and produces a recoverable error.
 
-## 5. Cavalry Cloud and deep links
+## 5. iCloud sync and deep links
 
-- [ ] Email/password sign-in, sign-out, session refresh, and profile retrieval work.
-- [ ] OAuth opens in the system browser and `cavalry://` returns to both a running app and a cold-started app.
+- [ ] iCloud account availability is reported accurately without a separate Cavalry login.
 - [ ] A second app launch forwards its deep link to the existing process.
-- [ ] Cloud workbook upload, download, conflict handling, and auto-sync work.
-- [ ] Feedback submission and attachment handling work.
-- [ ] Credentials are stored in macOS Keychain or Windows DPAPI-backed storage and are absent from logs and plaintext files.
+- [ ] Mac-to-iPhone and iPhone-to-Mac workbook upload, download, conflict handling, and automatic sync work.
+- [ ] Offline edits remain queued after relaunch and upload after connectivity returns.
+- [ ] Credentials are stored in macOS Keychain and are absent from logs and plaintext files.
 - [ ] Missing or unavailable secure storage fails closed in a packaged build.
 
 ## 6. Companion and Advisor

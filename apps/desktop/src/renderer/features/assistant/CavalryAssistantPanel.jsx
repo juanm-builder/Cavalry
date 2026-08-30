@@ -13,7 +13,6 @@ import {
   Message
 } from './CavalryAssistantPresentation.jsx';
 import { PANEL_DEFAULT_WIDTH } from './useCavalryAssistantPanelResize.js';
-import { CompanionFeedbackPanel } from '../feedback/CompanionFeedbackPanel.jsx';
 
 function asText(value) {
   return String(value == null ? '' : value).trim();
@@ -40,13 +39,10 @@ export function CavalryAssistantPanel({
   endPanelResize,
   error,
   exportConversation,
-  feedback,
-  feedbackOpen,
   historyOpen,
   imageInputRef,
   isOpen,
   liveStatus,
-  makeId,
   maxPanelWidth,
   messageListRef,
   messages,
@@ -69,7 +65,6 @@ export function CavalryAssistantPanel({
   setAssistantSettingsOpen,
   setComposer,
   setDraggingImages,
-  setFeedbackOpen,
   setHistoryOpen,
   startConversation,
   streamingText,
@@ -147,7 +142,7 @@ export function CavalryAssistantPanel({
             <button
               aria-label="New conversation"
               className="btn btn-icon"
-              disabled={pending || !messages.length || feedbackOpen || assistantSettingsOpen}
+              disabled={pending || !messages.length || assistantSettingsOpen}
               onClick={startConversation}
               title="New conversation"
               type="button"
@@ -158,20 +153,12 @@ export function CavalryAssistantPanel({
               canExport={Boolean(downloads) && messages.length > 0 && !pending}
               historyOpen={historyOpen}
               onExportChat={exportConversation}
-              onOpenFeedback={() => {
-                void voice.cancel();
-                setHistoryOpen(false);
-                setAssistantSettingsOpen(false);
-                setFeedbackOpen(true);
-              }}
               onOpenSettings={() => {
                 void voice.cancel();
                 setHistoryOpen(false);
-                setFeedbackOpen(false);
                 setAssistantSettingsOpen(true);
               }}
               onToggleHistory={() => {
-                setFeedbackOpen(false);
                 setAssistantSettingsOpen(false);
                 setHistoryOpen((current) => !current);
               }}
@@ -191,9 +178,7 @@ export function CavalryAssistantPanel({
           <div className="cavalry-assistant-context-bar">
             <Icon name={assistantSettingsOpen ? 'tune' : route.icon} />
             <span>
-              {assistantSettingsOpen
-                ? 'Assistant settings'
-                : `${feedbackOpen ? 'Reporting from' : 'Working with'} ${route.label}`}
+              {assistantSettingsOpen ? 'Assistant settings' : `Working with ${route.label}`}
             </span>
             <small>
               {assistantSettingsOpen
@@ -202,24 +187,14 @@ export function CavalryAssistantPanel({
             </small>
           </div>
 
-          {feedbackOpen ? (
-            <CompanionFeedbackPanel
-              createId={makeId}
-              feedback={feedback}
-              key={feedback?.model?.sessionKey || 'feedback-session'}
-              onBack={() => setFeedbackOpen(false)}
-              onOpenSettings={onOpenSettings}
-              routeId={route.id}
-            />
-          ) : null}
-          {historyOpen && !feedbackOpen ? (
+          {historyOpen ? (
             <ConversationHistory
               activeConversationId={conversationState.activeConversationId}
               conversations={conversations}
               onSelect={resumeConversation}
             />
           ) : null}
-          {assistantSettingsOpen && !feedbackOpen ? (
+          {assistantSettingsOpen ? (
             <AssistantSettings
               advisor={advisor}
               onBack={() => setAssistantSettingsOpen(false)}
@@ -228,7 +203,7 @@ export function CavalryAssistantPanel({
           ) : null}
           <div
             className="cavalry-assistant-messages"
-            hidden={historyOpen || feedbackOpen || assistantSettingsOpen}
+            hidden={historyOpen || assistantSettingsOpen}
             ref={messageListRef}
           >
             {messages.length ? (
@@ -299,7 +274,7 @@ export function CavalryAssistantPanel({
 
           <footer
             className="cavalry-assistant-composer-wrap"
-            hidden={historyOpen || feedbackOpen || assistantSettingsOpen}
+            hidden={historyOpen || assistantSettingsOpen}
           >
             {draggingImages ? (
               <div className="cavalry-assistant-drop-overlay">Drop images to attach them</div>

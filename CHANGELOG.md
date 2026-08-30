@@ -2,13 +2,70 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
-## [Unreleased]
+## 2.2.0 - 2026-08-30
+
+### Added
+
+- Added private, local-first CloudKit synchronization between Cavalry for Mac and Cavalry for
+  iPhone through `iCloud.com.juanmbuilder.cavalry`. Each device keeps a complete local workbook,
+  saves immediately while offline, and exchanges only queued changes when a connection returns.
+- Added automatic CloudKit change notifications, incremental fetches, retry scheduling, honest
+  connection states, and a manual Sync Now action without a permanent polling loop.
+- Added transaction-focused conflict review on both Mac and iPhone. Cavalry shows the specific
+  values that disagree, lets the user choose what every device should keep, and synchronizes the
+  resolved workbook back through iCloud.
+- Added automatic merging for safe concurrent changes and internal workbook metadata so users are
+  asked only about meaningful financial disagreements.
+- Added iPhone workbook import, quick add, transaction detail and editing, adaptive navigation,
+  protected local storage, and the shared finance engine used by Cavalry for Mac.
+
+### Changed
+
+- Changed the Mac application identity to `com.juanmbuilder.cavalry.mac`; the paired iPhone app uses
+  `com.juanmbuilder.cavalry.ios`. Both identities share the same private CloudKit container.
+- Simplified the iCloud and settings interfaces on both platforms while preserving Cavalry's
+  existing typography, spacing, controls, and overall visual language.
+- Kept HTML workbooks as portable local files and exports while making structured local data plus
+  CloudKit records the source of truth for continuous synchronization.
+- Updated the Mac release pipeline to verify production CloudKit entitlements, provisioning,
+  signed sidecar behavior, notarization, updater signatures, and complete dual-architecture assets.
+
+### Fixed
+
+- Fixed offline edits that previously stalled after reconnecting when both devices changed the same
+  workbook. Independent additions are preserved, deletion and edit conflicts stop for review, and
+  successful resolutions can be completed from either device.
+- Fixed vague or irrelevant conflict choices such as settings timestamps and whole-workbook counts.
+  Legacy conflict notices are recalculated into concise transaction, account, category, bill,
+  budget, or note decisions before they are shown.
+- Fixed iPhone library refresh and workbook validation paths so Mac workbooks can be discovered,
+  downloaded, opened, edited, and synchronized in both directions.
+- Fixed the Mac resolution action so a completed set of choices is durably applied and uploaded
+  instead of leaving the confirmation button with no effect.
+
+### Security
+
+- Removed hosted service credentials, environment-variable plumbing, authentication callbacks, and
+  network code that are no longer required by the private CloudKit architecture.
+- Hardened production entitlements and release checks so both apps use only the intended bundle ID,
+  production APNs environment, and shared CloudKit container.
+- Disabled iOS document sharing and unused biometric permission prompts, removed unnecessary direct
+  dependencies and assets, and retained only the network and storage capabilities Cavalry uses.
+
+### Removed
+
+- Removed Supabase code, dependencies, configuration, environment examples, API integration,
+  schemas, functions, migration scripts, and hosted feedback surfaces. No Supabase data migration is
+  included because Cavalry had no hosted data to preserve.
+- Removed Windows source conditionals, build targets, packaging, icons, CI paths, and documentation.
+- Removed the obsolete hosted-account sign-in experience, orphaned renderer code, unused iOS
+  packages, and unreferenced platform assets.
 
 ## 2.1.2 - 2026-08-27
 
 ### Fixed
 
-- Production Mac builds now compile the validated Supabase project URL and publishable key into
+- Production Mac builds now compile the validated legacy Cloud project URL and publishable key into
   the isolated desktop host, restoring Cavalry Cloud, Google sign-in, Apple sign-in, identity
   linking, and cross-device workbook synchronization. The 2.1.1 draft validated these public
   values in its release-input job but did not expose them to the separate native build jobs, so an
@@ -33,7 +90,7 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
   and identity-linking experience is delivered with complete updater packages for both Apple
   Silicon and Intel Macs. Apple authentication opens in the system browser and returns through the
   exact `cavalry://auth/callback` installed-app callback.
-- Signed-in Cloud owners can connect Apple to the same immutable Supabase owner used by Google and
+- Signed-in Cloud owners can connect Apple to the same immutable hosted Cloud owner used by Google and
   mobile, including when Apple Hide My Email is selected. Cavalry does not merge owners by email or
   create a second Cloud library for an explicitly linked identity.
 
@@ -49,9 +106,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - No workbook schema migration is required. Cavalry remains local-first, and signing in alone does
   not upload or replace the open workbook; subsequent successful saves enter the existing Cloud
   synchronization queue.
-- The production Cloud configuration must redirect Apple authorization to
-  `appleid.apple.com` with Services ID `com.juanmbuilder.cavalry.auth`. Provider secrets remain in
-  Supabase and are not embedded in the application or release metadata.
+- The production Cloud configuration redirected Apple authorization through the legacy hosted
+  identity provider. Provider secrets were not embedded in the application or release metadata.
 - The GitHub release remains a draft until signed and notarized packages pass the cross-application
   Apple identity checks in the Cloud OAuth runbook and an independent reviewer approves
   publication.
@@ -306,7 +362,7 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
   state, official Apple button artwork, and shared iPhone/iPad account setup.
 - Added an authenticated Cloud account-deletion function that revokes a freshly
   confirmed Apple token, removes private feedback objects, and deletes the
-  owner-scoped Supabase account data required by the iOS deletion flow.
+  owner-scoped hosted Cloud account data required by the iOS deletion flow.
 - Updated Electron to 41.10.5 to pick up the current 41.x security patch, and
   resolved the outstanding advisories in `brace-expansion`, `fast-uri`,
   `js-yaml`, `nanoid`, and `undici`. No application behavior changed.
@@ -361,7 +417,7 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
   a second upload; a deleted Cloud copy can be added again without automatically
   overwriting either copy.
 - Migration: deploy `20260726000100_fix_workbook_conflict_retry.sql` to the
-  Cavalry Supabase project.
+  legacy Cavalry Cloud project.
 - Known limitation: image intake for a local multimodal model still requires a
   vision projector from the exact same model family and embedding size. Text-only
   local Assistant use does not require a projector.
@@ -378,9 +434,9 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 - Added private, cross-device feedback and bug reports for signed-in Cavalry Cloud users, with an optional PNG or JPEG screenshot and an owner-visible report history in Settings.
 - Added an unobtrusive **Report a problem** flow inside the Cavalry AI companion so a report can carry the current app section as context without adding another dashboard surface.
-- Kept Supabase sessions, tokens, private object paths, and network calls in Electron main behind trusted, narrowly scoped IPC; owner-bound request keys make lost responses safely retryable, while account changes invalidate private results and clear unsent descriptions and images.
+- Kept hosted Cloud sessions, tokens, private object paths, and network calls in Electron main behind trusted, narrowly scoped IPC; owner-bound request keys make lost responses safely retryable, while account changes invalidate private results and clear unsent descriptions and images.
 - Added owner-scoped report and attachment quotas, forced RLS, RPC-only report creation/finalization, and operation-aware policies for a private `feedback-attachments` bucket. No service-role secret or durable image bytes are exposed to the renderer.
-- Migration: deploy `20260724000100_cloud_feedback.sql` to the Cavalry Supabase project before publishing or enabling this desktop version. Existing workbook files and Cloud snapshots require no migration.
+- This retired feedback feature required a hosted Cloud schema deployment. Existing workbook files and Cloud snapshots required no migration.
 - Known limitation: feedback submission is available only to signed-in Cavalry Cloud users. Signed-out or Cloud-unavailable reports are not sent, queued locally, or presented as cross-device synced.
 - Validation: formatting, runtime-license notices, lint, type checks, production builds, workspace/unit/renderer/integration tests, Electron smoke, migration/RLS checks, release security/history checks, dependency advisories, and release validation are gated before packaging.
 - Signing/notarization status: distribution remains gated on Developer ID signing with a secure timestamp, Apple notarization and stapling, Gatekeeper, architecture checks, updater metadata verification, and an installed `1.0.22` to `1.0.23` automatic-update test.
@@ -428,7 +484,7 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 ## 1.0.18 - 2026-07-21 (Cavalry Cloud beta)
 
 - Added Cavalry Cloud sign-in with Google, a multi-workbook cloud library, explicit **Add to Cloud** and **Sync Now** actions, revision-checked snapshots, open/download, profile editing, and confirmed cloud deletion. Local workbooks remain usable and are never uploaded automatically.
-- Added encrypted Cloud-session persistence in the macOS keychain, main-process-only OAuth credentials, strict callback and IPC validation, and owner-scoped Supabase Row Level Security.
+- Added encrypted Cloud-session persistence in the macOS keychain, main-process-only OAuth credentials, strict callback and IPC validation, and owner-scoped row-level access controls.
 - Added a recent-workbook library, workbook renaming, and startup/settings refinements for working with multiple local and cloud workbooks.
 - Moved stored Advisor API keys behind operating-system encryption and kept unconfigured or offline Advisor and Cloud features safely degraded.
 - Hardened the macOS updater release contract with GitHub-safe hyphenated asset names, complete differential-download asset checks, consistent legacy metadata validation, and a patched production YAML parser dependency.
@@ -448,4 +504,4 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - Enhanced Cavalry Assistant answers with evidence references, linked citations, richer Markdown rendering, clearer tool output, and a resizable chat panel.
 - Added recurring bill payment reconciliation so matching transactions and bill state stay synchronized.
 - Fixed local calendar-date handling so transaction dates do not shift across time zones when saved or edited.
-- Added a notarized Apple-silicon and Intel macOS release channel with opt-in background updates, restart/install prompts, and a tag-to-draft GitHub publication gate; Windows packaging support remains dormant for a future rollout.
+- Added a notarized Apple-silicon and Intel macOS release channel with opt-in background updates, restart/install prompts, and a tag-to-draft GitHub publication gate.

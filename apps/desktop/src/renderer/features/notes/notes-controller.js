@@ -22,14 +22,12 @@ export function submitNotesBatchCommand(workbook, entries, services = {}) {
     return commandError(workbook, 'notes.empty_batch', 'Process at least one transaction first.');
   }
 
-  const invalidEntry = batch.find(
-    (entry) => asArray(entry && entry.issues).length || validateNotesEntry(workbook, entry).length
-  );
+  const invalidEntry = batch.find((entry) => validateNotesEntry(workbook, entry).length);
   if (invalidEntry) {
     return commandError(
       workbook,
       'notes.unresolved_entry',
-      `Line ${invalidEntry.lineNumber || 1} still needs review.`,
+      `Line ${invalidEntry.lineNumber || 1} is missing required transaction details.`,
       { lineNumber: invalidEntry.lineNumber || 1 }
     );
   }

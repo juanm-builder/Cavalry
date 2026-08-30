@@ -222,12 +222,9 @@ describe('settings controller', () => {
     ).not.toHaveProperty('apiKey');
 
     const cloudActions = [
-      ['sign-in-with-google', 'sign-in'],
-      ['sign-in-with-apple', 'sign-in-apple'],
-      ['link-apple-cloud', 'link-apple'],
-      ['sign-out-cloud', 'sign-out'],
       ['refresh-cloud-workbooks', 'refresh'],
       ['upload-current-workbook', 'upload'],
+      ['keep-local-cloud-workbook', 'keep-local'],
       ['open-cloud-workbook', 'open'],
       ['delete-cloud-workbook', 'delete']
     ];
@@ -240,15 +237,6 @@ describe('settings controller', () => {
         type: 'test/cloud',
         payload: { operation, workbookId: 'cloud-workbook' }
       });
-    });
-    expect(
-      controller.handleAction(workbook, {
-        type: 'update-cloud-profile',
-        payload: { name: '  Cavalry Name  ', userId: 'ignored' }
-      }).events[0]
-    ).toMatchObject({
-      type: 'test/cloud',
-      payload: { operation: 'profile-update', name: 'Cavalry Name' }
     });
   });
 

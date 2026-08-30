@@ -6,7 +6,7 @@
 
 The workspace job installs with `npm ci`, refreshes the runtime dependency inventory, runs the repository gates, integration tests, renderer smoke, architecture checks, and whitespace validation.
 
-A separate macOS/Windows matrix runs `cargo check` against the Rust/Tauri host. Keeping this separate makes native compilation failures visible without mixing them with finance or renderer failures.
+A separate macOS job runs `cargo check` against the Rust/Tauri host. Keeping this separate makes native compilation failures visible without mixing them with finance or renderer failures.
 
 ## Full native build
 
@@ -14,17 +14,15 @@ A separate macOS/Windows matrix runs `cargo check` against the Rust/Tauri host. 
 
 - macOS Apple Silicon;
 - macOS Intel;
-- Windows x64.
 
 These artifacts are for certification and do not publish an update.
 
 ## Release
 
 `.github/workflows/desktop-release.yml` runs only for `v*` tags. It validates version agreement,
-security rules, Cloud build values, tests, and generated notices before entering the credential-bearing
+security rules, iCloud entitlements, tests, and generated notices before entering the credential-bearing
 signing environment. The production channel builds macOS Apple Silicon and Intel from the same
-immutable tag and uploads a draft release through the pinned Tauri action. Windows remains an
-unsigned CI/package target and is not published.
+immutable tag and uploads a draft release through the pinned Tauri action.
 
 The native matrix is intentionally pinned to architecture-matching hosts and runs one architecture
 at a time because both jobs merge into the same draft `latest.json` updater manifest:

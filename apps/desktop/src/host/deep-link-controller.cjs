@@ -1,9 +1,9 @@
-// Routes review links to the renderer and consumes OAuth callbacks only in the main process.
+// Routes validated Cavalry review links to the renderer.
 'use strict';
 
 const defaultDeepLink = require('./deep-link.cjs');
 
-function createCloudDeepLinkController(options = {}) {
+function createDeepLinkController(options = {}) {
   const app = options.app;
   const BrowserWindow = options.BrowserWindow;
   const parser = options.deepLink || defaultDeepLink;
@@ -17,12 +17,6 @@ function createCloudDeepLinkController(options = {}) {
   }
 
   function handle(rawUrl) {
-    const authCallback = parser.getCavalryAuthCallback(rawUrl);
-    if (authCallback) {
-      void options.cloudController.handleAuthCallback(authCallback);
-      if (!focusWindow() && app.isReady()) options.createWindow();
-      return true;
-    }
     const command = parser.getCavalryDeepLinkCommand(rawUrl);
     if (!command) return false;
     if (!BrowserWindow.getAllWindows().length) {
@@ -31,6 +25,7 @@ function createCloudDeepLinkController(options = {}) {
       return true;
     }
     options.sendCommand(command);
+    focusWindow();
     return true;
   }
 
@@ -69,4 +64,4 @@ function createCloudDeepLinkController(options = {}) {
   };
 }
 
-module.exports = { createCloudDeepLinkController };
+module.exports = { createDeepLinkController };

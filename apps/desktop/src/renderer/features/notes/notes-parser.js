@@ -47,8 +47,64 @@ const CATEGORY_ALIASES = Object.freeze({
   food: ['food', 'dining', 'meal', 'breakfast', 'lunch', 'dinner', 'restaurant', 'takeout'],
   utilities: ['utilities', 'utility', 'electric', 'electricity', 'water', 'internet', 'phone'],
   housing: ['housing', 'rent', 'mortgage'],
-  health: ['health', 'medical', 'medicine', 'doctor', 'hospital', 'pharmacy'],
-  shopping: ['shopping', 'clothes', 'clothing', 'shoes'],
+  health: [
+    'health',
+    'medical',
+    'medicine',
+    'meds',
+    'doctor',
+    'clinic',
+    'hospital',
+    'pharmacy',
+    'dental',
+    'dentist'
+  ],
+  'personal care': [
+    'personal care',
+    'make up',
+    'makeup',
+    'cosmetic',
+    'cosmetics',
+    'beauty',
+    'skincare',
+    'skin care',
+    'salon',
+    'barber',
+    'medicine',
+    'meds',
+    'pharmacy'
+  ],
+  beauty: [
+    'beauty',
+    'make up',
+    'makeup',
+    'cosmetic',
+    'cosmetics',
+    'skincare',
+    'skin care',
+    'salon'
+  ],
+  electronics: [
+    'electronics',
+    'electronic',
+    'laptop',
+    'computer',
+    'gadget',
+    'device',
+    'airpods',
+    'headphones',
+    'appliance'
+  ],
+  shopping: [
+    'shopping',
+    'clothes',
+    'clothing',
+    'shoes',
+    'mall',
+    'department store',
+    'shopee',
+    'lazada'
+  ],
   entertainment: ['entertainment', 'movie', 'movies', 'cinema', 'game', 'games'],
   travel: ['travel', 'flight', 'hotel', 'vacation'],
   education: ['education', 'school', 'tuition', 'book', 'books'],
@@ -56,6 +112,73 @@ const CATEGORY_ALIASES = Object.freeze({
   salary: ['salary', 'paycheck', 'payroll', 'wages'],
   income: ['income', 'received', 'earnings', 'revenue']
 });
+
+const BROAD_SHOPPING_ALIASES = Object.freeze([
+  'make up',
+  'makeup',
+  'cosmetic',
+  'cosmetics',
+  'medicine',
+  'meds',
+  'pharmacy',
+  'laptop',
+  'computer',
+  'electronics',
+  'gadget',
+  'device',
+  'appliance'
+]);
+
+const SEMANTIC_CATEGORY_PREFERENCES = Object.freeze([
+  {
+    aliases: ['medicine', 'meds', 'pharmacy', 'doctor', 'clinic', 'hospital', 'dental', 'dentist'],
+    categoryNames: ['health', 'medical', 'personal care']
+  },
+  {
+    aliases: ['make up', 'makeup', 'cosmetic', 'cosmetics', 'skincare', 'skin care', 'salon'],
+    categoryNames: ['beauty', 'personal care']
+  },
+  {
+    aliases: ['laptop', 'computer', 'electronics', 'gadget', 'device', 'appliance'],
+    categoryNames: ['electronics', 'shopping']
+  }
+]);
+
+const GENERIC_CATEGORY_NAMES = Object.freeze([
+  'uncategorized',
+  'uncategorised',
+  'general',
+  'other',
+  'random',
+  'misc',
+  'miscellaneous'
+]);
+
+const HISTORY_STOP_WORDS = new Set([
+  'and',
+  'card',
+  'cash',
+  'credit',
+  'debit',
+  'expense',
+  'for',
+  'from',
+  'gcash',
+  'into',
+  'maya',
+  'paid',
+  'payment',
+  'php',
+  'purchase',
+  'the',
+  'this',
+  'today',
+  'transaction',
+  'using',
+  'wallet',
+  'with',
+  'yesterday'
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -161,29 +284,179 @@ function categoryAliasKeys(categoryName) {
   );
 }
 
-function findCategory(workbook, normalizedLine) {
+function uniqueBest(matches, scoreForMatch) {
+  const ranked = matches
+    .map((match) => ({ ...match, score: Number(scoreForMatch(match)) || 0 }))
+    .sort((left, right) => right.score - left.score);
+  if (!ranked.length) return null;
+  const best = ranked.filter((candidate) => candidate.score === ranked[0].score);
+  const ids = new Set(
+    best.map((candidate) => asString(candidate.category && candidate.category.id))
+  );
+  return ids.size === 1 ? best[0] : { ...best[0], category: null, ambiguous: true };
+}
+
+function findCategoryFromRules(categories, description) {
+  const matches = [];
+  categories.forEach((category) => {
+    asArray(category && category.autoCategorizeRules).forEach((rule) => {
+      const field = normalize(rule && rule.field) || 'description';
+      if (field !== 'description') return;
+      const value = normalize(rule && rule.value);
+      if (!value) return;
+      const operator = normalize(rule && rule.operator).replace(/\s+/g, '_') || 'contains';
+      const matched =
+        operator === 'equals'
+          ? description === value
+          : operator === 'starts_with'
+            ? description.startsWith(value)
+            : containsPhrase(description, value) || description.includes(value);
+      if (!matched) return;
+      matches.push({
+        category,
+        matchedPhrase: value,
+        priority: operator === 'equals' ? 3 : operator === 'starts_with' ? 2 : 1
+      });
+    });
+  });
+  return uniqueBest(matches, (match) => match.priority * 10000 + match.matchedPhrase.length);
+}
+
+function meaningfulTokens(value) {
+  return normalize(value)
+    .split(' ')
+    .filter((token) => token.length > 2 && !/^\d+$/.test(token) && !HISTORY_STOP_WORDS.has(token));
+}
+
+function historicalTransactionScore(transaction, description) {
+  const prior = normalize(transaction && transaction.description);
+  const requested = normalize(description);
+  if (!prior || !requested) return 0;
+  if (prior === requested) return 8;
+  if (
+    prior.length >= 4 &&
+    requested.length >= 4 &&
+    (prior.includes(requested) || requested.includes(prior))
+  ) {
+    return 5;
+  }
+  const priorTokens = new Set(meaningfulTokens(prior));
+  const requestedTokens = meaningfulTokens(requested);
+  if (!requestedTokens.length) return 0;
+  const overlap = requestedTokens.filter((token) => priorTokens.has(token)).length;
+  const denominator = new Set([...requestedTokens, ...priorTokens]).size || 1;
+  const similarity = overlap / denominator;
+  if (similarity >= 0.6) return 4;
+  if (similarity >= 0.35) return 2;
+  return 0;
+}
+
+function historicalWinner(workbook, description, valueForTransaction, allowedIds) {
+  const totals = new Map();
+  asArray(workbook && workbook.transactions).forEach((transaction) => {
+    const value = asString(valueForTransaction(transaction));
+    if (!value || !allowedIds.has(value)) return;
+    const score = historicalTransactionScore(transaction, description);
+    if (score < 4) return;
+    const timestamp = Date.parse(`${asString(transaction && transaction.date)}T00:00:00Z`);
+    const recencyWeight = Number.isFinite(timestamp) ? Math.max(0, timestamp / 1e15) : 0;
+    totals.set(value, (totals.get(value) || 0) + score + recencyWeight);
+  });
+  const ranked = Array.from(totals.entries()).sort((left, right) => right[1] - left[1]);
+  if (!ranked.length || (ranked[1] && ranked[0][1] - ranked[1][1] < 1)) return '';
+  return ranked[0][0];
+}
+
+function impliedCategoryType(description) {
+  return /\b(?:allowance|earned|earnings|income|paid\s+by|paycheck|payroll|received|revenue|salary|wages)\b/.test(
+    description
+  )
+    ? 'income'
+    : 'expense';
+}
+
+function findPreferredSemanticCategory(categories, description) {
+  for (const preference of SEMANTIC_CATEGORY_PREFERENCES) {
+    const matchedPhrase = preference.aliases
+      .map(normalize)
+      .filter((alias) => containsPhrase(description, alias))
+      .sort((left, right) => right.length - left.length)[0];
+    if (!matchedPhrase) continue;
+    for (const preferredName of preference.categoryNames) {
+      const matches = categories.filter((category) => {
+        const categoryName = normalize(category && category.name);
+        return categoryName === preferredName || containsPhrase(categoryName, preferredName);
+      });
+      if (matches.length) {
+        return {
+          category: matches.length === 1 ? matches[0] : null,
+          matchedPhrase,
+          ambiguous: matches.length > 1,
+          source: 'semantic'
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findCategory(workbook, description) {
   const categories = activeCategories(workbook);
   const direct = categories
     .map((category) => ({ category, phrase: normalize(category.name) }))
-    .filter(({ phrase }) => phrase && containsPhrase(normalizedLine, phrase))
+    .filter(({ phrase }) => phrase && containsPhrase(description, phrase))
     .sort((left, right) => right.phrase.length - left.phrase.length);
 
   if (direct.length) {
     const bestLength = direct[0].phrase.length;
     const best = direct.filter((candidate) => candidate.phrase.length === bestLength);
+    const categoryIds = new Set(best.map((candidate) => asString(candidate.category.id)));
     return {
-      category: best[0].category,
+      category: categoryIds.size === 1 ? best[0].category : null,
       matchedPhrase: best[0].phrase,
-      ambiguous: best.length > 1
+      ambiguous: categoryIds.size > 1
     };
   }
+
+  const ruleMatch = findCategoryFromRules(categories, description);
+  if (ruleMatch) {
+    return {
+      category: ruleMatch.category,
+      matchedPhrase: ruleMatch.matchedPhrase,
+      ambiguous: ruleMatch.ambiguous === true,
+      source: 'rule'
+    };
+  }
+
+  const historicalId = historicalWinner(
+    workbook,
+    description,
+    (transaction) => transaction && transaction.categoryId,
+    new Set(categories.map((category) => asString(category.id)))
+  );
+  if (historicalId) {
+    const historicalCategory = categories.find(
+      (category) => asString(category.id) === historicalId
+    );
+    if (historicalCategory) {
+      return {
+        category: historicalCategory,
+        matchedPhrase: '',
+        ambiguous: false,
+        source: 'history'
+      };
+    }
+  }
+
+  const semanticMatch = findPreferredSemanticCategory(categories, description);
+  if (semanticMatch) return semanticMatch;
 
   const aliases = categories
     .flatMap((category) =>
       categoryAliasKeys(category.name).flatMap((key) =>
         CATEGORY_ALIASES[key]
           .map(normalize)
-          .filter((alias) => containsPhrase(normalizedLine, alias))
+          .filter((alias) => containsPhrase(description, alias))
           .map((alias) => ({ category, alias, key }))
       )
     )
@@ -193,20 +466,41 @@ function findCategory(workbook, normalizedLine) {
     const best = aliases.filter((candidate) => candidate.alias.length === bestLength);
     const categoryIds = new Set(best.map((candidate) => asString(candidate.category.id)));
     return {
-      category: best[0].category,
+      category: categoryIds.size === 1 ? best[0].category : null,
       matchedPhrase: best[0].alias,
       ambiguous: categoryIds.size > 1
     };
   }
 
-  const fallback =
-    categories.find((category) => {
-      const name = normalize(category.name);
-      return category.type === 'expense' && ['general', 'other', 'uncategorized'].includes(name);
-    }) ||
-    categories.find((category) => category.type === 'expense') ||
-    categories[0] ||
-    null;
+  const broadShoppingPhrase = BROAD_SHOPPING_ALIASES.map(normalize)
+    .filter((alias) => containsPhrase(description, alias))
+    .sort((left, right) => right.length - left.length)[0];
+  if (broadShoppingPhrase) {
+    const broadMatches = categories.filter((category) =>
+      ['shopping', 'lifestyle', 'retail'].some((name) =>
+        containsPhrase(normalize(category && category.name), name)
+      )
+    );
+    if (broadMatches.length === 1) {
+      return {
+        category: broadMatches[0],
+        matchedPhrase: broadShoppingPhrase,
+        ambiguous: false,
+        source: 'broad_semantic'
+      };
+    }
+  }
+
+  const expectedType = impliedCategoryType(description);
+  const compatible = categories.filter((category) => category.type === expectedType);
+  const generic = compatible
+    .filter((category) => GENERIC_CATEGORY_NAMES.includes(normalize(category.name)))
+    .sort(
+      (left, right) =>
+        GENERIC_CATEGORY_NAMES.indexOf(normalize(left.name)) -
+        GENERIC_CATEGORY_NAMES.indexOf(normalize(right.name))
+    )[0];
+  const fallback = generic || (compatible.length === 1 ? compatible[0] : null) || null;
   return { category: fallback, matchedPhrase: '', ambiguous: false, fallback: true };
 }
 
@@ -225,7 +519,55 @@ function accountDescriptor(account) {
   );
 }
 
-function findPayment(workbook, normalizedLine, transactionKind) {
+function preferredAccount(candidates, kind = '') {
+  const sorted = [...candidates].sort((left, right) => {
+    const leftName = normalize(left && left.name);
+    const rightName = normalize(right && right.name);
+    const expectedNames =
+      kind === 'cash'
+        ? ['cash']
+        : kind === 'wallet'
+          ? ['e wallet', 'wallet']
+          : kind === 'credit_card'
+            ? ['credit card']
+            : [];
+    const leftExact = expectedNames.includes(leftName) ? 1 : 0;
+    const rightExact = expectedNames.includes(rightName) ? 1 : 0;
+    if (leftExact !== rightExact) return rightExact - leftExact;
+    return (
+      leftName.localeCompare(rightName) ||
+      asString(left && left.id).localeCompare(asString(right && right.id))
+    );
+  });
+  return sorted[0] || null;
+}
+
+function primaryAccountIdFromTransaction(workbook, transaction) {
+  const accountsById = new Map(
+    balanceAccounts(workbook).map((account) => [asString(account.id), account])
+  );
+  const lines = asArray(transaction && transaction.lines);
+  const template = asString(transaction && transaction.template);
+  const expectedDirection = template === 'income_received' ? 'debit' : 'credit';
+  const expectedGroups =
+    template === 'expense_charged'
+      ? ['liability']
+      : template === 'income_received'
+        ? ['asset']
+        : ['asset'];
+  const matched = lines.find((line) => {
+    const account = accountsById.get(asString(line && line.accountId));
+    return (
+      line &&
+      asString(line.direction) === expectedDirection &&
+      account &&
+      expectedGroups.includes(asString(account.group).toLowerCase())
+    );
+  });
+  return asString(matched && matched.accountId);
+}
+
+function findPayment(workbook, normalizedLine, transactionKind, description = normalizedLine) {
   const accounts = balanceAccounts(workbook);
   const direct = accounts
     .map((account) => ({ account, phrase: normalize(account.name) }))
@@ -275,15 +617,44 @@ function findPayment(workbook, normalizedLine, transactionKind) {
     const eligible = accounts.filter((account) =>
       transactionKind === 'income' ? account.group === 'asset' : true
     );
+    const historicalId = historicalWinner(
+      workbook,
+      description,
+      (transaction) => primaryAccountIdFromTransaction(workbook, transaction),
+      new Set(eligible.map((account) => asString(account.id)))
+    );
+    const historical = eligible.find((account) => asString(account.id) === historicalId) || null;
+    if (historical) {
+      return {
+        account: historical,
+        matchedPhrase: '',
+        label: paymentLabel(historical),
+        kind: paymentKind(historical),
+        ambiguous: false,
+        missing: false,
+        unavailable: false,
+        source: 'history'
+      };
+    }
     const cash = eligible.filter(isCashAccount);
-    candidates = cash.length ? cash : eligible;
+    const exactCash = cash.filter((account) => normalize(account && account.name) === 'cash');
+    candidates = exactCash.length
+      ? exactCash
+      : cash.length === 1
+        ? cash
+        : eligible.length === 1
+          ? eligible
+          : [];
   }
 
+  const selectedAccount = preferredAccount(candidates, paymentPattern?.kind || '');
+
   return {
-    account: candidates[0] || null,
+    account: selectedAccount,
     matchedPhrase: paymentPattern ? normalize(paymentPattern.label) : '',
-    label: paymentPattern?.label || (candidates[0] ? paymentLabel(candidates[0]) : 'Not selected'),
-    kind: paymentPattern?.kind || (candidates[0] ? paymentKind(candidates[0]) : ''),
+    label:
+      paymentPattern?.label || (selectedAccount ? paymentLabel(selectedAccount) : 'Not selected'),
+    kind: paymentPattern?.kind || (selectedAccount ? paymentKind(selectedAccount) : ''),
     ambiguous: candidates.length > 1,
     missing: !paymentPattern,
     unavailable: !!paymentPattern && candidates.length === 0
@@ -326,19 +697,21 @@ function parseDate(source, today) {
 function parseAmount(source, workbookCurrency) {
   const matches = Array.from(
     source.matchAll(
-      /(?:₱|PHP\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)|(?:US\$|\$|USD\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)|(?:^|\s)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)(?=\s|$)/gi
+      /(?:₱|PHP\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?|(?:US\$|\$|USD\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?|(?:^|\s)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?(?=\s|$)/gi
     )
   );
   const match = matches[0];
   if (!match) return { amount: 0, currency: workbookCurrency, matchedText: '' };
-  const rawNumber = match[1] || match[2] || match[3] || '';
-  const amount = Number(rawNumber.replace(/,/g, ''));
+  const rawNumber = match[1] || match[3] || match[5] || '';
+  const suffix = asString(match[2] || match[4] || match[6]).toLowerCase();
+  const multiplier = suffix === 'm' ? 1_000_000 : suffix === 'k' ? 1_000 : 1;
+  const amount = Number(rawNumber.replace(/,/g, '')) * multiplier;
   const marker = match[0].toUpperCase();
   return {
     amount: Number.isFinite(amount) ? amount : 0,
     currency: match[1]
       ? 'PHP'
-      : match[2] || marker.includes('$') || marker.includes('USD')
+      : match[3] || marker.includes('$') || marker.includes('USD')
         ? 'USD'
         : workbookCurrency,
     matchedText: match[0].trim(),
@@ -516,9 +889,29 @@ export function parseNotesLine(line, workbook, options = {}) {
   const amountSource = removePhrase(sourceText, dateResult.matchedText);
   const amountResult = parseAmount(amountSource, workbookCurrency);
   const normalizedLine = normalize(sourceText);
-  const categoryResult = findCategory(workbook, normalizedLine);
+  const paymentPattern = PAYMENT_PATTERNS.find((candidate) => candidate.pattern.test(sourceText));
+  const paymentPhrase = paymentPattern?.pattern.exec(sourceText)?.[0] || '';
+  const preliminaryDescription = buildDescription(
+    sourceText,
+    amountResult.matchedText,
+    dateResult.matchedText,
+    paymentPhrase
+  );
+  const normalizedDescription = normalize(preliminaryDescription);
+  const categoryResult = findCategory(workbook, normalizedDescription || normalizedLine);
   const transactionKind = categoryResult.category?.type === 'income' ? 'income' : 'expense';
-  const paymentResult = findPayment(workbook, normalizedLine, transactionKind);
+  const paymentResult = findPayment(
+    workbook,
+    normalizedLine,
+    transactionKind,
+    normalizedDescription || normalizedLine
+  );
+  const description = buildDescription(
+    sourceText,
+    amountResult.matchedText,
+    dateResult.matchedText,
+    paymentPhrase || paymentResult.matchedPhrase
+  );
   const inferenceIssues = [];
   const suggestedFxRate =
     amountResult.currency !== workbookCurrency
@@ -532,7 +925,11 @@ export function parseNotesLine(line, workbook, options = {}) {
       issue('amount_ambiguous', 'amount', 'More than one amount appears on this line.')
     );
   }
-  if (!categoryResult.category || categoryResult.fallback) {
+  if (categoryResult.ambiguous) {
+    inferenceIssues.push(
+      issue('category_ambiguous', 'categoryId', 'More than one category matched this line.')
+    );
+  } else if (!categoryResult.category || categoryResult.fallback) {
     inferenceIssues.push(
       issue(
         'category_uncertain',
@@ -541,10 +938,6 @@ export function parseNotesLine(line, workbook, options = {}) {
           ? `Check whether ${categoryResult.category.name} is the right category.`
           : 'Choose a category.'
       )
-    );
-  } else if (categoryResult.ambiguous) {
-    inferenceIssues.push(
-      issue('category_ambiguous', 'categoryId', 'More than one category matched this line.')
     );
   }
   if (paymentResult.unavailable) {
@@ -580,16 +973,6 @@ export function parseNotesLine(line, workbook, options = {}) {
     );
   }
 
-  const paymentPhrase =
-    PAYMENT_PATTERNS.find((candidate) => candidate.pattern.test(sourceText))?.pattern.exec(
-      sourceText
-    )?.[0] || paymentResult.matchedPhrase;
-  const description = buildDescription(
-    sourceText,
-    amountResult.matchedText,
-    dateResult.matchedText,
-    paymentPhrase
-  );
   const parsed = {
     id: options.id || `notes-line-${Number(options.lineNumber) || 1}`,
     lineNumber: Number(options.lineNumber) || 1,
@@ -630,6 +1013,7 @@ export function parseNotesText(text, workbook, options = {}) {
 
 export function notesEntryToTransactionInput(entry) {
   return {
+    transactionId: asString(entry.transactionId),
     template: entry.template,
     amount: Number(entry.amount) || 0,
     currency: entry.currency,
@@ -638,10 +1022,13 @@ export function notesEntryToTransactionInput(entry) {
     categoryId: entry.categoryId,
     primaryAccountId: entry.primaryAccountId,
     secondaryAccountId: '',
-    note: 'Captured from Notes',
+    counterpartyId: asString(entry.counterpartyId),
+    note: asString(entry.transactionNote) || 'Captured from Notes',
     sourceRoute: 'notes',
-    allowDuplicate: entry.allowDuplicate === true,
-    allowCurrencyConversion: entry.manuallyReviewed === true && Number(entry.fxRateToBase) > 0,
+    // Notes is intentionally one-step intake: duplicate-looking lines are saved and remain
+    // editable instead of introducing a second confirmation/approval gate.
+    allowDuplicate: entry.allowDuplicate !== false,
+    allowCurrencyConversion: Number(entry.fxRateToBase) > 0,
     fxRateToBase: Number(entry.fxRateToBase) || 0
   };
 }

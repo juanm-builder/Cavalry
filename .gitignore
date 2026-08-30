@@ -66,6 +66,7 @@ AuthKey_*.p8
 *.jks
 *.keystore
 *.mobileprovision
+*.provisionprofile
 tools/llama-cpp-launcher/scripts/config.env
 
 # Local databases and exported dumps
@@ -119,6 +120,4 @@ tools/llama-cpp-launcher/**/*.pt
 tools/llama-cpp-launcher/**/*.pth
 tools/llama-cpp-launcher/**/*.mlmodel
 
-# Supabase CLI machine-local link state
-supabase/.temp/
 apps/desktop/packaging/RUNTIME-DEPENDENCY-INVENTORY.txt

@@ -270,8 +270,7 @@ describe('Advisor runtime controller', () => {
         '--password synthetic-password-123456',
         '"messages":[{"role":"user","content":"private workbook question"}]',
         'model=/Users/alex/Models/demo.gguf',
-        'cache=/home/alex/.cache/demo',
-        'windows=C:\\Users\\alex\\Models\\demo.gguf'
+        'cache=/home/alex/.cache/demo'
       ].join('\n')
     );
 
@@ -375,8 +374,7 @@ describe('Advisor runtime controller', () => {
     expect(args[args.indexOf('--flash-attn') + 1]).not.toBe('auto');
     expect(options).toMatchObject({
       cwd: '/tmp/cavalry-advisor-controller-test',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
+      stdio: ['ignore', 'pipe', 'pipe']
     });
   });
 

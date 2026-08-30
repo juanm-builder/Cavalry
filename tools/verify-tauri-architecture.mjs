@@ -41,7 +41,10 @@ const releaseTemplate = JSON.parse(
   await text('apps/desktop/src-tauri/tauri.release.template.json')
 );
 const macConfig = JSON.parse(await text('apps/desktop/src-tauri/tauri.macos.conf.json'));
-const windowsConfig = JSON.parse(await text('apps/desktop/src-tauri/tauri.windows.conf.json'));
+const entitlements = await text('apps/desktop/src-tauri/entitlements.plist');
+const releaseEntitlements = await text('apps/desktop/src-tauri/entitlements.release.plist');
+const sidecarEntitlements = await text('apps/desktop/src-tauri/entitlements.sidecar.plist');
+const codesignShim = await text('apps/desktop/scripts/macos-codesign-shim/codesign');
 const capability = JSON.parse(await text('apps/desktop/src-tauri/capabilities/main.json'));
 const cargo = await text('apps/desktop/src-tauri/Cargo.toml');
 const rustHost = await text('apps/desktop/src-tauri/src/lib.rs');
@@ -91,16 +94,52 @@ requireCondition(
   'The signed updater release template is missing or unsafe.'
 );
 requireCondition(
+  releaseTemplate.bundle?.macOS?.entitlements === 'entitlements.release.plist' &&
+    releaseTemplate.bundle?.macOS?.files?.['embedded.provisionprofile'] ===
+      'Cavalry.provisionprofile',
+  'The signed release must embed its CloudKit provisioning profile.'
+);
+requireCondition(
   tauriConfig.plugins?.['deep-link']?.desktop?.schemes?.includes('cavalry'),
   'cavalry:// deep-link scheme is missing.'
 );
 requireCondition(
-  macConfig.identifier === 'com.local.cavalry.mac',
-  'The existing macOS bundle identity changed.'
+  macConfig.identifier === 'com.juanmbuilder.cavalry.mac' &&
+    tauriConfig.identifier === 'com.juanmbuilder.cavalry.mac',
+  "The macOS bundle identity is not in Cavalry's Apple namespace."
 );
 requireCondition(
-  windowsConfig.identifier === 'com.local.cavalry.windows',
-  'The existing Windows bundle identity changed.'
+  entitlements.includes('iCloud.com.juanmbuilder.cavalry') &&
+    entitlements.includes('U8H23USGUJ.com.juanmbuilder.cavalry.mac') &&
+    entitlements.includes('com.apple.developer.team-identifier') &&
+    entitlements.includes(
+      'com.apple.developer.icloud-container-development-container-identifiers'
+    ) &&
+    entitlements.includes('com.apple.developer.icloud-services') &&
+    entitlements.includes('<string>Development</string>') &&
+    releaseEntitlements.includes('U8H23USGUJ.com.juanmbuilder.cavalry.mac') &&
+    releaseEntitlements.includes('com.apple.developer.team-identifier') &&
+    releaseEntitlements.includes('iCloud.com.juanmbuilder.cavalry') &&
+    releaseEntitlements.includes('<string>Production</string>') &&
+    releaseEntitlements.includes('<string>production</string>'),
+  'The shared Cavalry CloudKit container entitlement is missing.'
+);
+requireCondition(
+  sidecarEntitlements.includes('com.apple.security.cs.allow-jit') &&
+    sidecarEntitlements.includes('com.apple.security.cs.allow-unsigned-executable-memory') &&
+    !sidecarEntitlements.includes('com.apple.developer.icloud'),
+  'The host sidecar must have only its dedicated JIT entitlements.'
+);
+requireCondition(
+  codesignShim.includes('entitlements.sidecar.plist') &&
+    appPackage.scripts['tauri:build:mac'].includes('macos-codesign-shim') &&
+    appPackage.scripts['tauri:release:mac'].includes('macos-codesign-shim'),
+  'Mac packaging must sign the host sidecar with its dedicated entitlements.'
+);
+requireCondition(
+  rustHost.includes('cavalry_cloudkit_request') &&
+    existsSync(resolve(root, 'apps/desktop/src-tauri/src/cloudkit/CavalryCloudKitStore.swift')),
+  'The native CloudKit bridge is missing.'
 );
 requireCondition(
   cargo.includes('tauri-plugin-shell'),
@@ -145,6 +184,7 @@ for (const removedPath of [
   'apps/desktop/electron-builder.yml',
   'apps/desktop/electron-builder.release.yml',
   'apps/desktop/electron-builder.windows.yml',
+  'apps/desktop/src-tauri/tauri.windows.conf.json',
   'apps/desktop/vite.main.config.mjs',
   'apps/desktop/vite.preload.config.mjs'
 ]) {

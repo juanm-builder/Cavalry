@@ -2,22 +2,13 @@ import { builtinModules } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const nodeBuiltins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
 
-export default defineConfig(({ mode }) => {
-  const cloudEnv = loadEnv(mode, appRoot, 'CAVALRY_SUPABASE_');
-  const supabaseUrl = process.env.CAVALRY_SUPABASE_URL || cloudEnv.CAVALRY_SUPABASE_URL || '';
-  const publishableKey =
-    process.env.CAVALRY_SUPABASE_PUBLISHABLE_KEY || cloudEnv.CAVALRY_SUPABASE_PUBLISHABLE_KEY || '';
-
+export default defineConfig(() => {
   return {
-    define: {
-      'process.env.CAVALRY_SUPABASE_URL': JSON.stringify(supabaseUrl),
-      'process.env.CAVALRY_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(publishableKey)
-    },
     build: {
       emptyOutDir: true,
       lib: {

@@ -29,10 +29,6 @@ jobs:
             runner: macos-latest
             target: x86_64-apple-darwin
             sidecar: sidecar:prepare:mac:intel
-          - label: Windows x64
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            sidecar: sidecar:prepare:windows
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 
 import cavalryMark from '../assets/cavalry-mark.png';
-import { AppleOAuthButton } from '../shared/AppleOAuthButton.jsx';
 import { CavalryIcon } from '../shared/CavalryIcon.jsx';
 import { CavalrySelect } from '../shared/CavalrySelect.jsx';
 import { formatUiDateTime } from '../shared/date-format.js';
@@ -118,9 +117,6 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
   const user = cloud.user && typeof cloud.user === 'object' ? cloud.user : null;
   const signedIn = cloud.status === 'signed_in' && !!user;
   const pending = !!cloudText(cloud.pendingOperation) || cloud.status === 'initializing';
-  const connecting = cloud.status === 'signing_in';
-  const busy = pending || connecting;
-  const openingApple = cloudText(cloud.pendingOperation) === 'sign-in-apple';
   const run = (operation, payload) => {
     if (typeof onCloudAction === 'function') void onCloudAction(operation, payload || {});
   };
@@ -129,14 +125,12 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
     <section aria-labelledby="landing-cloud-heading" className="landing-cloud-library">
       <div className="landing-cloud-heading">
         <div>
-          <small>Cavalry Cloud</small>
+          <small>iCloud Sync</small>
           <h2 id="landing-cloud-heading">
-            {signedIn ? 'Your Cloud workbooks' : 'Open a workbook from any device'}
+            {signedIn ? 'Your iCloud workbooks' : 'iCloud workbooks unavailable'}
           </h2>
         </div>
-        {signedIn ? (
-          <span className="landing-cloud-user">{cloudText(user.email || user.name)}</span>
-        ) : null}
+        {signedIn ? <span className="landing-cloud-user">Connected</span> : null}
       </div>
       {cloud.error ? (
         <div className="panel-note status-bad" role="alert">
@@ -150,30 +144,19 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
       ) : null}
       {!signedIn ? (
         <div className="landing-cloud-signed-out">
-          <p>Sign in with Apple or Google to see your private Cloud library on this Mac.</p>
           <p>
-            If you already used Google for Cavalry Cloud, continue with Google first and connect
-            Apple later in Settings.
+            {cloud.status === 'initializing'
+              ? 'Checking your iCloud account…'
+              : 'Sign in to iCloud in System Settings, then refresh.'}
           </p>
-          <div className="landing-cloud-provider-actions">
-            <AppleOAuthButton
-              className="landing-apple-sign-in"
-              disabled={busy || cloud.status === 'unavailable'}
-              onClick={() => run('sign-in-apple')}
-              pending={openingApple}
-            />
-            <button
-              className="btn btn-primary"
-              disabled={busy || cloud.status === 'unavailable'}
-              onClick={() => run('sign-in')}
-              type="button"
-            >
-              <span aria-hidden="true" className="landing-google-mark">
-                G
-              </span>
-              {!openingApple && pending ? 'Opening Google…' : 'Continue with Google'}
-            </button>
-          </div>
+          <button
+            className="btn btn-soft"
+            disabled={pending}
+            onClick={() => run('refresh')}
+            type="button"
+          >
+            Refresh
+          </button>
         </div>
       ) : (
         <>
@@ -186,17 +169,9 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
             >
               Refresh
             </button>
-            <button
-              className="btn btn-quiet"
-              disabled={pending}
-              onClick={() => run('sign-out')}
-              type="button"
-            >
-              Sign Out
-            </button>
           </div>
           {workbooks.length ? (
-            <ul aria-label="Cavalry Cloud workbooks" className="landing-cloud-workbooks">
+            <ul aria-label="iCloud workbooks" className="landing-cloud-workbooks">
               {workbooks.map((workbook) => {
                 const id = cloudText(workbook && workbook.id);
                 const name = cloudText(workbook && workbook.name) || 'Untitled workbook';
@@ -214,7 +189,7 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
                       <small>{metadata || 'Cloud workbook'}</small>
                     </span>
                     <button
-                      aria-label={`Open ${name} from Cavalry Cloud`}
+                      aria-label={`Open ${name} from iCloud`}
                       className="btn btn-primary"
                       disabled={pending || !id}
                       onClick={() => run('open', { workbookId: id })}
@@ -228,7 +203,7 @@ function StartupCloudLibrary({ cloud: rawCloud, onCloudAction }) {
             </ul>
           ) : (
             <p className="landing-cloud-empty">
-              No Cloud workbooks yet. Create one locally, then choose Add to Cloud in Settings.
+              No iCloud workbooks yet. Save a workbook and Cavalry will add it automatically.
             </p>
           )}
         </>

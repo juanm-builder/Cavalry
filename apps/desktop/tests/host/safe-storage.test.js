@@ -52,7 +52,7 @@ describe('desktop host secure-storage compatibility layer', () => {
     );
   });
 
-  it('fails closed for packaged platforms without an OS-backed implementation', () => {
+  it('fails closed when the macOS Keychain backend is unavailable', () => {
     const storage = createSafeStorage({
       userDataDir: '/tmp/cavalry-packaged-test',
       isPackaged: true,
@@ -60,6 +60,8 @@ describe('desktop host secure-storage compatibility layer', () => {
     });
 
     expect(storage.isEncryptionAvailable()).toBe(false);
-    expect(() => storage.encryptString('must-not-be-plaintext')).toThrow(/not configured/i);
+    expect(() => storage.encryptString('must-not-be-plaintext')).toThrow(
+      /requires macOS Keychain/i
+    );
   });
 });

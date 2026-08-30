@@ -130,55 +130,6 @@ afterEach(() => {
 });
 
 describe('Tauri desktop release tooling', () => {
-  it('uses the desktop runtime rules for Cavalry Cloud release values', () => {
-    const valid = runScript('tools/release/validate-cloud-config.mjs', [], {
-      CAVALRY_SUPABASE_URL: 'https://project.supabase.co',
-      CAVALRY_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-key'
-    });
-    const invalidKey = runScript('tools/release/validate-cloud-config.mjs', [], {
-      CAVALRY_SUPABASE_URL: 'https://project.supabase.co',
-      CAVALRY_SUPABASE_PUBLISHABLE_KEY: 'garbage'
-    });
-    const invalidUrl = runScript('tools/release/validate-cloud-config.mjs', [], {
-      CAVALRY_SUPABASE_URL: 'https://project.supabase.co/rest/v1',
-      CAVALRY_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-key'
-    });
-
-    expect(valid.status, valid.stderr).toBe(0);
-    expect(invalidKey.status).not.toBe(0);
-    expect(invalidUrl.status).not.toBe(0);
-  });
-
-  it('fails the release when the built host omits the validated Cloud configuration', () => {
-    const directory = mkdtempSync(resolve(tmpdir(), 'cavalry-cloud-build-'));
-    temporaryDirectories.push(directory);
-    const bundlePath = resolve(directory, 'index.cjs');
-    const environment = {
-      CAVALRY_SUPABASE_URL: 'https://project.supabase.co',
-      CAVALRY_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-key'
-    };
-    writeFileSync(
-      bundlePath,
-      `const url = ${JSON.stringify(environment.CAVALRY_SUPABASE_URL)}; const key = ${JSON.stringify(environment.CAVALRY_SUPABASE_PUBLISHABLE_KEY)};`
-    );
-
-    const embedded = runScript(
-      'tools/release/validate-cloud-config.mjs',
-      ['--bundle', bundlePath],
-      environment
-    );
-    writeFileSync(bundlePath, 'const cloud = "";');
-    const missing = runScript(
-      'tools/release/validate-cloud-config.mjs',
-      ['--bundle', bundlePath],
-      environment
-    );
-
-    expect(embedded.status, embedded.stderr).toBe(0);
-    expect(missing.status).not.toBe(0);
-    expect(missing.stderr).toContain('does not contain the validated public Cloud configuration');
-  });
-
   it('accepts only the exact stable tag matching npm, Cargo, and Tauri versions', () => {
     const [major, minor, patch] = currentVersion.split('.').map(Number);
 
@@ -228,6 +179,10 @@ describe('Tauri desktop release tooling', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(generated.plugins.updater.pubkey).toBe('test-public-key');
     expect(generated.bundle.createUpdaterArtifacts).toBe(true);
+    expect(generated.bundle.macOS).toEqual({
+      entitlements: 'entitlements.release.plist',
+      files: { 'embedded.provisionprofile': 'Cavalry.provisionprofile' }
+    });
     expect(generated.bundle).toEqual(trackedTemplate.bundle);
     expect(trackedAfter).toBe(trackedBefore);
   });
@@ -330,16 +285,13 @@ describe('Tauri desktop release tooling', () => {
     expect(workflow).toContain('asset_arch: x64');
     expect(workflow).toContain('Cavalry.for.Mac_${version}_${{ matrix.asset_arch }}.dmg');
     expect(workflow).toContain('Verify uploaded release assets');
-    expect(
-      workflow.match(/CAVALRY_SUPABASE_URL: \$\{\{ vars\.CAVALRY_SUPABASE_URL \}\}/g)
-    ).toHaveLength(2);
-    expect(
-      workflow.match(
-        /CAVALRY_SUPABASE_PUBLISHABLE_KEY: \$\{\{ vars\.CAVALRY_SUPABASE_PUBLISHABLE_KEY \}\}/g
-      )
-    ).toHaveLength(2);
-    expect(workflow).toContain('validate-cloud-config.mjs --bundle dist/host/index.cjs');
-    expect(workflow).toContain('--expect-cloud-configured');
+    expect(workflow).toContain('--expect-icloud-enabled');
+    expect(workflow).toContain('MAC_PROVISIONING_PROFILE_BASE64');
+    expect(workflow).toContain('embedded.provisionprofile');
+    expect(workflow).toContain('scripts/macos-codesign-shim');
+    expect(workflow).toContain(
+      'The host sidecar must not carry the app-only CloudKit entitlement.'
+    );
     expect(workflow).not.toContain('Skipping sidecar smoke test');
   });
 });

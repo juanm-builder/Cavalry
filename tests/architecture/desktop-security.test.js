@@ -18,10 +18,7 @@ describe('Tauri desktop security boundary', () => {
     const openerScope = capability.permissions.find(
       (value) => typeof value === 'object' && value.identifier === 'opener:allow-open-url'
     );
-    expect(openerScope.allow).toEqual([
-      { url: 'x-apple.systempreferences:*' },
-      { url: 'ms-settings:*' }
-    ]);
+    expect(openerScope.allow).toEqual([{ url: 'x-apple.systempreferences:*' }]);
     expect(permissions.some((value) => value.startsWith('shell:'))).toBe(false);
     expect(permissions.some((value) => value.startsWith('process:'))).toBe(false);
   });
@@ -37,7 +34,7 @@ describe('Tauri desktop security boundary', () => {
     expect(bundle.bundle.externalBin).toEqual(['binaries/cavalry-host']);
   });
 
-  it('keeps a restrictive webview policy and preserves installed identities', () => {
+  it('keeps a restrictive webview policy and the Apple bundle identity', () => {
     const config = json('apps/desktop/src-tauri/tauri.conf.json');
     const csp = config.app.security.csp;
     expect(config.app.withGlobalTauri).toBe(true);
@@ -45,10 +42,7 @@ describe('Tauri desktop security boundary', () => {
     expect(csp).toContain("frame-src 'none'");
     expect(csp).not.toContain("'unsafe-eval'");
     expect(json('apps/desktop/src-tauri/tauri.macos.conf.json').identifier).toBe(
-      'com.local.cavalry.mac'
-    );
-    expect(json('apps/desktop/src-tauri/tauri.windows.conf.json').identifier).toBe(
-      'com.local.cavalry.windows'
+      'com.juanmbuilder.cavalry.mac'
     );
   });
 });

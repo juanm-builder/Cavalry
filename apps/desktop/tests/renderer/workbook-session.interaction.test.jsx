@@ -325,8 +325,8 @@ describe('workbook session', () => {
     });
     render(<AppShell autoHydrate ports={ports} routeId="dashboard" />);
 
-    expect(await screen.findByRole('heading', { name: 'Your Cloud workbooks' })).not.toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Open Cloud Plan from Cavalry Cloud' }));
+    expect(await screen.findByRole('heading', { name: 'Your iCloud workbooks' })).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Open Cloud Plan from iCloud' }));
 
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: 'Start a workbook' })).toBeNull()

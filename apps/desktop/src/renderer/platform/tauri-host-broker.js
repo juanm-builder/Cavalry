@@ -1,6 +1,6 @@
 const HOST_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:', 'tel:']);
-const ALLOWED_SYSTEM_PROTOCOLS = new Set(['x-apple.systempreferences:', 'ms-settings:']);
+const ALLOWED_SYSTEM_PROTOCOLS = new Set(['x-apple.systempreferences:']);
 
 // Tauri rejects a command promise with the plain value returned by `Err(String)`, so callers
 // reading `error.message` would otherwise drop the host's reason and report a generic failure.
@@ -116,6 +116,10 @@ async function handleNativeRequest(messageValue) {
     }
     await tauri.opener.revealItemInDir(String(payload.path || ''));
     return { ok: true };
+  }
+
+  if (method === 'cloudkit.request') {
+    return tauri.core.invoke('cloudkit_request', { request: payload });
   }
 
   throw new Error(`Unsupported native Cavalry request: ${method || 'unknown'}`);

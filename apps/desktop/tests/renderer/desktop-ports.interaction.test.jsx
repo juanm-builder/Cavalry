@@ -195,16 +195,11 @@ describe('desktop renderer ports', () => {
 
   it('serializes uploads and validates downloaded cloud workbooks', async () => {
     const uploadCalls = [];
-    const profileCalls = [];
     const ports = createDesktopRendererPorts({
       cavalryCloud: {
         async uploadWorkbook(payload) {
           uploadCalls.push(payload);
           return { ok: true };
-        },
-        async updateProfile(payload) {
-          profileCalls.push(payload);
-          return { ok: true, profile: { name: payload.name } };
         },
         async downloadWorkbook() {
           return {
@@ -228,7 +223,8 @@ describe('desktop renderer ports', () => {
     await expect(
       ports.cloud.invoke('uploadWorkbook', {
         workbook: downloaded.workbook,
-        expectedRevision: 3
+        expectedRevision: 3,
+        conflictResolution: 'keep_local'
       })
     ).resolves.toEqual({ ok: true });
     expect(uploadCalls[0]).toMatchObject({
@@ -237,14 +233,9 @@ describe('desktop renderer ports', () => {
       schemaVersion: 2,
       expectedRevision: 3
     });
+    expect(uploadCalls[0]).toHaveProperty('conflictResolution', 'keep_local');
     expect(uploadCalls[0].portableHtml).toContain('ledger-grove-export');
     expect(uploadCalls[0]).not.toHaveProperty('workbook');
-
-    await expect(ports.cloud.invoke('updateProfile', { name: 'Alex Example' })).resolves.toEqual({
-      ok: true,
-      profile: { name: 'Alex Example' }
-    });
-    expect(profileCalls).toEqual([{ name: 'Alex Example' }]);
   });
 
   it('keeps cloud bridge failures behind a stable renderer port', async () => {
@@ -261,56 +252,6 @@ describe('desktop renderer ports', () => {
       error: 'offline'
     });
     await expect(ports.cloud.invoke('deleteWorkbook')).resolves.toMatchObject({
-      ok: false,
-      unavailable: true
-    });
-  });
-
-  it('adapts the narrow cloud feedback bridge without exposing Cloud auth state', async () => {
-    const calls = [];
-    const ports = createDesktopRendererPorts({
-      cavalryCloud: {
-        listFeedbackReports: async () => ({ ok: true, reports: [{ id: 'report-1' }] }),
-        submitFeedbackReport: async (payload) => {
-          calls.push(['submit', payload]);
-          return { ok: true, report: { id: 'report-2', ...payload } };
-        },
-        getFeedbackAttachment: async (payload) => {
-          calls.push(['download', payload]);
-          return {
-            ok: true,
-            attachment: {
-              id: payload.attachmentId,
-              mimeType: 'image/png',
-              dataUrl: 'data:image/png;base64,AA=='
-            }
-          };
-        }
-      }
-    });
-
-    await expect(ports.feedback.invoke('list')).resolves.toMatchObject({
-      ok: true,
-      reports: [{ id: 'report-1' }]
-    });
-    await expect(
-      ports.feedback.invoke('submit', {
-        kind: 'bug',
-        description: 'Something broke.',
-        source: 'assistant'
-      })
-    ).resolves.toMatchObject({ ok: true, report: { id: 'report-2', kind: 'bug' } });
-    await expect(
-      ports.feedback.invoke('download', { attachmentId: 'attachment-1' })
-    ).resolves.toMatchObject({
-      ok: true,
-      attachment: { id: 'attachment-1', dataUrl: expect.stringContaining('data:image/png') }
-    });
-    expect(calls).toEqual([
-      ['submit', { kind: 'bug', description: 'Something broke.', source: 'assistant' }],
-      ['download', { attachmentId: 'attachment-1' }]
-    ]);
-    await expect(ports.feedback.invoke('unknown')).resolves.toMatchObject({
       ok: false,
       unavailable: true
     });

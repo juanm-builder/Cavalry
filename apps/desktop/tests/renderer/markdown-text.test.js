@@ -184,7 +184,7 @@ describe('MarkdownText', () => {
         'Vercel evidence',
         ['transaction:vercel-apr', 'transaction:vercel-may']
       ],
-      ['#cavalry-source-2', 'Supabase evidence', ['transaction:supabase-apr']],
+      ['#cavalry-source-2', 'Hosting evidence', ['transaction:hosting-apr']],
       ['#cavalry-source-3', 'AirPods installment', ['recurringItem:airpods']]
     ].map(([anchor, label, source_refs], index) => ({
       id: `citation-${index + 1}`,
@@ -200,7 +200,7 @@ describe('MarkdownText', () => {
           '| Expense | Finding |',
           '| --- | --- |',
           '| Vercel | About ₱1,276/month [source](#cavalry-source-1) |',
-          '| Supabase | Last found in April [source](#cavalry-source-2) |',
+          '| Hosting | Last found in April [source](#cavalry-source-2) |',
           '| AirPods installment | Installment 08/12 [source](#cavalry-source-3) |'
         ].join('\n'),
         referenceMode: 'claim',
@@ -211,7 +211,7 @@ describe('MarkdownText', () => {
 
     expect(html.match(/class="markdown-source-reference"/g)).toHaveLength(3);
     expect(html).toContain('Open 2 sources: Vercel evidence, 2 transactions');
-    expect(html).toContain('Open source: Supabase evidence, transaction');
+    expect(html).toContain('Open source: Hosting evidence, transaction');
     expect(html).toContain('Open source: AirPods installment, recurring');
     expect(html).toContain('>recurring</button>');
     expect(html).not.toContain('class="markdown-reference"');
@@ -222,7 +222,7 @@ describe('MarkdownText', () => {
       React.createElement(MarkdownText, {
         text: [
           '- Vercel looks monthly. [source](#cavalry-source-1)',
-          '- Supabase is uncertain. [source](#cavalry-source-2)'
+          '- Hosting is uncertain. [source](#cavalry-source-2)'
         ].join('\n'),
         referenceMode: 'claim',
         references: [
@@ -236,9 +236,9 @@ describe('MarkdownText', () => {
           {
             anchor: '#cavalry-source-2',
             token: 'source',
-            label: 'Supabase evidence',
+            label: 'Hosting evidence',
             kind: 'transaction',
-            source_refs: ['transaction:supabase-apr']
+            source_refs: ['transaction:hosting-apr']
           }
         ],
         onOpenReference: () => {}
@@ -247,7 +247,7 @@ describe('MarkdownText', () => {
 
     expect(html.match(/class="markdown-source-reference"/g)).toHaveLength(2);
     expect(html).toContain('Open 2 sources: Vercel evidence, 2 transactions');
-    expect(html).toContain('Open source: Supabase evidence, transaction');
+    expect(html).toContain('Open source: Hosting evidence, transaction');
   });
 
   it('captions source chips with the detail that tells them apart', () => {

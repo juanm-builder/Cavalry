@@ -34,11 +34,7 @@ jobs:
         run: npm ci
 
       - name: Validate versions, security, and tests
-        env:
-          CAVALRY_SUPABASE_URL: ${{ vars.CAVALRY_SUPABASE_URL }}
-          CAVALRY_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CAVALRY_SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          node tools/release/validate-cloud-config.mjs
           node tools/release/validate-release.mjs "$GITHUB_REF_NAME"
           npm run release:security
           npm run licenses:runtime
@@ -55,9 +51,6 @@ jobs:
     permissions:
       contents: write
     environment: release-signing
-    env:
-      CAVALRY_SUPABASE_URL: ${{ vars.CAVALRY_SUPABASE_URL }}
-      CAVALRY_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CAVALRY_SUPABASE_PUBLISHABLE_KEY }}
     strategy:
       fail-fast: false
       # tauri-action merges latest.json with a read/delete/re-upload sequence. Serialize the
@@ -110,8 +103,31 @@ jobs:
           npm run licenses:runtime
           npm run build:host
           npm run "${{ matrix.sidecar }}"
-          node ../../tools/release/validate-cloud-config.mjs --bundle dist/host/index.cjs
           npm run release:config
+          echo "$GITHUB_WORKSPACE/apps/desktop/scripts/macos-codesign-shim" >> "$GITHUB_PATH"
+
+      - name: Prepare CloudKit provisioning profile
+        shell: bash
+        env:
+          MAC_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAC_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAC_PROVISIONING_PROFILE_BASE64:-}" ]; then
+            echo "::error::MAC_PROVISIONING_PROFILE_BASE64 must contain the Developer ID profile for com.juanmbuilder.cavalry.mac."
+            exit 1
+          fi
+          profile_path="apps/desktop/src-tauri/Cavalry.provisionprofile"
+          printf '%s' "$MAC_PROVISIONING_PROFILE_BASE64" | tr -d '\r\n ' | openssl base64 -d -A -out "$profile_path"
+          chmod 600 "$profile_path"
+          profile_plist="$RUNNER_TEMP/cavalry-provisioning-profile.plist"
+          security cms -D -i "$profile_path" > "$profile_plist"
+          application_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
+          if [[ "$application_id" != *.com.juanmbuilder.cavalry.mac ]]; then
+            echo "::error::The provisioning profile targets $application_id instead of com.juanmbuilder.cavalry.mac."
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-identifiers' "$profile_plist" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Fq 'CloudKit'
 
       - name: Prepare Apple API key
         shell: bash
@@ -180,7 +196,7 @@ jobs:
           fi
           node apps/desktop/scripts/sidecar-smoke.mjs \
             --binary "$sidecar" \
-            --expect-cloud-configured
+            --expect-icloud-enabled
 
       - name: Notarize and staple the DMG
         shell: bash
@@ -216,6 +232,24 @@ jobs:
           app_path="$(find "$bundle_dir/macos" -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$app_path" ]; then
             echo "::error::No .app bundle found under $bundle_dir/macos"
+            exit 1
+          fi
+          sidecar="$app_path/Contents/MacOS/cavalry-host"
+          if [ ! -s "$app_path/Contents/embedded.provisionprofile" ]; then
+            echo "::error::The signed app is missing its CloudKit provisioning profile."
+            exit 1
+          fi
+          signed_entitlements="$RUNNER_TEMP/cavalry-signed-entitlements.plist"
+          codesign -d --entitlements :- "$app_path" > "$signed_entitlements"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-environment' "$signed_entitlements")" = "Production"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.aps-environment' "$signed_entitlements")" = "production"
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-identifiers' "$signed_entitlements" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
+          sidecar_entitlements="$RUNNER_TEMP/cavalry-sidecar-entitlements.plist"
+          codesign -d --entitlements :- "$sidecar" > "$sidecar_entitlements"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' "$sidecar_entitlements")" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-unsigned-executable-memory' "$sidecar_entitlements")" = "true"
+          if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-identifiers' "$sidecar_entitlements" >/dev/null 2>&1; then
+            echo "::error::The host sidecar must not carry the app-only CloudKit entitlement."
             exit 1
           fi
           echo "== $app_path =="

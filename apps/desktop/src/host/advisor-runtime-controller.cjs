@@ -359,7 +359,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
 
   function processMatchesLocalAdvisor(processInfo, settings, serverInfo) {
     const command = String((processInfo && processInfo.command) || '');
-    if (!/(^|[\\/\s"'])llama-server(?:\.exe)?(["'\s]|$)/i.test(command)) {
+    if (!/(^|[\\/\s"'])llama-server(["'\s]|$)/i.test(command)) {
       return false;
     }
     if (!commandHasCliValue(command, '--host', serverInfo.host)) {
@@ -692,8 +692,7 @@ function createAdvisorRuntimeController(dependencies = {}) {
       child = spawn(binaryPath, args, {
         cwd: workingDirectory,
         env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true
+        stdio: ['ignore', 'pipe', 'pipe']
       });
     } catch (error) {
       advisorProcessLog.close(error);

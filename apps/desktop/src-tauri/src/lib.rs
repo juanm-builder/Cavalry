@@ -2,10 +2,11 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     env,
+    ffi::{c_char, CStr, CString},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
@@ -24,6 +25,17 @@ const PROTOCOL_VERSION: u64 = 1;
 const HOST_READY_TIMEOUT: Duration = Duration::from_secs(30);
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(330);
 const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+const MAX_HOST_LINE_BYTES: usize = MAX_REQUEST_BYTES + 1024;
+
+type CloudKitEventCallback = extern "C" fn(*const c_char);
+
+unsafe extern "C" {
+    fn cavalry_cloudkit_request(request: *const c_char) -> *mut c_char;
+    fn cavalry_cloudkit_free_string(value: *mut c_char);
+    fn cavalry_cloudkit_set_event_callback(callback: Option<CloudKitEventCallback>);
+}
+
+static CLOUDKIT_HOST_STATE: OnceLock<Arc<HostState>> = OnceLock::new();
 
 #[derive(Default)]
 struct HostState {
@@ -157,49 +169,63 @@ fn host_native_response(
     }))
 }
 
+fn cloudkit_request_blocking(request: Value) -> Result<Value, String> {
+    let serialized = serde_json::to_string(&request).map_err(|error| error.to_string())?;
+    if serialized.len() > MAX_REQUEST_BYTES {
+        return Err("The CloudKit request exceeds Cavalry's size limit.".into());
+    }
+    let request = CString::new(serialized)
+        .map_err(|_| "The CloudKit request contains an invalid string.".to_string())?;
+    let response_pointer = unsafe { cavalry_cloudkit_request(request.as_ptr()) };
+    if response_pointer.is_null() {
+        return Err("The native CloudKit bridge did not return a response.".into());
+    }
+    let response_bytes = unsafe { CStr::from_ptr(response_pointer) }
+        .to_bytes()
+        .to_vec();
+    unsafe { cavalry_cloudkit_free_string(response_pointer) };
+    serde_json::from_slice(&response_bytes)
+        .map_err(|_| "The native CloudKit bridge returned an invalid response.".to_string())
+}
+
+#[tauri::command]
+async fn cloudkit_request(request: Value) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cloudkit_request_blocking(request))
+        .await
+        .map_err(|error| format!("The native CloudKit task stopped unexpectedly: {error}"))?
+}
+
+extern "C" fn handle_cloudkit_event(raw_event: *const c_char) {
+    if raw_event.is_null() {
+        return;
+    }
+    let bytes = unsafe { CStr::from_ptr(raw_event) }.to_bytes();
+    let Ok(payload) = serde_json::from_slice::<Value>(bytes) else {
+        return;
+    };
+    let Some(state) = CLOUDKIT_HOST_STATE.get() else {
+        return;
+    };
+    let _ = state.write(&json!({
+        "version": PROTOCOL_VERSION,
+        "type": "native-event",
+        "source": "cloudkit",
+        "payload": payload
+    }));
+}
+
 #[tauri::command]
 fn relaunch_app(app: tauri::AppHandle) {
     app.restart();
 }
 
 fn legacy_user_data_dir() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-        format!("{home}/Library/Application Support/Cavalry for Mac")
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let base = env::var("APPDATA")
-            .or_else(|_| env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".into());
-        format!("{base}\\Cavalry")
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let base = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-            format!(
-                "{}/.config",
-                env::var("HOME").unwrap_or_else(|_| ".".into())
-            )
-        });
-        format!("{base}/Cavalry")
-    }
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+    format!("{home}/Library/Application Support/Cavalry for Mac")
 }
 
 fn app_display_name() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "Cavalry for Mac"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "Cavalry for Windows"
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        "Cavalry"
-    }
+    "Cavalry for Mac"
 }
 
 fn process_host_message<R: Runtime>(
@@ -247,6 +273,37 @@ fn process_host_message<R: Runtime>(
     }
 }
 
+fn take_host_messages(buffer: &mut Vec<u8>, chunk: &[u8]) -> Result<Vec<Value>, String> {
+    buffer.extend_from_slice(chunk);
+
+    let prefix = PROTOCOL_PREFIX.as_bytes();
+    let mut messages = Vec::new();
+    while let Some(newline_index) = buffer.iter().position(|byte| *byte == b'\n') {
+        if newline_index > MAX_HOST_LINE_BYTES {
+            buffer.clear();
+            return Err("The Cavalry desktop host response exceeds the size limit.".into());
+        }
+        let mut line: Vec<u8> = buffer.drain(..=newline_index).collect();
+        line.pop();
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        let Some(prefix_index) = line.windows(prefix.len()).position(|bytes| bytes == prefix)
+        else {
+            continue;
+        };
+        let payload = &line[prefix_index + prefix.len()..];
+        if let Ok(value) = serde_json::from_slice::<Value>(payload) {
+            messages.push(value);
+        }
+    }
+    if buffer.len() > MAX_HOST_LINE_BYTES {
+        buffer.clear();
+        return Err("The Cavalry desktop host response exceeds the size limit.".into());
+    }
+    Ok(messages)
+}
+
 fn spawn_host<R: Runtime>(
     app: &tauri::App<R>,
     state: Arc<HostState>,
@@ -281,17 +338,25 @@ fn spawn_host<R: Runtime>(
     let app_handle = app.handle().clone();
     let event_state = state.clone();
     tauri::async_runtime::spawn(async move {
+        let mut stdout_buffer = Vec::new();
         while let Some(event) = events.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
-                    let output = String::from_utf8_lossy(&bytes);
-                    for line in output.lines() {
-                        let Some(index) = line.find(PROTOCOL_PREFIX) else {
-                            continue;
-                        };
-                        let payload = &line[index + PROTOCOL_PREFIX.len()..];
-                        if let Ok(value) = serde_json::from_str::<Value>(payload) {
-                            process_host_message(&app_handle, &event_state, value);
+                    match take_host_messages(&mut stdout_buffer, &bytes) {
+                        Ok(messages) => {
+                            for value in messages {
+                                process_host_message(&app_handle, &event_state, value);
+                            }
+                        }
+                        Err(error) => {
+                            event_state.ready.store(false, Ordering::Release);
+                            event_state.reject_pending(&error);
+                            let _ = app_handle.emit(
+                                "cavalry-host-fatal",
+                                json!({
+                                    "error": error
+                                }),
+                            );
                         }
                     }
                 }
@@ -386,10 +451,11 @@ fn handle_menu<R: Runtime>(app: &tauri::AppHandle<R>, id: &str) {
 pub fn run() {
     let host_state = Arc::new(HostState::default());
     let managed_state = host_state.clone();
+    let _ = CLOUDKIT_HOST_STATE.set(host_state.clone());
+    unsafe { cavalry_cloudkit_set_event_callback(Some(handle_cloudkit_event)) };
 
     let app = tauri::Builder::default()
-        // This plugin must be registered first so Windows/Linux deep-link launches
-        // are forwarded to the already-running process.
+        // Register first so deep-link launches reach the already-running Mac app.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             show_main_window(app);
             let urls: Vec<String> = args
@@ -408,6 +474,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(managed_state)
         .invoke_handler(tauri::generate_handler![
+            cloudkit_request,
             host_invoke,
             host_native_response,
             relaunch_app
@@ -444,4 +511,51 @@ pub fn run() {
         }
         _ => {}
     });
+    unsafe { cavalry_cloudkit_set_event_callback(None) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buffers_split_host_protocol_frames() {
+        let mut buffer = Vec::new();
+        assert!(
+            take_host_messages(&mut buffer, b"CAVALRY_IPC_V1:{\"type\":\"rea")
+                .unwrap()
+                .is_empty()
+        );
+        let messages = take_host_messages(&mut buffer, b"dy\",\"version\":1}\n").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["type"], "ready");
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn buffers_unicode_and_extracts_multiple_frames() {
+        let mut buffer = Vec::new();
+        let payload = "CAVALRY_IPC_V1:{\"type\":\"event\",\"value\":\"Café\"}\n\
+CAVALRY_IPC_V1:{\"type\":\"stopped\"}\n";
+        let cafe_boundary = payload.find('é').unwrap() + 1;
+        assert!(
+            take_host_messages(&mut buffer, &payload.as_bytes()[..cafe_boundary])
+                .unwrap()
+                .is_empty()
+        );
+        let messages =
+            take_host_messages(&mut buffer, &payload.as_bytes()[cafe_boundary..]).unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["value"], "Café");
+        assert_eq!(messages[1]["type"], "stopped");
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn rejects_an_unbounded_partial_host_frame() {
+        let mut buffer = vec![b'x'; MAX_HOST_LINE_BYTES];
+        let error = take_host_messages(&mut buffer, b"x").unwrap_err();
+        assert!(error.contains("size limit"));
+        assert!(buffer.is_empty());
+    }
 }

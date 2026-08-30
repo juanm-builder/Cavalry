@@ -25,6 +25,41 @@ function asRevision(value) {
   return Number.isSafeInteger(revision) && revision > 0 ? revision : null;
 }
 
+function asConflictNoticeId(value) {
+  const id = asId(value);
+  return /^[A-Za-z0-9._:-]{1,160}$/.test(id) ? id : '';
+}
+
+function asWorkbook(value, workbookId) {
+  if (!(value && typeof value === 'object' && !Array.isArray(value))) return null;
+  if (asId(value.id) !== asId(workbookId)) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizedStoredState(parsed, workbookId) {
+  if (!(parsed && typeof parsed === 'object' && parsed.version === 1)) {
+    return { known: false, revision: null, conflict: false };
+  }
+  const baseWorkbook = asWorkbook(parsed.baseWorkbook, workbookId);
+  const baseRevision = baseWorkbook ? asRevision(parsed.baseRevision || parsed.revision) : null;
+  const conflict = parsed.conflict === true;
+  const conflictNoticeId = conflict ? asConflictNoticeId(parsed.conflictNoticeId) : '';
+  const conflictRemoteRevision = conflict ? asRevision(parsed.conflictRemoteRevision) : null;
+  return {
+    known: true,
+    revision: asRevision(parsed.revision),
+    conflict,
+    ...(conflictNoticeId && conflictRemoteRevision
+      ? { conflictNoticeId, conflictRemoteRevision }
+      : {}),
+    ...(baseWorkbook && baseRevision ? { baseRevision, baseWorkbook } : {})
+  };
+}
+
 export function resolveCloudWorkbookSyncStorage(storage) {
   if (
     storage &&
@@ -63,48 +98,59 @@ export function readCloudWorkbookSyncState(storage, userId, workbookId) {
   try {
     const raw = storage.getItem(key) || (fallbackKeys.has(key) ? memoryStorage.getItem(key) : null);
     if (!raw) return { known: false, revision: null, conflict: false };
-    const parsed = JSON.parse(raw);
-    if (!(parsed && typeof parsed === 'object' && parsed.version === 1)) {
-      return { known: false, revision: null, conflict: false };
-    }
-    return {
-      known: true,
-      revision: asRevision(parsed.revision),
-      conflict: parsed.conflict === true
-    };
+    return normalizedStoredState(JSON.parse(raw), workbookId);
   } catch (_error) {
     try {
       const fallback = memoryStorage.getItem(key);
       if (!fallback) return { known: false, revision: null, conflict: false };
-      const parsed = JSON.parse(fallback);
-      return {
-        known: parsed && parsed.version === 1,
-        revision: asRevision(parsed && parsed.revision),
-        conflict: !!(parsed && parsed.version === 1 && parsed.conflict === true)
-      };
+      return normalizedStoredState(JSON.parse(fallback), workbookId);
     } catch (_fallbackError) {
       return { known: false, revision: null, conflict: false };
     }
   }
 }
 
-export function writeCloudWorkbookSyncState(
-  storage,
-  userId,
-  workbookId,
-  { revision, conflict = false } = {}
-) {
+export function writeCloudWorkbookSyncState(storage, userId, workbookId, options = {}) {
   const key = cloudWorkbookSyncStorageKey(userId, workbookId);
+  const previous = readCloudWorkbookSyncState(storage, userId, workbookId);
+  const revision = asRevision(options.revision);
+  const hasBaseWorkbook = Object.prototype.hasOwnProperty.call(options, 'baseWorkbook');
+  const baseWorkbook = hasBaseWorkbook
+    ? asWorkbook(options.baseWorkbook, workbookId)
+    : previous.baseWorkbook || null;
+  const baseRevision = baseWorkbook
+    ? hasBaseWorkbook
+      ? asRevision(options.baseRevision || revision)
+      : asRevision(previous.baseRevision)
+    : null;
   const normalized = {
     known: true,
-    revision: asRevision(revision),
-    conflict: conflict === true
+    revision,
+    conflict: options.conflict === true,
+    ...(options.conflict === true &&
+    (asConflictNoticeId(options.conflictNoticeId) || previous.conflictNoticeId) &&
+    (asRevision(options.conflictRemoteRevision) || previous.conflictRemoteRevision)
+      ? {
+          conflictNoticeId:
+            asConflictNoticeId(options.conflictNoticeId) || previous.conflictNoticeId,
+          conflictRemoteRevision:
+            asRevision(options.conflictRemoteRevision) || previous.conflictRemoteRevision
+        }
+      : {}),
+    ...(baseWorkbook && baseRevision ? { baseRevision, baseWorkbook } : {})
   };
   if (!key || !(storage && typeof storage.setItem === 'function')) return normalized;
   const serialized = JSON.stringify({
     version: 1,
     revision: normalized.revision,
-    conflict: normalized.conflict
+    conflict: normalized.conflict,
+    ...(normalized.conflictNoticeId && normalized.conflictRemoteRevision
+      ? {
+          conflictNoticeId: normalized.conflictNoticeId,
+          conflictRemoteRevision: normalized.conflictRemoteRevision
+        }
+      : {}),
+    ...(baseWorkbook && baseRevision ? { baseRevision, baseWorkbook } : {})
   });
   memoryStorage.setItem(key, serialized);
   try {

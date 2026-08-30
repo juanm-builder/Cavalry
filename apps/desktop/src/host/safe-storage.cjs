@@ -10,14 +10,14 @@ const ENVELOPE_PREFIX = Buffer.from('CAVALRY1', 'ascii');
 const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
-const KEYCHAIN_SERVICE = 'com.local.cavalry.desktop.credentials';
+const KEYCHAIN_SERVICE = 'com.juanmbuilder.cavalry.mac.credentials';
 
 function safeMkdir(directory) {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   try {
     fs.chmodSync(directory, 0o700);
   } catch (_error) {
-    // Windows does not expose POSIX modes; current-user DPAPI still protects the key.
+    // Best effort for development filesystems that do not expose POSIX modes.
   }
 }
 
@@ -58,51 +58,6 @@ function loadMacKey() {
   return key;
 }
 
-function runPowerShell(script, environment) {
-  const result = spawnSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-    {
-      encoding: 'utf8',
-      env: { ...process.env, ...environment },
-      timeout: 15_000,
-      windowsHide: true
-    }
-  );
-  if (result.status !== 0) {
-    throw new Error(String(result.stderr || 'Windows credential protection failed.').trim());
-  }
-  return String(result.stdout || '').trim();
-}
-
-function loadWindowsKey(userDataDir) {
-  const keyPath = path.join(userDataDir, 'credentials-master-key.dpapi');
-  safeMkdir(path.dirname(keyPath));
-  if (!fs.existsSync(keyPath)) {
-    const key = crypto.randomBytes(KEY_BYTES);
-    runPowerShell(
-      [
-        '$raw=[Convert]::FromBase64String($env:CAVALRY_MASTER_KEY);',
-        '$scope=[Security.Cryptography.DataProtectionScope]::CurrentUser;',
-        '$protected=[Security.Cryptography.ProtectedData]::Protect($raw,$null,$scope);',
-        '[IO.File]::WriteAllText($env:CAVALRY_KEY_PATH,[Convert]::ToBase64String($protected));'
-      ].join(' '),
-      { CAVALRY_MASTER_KEY: key.toString('base64'), CAVALRY_KEY_PATH: keyPath }
-    );
-    return key;
-  }
-  const output = runPowerShell(
-    [
-      '$protected=[Convert]::FromBase64String([IO.File]::ReadAllText($env:CAVALRY_KEY_PATH));',
-      '$scope=[Security.Cryptography.DataProtectionScope]::CurrentUser;',
-      '$raw=[Security.Cryptography.ProtectedData]::Unprotect($protected,$null,$scope);',
-      '[Console]::Out.Write([Convert]::ToBase64String($raw));'
-    ].join(' '),
-    { CAVALRY_KEY_PATH: keyPath }
-  );
-  return normalizeKey(output);
-}
-
 function loadDevelopmentKey(userDataDir) {
   const keyPath = path.join(userDataDir, 'credentials-master-key.development');
   safeMkdir(path.dirname(keyPath));
@@ -132,14 +87,11 @@ function createSafeStorage({ userDataDir, isPackaged = false, platform = process
       if (platform === 'darwin') {
         backend = 'keychain';
         key = loadMacKey();
-      } else if (platform === 'win32') {
-        backend = 'dpapi';
-        key = loadWindowsKey(userDataDir);
       } else if (!isPackaged || process.env.CAVALRY_ALLOW_INSECURE_DEV_STORAGE === '1') {
         backend = 'development-file';
         key = loadDevelopmentKey(userDataDir);
       } else {
-        throw new Error('Secure credential storage is not configured for this operating system.');
+        throw new Error('Cavalry credential storage requires macOS Keychain.');
       }
       return key;
     } catch (error) {

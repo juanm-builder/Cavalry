@@ -17,21 +17,19 @@ const binaryPath =
   binaryOptionIndex >= 0 && argumentsList[binaryOptionIndex + 1]
     ? resolve(argumentsList[binaryOptionIndex + 1])
     : '';
-const expectCloudConfigured = argumentsList.includes('--expect-cloud-configured');
+const expectICloudEnabled = argumentsList.includes('--expect-icloud-enabled');
 const recognizedArguments = new Set([
   '--binary',
   ...(binaryPath ? [argumentsList[binaryOptionIndex + 1]] : []),
-  '--expect-cloud-configured'
+  '--expect-icloud-enabled'
 ]);
 
 if (
   (binaryOptionIndex >= 0 && !binaryPath) ||
-  (expectCloudConfigured && !binaryPath) ||
+  (expectICloudEnabled && !binaryPath) ||
   argumentsList.some((argument) => !recognizedArguments.has(argument))
 ) {
-  throw new Error(
-    'Usage: sidecar-smoke.mjs [--binary <packaged-host>] [--expect-cloud-configured]'
-  );
+  throw new Error('Usage: sidecar-smoke.mjs [--binary <packaged-host>] [--expect-icloud-enabled]');
 }
 
 const child = spawn(binaryPath || process.execPath, binaryPath ? [] : [hostPath], {
@@ -43,13 +41,7 @@ const child = spawn(binaryPath || process.execPath, binaryPath ? [] : [hostPath]
     CAVALRY_APP_VERSION: '1.0.26',
     CAVALRY_IS_PACKAGED: binaryPath ? '1' : '0',
     CAVALRY_USER_DATA_DIR: userDataDir,
-    CAVALRY_COMPANION_API_ENABLED: '0',
-    ...(binaryPath
-      ? {}
-      : {
-          CAVALRY_SUPABASE_URL: '',
-          CAVALRY_SUPABASE_PUBLISHABLE_KEY: ''
-        })
+    CAVALRY_COMPANION_API_ENABLED: '0'
   }
 });
 
@@ -115,6 +107,53 @@ lines.on('line', (line) => {
   } catch (_error) {
     return;
   }
+  if (message.type === 'native-request' && expectICloudEnabled) {
+    const request = message.request && typeof message.request === 'object' ? message.request : {};
+    const operation =
+      request.payload && typeof request.payload === 'object'
+        ? String(request.payload.operation || '')
+        : '';
+    if (!(request.id && request.method === 'cloudkit.request')) {
+      finish(
+        new Error(`The desktop host emitted an invalid native request: ${JSON.stringify(message)}`)
+      );
+      return;
+    }
+    if (operation === 'status') {
+      write({
+        type: 'native-response',
+        response: {
+          id: request.id,
+          ok: true,
+          result: {
+            ok: true,
+            account: { status: 'available', userId: 'sidecar-smoke-icloud' },
+            pendingCount: 0,
+            lastSyncAt: '2026-08-29T13:00:00.000Z'
+          }
+        }
+      });
+      return;
+    }
+    if (operation === 'list') {
+      write({
+        type: 'native-response',
+        response: {
+          id: request.id,
+          ok: true,
+          result: {
+            ok: true,
+            workbooks: [],
+            pendingCount: 0,
+            lastSyncAt: '2026-08-29T13:00:00.000Z'
+          }
+        }
+      });
+      return;
+    }
+    finish(new Error(`The desktop host requested an unexpected CloudKit operation: ${operation}`));
+    return;
+  }
   if (message.type === 'ready' && !ready) {
     ready = true;
     write({ type: 'request', id: infoRequestId, channel: 'cavalry-host:get-info', payload: {} });
@@ -127,7 +166,7 @@ lines.on('line', (line) => {
       );
       return;
     }
-    if (expectCloudConfigured) {
+    if (expectICloudEnabled) {
       write({
         type: 'request',
         id: cloudRequestId,
@@ -140,8 +179,8 @@ lines.on('line', (line) => {
   }
   if (message.type === 'response' && message.id === cloudRequestId) {
     const state = message && message.result && message.result.state;
-    if (!message.ok || !state || state.configured !== true) {
-      finish(new Error('The packaged desktop host reports that Cavalry Cloud is not configured.'));
+    if (!message.ok || !state || state.configured !== true || state.status !== 'signed_in') {
+      finish(new Error('The packaged desktop host did not complete its native iCloud handshake.'));
       return;
     }
     finish();

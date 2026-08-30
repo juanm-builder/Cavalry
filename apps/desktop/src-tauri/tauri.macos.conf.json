@@ -1,9 +1,9 @@
 {
   "productName": "Cavalry for Mac",
-  "identifier": "com.local.cavalry.mac",
+  "identifier": "com.juanmbuilder.cavalry.mac",
   "bundle": {
     "macOS": {
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "14.0",
       "entitlements": "entitlements.plist",
       "infoPlist": "Info.plist"
     }

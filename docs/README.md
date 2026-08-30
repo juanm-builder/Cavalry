@@ -16,7 +16,7 @@ This documentation describes the current Tauri desktop architecture and the comp
 
 - [Feature documentation](features/README.md)
 - [Integration documentation](integrations/README.md)
-- [Cavalry Cloud](features/cavalry-cloud.md)
+- [iCloud workbook sync](features/icloud-sync.md)
 - [Advisor acceptance](features/advisor-acceptance.md)
 - [AI companion capabilities](features/ai-companion-capabilities.md)
 - [Companion trust architecture](features/companion-trust-architecture.md)

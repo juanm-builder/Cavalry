@@ -1,6 +1,6 @@
 # Cavalry
 
-Cavalry is a local-first personal finance application for macOS and Windows. The desktop product uses a React renderer inside **Tauri 2**, with a Rust host that owns native windowing, menus, deep links, updates, and a tightly scoped Cavalry host sidecar. The renderer, finance rules, workbook format, and visual design are shared with the previous desktop runtime.
+Cavalry is a local-first personal finance application for iPhone and Mac. The Mac product uses a React renderer inside **Tauri 2**, with a Rust host that owns native windowing, menus, deep links, updates, CloudKit synchronization, and a tightly scoped Cavalry host sidecar. The renderer, finance rules, workbook format, and visual design are shared with the previous desktop runtime.
 
 > Cavalry organizes financial information. It does not provide financial, tax, legal, or investment advice.
 
@@ -31,7 +31,7 @@ The desktop app has three runtime layers:
 
 1. **React renderer** — the existing interface, routes, workbook session, feature controllers, and CSS.
 2. **Rust/Tauri host** — the native window, application menu, single-instance behavior, `cavalry://` deep links, updater, lifecycle, and the bounded IPC bridge.
-3. **Cavalry host sidecar** — existing Node services for workbook persistence and recovery, Cavalry Cloud, Companion API, Advisor streaming, transcription, and llama.cpp process supervision.
+3. **Cavalry host sidecar** — existing Node services for workbook persistence and recovery, private iCloud workbook synchronization, Companion API, Advisor streaming, transcription, and llama.cpp process supervision.
 
 The sidecar is an intentional compatibility boundary, not renderer-accessible Node integration. Only the Rust host can launch it. Requests use a versioned newline-delimited protocol, named channels, input-size limits, request timeouts, and Tauri events.
 
@@ -69,7 +69,6 @@ Native packaging also requires a target-specific sidecar. The package commands p
 ```bash
 npm run package:mac
 npm run package:mac:intel
-npm run package:windows
 ```
 
 Release builds additionally require operating-system signing credentials and Tauri updater keys. See [the release guide](docs/operations/release.md).

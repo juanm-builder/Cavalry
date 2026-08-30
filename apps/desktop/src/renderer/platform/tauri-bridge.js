@@ -57,17 +57,10 @@ async function requestMicrophoneAccess() {
 }
 
 async function openMicrophoneSettings() {
-  const platformHint = String(
-    globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || ''
-  ).toLowerCase();
-  const macUrls = [
+  const candidates = [
     'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone',
     'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
   ];
-  const windowsUrls = ['ms-settings:privacy-microphone'];
-  const candidates = platformHint.includes('win')
-    ? [...windowsUrls, ...macUrls]
-    : [...macUrls, ...windowsUrls];
 
   for (const url of candidates) {
     try {
@@ -140,18 +133,14 @@ export function createTauriBridge() {
     },
     cloud: {
       getState: () => invoke('cavalry-cloud:get-state'),
-      linkAppleIdentity: () => invoke('cavalry-cloud:link-apple'),
-      signInWithApple: () => invoke('cavalry-cloud:sign-in-apple'),
-      signInWithGoogle: () => invoke('cavalry-cloud:sign-in-google'),
-      signOut: () => invoke('cavalry-cloud:sign-out'),
-      updateProfile: (payload) => invoke('cavalry-cloud:update-profile', payload),
       listWorkbooks: () => invoke('cavalry-cloud:list-workbooks'),
       uploadWorkbook: (payload) => invoke('cavalry-cloud:upload-workbook', payload),
       downloadWorkbook: (payload) => invoke('cavalry-cloud:download-workbook', payload),
+      downloadConflictPackage: (payload) =>
+        invoke('cavalry-cloud:download-conflict-package', payload),
       deleteWorkbook: (payload) => invoke('cavalry-cloud:delete-workbook', payload),
-      listFeedbackReports: (payload) => invoke('cavalry-cloud:list-feedback-reports', payload),
-      submitFeedbackReport: (payload) => invoke('cavalry-cloud:submit-feedback-report', payload),
-      getFeedbackAttachment: (payload) => invoke('cavalry-cloud:get-feedback-attachment', payload),
+      publishConflictNotice: (payload) => invoke('cavalry-cloud:publish-conflict-notice', payload),
+      clearConflictNotice: (payload) => invoke('cavalry-cloud:clear-conflict-notice', payload),
       onStateChanged: (callback) => subscribe('cavalry-cloud:state-changed', callback)
     },
     updates

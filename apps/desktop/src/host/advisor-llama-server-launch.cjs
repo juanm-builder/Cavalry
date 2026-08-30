@@ -49,8 +49,7 @@ function createAdvisorLlamaServerLaunchSupport({
 
   async function findCommandOnPath(commandName) {
     try {
-      const locator = process.platform === 'win32' ? 'where.exe' : 'which';
-      const result = await execFileAsync(locator, [commandName], { timeout: 10000 });
+      const result = await execFileAsync('which', [commandName], { timeout: 10000 });
       const firstLine = String(result.stdout || '')
         .split(/\r?\n/)
         .map((line) => line.trim())
@@ -73,7 +72,7 @@ function createAdvisorLlamaServerLaunchSupport({
   }
 
   function getCommonBinaryPaths() {
-    const executableName = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+    const executableName = 'llama-server';
     const homePath =
       app && typeof app.getPath === 'function' ? String(app.getPath('home') || '') : '';
     const userCandidates = homePath
@@ -82,20 +81,11 @@ function createAdvisorLlamaServerLaunchSupport({
           path.join(homePath, 'bin', executableName)
         ]
       : [];
-    if (process.platform === 'win32') return userCandidates;
-    if (process.platform === 'darwin') {
-      return [
-        ...userCandidates,
-        '/opt/homebrew/bin/llama-server',
-        '/usr/local/bin/llama-server',
-        '/opt/local/bin/llama-server'
-      ];
-    }
     return [
       ...userCandidates,
+      '/opt/homebrew/bin/llama-server',
       '/usr/local/bin/llama-server',
-      '/usr/bin/llama-server',
-      '/snap/bin/llama-server'
+      '/opt/local/bin/llama-server'
     ];
   }
 
@@ -141,8 +131,7 @@ function createAdvisorLlamaServerLaunchSupport({
   async function resolveBinary() {
     const candidates = [];
     if (process.env.LLAMA_SERVER_BIN) candidates.push(process.env.LLAMA_SERVER_BIN);
-    const commandName = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-    const fromPath = await findCommandOnPath(commandName);
+    const fromPath = await findCommandOnPath('llama-server');
     if (fromPath) candidates.push(fromPath);
     candidates.push(...getCommonBinaryPaths());
 
