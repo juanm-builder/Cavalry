@@ -106,19 +106,55 @@ jobs:
           npm run release:config
           echo "$GITHUB_WORKSPACE/apps/desktop/scripts/macos-codesign-shim" >> "$GITHUB_PATH"
 
+      - name: Prepare Apple release credentials
+        shell: bash
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_API_KEY_P8_BASE64:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; then
+            echo "::error::The App Store Connect API key, key ID, and issuer are required for provisioning and notarization."
+            exit 1
+          fi
+          if [ -z "${MAC_CSC_LINK:-}" ] || [ -z "${MAC_CSC_KEY_PASSWORD:-}" ]; then
+            echo "::error::The Developer ID certificate and its password are required."
+            exit 1
+          fi
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | tr -d '\r\n ' | openssl base64 -d -A -out "$key_path"
+          chmod 600 "$key_path"
+
+          certificate_bundle="$RUNNER_TEMP/CavalryDeveloperID.p12"
+          certificate_pem="$RUNNER_TEMP/CavalryDeveloperID.pem"
+          printf '%s' "$MAC_CSC_LINK" | tr -d '\r\n ' | openssl base64 -d -A -out "$certificate_bundle"
+          chmod 600 "$certificate_bundle"
+          openssl pkcs12 -in "$certificate_bundle" -clcerts -nokeys \
+            -passin env:MAC_CSC_KEY_PASSWORD -out "$certificate_pem"
+          certificate_serial="$(openssl x509 -in "$certificate_pem" -noout -serial | sed -E 's/^serial=//I')"
+          if [[ ! "$certificate_serial" =~ ^[0-9A-Fa-f]+$ ]]; then
+            echo "::error::Could not read the Developer ID certificate serial number."
+            exit 1
+          fi
+
+          # Tauri reads APPLE_API_KEY as the key *ID* and APPLE_API_KEY_PATH as the .p8 path.
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_CERTIFICATE_SERIAL=$certificate_serial" >> "$GITHUB_ENV"
+
       - name: Prepare CloudKit provisioning profile
         shell: bash
         env:
-          MAC_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAC_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_SIGNING_CERTIFICATE_SERIAL: ${{ env.APPLE_SIGNING_CERTIFICATE_SERIAL }}
         run: |
           set -euo pipefail
-          if [ -z "${MAC_PROVISIONING_PROFILE_BASE64:-}" ]; then
-            echo "::error::MAC_PROVISIONING_PROFILE_BASE64 must contain the Developer ID profile for com.juanmbuilder.cavalry.mac."
-            exit 1
-          fi
           profile_path="apps/desktop/src-tauri/Cavalry.provisionprofile"
-          printf '%s' "$MAC_PROVISIONING_PROFILE_BASE64" | tr -d '\r\n ' | openssl base64 -d -A -out "$profile_path"
-          chmod 600 "$profile_path"
+          node tools/release/prepare-mac-profile.mjs --output "$profile_path"
           profile_plist="$RUNNER_TEMP/cavalry-provisioning-profile.plist"
           security cms -D -i "$profile_path" > "$profile_plist"
           application_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
@@ -126,25 +162,14 @@ jobs:
             echo "::error::The provisioning profile targets $application_id instead of com.juanmbuilder.cavalry.mac."
             exit 1
           fi
-          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-identifiers' "$profile_plist" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
-          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Fq 'CloudKit'
-
-      - name: Prepare Apple API key
-        shell: bash
-        env:
-          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "${APPLE_API_KEY_P8_BASE64:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ]; then
-            echo "::error::APPLE_API_KEY_P8_BASE64 and APPLE_API_KEY_ID must be set; notarization cannot run without them."
+          if /usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$profile_plist" 2>/dev/null | grep -Fqx 'true'; then
+            echo "::error::A development provisioning profile cannot be used for a Developer ID release."
             exit 1
           fi
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_P8_BASE64" | tr -d '\r\n ' | openssl base64 -d -A -out "$key_path"
-          chmod 600 "$key_path"
-          # Tauri reads APPLE_API_KEY as the key *ID* and APPLE_API_KEY_PATH as the .p8 path.
-          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+          /usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" | grep -Fqx 'true'
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-identifiers' "$profile_plist" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-container-environment' "$profile_plist" | grep -Fq 'Production'
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Fq 'CloudKit'
 
       - name: Build, sign, and upload Tauri release
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0

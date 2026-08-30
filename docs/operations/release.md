@@ -27,10 +27,12 @@ Production builds require:
 
 - Tauri updater public key in `CAVALRY_UPDATER_PUBLIC_KEY`;
 - updater private key in `TAURI_SIGNING_PRIVATE_KEY` and optional password;
-- the base64-encoded Developer ID provisioning profile for `com.juanmbuilder.cavalry.mac` in
-  `MAC_PROVISIONING_PROFILE_BASE64`; it must authorize CloudKit and
-  `iCloud.com.juanmbuilder.cavalry`;
-- Apple Developer ID certificate in `MAC_CSC_LINK`, its password in `MAC_CSC_KEY_PASSWORD`, and notarization API credentials in `APPLE_API_KEY_P8_BASE64`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`.
+- Apple Developer ID certificate in `MAC_CSC_LINK` and its password in `MAC_CSC_KEY_PASSWORD`;
+- App Store Connect credentials with provisioning and notarization access in
+  `APPLE_API_KEY_P8_BASE64`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`. The workflow reuses or
+  creates the matching `MAC_APP_DIRECT` profile for `com.juanmbuilder.cavalry.mac`, verifies its
+  production CloudKit authorization, and embeds it without storing the profile as a repository
+  secret.
 
 The production release workflow publishes only the Apple Silicon and Intel Mac applications.
 
@@ -46,8 +48,10 @@ The production release workflow publishes only the Apple Silicon and Intel Mac a
    - Intel on `macos-15-intel`, whose host must report `x86_64`.
 5. Build the target-specific `cavalry-host-<triple>` sidecar on its matching native host. There is no
    cross-architecture skip path.
-6. Decode and validate the CloudKit provisioning profile, then generate the updater release overlay
-   with production CloudKit/push entitlements and `embedded.provisionprofile`.
+6. Match the Developer ID certificate by serial number, fetch or create its direct-distribution
+   provisioning profile through Apple's API, validate its production CloudKit authorization, then
+   generate the updater release overlay with production entitlements and
+   `embedded.provisionprofile`.
 7. Run the pinned Tauri CLI build for the target.
 8. The repository's codesign shim applies the production app entitlements to Cavalry and the
    dedicated JIT-only entitlements to `cavalry-host`; verify that the helper has no CloudKit or push
