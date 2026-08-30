@@ -60,13 +60,13 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",
-    "@testing-library/user-event": "^14.0.0",
+    "@testing-library/user-event": "^14.6.6",
     "@vitejs/plugin-react": "^5.2.0",
     "jsdom": "^26.0.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "vite": "7.3.6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22"
