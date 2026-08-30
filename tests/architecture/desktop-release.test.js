@@ -293,6 +293,7 @@ describe('Tauri desktop release tooling', () => {
     expect(workflow).toContain("grep -Eq 'CloudKit|^[[:space:]]*\\*[[:space:]]*$'");
     expect(workflow).toContain('embedded.provisionprofile');
     expect(workflow).toContain('scripts/macos-codesign-shim');
+    expect(workflow).toContain('/usr/bin/codesign -d --entitlements :- "$sidecar"');
     expect(workflow).toContain(
       'The host sidecar must not carry the app-only CloudKit entitlement.'
     );

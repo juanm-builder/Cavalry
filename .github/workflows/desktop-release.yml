@@ -275,12 +275,12 @@ jobs:
             exit 1
           fi
           signed_entitlements="$RUNNER_TEMP/cavalry-signed-entitlements.plist"
-          codesign -d --entitlements :- "$app_path" > "$signed_entitlements"
+          /usr/bin/codesign -d --entitlements :- "$app_path" > "$signed_entitlements"
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-environment' "$signed_entitlements")" = "Production"
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.aps-environment' "$signed_entitlements")" = "production"
           /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-identifiers' "$signed_entitlements" | grep -Fq 'iCloud.com.juanmbuilder.cavalry'
           sidecar_entitlements="$RUNNER_TEMP/cavalry-sidecar-entitlements.plist"
-          codesign -d --entitlements :- "$sidecar" > "$sidecar_entitlements"
+          /usr/bin/codesign -d --entitlements :- "$sidecar" > "$sidecar_entitlements"
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' "$sidecar_entitlements")" = "true"
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-unsigned-executable-memory' "$sidecar_entitlements")" = "true"
           if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.icloud-container-identifiers' "$sidecar_entitlements" >/dev/null 2>&1; then
@@ -288,12 +288,12 @@ jobs:
             exit 1
           fi
           echo "== $app_path =="
-          codesign --verify --deep --strict --verbose=2 "$app_path"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path"
           xcrun stapler validate "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
           for dmg in "$bundle_dir"/dmg/*.dmg; do
             echo "== $dmg =="
-            codesign --verify --strict --verbose=2 "$dmg"
+            /usr/bin/codesign --verify --strict --verbose=2 "$dmg"
             xcrun stapler validate "$dmg"
           done
 

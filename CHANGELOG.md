@@ -2,6 +2,21 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.3 - 2026-08-30
+
+### Fixed
+
+- Fixed post-signing verification so Cavalry's sidecar signing wrapper applies its dedicated JIT
+  entitlements only during signing, then leaves read-only signature inspection to Apple's system
+  `codesign` tool. This preserves the strict sidecar entitlement check without redirecting its
+  output.
+
+### Compatibility and release notes
+
+- This fix-forward release supersedes the unpublished `v2.2.2` build attempt. The signed Apple
+  Silicon app, host-sidecar execution, and Apple notarization had already passed; this change fixes
+  only the subsequent verification command.
+
 ## 2.2.2 - 2026-08-30
 
 ### Fixed

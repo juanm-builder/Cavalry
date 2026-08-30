@@ -3,8 +3,16 @@ set -euo pipefail
 
 arguments=("$@")
 target="${arguments[${#arguments[@]} - 1]:-}"
+is_signing=0
 
-if [[ "$(basename "$target")" == "cavalry-host" ]]; then
+for argument in "${arguments[@]}"; do
+  if [[ "$argument" == "--sign" || "$argument" == "-s" ]]; then
+    is_signing=1
+    break
+  fi
+done
+
+if [[ "$(basename "$target")" == "cavalry-host" && "$is_signing" -eq 1 ]]; then
   script_directory="$(cd "$(dirname "$0")" && pwd)"
   helper_entitlements="$script_directory/../../src-tauri/entitlements.sidecar.plist"
   replaced_entitlements=0
