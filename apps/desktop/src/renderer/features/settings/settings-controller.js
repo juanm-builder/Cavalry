@@ -306,21 +306,23 @@ export function createSettingsController(dependencies = {}) {
         }
 
         const cloudOperations = {
-          'sign-in-with-google': 'sign-in',
-          'sign-in-with-apple': 'sign-in-apple',
-          'link-apple-cloud': 'link-apple',
-          'sign-out-cloud': 'sign-out',
-          'update-cloud-profile': 'profile-update',
           'refresh-cloud-workbooks': 'refresh',
           'upload-current-workbook': 'upload',
+          'keep-local-cloud-workbook': 'keep-local',
+          'reconcile-cloud-workbook': 'reconcile',
           'open-cloud-workbook': 'open',
           'delete-cloud-workbook': 'delete'
         };
         if (cloudOperations[type]) {
-          const cloudPayload =
-            cloudOperations[type] === 'profile-update'
-              ? { name: asString(payload.name) }
-              : { workbookId: asString(payload.workbookId) };
+          const cloudPayload = {
+            workbookId: asString(payload.workbookId),
+            ...(type === 'reconcile-cloud-workbook'
+              ? {
+                  choices: Array.isArray(payload.choices) ? payload.choices : [],
+                  conflictNoticeId: asString(payload.conflictNoticeId)
+                }
+              : {})
+          };
           return createIntentResult(workbook, cloudIntent, cloudOperations[type], cloudPayload);
         }
 

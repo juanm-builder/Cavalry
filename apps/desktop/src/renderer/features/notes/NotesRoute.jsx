@@ -1,11 +1,16 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 
 import { submitNotesBatchCommand } from './notes-controller.js';
 import { parseNotesWithAi } from './notes-ai-parser.js';
-import { isCreditCardAccount, paymentLabel, resolveNotesEntry } from './notes-parser.js';
+import {
+  isCreditCardAccount,
+  paymentLabel,
+  resolveNotesEntry,
+  validateNotesEntry
+} from './notes-parser.js';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -54,7 +59,7 @@ function accountTypeLabel(account) {
   return method === account.name ? account.name : `${account.name} · ${method}`;
 }
 
-function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave }) {
+function ReviewEditor({ entry, workbook, onCancel, onChange, onSave }) {
   const categories = asArray(workbook && workbook.categories).filter(
     (category) =>
       category &&
@@ -92,6 +97,15 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
     asString(selectedAccount && selectedAccount.currency).toUpperCase() || entry.currency;
   const needsFxRate =
     entry.currency !== workbookCurrency || selectedAccountCurrency !== entry.currency;
+  const fieldAccessibility = (field) => {
+    const describedBy = asArray(entry.issues)
+      .map((item, index) => (item.field === field ? `${entry.id}-issue-${index}` : ''))
+      .filter(Boolean)
+      .join(' ');
+    return describedBy
+      ? { 'aria-describedby': describedBy, 'aria-invalid': true }
+      : { 'aria-invalid': false };
+  };
 
   return (
     <div className="notes-review-editor">
@@ -99,6 +113,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field notes-editor-description">
           <label htmlFor={`${entry.id}-description`}>Description</label>
           <input
+            {...fieldAccessibility('description')}
             id={`${entry.id}-description`}
             onChange={(event) => onChange('description', event.target.value)}
             type="text"
@@ -108,6 +123,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field">
           <label htmlFor={`${entry.id}-amount`}>Amount</label>
           <input
+            {...fieldAccessibility('amount')}
             id={`${entry.id}-amount`}
             inputMode="decimal"
             min="0"
@@ -119,6 +135,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field">
           <label htmlFor={`${entry.id}-currency`}>Currency</label>
           <CavalrySelect
+            {...fieldAccessibility('currency')}
             aria-label="Currency"
             id={`${entry.id}-currency`}
             onChange={(event) => onChange('currency', event.target.value)}
@@ -130,6 +147,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field">
           <label htmlFor={`${entry.id}-category`}>Category</label>
           <CavalrySelect
+            {...fieldAccessibility('categoryId')}
             aria-label="Category"
             id={`${entry.id}-category`}
             leadingIcon="category"
@@ -147,6 +165,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field">
           <label htmlFor={`${entry.id}-account`}>Payment account</label>
           <CavalrySelect
+            {...fieldAccessibility('primaryAccountId')}
             aria-label="Payment account"
             id={`${entry.id}-account`}
             leadingIcon="account_balance_wallet"
@@ -163,6 +182,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
         <div className="field">
           <label htmlFor={`${entry.id}-date`}>Date</label>
           <input
+            {...fieldAccessibility('date')}
             id={`${entry.id}-date`}
             onChange={(event) => onChange('date', event.target.value)}
             type="date"
@@ -175,6 +195,7 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
               {entry.currency} to {workbookCurrency} rate
             </label>
             <input
+              {...fieldAccessibility('fxRateToBase')}
               id={`${entry.id}-fx-rate`}
               inputMode="decimal"
               min="0"
@@ -188,33 +209,20 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
 
       {entry.issues.length ? (
         <ul aria-label={`Line ${entry.lineNumber} issues`} className="notes-editor-issues">
-          {entry.issues.map((item) => (
-            <li key={`${item.code}:${item.field}`}>{item.message}</li>
+          {entry.issues.map((item, index) => (
+            <li id={`${entry.id}-issue-${index}`} key={`${item.code}:${item.field}`}>
+              {item.message}
+            </li>
           ))}
         </ul>
       ) : null}
-      {entry.issues.some((item) => item.code === 'possible_duplicate_transaction') ? (
-        <label className="notes-duplicate-approval">
-          <input
-            checked={entry.allowDuplicate === true}
-            onChange={(event) => onChange('allowDuplicate', event.target.checked)}
-            type="checkbox"
-          />
-          Save it even though it looks like a duplicate
-        </label>
-      ) : null}
-
       <div className="notes-editor-actions">
-        <button className="btn notes-remove-button" onClick={onRemove} type="button">
-          <Icon name="delete" />
-          Remove
-        </button>
         <span />
         <button className="btn" onClick={onCancel} type="button">
           Cancel
         </button>
         <button className="btn btn-primary" onClick={onSave} type="button">
-          Done
+          Save changes
         </button>
       </div>
     </div>
@@ -223,21 +231,21 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onRemove, onSave })
 
 function ReviewEntry({
   entry,
+  position,
   isEditing,
   editingEntry,
   workbook,
   onEdit,
   onEditChange,
   onEditCancel,
-  onEditSave,
-  onRemove
+  onEditSave
 }) {
   const amountTone = entry.template === 'income_received' ? 'good' : 'bad';
   const amountDirection = amountTone === 'good' ? 'Income' : 'Expense';
   const amountSign = amountTone === 'good' ? '+' : '−';
   return (
     <article
-      className={`notes-review-entry${entry.issues.length ? ' needs-review' : ''}${isEditing ? ' is-editing' : ''}`}
+      className={`notes-review-entry${entry.transactionId ? '' : ' needs-review'}${isEditing ? ' is-editing' : ''}`}
     >
       <div className="notes-review-summary">
         <span
@@ -260,20 +268,11 @@ function ReviewEntry({
           {formatAmount(Math.abs(Number(entry.amount) || 0), entry.currency)}
         </strong>
         <span className="notes-payment-pill">{entry.paymentLabel}</span>
-        {entry.issues.length ? (
-          <span className="notes-review-badge">
-            <Icon name="error" />
-            Needs review
-          </span>
-        ) : (
-          <span aria-label="Ready" className="notes-ready-mark" title="Ready">
-            <Icon name="check_circle" />
-          </span>
-        )}
         <button
           aria-expanded={isEditing}
-          aria-label={`Edit line ${entry.lineNumber}`}
+          aria-label={`Edit transaction ${position}: ${entry.description}`}
           className="notes-edit-button"
+          id={`notes-edit-${entry.id}`}
           onClick={() => onEdit(entry)}
           type="button"
         >
@@ -285,7 +284,6 @@ function ReviewEntry({
           entry={editingEntry}
           onCancel={onEditCancel}
           onChange={onEditChange}
-          onRemove={() => onRemove(entry.id)}
           onSave={onEditSave}
           workbook={workbook}
         />
@@ -314,35 +312,179 @@ function persistText(workbookId, value) {
   }
 }
 
+function entriesStorageKey(workbookId) {
+  return `cavalry.notes.entries.${workbookId || 'workbook'}`;
+}
+
+function transactionFingerprint(transaction) {
+  if (!transaction) return '';
+  return JSON.stringify(transaction);
+}
+
+function transactionPrimaryAccountId(workbook, transaction) {
+  const accountsById = new Map(
+    asArray(workbook && workbook.accounts).map((account) => [asString(account?.id), account])
+  );
+  const template = asString(transaction?.template);
+  const direction = template === 'income_received' ? 'debit' : 'credit';
+  const group = template === 'expense_charged' ? 'liability' : 'asset';
+  const line = asArray(transaction?.lines).find((candidate) => {
+    const account = accountsById.get(asString(candidate?.accountId));
+    return candidate?.direction === direction && account?.group === group;
+  });
+  return asString(line?.accountId);
+}
+
+function entryFromTransaction(workbook, transaction, priorEntry = {}) {
+  const entry = {
+    ...priorEntry,
+    id: asString(priorEntry.id) || `notes-transaction-${asString(transaction.id)}`,
+    lineNumber: Number(priorEntry.lineNumber) || 1,
+    sourceText: asString(priorEntry.sourceText) || asString(transaction.description),
+    amount: Number(transaction.amount) || 0,
+    currency:
+      asString(
+        transaction.originalCurrency || transaction.currency || workbook.currency
+      ).toUpperCase() || 'PHP',
+    fxRateToBase: Number(transaction.fxRateToBase) || 0,
+    date: asString(transaction.date),
+    description: asString(transaction.description),
+    categoryId: asString(transaction.categoryId),
+    primaryAccountId: transactionPrimaryAccountId(workbook, transaction),
+    template: asString(transaction.template),
+    counterpartyId: asString(transaction.counterpartyId),
+    transactionNote: asString(transaction.note),
+    transactionId: asString(transaction.id),
+    transactionFingerprint: transactionFingerprint(transaction),
+    issues: []
+  };
+  return { ...resolveNotesEntry(workbook, entry), issues: [] };
+}
+
+function reconcileEntries(workbook, entries) {
+  const transactionsById = new Map(
+    asArray(workbook && workbook.transactions).map((transaction) => [
+      asString(transaction?.id),
+      transaction
+    ])
+  );
+  return asArray(entries)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object' || !asString(entry.id)) return null;
+      const transactionId = asString(entry.transactionId);
+      if (transactionId) {
+        const transaction = transactionsById.get(transactionId);
+        return transaction ? entryFromTransaction(workbook, transaction, entry) : null;
+      }
+      const resolved = resolveNotesEntry(workbook, entry);
+      return { ...resolved, transactionId: '', issues: validateNotesEntry(workbook, resolved) };
+    })
+    .filter(Boolean);
+}
+
+function initialEntries(workbook) {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(entriesStorageKey(workbook.id)) || '[]');
+    return reconcileEntries(workbook, parsed);
+  } catch (_error) {
+    return [];
+  }
+}
+
+function persistEntries(workbookId, entries) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const key = entriesStorageKey(workbookId);
+  try {
+    const listedEntries = asArray(entries);
+    if (listedEntries.length) window.localStorage.setItem(key, JSON.stringify(listedEntries));
+    else window.localStorage.removeItem(key);
+  } catch (_error) {
+    // The current list remains available for this session when storage is unavailable.
+  }
+}
+
 export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, onCommandResult }) {
+  const workbookId = asString(workbook.id) || 'workbook';
   const [text, setText] = useState(() => initialText(workbook.id));
-  const [entries, setEntries] = useState([]);
+  const [entries, setEntries] = useState(() => initialEntries(workbook));
   const [editingEntry, setEditingEntry] = useState(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [canConfigureAi, setCanConfigureAi] = useState(false);
+  const [parseMode, setParseMode] = useState('local');
   const processRequest = useRef(0);
+  const entriesWorkbookId = useRef(workbookId);
+  const focusTransactionsAfterUpdate = useRef(false);
+  const latestWorkbook = useRef(workbook);
+  const mounted = useRef(true);
+  const latestTransactions = useRef(workbook.transactions);
+  const transactionsHeadingRef = useRef(null);
   const lines = useMemo(() => text.split(/\r?\n/).filter((line) => line.trim()).length, [text]);
-  const unresolvedCount = entries.filter((entry) => entry.issues.length).length;
-  const readyToSave = entries.length > 0 && unresolvedCount === 0 && !editingEntry && !processing;
+  const unresolvedCount = entries.filter((entry) => !entry.transactionId).length;
+
+  useLayoutEffect(() => {
+    latestWorkbook.current = workbook;
+  }, [workbook]);
+
+  useEffect(() => {
+    if (entriesWorkbookId.current !== workbookId) {
+      processRequest.current += 1;
+      entriesWorkbookId.current = workbookId;
+      setText(initialText(workbookId));
+      setEntries(initialEntries(workbook));
+      setEditingEntry(null);
+      setNotice('');
+      setError('');
+      setProcessing(false);
+      return;
+    }
+    persistEntries(workbookId, entries);
+  }, [entries, workbook, workbookId]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      processRequest.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (latestTransactions.current === workbook.transactions) return;
+    latestTransactions.current = workbook.transactions;
+    setEntries((current) => reconcileEntries(workbook, current));
+  }, [workbook, workbook.transactions]);
+
+  useEffect(() => {
+    if (!focusTransactionsAfterUpdate.current || !entries.length) return;
+    focusTransactionsAfterUpdate.current = false;
+    transactionsHeadingRef.current?.focus();
+  }, [entries]);
+
+  const focusEditButton = (entryId) => {
+    if (!entryId || typeof window === 'undefined') return;
+    const focus = () => document.getElementById(`notes-edit-${entryId}`)?.focus();
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(focus);
+    else window.setTimeout(focus, 0);
+  };
 
   const updateText = (value) => {
     processRequest.current += 1;
     setText(value);
     persistText(workbook.id, value);
-    setEntries([]);
-    setEditingEntry(null);
     setNotice('');
     setError('');
     setCanConfigureAi(false);
+    setParseMode('local');
   };
   const processTransactions = async () => {
     if (!lines || processing) return;
+    const workbookAtStart = workbook;
     const request = processRequest.current + 1;
     processRequest.current = request;
     setProcessing(true);
-    setEntries([]);
     setEditingEntry(null);
     setNotice('');
     setError('');
@@ -353,16 +495,93 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
         createId: services.createId,
         today: services.today || services.defaultDate
       });
-      if (processRequest.current !== request) return;
-      setEntries(result.entries);
-      setNotice(result.notice || '');
+      if (
+        !mounted.current ||
+        processRequest.current !== request ||
+        latestWorkbook.current !== workbookAtStart
+      ) {
+        return;
+      }
+      if (!result.entries.length) {
+        setError('Enter at least one transaction to add.');
+        return;
+      }
+
+      const batchId =
+        typeof services.createId === 'function'
+          ? services.createId('notes_batch')
+          : `notes-batch-${Date.now().toString(36)}-${request}`;
+      const parsedEntries = result.entries.map((entry) => ({
+        ...entry,
+        id: `${batchId}-${entry.lineNumber}`,
+        issues: validateNotesEntry(workbook, entry),
+        transactionId: ''
+      }));
+      const savableEntries = parsedEntries.filter((entry) => !entry.issues.length);
+      let listedEntries = parsedEntries;
+      let savedCount = 0;
+
+      if (savableEntries.length) {
+        const commandResult = submitNotesBatchCommand(workbook, savableEntries, services);
+        if (commandResult.ok) {
+          const savedByEntryId = new Map(
+            savableEntries.map((entry, index) => [entry.id, commandResult.transactions[index]])
+          );
+          listedEntries = parsedEntries.map((entry) => {
+            const transaction = savedByEntryId.get(entry.id);
+            return transaction
+              ? {
+                  ...entry,
+                  transactionId: transaction.id,
+                  transactionFingerprint: transactionFingerprint(transaction),
+                  issues: []
+                }
+              : entry;
+          });
+          savedCount = commandResult.count || commandResult.transactions.length;
+          onCommandResult?.(commandResult);
+        } else {
+          const saveIssue = commandResult.errors?.[0];
+          listedEntries = parsedEntries.map((entry) =>
+            savableEntries.some((candidate) => candidate.id === entry.id)
+              ? {
+                  ...entry,
+                  issues: [
+                    {
+                      code: saveIssue?.code || 'notes.transaction_not_saved',
+                      field: 'transaction',
+                      message: saveIssue?.message || 'This transaction could not be added.'
+                    }
+                  ]
+                }
+              : entry
+          );
+          setError(saveIssue?.message || 'The transactions could not be added.');
+        }
+      }
+
+      const needsDetailsCount = listedEntries.length - savedCount;
+      const summary = [
+        savedCount ? `${savedCount} transaction${savedCount === 1 ? '' : 's'} added.` : '',
+        needsDetailsCount
+          ? `${needsDetailsCount} ${needsDetailsCount === 1 ? 'needs' : 'need'} details; use Edit to finish.`
+          : '',
+        result.notice || ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+      focusTransactionsAfterUpdate.current = true;
+      setEntries((current) => [...current, ...listedEntries]);
+      setText('');
+      persistText(workbook.id, '');
+      setNotice(summary);
       setCanConfigureAi(result.canConfigure === true);
-      setError(result.entries.length ? '' : 'Enter at least one transaction to process.');
+      setParseMode(result.mode || 'local');
     } catch (_error) {
-      if (processRequest.current !== request) return;
+      if (!mounted.current || processRequest.current !== request) return;
       setError('Cavalry could not process these notes. Try again.');
     } finally {
-      if (processRequest.current === request) setProcessing(false);
+      if (mounted.current && processRequest.current === request) setProcessing(false);
     }
   };
   const clearNotes = () => {
@@ -375,64 +594,67 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
   };
   const saveEdit = () => {
     if (!editingEntry) return;
-    const resolved = resolveNotesEntry(workbook, editingEntry, { manuallyReviewed: true });
-    const duplicateIssue = editingEntry.issues.find(
-      (item) => item.code === 'possible_duplicate_transaction'
+    const existingTransaction = asArray(workbook.transactions).find(
+      (transaction) => asString(transaction?.id) === asString(editingEntry.transactionId)
     );
-    if (duplicateIssue && editingEntry.allowDuplicate !== true) {
-      resolved.issues = [...resolved.issues, duplicateIssue];
-    }
-    setEntries((current) => current.map((entry) => (entry.id === resolved.id ? resolved : entry)));
-    if (resolved.issues.length) {
-      setEditingEntry(resolved);
+    if (editingEntry.transactionId && !existingTransaction) {
+      setNotice('');
+      setError('This transaction no longer exists. Its saved Notes row was removed.');
+      setEntries((current) => current.filter((entry) => entry.id !== editingEntry.id));
+      setEditingEntry(null);
       return;
     }
-    setEditingEntry(null);
-    setNotice('');
-  };
-  const removeEntry = (entryId) => {
-    setEntries((current) => current.filter((entry) => entry.id !== entryId));
-    setEditingEntry(null);
-    setNotice('Transaction removed from this batch.');
-  };
-  const saveTransactions = () => {
-    if (!readyToSave) return;
-    const result = submitNotesBatchCommand(workbook, entries, services);
+    if (
+      existingTransaction &&
+      editingEntry.transactionFingerprint &&
+      transactionFingerprint(existingTransaction) !== editingEntry.transactionFingerprint
+    ) {
+      setNotice('');
+      setError(
+        'This transaction changed elsewhere. Cancel and reopen Edit to use its latest details.'
+      );
+      setEntries((current) => reconcileEntries(workbook, current));
+      return;
+    }
+    const resolved = resolveNotesEntry(workbook, editingEntry, { manuallyReviewed: true });
+    resolved.issues = validateNotesEntry(workbook, resolved);
+    if (resolved.issues.length) {
+      setEditingEntry(resolved);
+      setNotice('');
+      setError('Fix the highlighted details before saving.');
+      return;
+    }
+    const result = submitNotesBatchCommand(workbook, [resolved], services);
     if (!result.ok) {
       const saveIssue = result.errors?.[0];
-      if (
-        saveIssue?.code === 'possible_duplicate_transaction' &&
-        Number(saveIssue.lineNumber) > 0
-      ) {
-        setEntries((current) =>
-          current.map((entry) =>
-            entry.lineNumber === Number(saveIssue.lineNumber)
-              ? {
-                  ...entry,
-                  issues: [
-                    {
-                      code: saveIssue.code,
-                      field: 'allowDuplicate',
-                      message: saveIssue.message || 'This may already be in your records.'
-                    }
-                  ]
-                }
-              : entry
-          )
-        );
-      }
-      setError(saveIssue?.message || 'The transactions could not be saved.');
+      const failed = {
+        ...resolved,
+        issues: [
+          {
+            code: saveIssue?.code || 'notes.transaction_not_saved',
+            field: 'transaction',
+            message: saveIssue?.message || 'This transaction could not be saved.'
+          }
+        ]
+      };
+      setEditingEntry(failed);
+      setError(saveIssue?.message || 'The transaction could not be saved.');
       return;
     }
     onCommandResult?.(result);
-    const savedCount = result.count || entries.length;
-    setText('');
-    persistText(workbook.id, '');
-    setEntries([]);
+    const transaction = result.transactions[0];
+    const saved = {
+      ...resolved,
+      transactionId: transaction?.id || resolved.transactionId,
+      transactionFingerprint: transactionFingerprint(transaction),
+      issues: []
+    };
+    setEntries((current) => current.map((entry) => (entry.id === saved.id ? saved : entry)));
     setEditingEntry(null);
+    focusEditButton(saved.id);
     setError('');
     setCanConfigureAi(false);
-    setNotice(`${savedCount} transaction${savedCount === 1 ? '' : 's'} saved to your records.`);
+    setNotice(resolved.transactionId ? 'Transaction updated.' : 'Transaction added.');
   };
 
   return (
@@ -442,23 +664,27 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           <h1>Notes</h1>
         </div>
         <button
+          aria-label="Clear the Notes draft and list; saved transactions stay in the ledger"
           className="btn notes-clear-button"
           disabled={processing || (!text && !entries.length)}
           onClick={clearNotes}
+          title="Clear the draft and this list. Saved transactions stay in the ledger."
           type="button"
         >
           <Icon name="delete" />
-          Clear notes
+          Clear view
         </button>
       </header>
 
       {notice || error ? (
         <div
-          aria-live="polite"
+          aria-live={error ? undefined : 'polite'}
           className={`notes-route-notice${error ? ' is-error' : ''}`}
           role={error ? 'alert' : 'status'}
         >
-          <Icon name={error ? 'error' : notice.includes('saved') ? 'check_circle' : 'info'} />
+          <Icon
+            name={error ? 'error' : /\b(?:added|updated)\b/i.test(notice) ? 'check_circle' : 'info'}
+          />
           <span>{error || notice}</span>
           {!error && canConfigureAi ? (
             <button
@@ -469,7 +695,7 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             >
               Open AI settings
             </button>
-          ) : !error && notice.includes('saved') ? (
+          ) : !error && /\b(?:added|updated)\b/i.test(notice) ? (
             <button
               onClick={() => onAction?.({ type: 'route/navigate', payload: { routeId: 'ledger' } })}
               type="button"
@@ -488,7 +714,11 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             </div>
             <span className="notes-ai-badge">
               <Icon name="auto_awesome" />
-              Cavalry AI
+              {parseMode === 'ai'
+                ? 'AI enhanced'
+                : parseMode === 'hybrid'
+                  ? 'AI + local'
+                  : 'Smart entry'}
             </span>
           </header>
           <label className="notes-textarea-label" htmlFor="notes-quick-entry">
@@ -514,10 +744,10 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           <footer className="notes-panel-footer">
             <span>
               {processing
-                ? 'Cavalry AI is reading your notes…'
+                ? 'Reading and adding your transactions…'
                 : lines
-                  ? `${lines} line${lines === 1 ? '' : 's'} ready to process`
-                  : 'Start with an amount, category, and payment method'}
+                  ? `${lines} line${lines === 1 ? '' : 's'} ready to add`
+                  : 'Start with an amount and description; payment method is optional'}
             </span>
             <button
               className="btn btn-primary notes-process-button"
@@ -526,7 +756,7 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
               type="button"
             >
               <Icon name="auto_awesome" />
-              {processing ? 'Processing…' : 'Process transactions'}
+              {processing ? 'Adding…' : 'Add transactions'}
             </button>
           </footer>
         </section>
@@ -534,7 +764,9 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
         <section className="notes-panel notes-review-panel">
           <header>
             <div>
-              <h2>Review transactions</h2>
+              <h2 ref={transactionsHeadingRef} tabIndex={-1}>
+                Transactions
+              </h2>
             </div>
             {entries.length ? (
               <span
@@ -543,28 +775,37 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                 }
               >
                 {unresolvedCount
-                  ? `${unresolvedCount} need${unresolvedCount === 1 ? 's' : ''} review`
-                  : 'All ready'}
+                  ? `${entries.length - unresolvedCount} added · ${unresolvedCount} need${
+                      unresolvedCount === 1 ? 's' : ''
+                    } details`
+                  : `${entries.length} added`}
               </span>
             ) : null}
           </header>
           <div className="notes-review-list">
             {entries.length ? (
-              entries.map((entry) => (
+              entries.map((entry, index) => (
                 <ReviewEntry
                   key={entry.id}
                   editingEntry={editingEntry}
                   entry={entry}
                   isEditing={editingEntry?.id === entry.id}
-                  onEdit={(selected) =>
-                    setEditingEntry(editingEntry?.id === selected.id ? null : { ...selected })
-                  }
-                  onEditCancel={() => setEditingEntry(null)}
-                  onEditChange={(field, value) =>
-                    setEditingEntry((current) => ({ ...current, [field]: value }))
-                  }
+                  position={index + 1}
+                  onEdit={(selected) => {
+                    setError('');
+                    setEditingEntry(editingEntry?.id === selected.id ? null : { ...selected });
+                  }}
+                  onEditCancel={() => {
+                    const entryId = editingEntry?.id;
+                    setEditingEntry(null);
+                    setError('');
+                    focusEditButton(entryId);
+                  }}
+                  onEditChange={(field, value) => {
+                    setError('');
+                    setEditingEntry((current) => ({ ...current, [field]: value }));
+                  }}
                   onEditSave={saveEdit}
-                  onRemove={removeEntry}
                   workbook={workbook}
                 />
               ))
@@ -573,32 +814,10 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                 <span>
                   <Icon name="receipt_long" />
                 </span>
-                <strong>Your review will appear here</strong>
+                <strong>Added transactions will appear here</strong>
               </div>
             )}
           </div>
-          <footer className="notes-panel-footer notes-save-footer">
-            {entries.length ? (
-              <span>
-                {unresolvedCount
-                  ? `Resolve ${unresolvedCount} item${unresolvedCount === 1 ? '' : 's'} before saving`
-                  : `${entries.length} transaction${entries.length === 1 ? '' : 's'} ready`}
-              </span>
-            ) : (
-              <span>Nothing will be saved until you confirm the batch</span>
-            )}
-            <button
-              className="btn btn-primary notes-save-button"
-              disabled={!readyToSave}
-              onClick={saveTransactions}
-              type="button"
-            >
-              <Icon name="check" />
-              {entries.length
-                ? `Save ${entries.length} transaction${entries.length === 1 ? '' : 's'}`
-                : 'Save transactions'}
-            </button>
-          </footer>
         </section>
       </div>
     </section>

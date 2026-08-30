@@ -13,16 +13,13 @@ Report suspected vulnerabilities privately through the process in [`SECURITY.md`
 
 ## Credential storage
 
-The host encrypts credentials with AES-256-GCM using a random master key protected by:
-
-- macOS Login Keychain; or
-- Windows current-user DPAPI.
+The host encrypts Advisor credentials with AES-256-GCM using a random master key protected by the macOS Login Keychain.
 
 A local key file is allowed only in development or under an explicit development override. Packaged builds fail closed when secure OS storage is unavailable. Old Electron `safeStorage` ciphertext is treated as incompatible rather than copied or written in plaintext.
 
 ## Content security
 
-The renderer Content Security Policy blocks embedded frames, objects, unsafe evaluation, and unapproved network destinations. Cloud connections are restricted to configured Supabase origins; local model sockets are limited to localhost.
+The renderer Content Security Policy blocks embedded frames, objects, unsafe evaluation, and unapproved network destinations. Private workbook sync runs in native CloudKit code rather than through renderer network access; local model sockets are limited to localhost.
 
 ## Release security
 

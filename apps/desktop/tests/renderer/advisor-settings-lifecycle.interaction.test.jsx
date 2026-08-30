@@ -14,9 +14,10 @@ function ControllerHarness({ controllerRef }) {
   return null;
 }
 
-function renderController(advisor) {
+function renderController(advisor, overrides = {}) {
   const controllerRef = { current: null };
   const ports = createNullRendererPorts({
+    ...overrides,
     advisor,
     clock: {
       now: () => '2026-07-29T04:00:00.000Z',
@@ -38,6 +39,51 @@ function renderController(advisor) {
 }
 
 describe('advisor Settings lifecycle', () => {
+  it('returns the asynchronous iCloud result to settings controls', async () => {
+    const cloud = {
+      subscribe: () => () => {},
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') {
+          return {
+            ok: true,
+            state: {
+              configured: true,
+              status: 'signed_in',
+              user: { id: 'icloud-owner' },
+              workbooks: []
+            }
+          };
+        }
+        if (command === 'listWorkbooks') {
+          return {
+            ok: false,
+            code: 'test_cloud_failure',
+            error: 'The test iCloud refresh failed.'
+          };
+        }
+        return { ok: true };
+      })
+    };
+    const { controllerRef } = renderController(undefined, { cloud });
+    await waitFor(() =>
+      expect(controllerRef.current.routeModels.settings.cloud.status).toBe('signed_in')
+    );
+
+    let result;
+    await act(async () => {
+      result = await controllerRef.current.routeProps.settings.onAction({
+        type: 'refresh-cloud-workbooks',
+        payload: {}
+      });
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'test_cloud_failure',
+      error: 'The test iCloud refresh failed.'
+    });
+  });
+
   it('keeps model fields controlled and locks connection changes during lifecycle work', () => {
     const routeModel = (localModelPath, pending = false) => ({
       activeSection: 'settings-advisor',

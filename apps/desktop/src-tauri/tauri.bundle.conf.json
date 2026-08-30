@@ -1,6 +1,11 @@
 {
   "bundle": {
     "externalBin": ["binaries/cavalry-host"],
+    "macOS": {
+      "files": {
+        "embedded.provisionprofile": "Cavalry.provisionprofile"
+      }
+    },
     "resources": [
       "../packaging/RUNTIME-DEPENDENCY-INVENTORY.txt",
       "../../../LICENSE",

@@ -665,11 +665,7 @@ export function reviewDependencyAudit(report, lockfile, now = Date.now()) {
 }
 
 function checkDependencyAudit() {
-  const auditResult = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'audit',
-    '--audit-level=low',
-    '--json'
-  ]);
+  const auditResult = run('npm', ['audit', '--audit-level=low', '--json']);
   const report = parseAuditReport(auditResult, 'npm audit');
   const vulnerabilities = report.metadata?.vulnerabilities || {};
   const total = Number(vulnerabilities.total || 0);
@@ -693,12 +689,7 @@ function checkDependencyAudit() {
     );
   }
 
-  const productionResult = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'audit',
-    '--omit=dev',
-    '--audit-level=low',
-    '--json'
-  ]);
+  const productionResult = run('npm', ['audit', '--omit=dev', '--audit-level=low', '--json']);
   const productionReport = parseAuditReport(productionResult, 'production npm audit');
   const productionVulnerabilities = productionReport.metadata?.vulnerabilities || {};
   if (productionResult.status !== 0 || Number(productionVulnerabilities.total || 0) > 0) {

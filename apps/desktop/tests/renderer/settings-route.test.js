@@ -131,7 +131,7 @@ describe('SettingsRoute', () => {
     expect(html).not.toContain('settings-data-health');
   });
 
-  it('keeps the local profile form as a fallback when Cavalry Cloud is unconfigured', () => {
+  it('keeps local settings available when iCloud is unavailable', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: false,
@@ -142,13 +142,14 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('id="account-profile-form"');
     expect(html).toContain('Stored on this Mac');
-    expect(html).toContain('Cavalry Cloud');
+    expect(html).toContain('iCloud Sync');
     expect(html).toContain('Unavailable');
-    expect(html).toContain('Your profile and workbook remain on this Mac.');
+    expect(html).toContain('Your workbooks stay in sync');
+    expect(html).toContain('System Settings');
     expect(html).not.toContain('Continue with Google');
   });
 
-  it('renders private Apple and Google sign-in without exposing the local email form', () => {
+  it('uses the system iCloud account without a separate provider login', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: true,
@@ -159,27 +160,24 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('Continue with Apple');
-    expect(html).toContain('Continue with Google');
-    expect(html).toContain('Already have a Google-backed Cloud library?');
-    expect(html).toContain('Signed out');
-    expect(html).toContain('Nothing is uploaded until you choose Add to Cloud.');
-    expect(html).toContain('Cavalry opens provider sign-in in your browser.');
-    expect(html).toContain('Cavalry never receives your Mac password.');
-    expect(html).not.toContain('id="account-profile-form"');
-    expect(html).not.toContain('settings-account-email');
+    expect(html).toContain('Sign in needed');
+    expect(html).toContain('System Settings');
+    expect(html).toContain('id="account-profile-form"');
+    expect(html).not.toContain('Continue with Apple');
+    expect(html).not.toContain('Continue with Google');
+    expect(html).not.toContain('browser');
   });
 
-  it('renders Apple as the verified Cloud identity provider', () => {
+  it('shows a connected private iCloud database without exposing account metadata', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: true,
       status: 'signed_in',
       user: {
         id: 'apple-user',
-        name: 'Private User',
-        email: 'relay@privaterelay.appleid.com',
-        provider: 'apple'
+        name: 'iCloud',
+        email: '',
+        provider: 'icloud'
       },
       current: {},
       workbooks: []
@@ -187,12 +185,13 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('Signed in to Cavalry Cloud');
-    expect(html).toContain('relay@privaterelay.appleid.com · Connected: Apple');
-    expect(html).not.toContain('aria-label="Continue with Apple"');
+    expect(html).toContain('Connected');
+    expect(html).toContain('iCloud · Ready to sync');
+    expect(html).not.toContain('apple-user');
+    expect(html).not.toContain('relay@privaterelay.appleid.com');
   });
 
-  it('renders a verified account and accessible actions for every cloud workbook', () => {
+  it('renders accessible actions for every iCloud workbook', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: true,
@@ -229,85 +228,19 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('Signed in to Cavalry Cloud');
-    expect(html).toContain('Alex Example');
-    expect(html).toContain('alex@example.com');
-    expect(html).toContain('id="settings-cloud-profile-name"');
-    expect(html).toContain('value="Alex Example"');
-    expect(html).toContain('Save Name');
-    expect(html).toContain('aria-label="Continue with Apple"');
-    expect(html).toContain('Hide My Email');
-    expect(html).toContain('Add to Cloud');
-    expect(html).toContain('Refresh');
-    expect(html).toContain('Sign Out');
+    expect(html).toContain('Connected');
+    expect(html).toContain('Add to iCloud');
+    expect(html).toContain('Sync Now');
     expect(html).toContain('2 workbooks');
-    expect(html).toContain('aria-label="Cavalry Cloud workbooks"');
-    expect(html).toContain('aria-label="Open The Plan from Cavalry Cloud"');
-    expect(html).toContain('aria-label="Remove The Plan from Cavalry Cloud"');
-    expect(html).toContain('aria-label="Open Business 2026 from Cavalry Cloud"');
-    expect(html).toContain('aria-label="Remove Business 2026 from Cavalry Cloud"');
+    expect(html).toContain('aria-label="iCloud workbooks"');
+    expect(html).toContain('aria-label="Open The Plan from iCloud"');
+    expect(html).toContain('aria-label="Remove The Plan from iCloud"');
+    expect(html).toContain('aria-label="Open Business 2026 from iCloud"');
+    expect(html).toContain('aria-label="Remove Business 2026 from iCloud"');
     expect(html).toContain('Current');
-    expect(html).not.toContain('id="account-profile-form"');
-  });
-
-  it('provides a Cloud-synced Feedback tab with report submission and review', () => {
-    const model = buildSettingsRouteFixture();
-    model.activeSection = 'settings-feedback';
-    const html = renderToStaticMarkup(
-      React.createElement(SettingsRoute, {
-        model,
-        feedback: {
-          model: {
-            configured: true,
-            signedIn: true,
-            status: 'signed_in',
-            loaded: true,
-            reports: [
-              {
-                id: 'report-1',
-                kind: 'bug',
-                description: 'The filter stopped responding.',
-                status: 'received',
-                source: 'settings',
-                context: { routeId: 'ledger' },
-                createdAt: '2026-07-24T02:00:00.000Z',
-                attachment: null
-              }
-            ]
-          }
-        }
-      })
-    );
-
-    expect(html).toContain('id="settings-feedback"');
-    expect(html).toContain('aria-label="Feedback"');
-    expect(html).toContain('Send feedback');
-    expect(html).toContain('Cloud synced');
-    expect(html).toContain('The filter stopped responding.');
-    expect(html).toContain('From Transactions');
-    expect(html).toContain('Your reports');
-  });
-
-  it('does not render a feedback submit action while Cavalry Cloud is signed out', () => {
-    const model = buildSettingsRouteFixture();
-    model.activeSection = 'settings-feedback';
-    const html = renderToStaticMarkup(
-      React.createElement(SettingsRoute, {
-        model,
-        feedback: {
-          model: {
-            configured: true,
-            signedIn: false,
-            status: 'signed_out',
-            reports: []
-          }
-        }
-      })
-    );
-
-    expect(html).toContain('Sign in to send feedback');
-    expect(html).toContain('Open Account settings');
-    expect(html).not.toContain('>Send report</button>');
+    expect(html).toContain('id="account-profile-form"');
+    expect(html).not.toContain('Alex Example');
+    expect(html).not.toContain('alex@example.com');
   });
 
   it('shows explicit sync state for a linked current workbook', () => {
@@ -330,11 +263,11 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('Sync Now');
     expect(html).toContain('Last synced');
-    expect(html).toContain('No cloud workbooks yet');
-    expect(html).not.toContain('Add to Cloud</button>');
+    expect(html).toContain('No iCloud workbooks yet');
+    expect(html).not.toContain('Add to iCloud</button>');
   });
 
-  it('requires explicit review when the current Cloud workbook has changed', () => {
+  it('requires explicit review when the current iCloud workbook has changed', () => {
     const model = buildSettingsRouteFixture();
     model.cloud = {
       configured: true,
@@ -360,11 +293,11 @@ describe('SettingsRoute', () => {
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('The Cloud copy changed.');
-    expect(html).toContain('Cloud copy changed</button>');
-    expect(html).toContain('Review The Plan from Cavalry Cloud');
+    expect(html).not.toContain('Both copies are safe. Review each clash and choose what to keep.');
+    expect(html).not.toContain('0 decisions needed');
+    expect(html).toContain('Keep Mac Copy');
+    expect(html).toContain('Review The Plan from iCloud');
     expect(html).toContain('>Review</button>');
-    expect(html).not.toContain('Sync Now');
   });
 
   it('hides the retired microphone controls from the assistant settings', () => {
@@ -436,6 +369,28 @@ describe('SettingsRoute', () => {
     expect(html).not.toContain('Vision Projector');
     expect(html).not.toContain('Context Allocation');
     expect(html).not.toContain('Start Model');
+  });
+
+  it('does not present an OpenAI provider as connected until an API key is saved', () => {
+    const model = buildSettingsRouteFixture();
+    model.advisor = Object.assign({}, model.advisor, {
+      providerLabel: 'OpenAI / API',
+      settings: {
+        provider: 'openai',
+        apiMode: 'responses',
+        model: 'gpt-5.4-mini',
+        endpoint: 'https://api.openai.com/v1/responses',
+        hasApiKey: false,
+        apiKeyPreview: ''
+      },
+      serverLine: '',
+      localStartLine: ''
+    });
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('API key required');
+    expect(html).toContain('settings-status-pill warn');
   });
 
   it('allows a GGUF-only local model to be started without a vision projector', () => {

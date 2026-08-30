@@ -111,7 +111,6 @@ export function useFinanceApplicationController({
 
   const cloud = useCloudWorkbookController({
     cloud: ports.cloud,
-    feedback: ports.feedback,
     workbook,
     browserCache: ports.browserCache,
     workbookStorage: ports.workbookStorage,
@@ -468,11 +467,11 @@ export function useFinanceApplicationController({
       const source = asObject(event);
       const payload = asObject(source.payload);
       if (source.type === 'application/storage-intent') {
-        executeStorageIntent(payload);
+        return executeStorageIntent(payload);
       } else if (source.type === 'application/advisor-intent') {
-        executeAdvisorIntent(payload);
+        return executeAdvisorIntent(payload);
       } else if (source.type === 'application/cloud-intent') {
-        executeCloudOperation(payload.operation, payload);
+        return executeCloudOperation(payload.operation, payload);
       } else if (source.type === 'bills/view-state-change-requested') {
         setBillsViewState((current) => ({ ...current, ...asObject(payload.patch) }));
       } else if (source.type === BUDGET_EVENT_TYPES.viewStateChange) {
@@ -542,6 +541,7 @@ export function useFinanceApplicationController({
         transactionActionRef.current?.({ type: 'open-ledger-composer', payload });
         navigate('ledger');
       }
+      return null;
     },
     [
       executeCloudOperation,
@@ -565,10 +565,20 @@ export function useFinanceApplicationController({
         return result;
       }
       setApplicationErrors([]);
-      asArray(result.events).forEach(handleApplicationEvent);
-      return applyCommandResult(result, {
+      const eventResults = asArray(result.events).map(handleApplicationEvent);
+      const commandResult = applyCommandResult(result, {
         saveMutation: ['budget', 'bills', 'settings'].includes(scope),
         reason: `${scope}_changed`
+      });
+      const asynchronousResults = eventResults.filter(
+        (value) => value && typeof value.then === 'function'
+      );
+      if (!asynchronousResults.length) return commandResult;
+      return Promise.all(asynchronousResults).then((resolved) => {
+        const operationResult = [...resolved]
+          .reverse()
+          .find((value) => value && typeof value === 'object' && 'ok' in value);
+        return operationResult || commandResult;
       });
     },
     [applyCommandResult, handleApplicationEvent, reportError]
@@ -958,7 +968,6 @@ export function useFinanceApplicationController({
       },
       settings: {
         instanceKey: settingsModel.activeSectionKey || 'settings',
-        feedback: cloud.feedback,
         model: settingsModel,
         onAction: handleSettingsAction
       },
@@ -1013,7 +1022,6 @@ export function useFinanceApplicationController({
       budgetModel,
       budgetReferenceTarget,
       billsModel,
-      cloud.feedback,
       recurringReferenceTarget,
       categoryReferenceTarget,
       consumeBudgetReferenceTarget,

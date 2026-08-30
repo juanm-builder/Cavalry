@@ -32,6 +32,6 @@ Checkpointed apply remains experimental, scoped, and opt-in. The normal GPT-faci
 
 ## Sync and local models
 
-`packages/sync-foundation/` contains local types, change logs, conflict checks, and readiness reporting only. Cavalry Cloud's explicit Supabase snapshot transport lives behind the desktop host port; automatic remote merging remains deferred. The current boundary is documented in [`../features/cavalry-cloud.md`](../features/cavalry-cloud.md).
+`packages/sync-foundation/` contains local types, change logs, conflict checks, and readiness reporting. Apple-device snapshot transport is implemented by native CKSyncEngine adapters behind the iPhone and Mac ports; conflicts remain explicit instead of being merged silently. The current boundary is documented in [`../features/icloud-sync.md`](../features/icloud-sync.md).
 
 The optional llama.cpp launcher is documented in [`tools/llama-cpp-launcher/`](../../tools/llama-cpp-launcher/README.md). It is not a runtime dependency of `finance-core` or workbook access.

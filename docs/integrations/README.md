@@ -11,4 +11,6 @@ Advisor, Companion API, Custom GPT, checkpointed apply, cloud/sync, and local-mo
 
 Integrations must remain disabled or safely degraded by default and cannot become a dependency of workbook access or core finance workflows.
 
-Current sync scope is the local conflict/readiness foundation in `packages/sync-foundation/`. Cavalry Cloud's explicit snapshot boundary is documented in [the maintained feature guide](../features/cavalry-cloud.md).
+Current sync scope is the local conflict/readiness foundation in `packages/sync-foundation/`.
+Private CloudKit snapshot synchronization is documented in
+[the maintained feature guide](../features/icloud-sync.md).

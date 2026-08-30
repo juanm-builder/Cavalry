@@ -1,6 +1,6 @@
 # Cavalry desktop application
 
-`@cavalry/desktop` is the Tauri 2 desktop workspace for macOS and Windows. It keeps Cavalry's existing React interface and workbook behavior while replacing Electron's application shell with a Rust/Tauri host.
+`@cavalry/desktop` is the Tauri 2 workspace for Cavalry on Mac. It keeps Cavalry's existing React interface and workbook behavior while replacing Electron's application shell with a Rust/Tauri host.
 
 ## Runtime map
 
@@ -41,7 +41,6 @@ Native package commands:
 ```bash
 npm run package:mac
 npm run package:mac:intel
-npm run package:windows
 ```
 
 ## Toolchain
@@ -54,13 +53,13 @@ Sidecars are produced with `@yao-pkg/pkg@6.22.0` through `scripts/build-sidecar.
 
 `main.jsx` still creates one React root. `app/routes.js` remains the executable route registry, and `WorkbookProvider` continues to own hydration, immutable workbook identity, persistence state, navigation, overlays, warnings, and errors. Existing CSS and image assets are preserved.
 
-The system WebView can differ subtly from Chromium. Before a release, certify layout, keyboard focus, downloads, IndexedDB, microphone capture, accessibility, and platform font rendering on both WKWebView and WebView2. The maintained checklist is in [`docs/operations/native-certification.md`](../../docs/operations/native-certification.md).
+The system WebView can differ subtly from Chromium. Before a release, certify layout, keyboard focus, downloads, IndexedDB, microphone capture, accessibility, and platform font rendering in WKWebView. The maintained checklist is in [`docs/operations/native-certification.md`](../../docs/operations/native-certification.md).
 
 ## Data compatibility
 
 Workbook files, recents, recovery files, and rolling backups keep their existing format and application-data locations. The Rust host passes the legacy data directory to the sidecar so existing local workbooks remain discoverable.
 
-Electron `safeStorage` ciphertext is not automatically decryptable by the new host. The migration therefore fails closed and may require the user to sign in to Cavalry Cloud again or re-enter encrypted Advisor credentials. See the [migration runbook](../../docs/operations/electron-to-tauri-migration.md).
+Electron `safeStorage` ciphertext is not automatically decryptable by the new host. The migration therefore fails closed and may require the user to re-enter encrypted Advisor credentials. iCloud identity is supplied by macOS and does not use an app-specific password or token. See the [migration runbook](../../docs/operations/electron-to-tauri-migration.md).
 
 ## Generated output
 

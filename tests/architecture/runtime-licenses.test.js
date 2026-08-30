@@ -29,7 +29,6 @@ describe('runtime dependency inventory', () => {
 
     expect(entries.map((entry) => entry.lockPath).sort()).toEqual(expectedPaths);
     expect(entries.some((entry) => entry.name === 'react')).toBe(true);
-    expect(entries.some((entry) => entry.name === '@supabase/supabase-js')).toBe(true);
     expect(entries.some((entry) => /^electron(?:$|-)/.test(entry.name))).toBe(false);
     entries.forEach((entry) => {
       expect(entry.name).toBeTruthy();

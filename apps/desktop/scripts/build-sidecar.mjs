@@ -9,10 +9,7 @@ const binariesDirectory = resolve(appRoot, 'src-tauri/binaries');
 
 const TARGETS = Object.freeze({
   'aarch64-apple-darwin': { pkg: 'node22-macos-arm64', extension: '' },
-  'x86_64-apple-darwin': { pkg: 'node22-macos-x64', extension: '' },
-  'x86_64-pc-windows-msvc': { pkg: 'node22-win-x64', extension: '.exe' },
-  'x86_64-unknown-linux-gnu': { pkg: 'node22-linux-x64', extension: '' },
-  'aarch64-unknown-linux-gnu': { pkg: 'node22-linux-arm64', extension: '' }
+  'x86_64-apple-darwin': { pkg: 'node22-macos-x64', extension: '' }
 });
 
 function readArgument(name) {
@@ -21,14 +18,8 @@ function readArgument(name) {
 }
 
 function detectTarget() {
-  if (process.platform === 'darwin') {
-    return process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
-  }
-  if (process.platform === 'win32') return 'x86_64-pc-windows-msvc';
-  if (process.platform === 'linux') {
-    return process.arch === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu';
-  }
-  throw new Error(`No Cavalry sidecar target is defined for ${process.platform}/${process.arch}.`);
+  if (process.platform !== 'darwin') throw new Error('Cavalry sidecars are built on macOS only.');
+  return process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
 }
 
 const target = readArgument('--target') || process.env.TAURI_ENV_TARGET_TRIPLE || detectTarget();
@@ -44,9 +35,8 @@ mkdirSync(binariesDirectory, { recursive: true });
 const output = resolve(binariesDirectory, `cavalry-host-${target}${targetConfig.extension}`);
 rmSync(output, { force: true });
 
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const result = spawnSync(
-  npx,
+  'npx',
   [
     '--yes',
     '--package=@yao-pkg/pkg@6.22.0',
@@ -69,6 +59,6 @@ if (result.status !== 0) {
 if (!existsSync(output) || statSync(output).size < 1_000_000) {
   throw new Error(`Cavalry sidecar output is missing or unexpectedly small: ${output}`);
 }
-if (process.platform !== 'win32') chmodSync(output, 0o755);
+chmodSync(output, 0o755);
 
 process.stdout.write(`Prepared ${output}\n`);

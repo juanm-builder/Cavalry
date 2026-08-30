@@ -19,7 +19,7 @@ This is a production migration architecture, not permission for arbitrary sideca
 
 - The React interface and finance behavior can remain stable.
 - Distribution no longer bundles Electron or Chromium.
-- Native behavior must be certified against WKWebView and WebView2.
+- Native behavior must be certified against WKWebView on both supported Mac architectures.
 - Node is still present inside the packaged sidecar, so further Rust migration may reduce size and complexity later.
 - Electron `safeStorage` values require reauthentication or a dedicated one-time migration tool.
 - Existing Electron clients need a bridge or manual installer path to move onto the Tauri update feed.

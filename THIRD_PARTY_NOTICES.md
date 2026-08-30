@@ -13,10 +13,9 @@ The packaged desktop application uses the following principal projects:
 | Rust standard library and Cargo-resolved crates      | Project-specific open-source licenses | [Rust](https://github.com/rust-lang/rust) and each crate's package metadata     |
 | Node.js runtime embedded in the Cavalry host sidecar | MIT and bundled third-party notices   | [nodejs/node](https://github.com/nodejs/node)                                   |
 | React and React DOM                                  | MIT                                   | [facebook/react](https://github.com/facebook/react)                             |
-| Supabase JavaScript client                           | MIT                                   | [supabase/supabase-js](https://github.com/supabase/supabase-js)                 |
 | `@yao-pkg/pkg` build tool                            | MIT                                   | [yao-pkg/pkg](https://github.com/yao-pkg/pkg)                                   |
 
-On macOS, Tauri uses the operating system's WKWebView. On Windows, it uses the installed Microsoft Edge WebView2 runtime. Cavalry does not distribute an Electron or Chromium framework. System WebView components remain governed by their platform terms.
+On macOS, Tauri uses the operating system's WKWebView. Cavalry does not distribute an Electron or Chromium framework. System WebView components remain governed by Apple platform terms.
 
 Exact JavaScript versions and transitive dependencies are recorded in `package-lock.json`. Exact Rust versions must be recorded in `apps/desktop/src-tauri/Cargo.lock` before a production release. The target-specific Node sidecar must retain Node's bundled license and third-party notices.
 

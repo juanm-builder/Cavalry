@@ -5,7 +5,6 @@ import { CavalrySelect, UncontrolledCavalrySelect } from '../../shared/CavalrySe
 import { useAppearance } from '../../app/AppearanceProvider.jsx';
 import { CUSTOM_COLOR_FIELDS } from '../../app/appearance-preferences.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
-import { FeedbackSettingsPanel } from '../feedback/FeedbackSettingsPanel.jsx';
 import { CloudAccountPanel } from './CloudAccountPanel.jsx';
 
 const COUNTERPARTY_KIND_OPTIONS = Object.freeze([
@@ -133,11 +132,6 @@ const SETTINGS_SECTIONS = [
     id: 'settings-account',
     label: 'Account',
     icon: 'account_circle'
-  },
-  {
-    id: 'settings-feedback',
-    label: 'Feedback',
-    icon: 'feedback'
   },
   {
     id: 'settings-files',
@@ -569,6 +563,20 @@ function AssistantPanel({ advisor, feedback, onAction }) {
     ? advisorSettings.apiKeyPreview || advisor.apiKeyPlaceholder || ''
     : '';
   const advisorHasSavedApiKey = advisorUsesRemoteModel && advisorSettings.hasApiKey === true;
+  const advisorHasModelName = !!String(advisorSettings.model || '').trim();
+  const advisorConnectionReady = advisorUsesRemoteModel
+    ? advisorHasSavedApiKey && advisorHasModelName
+    : advisorUsesLocalModel
+      ? advisorHasModelName &&
+        (!!String(advisorSettings.localModelPath || '').trim() || advisorToggle.shouldStop === true)
+      : false;
+  const advisorConnectionLabel = advisorConnectionReady
+    ? advisor.providerLabel || 'Connected'
+    : advisorUsesRemoteModel && !advisorHasSavedApiKey
+      ? 'API key required'
+      : advisorUsesLocalModel || advisorUsesRemoteModel
+        ? 'Choose a model'
+        : 'Not connected';
   const [unlockedApiKeyPreview, setUnlockedApiKeyPreview] = useState('');
   const apiKeyLocked = advisorHasSavedApiKey && unlockedApiKeyPreview !== advisorApiKeyValue;
   const advisorModeTitle = advisorUsesLocalModel ? 'Local model' : 'No model connected';
@@ -612,8 +620,11 @@ function AssistantPanel({ advisor, feedback, onAction }) {
         icon="hub"
         title="Model connection"
         trailing={
-          <StatusPill icon={advisorUsesConfiguredModel ? 'check_circle' : 'link_off'} tone="info">
-            {advisor.providerLabel || 'Not connected'}
+          <StatusPill
+            icon={advisorConnectionReady ? 'check_circle' : 'link_off'}
+            tone={advisorConnectionReady ? 'good' : 'warn'}
+          >
+            {advisorConnectionLabel}
           </StatusPill>
         }
       >
@@ -1001,7 +1012,7 @@ function FilesPanel({ feedback, files, summaryItems }) {
   );
 }
 
-function SettingsRouteView({ feedback: cloudFeedback, model, onAction }) {
+function SettingsRouteView({ model, onAction }) {
   const data = model || {};
   const requestedSection = SETTINGS_SECTIONS.some((section) => section.id === data.activeSection)
     ? data.activeSection
@@ -1054,12 +1065,6 @@ function SettingsRouteView({ feedback: cloudFeedback, model, onAction }) {
               workbook={workbook}
             />
           </SettingsTabPanel>
-          <SettingsTabPanel activeSection={activeSection} id="settings-feedback">
-            <FeedbackSettingsPanel
-              feedback={cloudFeedback}
-              onOpenAccountSettings={() => setActiveSection('settings-account')}
-            />
-          </SettingsTabPanel>
           <SettingsTabPanel activeSection={activeSection} id="settings-files">
             <FilesPanel
               feedback={feedbackFor('settings-files')}
@@ -1073,10 +1078,10 @@ function SettingsRouteView({ feedback: cloudFeedback, model, onAction }) {
   );
 }
 
-export function SettingsRoute({ feedback, model, onAction }) {
+export function SettingsRoute({ model, onAction }) {
   return (
     <ActionBindingProvider onAction={onAction}>
-      <SettingsRouteView feedback={feedback} model={model} onAction={onAction} />
+      <SettingsRouteView model={model} onAction={onAction} />
     </ActionBindingProvider>
   );
 }

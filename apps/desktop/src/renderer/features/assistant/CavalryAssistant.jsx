@@ -173,7 +173,6 @@ export function CavalryAssistant({
   createId,
   downloads,
   executeTool,
-  feedback,
   isOpen,
   onClose,
   onOpen,
@@ -194,7 +193,6 @@ export function CavalryAssistant({
     createCavalryAssistantConversationState(workbook)
   );
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
   const [composer, setComposer] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -301,7 +299,6 @@ export function CavalryAssistant({
         : createCavalryAssistantConversationState(workbook)
     );
     setHistoryOpen(false);
-    setFeedbackOpen(false);
     setAssistantSettingsOpen(false);
     setComposer('');
     setAttachments([]);
@@ -397,14 +394,13 @@ export function CavalryAssistant({
         if (isOpen) onClose?.();
         else onOpen?.();
       } else if (event.key === 'Escape' && isOpen) {
-        if (feedbackOpen) setFeedbackOpen(false);
-        else if (assistantSettingsOpen) setAssistantSettingsOpen(false);
+        if (assistantSettingsOpen) setAssistantSettingsOpen(false);
         else onClose?.();
       }
     };
     document.addEventListener('keydown', handleShortcut);
     return () => document.removeEventListener('keydown', handleShortcut);
-  }, [assistantSettingsOpen, feedbackOpen, isOpen, onClose, onOpen]);
+  }, [assistantSettingsOpen, isOpen, onClose, onOpen]);
 
   async function addImageFiles(files) {
     if (processingImages || pending || !files?.length) return;
@@ -817,7 +813,6 @@ export function CavalryAssistant({
     clearConversationDraft();
     setConversationState((current) => startNewCavalryAssistantConversation(current));
     setHistoryOpen(false);
-    setFeedbackOpen(false);
     setAssistantSettingsOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
@@ -827,7 +822,6 @@ export function CavalryAssistant({
     clearConversationDraft();
     setConversationState((current) => selectCavalryAssistantConversation(current, conversationId));
     setHistoryOpen(false);
-    setFeedbackOpen(false);
     setAssistantSettingsOpen(false);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   }
@@ -876,13 +870,10 @@ export function CavalryAssistant({
       endPanelResize={endPanelResize}
       error={error}
       exportConversation={exportConversation}
-      feedback={feedback}
-      feedbackOpen={feedbackOpen}
       historyOpen={historyOpen}
       imageInputRef={imageInputRef}
       isOpen={isOpen}
       liveStatus={liveStatus}
-      makeId={makeId}
       maxPanelWidth={maxPanelWidth}
       messageListRef={messageListRef}
       messages={messages}
@@ -905,7 +896,6 @@ export function CavalryAssistant({
       setAssistantSettingsOpen={setAssistantSettingsOpen}
       setComposer={setComposer}
       setDraggingImages={setDraggingImages}
-      setFeedbackOpen={setFeedbackOpen}
       setHistoryOpen={setHistoryOpen}
       startConversation={startConversation}
       streamingText={streamingText}

@@ -11,6 +11,9 @@ describe('Tauri desktop security and compatibility boundary', () => {
     const config = readJson('src-tauri/tauri.conf.json');
     const bundleConfig = readJson('src-tauri/tauri.bundle.conf.json');
     expect(bundleConfig.bundle.externalBin).toEqual(['binaries/cavalry-host']);
+    expect(bundleConfig.bundle.macOS.files).toEqual({
+      'embedded.provisionprofile': 'Cavalry.provisionprofile'
+    });
     expect(bundleConfig.bundle.resources).toContain(
       '../packaging/RUNTIME-DEPENDENCY-INVENTORY.txt'
     );
@@ -26,15 +29,61 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(permissions).toContain('updater:default');
   });
 
-  it('preserves installed application identities on macOS and Windows', () => {
+  it("uses Cavalry's Apple identity and CloudKit container on macOS", () => {
     expect(readJson('src-tauri/tauri.macos.conf.json')).toMatchObject({
       productName: 'Cavalry for Mac',
-      identifier: 'com.local.cavalry.mac'
+      identifier: 'com.juanmbuilder.cavalry.mac'
     });
-    expect(readJson('src-tauri/tauri.windows.conf.json')).toMatchObject({
-      productName: 'Cavalry for Windows',
-      identifier: 'com.local.cavalry.windows'
-    });
+    const entitlements = readFileSync(resolve(desktopRoot, 'src-tauri/entitlements.plist'), 'utf8');
+    const releaseEntitlements = readFileSync(
+      resolve(desktopRoot, 'src-tauri/entitlements.release.plist'),
+      'utf8'
+    );
+    const sidecarEntitlements = readFileSync(
+      resolve(desktopRoot, 'src-tauri/entitlements.sidecar.plist'),
+      'utf8'
+    );
+    expect(entitlements).toContain('iCloud.com.juanmbuilder.cavalry');
+    expect(entitlements).toContain('com.apple.developer.icloud-services');
+    expect(entitlements).toContain('U8H23USGUJ.com.juanmbuilder.cavalry.mac');
+    expect(entitlements).toContain(
+      'com.apple.developer.icloud-container-development-container-identifiers'
+    );
+    expect(entitlements).toContain('<string>Development</string>');
+    expect(releaseEntitlements).toContain('U8H23USGUJ.com.juanmbuilder.cavalry.mac');
+    expect(releaseEntitlements).toContain('<string>Production</string>');
+    expect(sidecarEntitlements).toContain('com.apple.security.cs.allow-jit');
+    expect(sidecarEntitlements).toContain('com.apple.security.cs.allow-unsigned-executable-memory');
+    expect(sidecarEntitlements).not.toContain('com.apple.developer.icloud');
+  });
+
+  it('accepts ISO-8601 workbook timestamps with fractional seconds', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('.withFractionalSeconds');
+    expect(cloudKitStore).toContain('fractionalFormatter.date(from: normalized)');
+    expect(cloudKitStore).toContain('standardFormatter.date(from: normalized)');
+  });
+
+  it('preserves CloudKit state when the same iCloud account signs in again', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('let accountChanged = previous != current');
+    expect(cloudKitStore).toContain('preservePending: previous == nil && current != nil');
+    expect(cloudKitStore).toContain('diskState.subscriptionIdentifier = cavalrySyncStateVersion');
+    expect(cloudKitStore).not.toContain('configuration.subscriptionID =');
+    expect(cloudKitStore).toMatch(
+      /if accountChanged \{[\s\S]*?resetForAccountChange\([\s\S]*?\n\s*\}/
+    );
+  });
+
+  it('does not start the host CloudKit request before the renderer listener is ready', () => {
+    const hostSource = readFileSync(resolve(desktopRoot, 'src/host/index.cjs'), 'utf8');
+    expect(hostSource).not.toContain('cloudController.restoreExistingSession()');
   });
 
   it('contains no Electron runtime dependency', () => {

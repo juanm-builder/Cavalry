@@ -29,7 +29,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'EOF'
   <key>CFBundleExecutable</key>
   <string>launcher</string>
   <key>CFBundleIdentifier</key>
-  <string>com.local.cavalry.llamacpp</string>
+  <string>com.juanmbuilder.cavalry.llamacpp</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>

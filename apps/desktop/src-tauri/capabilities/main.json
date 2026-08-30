@@ -12,9 +12,6 @@
       "allow": [
         {
           "url": "x-apple.systempreferences:*"
-        },
-        {
-          "url": "ms-settings:*"
         }
       ]
     },

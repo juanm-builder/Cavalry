@@ -1,0 +1,31 @@
+#!/bin/bash
+set -euo pipefail
+
+arguments=("$@")
+target="${arguments[${#arguments[@]} - 1]:-}"
+
+if [[ "$(basename "$target")" == "cavalry-host" ]]; then
+  script_directory="$(cd "$(dirname "$0")" && pwd)"
+  helper_entitlements="$script_directory/../../src-tauri/entitlements.sidecar.plist"
+  replaced_entitlements=0
+
+  for ((index = 0; index < ${#arguments[@]}; index += 1)); do
+    if [[ "${arguments[$index]}" == "--entitlements" ]]; then
+      next_index=$((index + 1))
+      if ((next_index >= ${#arguments[@]})); then
+        echo "Cavalry codesign shim: --entitlements has no value." >&2
+        exit 2
+      fi
+      arguments[$next_index]="$helper_entitlements"
+      replaced_entitlements=1
+      break
+    fi
+  done
+
+  if ((replaced_entitlements == 0)); then
+    echo "Cavalry codesign shim: Tauri did not provide entitlements for cavalry-host." >&2
+    exit 2
+  fi
+fi
+
+exec /usr/bin/codesign "${arguments[@]}"

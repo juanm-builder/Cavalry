@@ -41,5 +41,6 @@ export * from './application/transactions/transaction-route-view-model-service.j
 export * from './application/transactions/transaction-submit-intent-service.js';
 export * from './application/transactions/transaction-table-service.js';
 export * from './application/workbook/workbook-persistence-service.js';
+export * from './application/workbook/workbook-sync-merge-service.js';
 export * from './application/workbook/workbook-session-command-service.js';
 export * from './application/workbook/workbook-factory.js';

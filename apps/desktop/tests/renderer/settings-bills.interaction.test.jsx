@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -61,6 +61,359 @@ async function fillRecurringForm(user, values = {}) {
 }
 
 describe('Settings and Bills interactions', () => {
+  it('lets the Mac resolve changes reported by an iPhone', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn(async () => ({ ok: true }));
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'icloud-owner', name: 'iCloud' },
+            pendingCount: 0,
+            current: {
+              workbookId: 'workbook-plan',
+              linked: true,
+              conflict: false,
+              status: 'synced',
+              conflictNotice: {
+                id: 'conflict-iphone-1',
+                sourceDevice: 'iPhone',
+                resolutionAvailable: true,
+                report: {
+                  version: 1,
+                  workbookId: 'workbook-plan',
+                  workbookName: 'The Plan',
+                  conflictCount: 1,
+                  omittedCount: 0,
+                  entries: [
+                    {
+                      key: 'tx-1',
+                      path: 'transactions["tx-1"]',
+                      section: 'Transactions',
+                      title: 'Groceries',
+                      message: 'Both copies changed this item differently.',
+                      local: {
+                        label: 'This iPhone',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 500', after: 'PHP 650' }]
+                      },
+                      remote: {
+                        label: 'iCloud copy',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 500', after: 'PHP 700' }]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.getByText('1 decision needed')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Review Changes' }));
+    expect(screen.getByText('Groceries')).not.toBeNull();
+    expect(screen.getByText('Groceries · PHP 650')).not.toBeNull();
+    expect(screen.getByText('Groceries · PHP 700')).not.toBeNull();
+    expect(screen.getAllByText('Was PHP 500')).toHaveLength(2);
+    await user.click(screen.getByRole('radio', { name: 'Use iCloud copy for Groceries' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Resolution' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Resolution' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'reconcile-cloud-workbook',
+      payload: {
+        conflictNoticeId: 'conflict-iphone-1',
+        choices: [{ path: 'transactions["tx-1"]', side: 'remote' }]
+      }
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Confirm Resolution' })).toBeNull()
+    );
+  });
+
+  it('lets the Mac choose and confirm one side for every locally owned clash', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'icloud-owner', name: 'iCloud' },
+            pendingCount: 0,
+            current: {
+              workbookId: 'workbook-plan',
+              linked: true,
+              conflict: true,
+              status: 'conflict',
+              conflictNotice: {
+                id: 'conflict-mac-1',
+                sourceDevice: 'Mac',
+                resolutionAvailable: true,
+                remoteRevision: 9,
+                report: {
+                  version: 1,
+                  workbookId: 'workbook-plan',
+                  conflictCount: 1,
+                  omittedCount: 0,
+                  entries: [
+                    {
+                      key: 'tx-1',
+                      path: 'transactions["tx-1"]',
+                      section: 'Transactions',
+                      title: 'Groceries',
+                      local: {
+                        label: 'This Mac',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 500', after: 'PHP 650' }]
+                      },
+                      remote: {
+                        label: 'iCloud copy',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 500', after: 'PHP 700' }]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Review Changes' }));
+    const apply = screen.getByRole('button', { name: 'Apply Resolution' });
+    expect(apply.disabled).toBe(true);
+    await user.click(screen.getByRole('radio', { name: 'Use iCloud copy for Groceries' }));
+    expect(screen.getByRole('button', { name: 'Apply Resolution' }).disabled).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Apply Resolution' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Resolution' }));
+
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'reconcile-cloud-workbook',
+      payload: {
+        conflictNoticeId: 'conflict-mac-1',
+        choices: [{ path: 'transactions["tx-1"]', side: 'remote' }]
+      }
+    });
+  });
+
+  it('never offers a destructive choice for a legacy internal-only review', () => {
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'icloud-owner', name: 'iCloud' },
+            pendingCount: 0,
+            current: {
+              workbookId: 'workbook-plan',
+              linked: true,
+              conflict: true,
+              status: 'conflict',
+              conflictNotice: {
+                id: 'legacy-internal-review',
+                sourceDevice: 'iPhone',
+                resolutionAvailable: true,
+                remoteRevision: 9,
+                report: {
+                  version: 1,
+                  workbookId: 'workbook-plan',
+                  conflictCount: 2,
+                  omittedCount: 0,
+                  entries: [
+                    {
+                      key: 'settings',
+                      path: 'settings',
+                      section: 'Workbook',
+                      title: 'Settings',
+                      local: { label: 'This iPhone', action: 'different', details: [] },
+                      remote: { label: 'iCloud copy', action: 'different', details: [] }
+                    },
+                    {
+                      key: 'updated-at',
+                      path: 'updatedAt',
+                      section: 'Workbook',
+                      title: 'Updated At',
+                      local: { label: 'This iPhone', action: 'different', details: [] },
+                      remote: { label: 'iCloud copy', action: 'different', details: [] }
+                    }
+                  ]
+                }
+              }
+            },
+            workbooks: []
+          }
+        })}
+        onAction={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText('Updating details').length).toBeGreaterThan(0);
+    expect(
+      screen.getByText('Cavalry is refreshing this review so it shows only real workbook changes.')
+    ).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review Changes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Keep Mac Copy' })).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+  });
+
+  it('reviews several clashes one at a time and preserves every choice', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'icloud-owner', name: 'iCloud' },
+            pendingCount: 0,
+            current: {
+              workbookId: 'workbook-plan',
+              linked: true,
+              conflict: true,
+              status: 'conflict',
+              conflictNotice: {
+                id: 'conflict-mac-many',
+                sourceDevice: 'Mac',
+                resolutionAvailable: true,
+                remoteRevision: 10,
+                report: {
+                  version: 1,
+                  workbookId: 'workbook-plan',
+                  workbookName: 'Main Plan',
+                  conflictCount: 3,
+                  omittedCount: 0,
+                  entries: [
+                    {
+                      key: 'opening',
+                      path: 'transactions["opening"]',
+                      section: 'Transactions',
+                      title: 'Cash opening balance',
+                      local: {
+                        label: 'This Mac',
+                        action: 'deleted',
+                        details: [
+                          {
+                            label: 'Description',
+                            before: 'Cash opening balance',
+                            after: 'None'
+                          },
+                          { label: 'Amount', before: 'PHP 600,000', after: 'None' }
+                        ]
+                      },
+                      remote: {
+                        label: 'iCloud copy',
+                        action: 'unchanged',
+                        details: [
+                          {
+                            label: 'Description',
+                            before: 'Cash opening balance',
+                            after: 'Cash opening balance'
+                          },
+                          { label: 'Amount', before: 'PHP 600,000', after: 'PHP 600,000' },
+                          { label: 'Date', before: 'Apr 1, 2026', after: 'Apr 1, 2026' }
+                        ]
+                      }
+                    },
+                    {
+                      key: 'groceries',
+                      path: 'transactions["groceries"]',
+                      section: 'Transactions',
+                      title: 'Grocery delivery',
+                      local: {
+                        label: 'This Mac',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 1,000', after: 'PHP 1,200' }]
+                      },
+                      remote: {
+                        label: 'iCloud copy',
+                        action: 'edited',
+                        details: [{ label: 'Amount', before: 'PHP 1,000', after: 'PHP 1,500' }]
+                      }
+                    },
+                    {
+                      key: 'salary',
+                      path: 'transactions["salary"]',
+                      section: 'Transactions',
+                      title: 'Salary deposit',
+                      local: {
+                        label: 'This Mac',
+                        action: 'unchanged',
+                        details: [{ label: 'Amount', before: 'PHP 80,000', after: 'PHP 80,000' }]
+                      },
+                      remote: {
+                        label: 'iCloud copy',
+                        action: 'deleted',
+                        details: [{ label: 'Amount', before: 'PHP 80,000', after: 'None' }]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.getByText('3 decisions needed')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Review Changes' }));
+    expect(screen.getByText('Keep this transaction?')).not.toBeNull();
+    expect(screen.getByText('Up next')).not.toBeNull();
+    expect(screen.getByText('0 of 3 decisions made')).not.toBeNull();
+
+    await user.click(
+      screen.getByRole('radio', { name: 'Use iCloud copy for Cash opening balance' })
+    );
+    const groceryRow = screen
+      .getByText('Grocery delivery')
+      .closest('.settings-cloud-conflict-queue-row');
+    await user.click(within(groceryRow).getByRole('button', { name: 'Review' }));
+    expect(screen.getByText('Which version should Cavalry keep?')).not.toBeNull();
+    await user.click(screen.getByRole('radio', { name: 'Use This Mac for Grocery delivery' }));
+
+    const salaryRow = screen
+      .getByText('Salary deposit')
+      .closest('.settings-cloud-conflict-queue-row');
+    await user.click(within(salaryRow).getByRole('button', { name: 'Review' }));
+    await user.click(screen.getByRole('radio', { name: 'Use iCloud copy for Salary deposit' }));
+
+    expect(screen.getByText('3 of 3 decisions made')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Apply Resolution' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Resolution' }));
+
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'reconcile-cloud-workbook',
+      payload: {
+        conflictNoticeId: 'conflict-mac-many',
+        choices: [
+          { path: 'transactions["opening"]', side: 'remote' },
+          { path: 'transactions["groceries"]', side: 'local' },
+          { path: 'transactions["salary"]', side: 'remote' }
+        ]
+      }
+    });
+  });
+
   it('shows only the selected settings section', async () => {
     const user = userEvent.setup();
     render(<SettingsRoute model={makeSettingsModel()} />);
@@ -94,7 +447,7 @@ describe('Settings and Bills interactions', () => {
   it('locks a saved API key until the remove control is used', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    const { container } = render(
+    render(
       <SettingsRoute
         model={makeSettingsModel({
           activeSection: 'settings-advisor',
@@ -297,30 +650,30 @@ describe('Settings and Bills interactions', () => {
       />
     );
 
-    const profileName = container.querySelector('#settings-cloud-profile-name');
-    await user.clear(profileName);
-    await user.type(profileName, 'Alex Example');
-    await user.click(screen.getByRole('button', { name: 'Save Name' }));
-    expect(onAction).toHaveBeenLastCalledWith({
-      type: 'update-cloud-profile',
-      payload: { name: 'Alex Example' }
-    });
+    const identityCard = screen.getByRole('heading', { name: 'iCloud Sync' }).closest('section');
+    expect(within(identityCard).getByText('Your workbooks stay in sync')).not.toBeNull();
+    expect(within(identityCard).queryByText(/CKSyncEngine/)).toBeNull();
+    await user.click(within(identityCard).getByRole('button', { name: 'Sync Now' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'refresh-cloud-workbooks', payload: {} });
 
-    await user.click(screen.getByRole('button', { name: 'Sync Now' }));
+    const libraryCard = screen
+      .getByRole('heading', { name: 'iCloud Workbooks' })
+      .closest('section');
+    await user.click(within(libraryCard).getByRole('button', { name: 'Sync Now' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'upload-current-workbook', payload: {} });
 
-    await user.click(screen.getByRole('button', { name: 'Open Business from Cavalry Cloud' }));
+    await user.click(screen.getByRole('button', { name: 'Open Business from iCloud' }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'open-cloud-workbook',
       payload: { workbookId: 'workbook-business' }
     });
 
-    await user.click(screen.getByRole('button', { name: 'Remove Business from Cavalry Cloud' }));
+    await user.click(screen.getByRole('button', { name: 'Remove Business from iCloud' }));
     expect(onAction).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'delete-cloud-workbook' })
     );
     await user.click(
-      screen.getByRole('button', { name: 'Confirm removal of Business from Cavalry Cloud' })
+      screen.getByRole('button', { name: 'Confirm removal of Business from iCloud' })
     );
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'delete-cloud-workbook',

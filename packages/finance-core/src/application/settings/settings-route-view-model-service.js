@@ -160,7 +160,20 @@ export function buildSettingsAdvisorViewModel(options = {}) {
   const advisorContextLocked =
     advisorProvider === 'custom' &&
     !!(advisorServerStatus.running || advisorServerStatus.starting || advisorServerStatus.stopping);
-  const advisorUsesConfiguredModel = advisorProvider === 'openai' || advisorProvider === 'custom';
+  const advisorUsesConfiguredModel =
+    (advisorProvider === 'openai' &&
+      advisorSettings.hasApiKey === true &&
+      !!asString(advisorSettings.model)) ||
+    (advisorProvider === 'custom' &&
+      !!asString(advisorSettings.model) &&
+      (!!asString(advisorSettings.localModelPath) || advisorServerStatus.running === true));
+  const advisorReadinessDetail = advisorUsesConfiguredModel
+    ? 'Ready'
+    : advisorProvider === 'openai' && advisorSettings.hasApiKey !== true
+      ? 'API key required'
+      : advisorProvider === 'openai' || advisorProvider === 'custom'
+        ? 'Choose a model'
+        : 'Not connected';
   return {
     providerLabel,
     fieldsDisabled: advisorProvider === 'local',
@@ -203,7 +216,7 @@ export function buildSettingsAdvisorViewModel(options = {}) {
     summaryTitle:
       providerLabel +
       (advisorUsesConfiguredModel && advisorSettings.model ? ' • ' + advisorSettings.model : ''),
-    summaryDetail: advisorConnection || advisorStatus || 'Ready'
+    summaryDetail: advisorConnection || advisorStatus || advisorReadinessDetail
   };
 }
 

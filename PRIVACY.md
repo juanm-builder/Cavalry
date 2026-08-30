@@ -1,8 +1,8 @@
 # Privacy and data handling
 
-Last updated: 2026-08-21
+Last updated: 2026-08-28
 
-Cavalry is local-first, but optional features can send selected data to external services. This document describes the current repository behavior; it does not replace the privacy terms of Apple, Supabase, Google, GitHub, OpenAI, a configured model provider, or a tunnel provider.
+Cavalry is local-first, but optional features can send selected data to external services. This document describes the current repository behavior; it does not replace the privacy terms of Apple, GitHub, OpenAI, a configured model provider, or a tunnel provider.
 
 ## Local workbook data
 
@@ -16,20 +16,17 @@ choices needed to resolve them are sent through the configured Advisor provider.
 
 The current code does not configure a general product-analytics or advertising service. A packaged app still makes ordinary network requests for update checks and the Material Symbols font stylesheet, and optional features add the requests described below.
 
-## Cavalry Cloud
+## iCloud workbook sync
 
-Cavalry Cloud is optional and requires a configured Supabase project. Apple or Google can authenticate the same owner-scoped account. Signing in does not upload a workbook. **Add to Cloud** and later **Sync Now** actions upload a complete portable HTML workbook snapshot to Supabase, together with workbook metadata, a content hash, version history, and sync audit records. The chosen identity provider and Supabase receive the account and network data needed to authenticate and serve those requests. Apple may provide a private relay address when **Hide My Email** is selected. On iPhone and iPad, Cavalry stores Apple's stable credential identifier in device-only Keychain storage so it can check that credential on launch and foreground; this identifier is not an Apple password or token.
+iCloud sync is optional and uses the private CloudKit database belonging to the Apple Account signed in on the device. Cavalry saves locally first, then queues a validated portable HTML workbook snapshot together with its name, year, currency, revision, update time, and integrity hash. CloudKit receives the account and network information needed to provide the service. Cavalry does not operate a separate sync account and does not receive an Apple Account password.
 
-Cloud sessions are stored through the operating system's credential encryption. A fresh signed-out profile does not access credential storage merely because Cavalry starts; secure storage initializes only to restore an existing encrypted session or after the user explicitly begins sign-in. On macOS, Keychain may ask the user to approve that access, but Cavalry never receives the user's Mac password. If secure storage is unavailable, Cloud fails closed instead of persisting plaintext tokens. Cloud snapshots are protected by owner-scoped Row Level Security, but users should still treat the configured Supabase project as a holder of their financial data.
+CloudKit metadata and the workbook asset use encrypted record fields. Cavalry also keeps CloudKit change tokens, record system fields, pending payloads, cached remote payloads, revision anchors, and conflict flags in local Application Support storage so offline changes can resume safely. These local files can contain financial data and should be protected like the primary workbook.
 
-To prevent a stale local copy from silently overwriting a newer Cloud copy,
-Cavalry stores the signed-in user ID, workbook ID, last acknowledged Cloud
-revision, and conflict flag in local application storage. This sync marker does
-not contain workbook contents, account balances, transactions, or Cloud tokens.
+To prevent stale copies from silently overwriting newer ones, Cavalry compares the last acknowledged revision and CloudKit record change tag. A conflict remains blocked until the user explicitly reviews the iCloud copy or confirms a local replacement against the latest remote revision.
 
-Deleting a cloud workbook removes its cloud snapshots and related audit records under the current database contract; it does not delete the local workbook. The iOS Cloud screen also provides **Delete Cloud account**. After confirmation—and fresh Apple confirmation when Apple is connected—the trusted Supabase function removes feedback attachments, deletes the Supabase Auth user, and cascades the user's active Cloud profile, workbook snapshots, versions, feedback metadata, and audit records. It also asks Apple's server to revoke the connected Apple token before deleting an Apple-backed account. Local workbook files on the user's devices are not deleted. Provider and infrastructure backup-retention rules may continue to apply; a self-service account export is not currently implemented.
+Deleting an iCloud workbook removes its private CloudKit record when the queued deletion reaches Apple; it does not delete the local workbook. Signing out of or switching the device's Apple Account clears Cavalry's local CloudKit cache and change tokens but does not delete local workbooks. Apple's infrastructure and backup-retention policies may continue to apply.
 
-See [Cavalry Cloud](docs/features/cavalry-cloud.md) for the maintained product and data boundary.
+See [iCloud workbook sync](docs/features/icloud-sync.md) for the maintained product and data boundary.
 
 ## Companion local memory
 

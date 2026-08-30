@@ -5,7 +5,10 @@ import {
   readCloudWorkbookSyncState,
   writeCloudWorkbookSyncState
 } from '../../src/renderer/app/cloud-workbook-sync-state.js';
-import { useCloudWorkbookController } from '../../src/renderer/app/use-cloud-workbook-controller.js';
+import {
+  isRetryableAutomaticSyncFailure,
+  useCloudWorkbookController
+} from '../../src/renderer/app/use-cloud-workbook-controller.js';
 import {
   cloneFixture,
   makeMinimalWorkbook
@@ -20,6 +23,23 @@ function signedInState() {
   };
 }
 
+function syncTransaction(id, description = id) {
+  return {
+    id,
+    date: '2026-08-29',
+    description,
+    lines: []
+  };
+}
+
+function syncWorkbook(name, transactions = []) {
+  const workbook = cloneFixture(makeMinimalWorkbook());
+  workbook.id = 'cloud-workbook';
+  workbook.name = name;
+  workbook.transactions = transactions;
+  return workbook;
+}
+
 function makeCloud(downloadResult) {
   return {
     invoke: vi.fn(async (command) => {
@@ -31,7 +51,7 @@ function makeCloud(downloadResult) {
   };
 }
 
-function createSyncStorage(revision = null, conflict = false) {
+function createSyncStorage(revision = null, conflict = false, baseWorkbook = null) {
   const values = new Map();
   const storage = {
     getItem: (key) => values.get(key) || null,
@@ -41,7 +61,8 @@ function createSyncStorage(revision = null, conflict = false) {
   if (revision || conflict) {
     writeCloudWorkbookSyncState(storage, 'user-1', 'cloud-workbook', {
       revision,
-      conflict
+      conflict,
+      ...(baseWorkbook ? { baseRevision: revision, baseWorkbook } : {})
     });
   }
   return storage;
@@ -69,12 +90,29 @@ function createAutoSyncTimers() {
 }
 
 describe('cloud workbook controller interactions', () => {
+  it('does not retry a permanent CloudKit rejection automatically', () => {
+    expect(
+      isRetryableAutomaticSyncFailure({
+        ok: false,
+        code: 'cloud_change_rejected',
+        error: 'CloudKit rejected this record.'
+      })
+    ).toBe(false);
+    expect(
+      isRetryableAutomaticSyncFailure({
+        ok: false,
+        code: 'cloud_upload_failed',
+        error: 'The network is offline.'
+      })
+    ).toBe(true);
+  });
+
   it('automatically uploads the latest workbook after its local file save succeeds', async () => {
     const timers = createAutoSyncTimers();
     const initialState = { ...signedInState(), workbooks: [] };
     let uploadedRevision = 0;
     const cloud = {
-      invoke: vi.fn(async (command) => {
+      invoke: vi.fn(async (command, payload) => {
         if (command === 'getState') return { ok: true, state: initialState };
         if (command === 'uploadWorkbook') {
           uploadedRevision += 1;
@@ -128,10 +166,12 @@ describe('cloud workbook controller interactions', () => {
         })
       );
     });
-    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
       known: true,
       revision: 1,
-      conflict: false
+      conflict: false,
+      baseRevision: 1,
+      baseWorkbook: { id: 'cloud-workbook', name: 'Latest local plan' }
     });
 
     hook.rerender({
@@ -156,7 +196,229 @@ describe('cloud workbook controller interactions', () => {
     expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook').revision).toBe(2);
   });
 
+  it('automatically enrolls an already-saved Mac workbook on first iCloud connection', async () => {
+    const timers = createAutoSyncTimers();
+    const initialState = { ...signedInState(), workbooks: [] };
+    const workbook = { id: 'local-plan', name: 'Main Plan' };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: initialState };
+        if (command === 'uploadWorkbook') {
+          const metadata = { ...workbook, revision: 1 };
+          return {
+            ok: true,
+            metadata,
+            state: { ...signedInState(), workbooks: [metadata] }
+          };
+        }
+        return { ok: true, state: initialState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage();
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook,
+        saveStatus: 'saved',
+        localSaveSequence: 0,
+        syncStorage,
+        autoSyncSchedulerOptions: timers.options
+      })
+    );
+
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+    await act(async () => {
+      expect(timers.runLatest().delay).toBe(800);
+      await vi.waitFor(() =>
+        expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+          workbook,
+          expectedRevision: null
+        })
+      );
+    });
+
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'local-plan')).toMatchObject({
+      known: true,
+      revision: 1,
+      conflict: false,
+      baseRevision: 1,
+      baseWorkbook: workbook
+    });
+    expect(result.current.model.current).toMatchObject({
+      linked: true,
+      revision: 1,
+      status: 'synced'
+    });
+  });
+
+  it('combines both devices after CloudKit rejects two queued copies of the same revision', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan');
+    const macWorkbook = cloneFixture(baseWorkbook);
+    macWorkbook.transactions = [syncTransaction('mac-transaction')];
+    macWorkbook.updatedAt = '2026-08-29T10:01:00.000Z';
+    const phoneWorkbook = cloneFixture(baseWorkbook);
+    phoneWorkbook.transactions = [syncTransaction('phone-transaction')];
+    phoneWorkbook.updatedAt = '2026-08-29T10:02:00.000Z';
+    const conflictedState = {
+      ...signedInState(),
+      pendingCount: 0,
+      workbooks: [
+        {
+          ...signedInState().workbooks[0],
+          revision: 6,
+          conflict: true
+        }
+      ]
+    };
+    const mergedState = {
+      ...signedInState(),
+      pendingCount: 0,
+      workbooks: [{ ...signedInState().workbooks[0], revision: 7 }]
+    };
+    let uploadedWorkbook;
+    const cloud = {
+      invoke: vi.fn(async (command, payload) => {
+        if (command === 'getState') return { ok: true, state: conflictedState };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: phoneWorkbook,
+            metadata: conflictedState.workbooks[0],
+            state: conflictedState
+          };
+        }
+        if (command === 'uploadWorkbook') {
+          uploadedWorkbook = payload.workbook;
+          return {
+            ok: true,
+            metadata: { ...mergedState.workbooks[0], id: 'cloud-workbook' },
+            state: mergedState
+          };
+        }
+        return { ok: true, state: mergedState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage();
+    writeCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook', {
+      revision: 6,
+      conflict: false,
+      baseRevision: 5,
+      baseWorkbook
+    });
+    const setWorkbook = vi.fn((_workbook) => _workbook);
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: macWorkbook,
+        saveStatus: 'saved',
+        saveWorkbook,
+        syncStorage,
+        setWorkbook
+      })
+    );
+
+    await waitFor(() =>
+      expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        workbook: expect.any(Object),
+        expectedRevision: 6,
+        conflictResolution: 'keep_local'
+      })
+    );
+    expect(uploadedWorkbook.transactions.map(({ id }) => id)).toEqual([
+      'mac-transaction',
+      'phone-transaction'
+    ]);
+    expect(saveWorkbook).toHaveBeenCalledWith(uploadedWorkbook);
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
+      revision: 7,
+      conflict: false,
+      baseRevision: 7,
+      baseWorkbook: uploadedWorkbook
+    });
+    expect(result.current.model.current.conflict).toBe(false);
+  });
+
+  it('verifies a legacy same-revision anchor before merging a restored local file', async () => {
+    const remoteWorkbook = syncWorkbook('Shared Plan', [syncTransaction('mac-transaction')]);
+    remoteWorkbook.updatedAt = '2026-08-29T10:01:00.000Z';
+    remoteWorkbook.settings.lastSavedAt = '2026-08-29T10:01:00.000Z';
+    const restoredWorkbook = cloneFixture(remoteWorkbook);
+    restoredWorkbook.transactions.push(syncTransaction('phone-transaction'));
+    restoredWorkbook.updatedAt = '2026-08-29T10:02:00.000Z';
+    restoredWorkbook.settings.lastSavedAt = '2026-08-29T10:02:00.000Z';
+    const legacyState = {
+      ...signedInState(),
+      pendingCount: 0,
+      workbooks: [{ ...signedInState().workbooks[0], revision: 7 }]
+    };
+    const mergedState = {
+      ...legacyState,
+      workbooks: [{ ...legacyState.workbooks[0], revision: 8 }]
+    };
+    let uploadedWorkbook;
+    const cloud = {
+      invoke: vi.fn(async (command, payload) => {
+        if (command === 'getState') return { ok: true, state: legacyState };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: remoteWorkbook,
+            metadata: legacyState.workbooks[0],
+            state: legacyState
+          };
+        }
+        if (command === 'uploadWorkbook') {
+          uploadedWorkbook = payload.workbook;
+          return {
+            ok: true,
+            metadata: { ...mergedState.workbooks[0], id: 'cloud-workbook' },
+            state: mergedState
+          };
+        }
+        return { ok: true, state: mergedState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage(7);
+    const setWorkbook = vi.fn((nextWorkbook) => nextWorkbook);
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+
+    renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: restoredWorkbook,
+        saveStatus: 'saved',
+        saveWorkbook,
+        syncStorage,
+        setWorkbook
+      })
+    );
+
+    await waitFor(() =>
+      expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        workbook: expect.any(Object),
+        expectedRevision: 7,
+        conflictResolution: 'keep_local'
+      })
+    );
+    expect(uploadedWorkbook.transactions.map(({ id }) => id)).toEqual([
+      'mac-transaction',
+      'phone-transaction'
+    ]);
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
+      revision: 8,
+      conflict: false,
+      baseRevision: 8,
+      baseWorkbook: uploadedWorkbook
+    });
+  });
+
   it('ignores a realtime echo of the exact acknowledged revision', async () => {
+    const workbook = { id: 'cloud-workbook', name: 'Cloud Plan' };
     let publishState = () => {};
     const cloud = {
       invoke: vi.fn(async (command) => {
@@ -169,11 +431,11 @@ describe('cloud workbook controller interactions', () => {
         return () => {};
       }
     };
-    const syncStorage = createSyncStorage(2);
+    const syncStorage = createSyncStorage(2, false, workbook);
     const { result } = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Cloud Plan' },
+        workbook,
         saveStatus: 'saved',
         syncStorage
       })
@@ -196,6 +458,7 @@ describe('cloud workbook controller interactions', () => {
   });
 
   it('downloads and locally saves a newer realtime revision when the workbook is clean', async () => {
+    const localWorkbook = { id: 'cloud-workbook', name: 'Revision two' };
     let publishState = () => {};
     const downloadedWorkbook = cloneFixture(makeMinimalWorkbook());
     downloadedWorkbook.id = 'cloud-workbook';
@@ -228,13 +491,13 @@ describe('cloud workbook controller interactions', () => {
         return () => {};
       }
     };
-    const syncStorage = createSyncStorage(2);
+    const syncStorage = createSyncStorage(2, false, localWorkbook);
     const setWorkbook = vi.fn();
     const saveWorkbook = vi.fn(async () => ({ ok: true }));
     const { result } = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Revision two' },
+        workbook: localWorkbook,
         saveStatus: 'saved',
         saveWorkbook,
         syncStorage,
@@ -246,18 +509,20 @@ describe('cloud workbook controller interactions', () => {
     act(() => publishState(changedState));
     await waitFor(() => expect(saveWorkbook).toHaveBeenCalledWith(downloadedWorkbook));
     expect(setWorkbook).toHaveBeenCalledWith(downloadedWorkbook, {
-      source: 'cloud-realtime',
+      source: 'cloud-merge',
       markDirty: true
     });
-    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
       known: true,
       revision: 3,
-      conflict: false
+      conflict: false,
+      baseRevision: 3,
+      baseWorkbook: downloadedWorkbook
     });
     expect(result.current.model.current.conflict).toBe(false);
   });
 
-  it('latches a newer realtime revision instead of replacing unsaved local changes', async () => {
+  it('defers a newer realtime revision until unsaved local changes are durable', async () => {
     let publishState = () => {};
     const changedState = {
       ...signedInState(),
@@ -294,13 +559,14 @@ describe('cloud workbook controller interactions', () => {
     await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
 
     act(() => publishState(changedState));
-    await waitFor(() => expect(result.current.model.current.conflict).toBe(true));
+    await waitFor(() => expect(result.current.model.current.revision).toBe(3));
+    expect(result.current.model.current.conflict).toBe(false);
     expect(setWorkbook).not.toHaveBeenCalled();
     expect(cloud.invoke).not.toHaveBeenCalledWith('downloadWorkbook', expect.anything());
     expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
       known: true,
       revision: 2,
-      conflict: true
+      conflict: false
     });
   });
 
@@ -409,120 +675,8 @@ describe('cloud workbook controller interactions', () => {
     expect(forget).not.toHaveBeenCalled();
   });
 
-  it('shows the specific main-process sign-in failure', async () => {
-    const signedOut = { configured: true, status: 'signed_out', user: null, workbooks: [] };
-    const cloud = {
-      invoke: vi.fn(async (command) => {
-        if (command === 'signInWithGoogle') {
-          return {
-            ok: false,
-            state: {
-              ...signedOut,
-              error: {
-                code: 'google_sign_in_failed',
-                message: 'Google sign-in could not be started.'
-              }
-            }
-          };
-        }
-        return { ok: true, state: signedOut };
-      }),
-      subscribe: () => () => {}
-    };
-    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
-    await waitFor(() => expect(result.current.model.status).toBe('signed_out'));
-
-    await act(async () => {
-      await result.current.execute('sign-in');
-    });
-
-    expect(result.current.model.error).toBe('Google sign-in could not be started.');
-  });
-
-  it('routes Apple sign-in through the named Cloud bridge method', async () => {
-    const signedOut = { configured: true, status: 'signed_out', user: null, workbooks: [] };
-    const cloud = {
-      invoke: vi.fn(async () => ({ ok: true, state: signedOut })),
-      subscribe: () => () => {}
-    };
-    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
-    await waitFor(() => expect(result.current.model.status).toBe('signed_out'));
-
-    await act(async () => {
-      await result.current.execute('sign-in-apple');
-    });
-
-    expect(cloud.invoke).toHaveBeenCalledWith('signInWithApple', {});
-  });
-
-  it('routes Apple identity linking through the named Cloud bridge method', async () => {
-    const cloud = {
-      invoke: vi.fn(async (command) => ({
-        ok: true,
-        state:
-          command === 'getState'
-            ? signedInState()
-            : {
-                ...signedInState(),
-                user: { ...signedInState().user, providers: ['google', 'apple'] }
-              }
-      })),
-      subscribe: () => () => {}
-    };
-    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
-    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
-
-    await act(async () => {
-      await result.current.execute('link-apple');
-    });
-
-    expect(cloud.invoke).toHaveBeenCalledWith('linkAppleIdentity', {});
-    expect(result.current.model.user.providers).toContain('apple');
-  });
-
-  it('updates the Cavalry profile name and publishes the returned Cloud state', async () => {
-    const updatedState = {
-      ...signedInState(),
-      user: { ...signedInState().user, name: 'Alex Example' }
-    };
-    const cloud = {
-      invoke: vi.fn(async (command, payload) => {
-        if (command === 'getState') return { ok: true, state: signedInState() };
-        if (command === 'updateProfile') {
-          return { ok: true, profile: { name: payload.name }, state: updatedState };
-        }
-        return { ok: true, state: signedInState() };
-      }),
-      subscribe: () => () => {}
-    };
-    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
-    await waitFor(() => expect(result.current.model.user?.name).toBe('Alex Example'));
-
-    let updated;
-    await act(async () => {
-      updated = await result.current.execute('profile-update', { name: '  Alex Example  ' });
-    });
-
-    expect(updated).toMatchObject({ ok: true, profile: { name: 'Alex Example' } });
-    expect(cloud.invoke).toHaveBeenCalledWith('updateProfile', { name: 'Alex Example' });
-    expect(result.current.model.user?.name).toBe('Alex Example');
-    expect(result.current.model.notice).toBe('Profile name updated.');
-  });
-
-  it('rejects invalid profile names before invoking the main process', async () => {
-    const cloud = makeCloud();
-    const { result } = renderHook(() => useCloudWorkbookController({ cloud }));
-    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
-
-    await act(async () => {
-      await result.current.execute('profile-update', { name: '   ' });
-    });
-
-    expect(result.current.model.error).toBe('Enter a profile name.');
-    expect(cloud.invoke).not.toHaveBeenCalledWith('updateProfile', expect.anything());
-  });
-
-  it('clears a deleted Cloud link so the local workbook can be added again deliberately', async () => {
+  it('recreates a deleted iCloud copy only after an explicit keep-local choice', async () => {
+    const localWorkbook = { id: 'cloud-workbook', name: 'Local Plan' };
     let uploadCount = 0;
     const recreatedState = {
       ...signedInState(),
@@ -531,6 +685,9 @@ describe('cloud workbook controller interactions', () => {
     const cloud = {
       invoke: vi.fn(async (command) => {
         if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'listWorkbooks') {
+          return { ok: true, state: { ...signedInState(), workbooks: [] } };
+        }
         if (command === 'uploadWorkbook') {
           uploadCount += 1;
           return uploadCount === 1
@@ -541,17 +698,28 @@ describe('cloud workbook controller interactions', () => {
                 error: 'This workbook changed in Cavalry Cloud.',
                 state: { ...signedInState(), workbooks: [] }
               }
-            : { ok: true, state: recreatedState };
+            : {
+                ok: true,
+                metadata: recreatedState.workbooks[0],
+                state: recreatedState
+              };
         }
         return { ok: true, state: recreatedState };
       }),
       subscribe: () => () => {}
     };
-    const syncStorage = createSyncStorage(2);
+    const syncStorage = createSyncStorage(2, false, localWorkbook);
     const { result } = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Local Plan' },
+        workbook: localWorkbook,
+        workbookStorage: {
+          load: async () => ({
+            status: 'loaded',
+            workbook: { id: 'cloud-workbook', name: 'Local Plan' }
+          })
+        },
+        saveStatus: 'saved',
         syncStorage
       })
     );
@@ -561,21 +729,25 @@ describe('cloud workbook controller interactions', () => {
     await act(async () => {
       conflicted = await result.current.execute('upload');
     });
-    expect(conflicted.error).toContain('no longer exists');
+    expect(conflicted.error).toContain('was deleted');
     expect(result.current.model.current).toMatchObject({
-      conflict: false,
+      conflict: true,
       linked: false,
-      status: 'local_only'
+      status: 'conflict'
     });
 
     let recreated;
     await act(async () => {
-      recreated = await result.current.execute('upload');
+      recreated = await result.current.execute('keep-local');
     });
     expect(recreated).toMatchObject({ ok: true });
-    expect(cloud.invoke).toHaveBeenLastCalledWith('uploadWorkbook', {
+    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
       workbook: { id: 'cloud-workbook', name: 'Local Plan' },
-      expectedRevision: null
+      expectedRevision: null,
+      conflictResolution: 'keep_local'
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      workbookId: 'cloud-workbook'
     });
     expect(result.current.model.current).toMatchObject({
       conflict: false,
@@ -585,9 +757,11 @@ describe('cloud workbook controller interactions', () => {
   });
 
   it('latches a newer Cloud copy until the saved local workbook is explicitly replaced', async () => {
-    const downloadedWorkbook = cloneFixture(makeMinimalWorkbook());
-    downloadedWorkbook.id = 'cloud-workbook';
-    downloadedWorkbook.name = 'Newer Cloud Plan';
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const localWorkbook = cloneFixture(baseWorkbook);
+    localWorkbook.transactions[0].description = 'Mac edit';
+    const downloadedWorkbook = cloneFixture(baseWorkbook);
+    downloadedWorkbook.transactions[0].description = 'Phone edit';
     const changedState = {
       ...signedInState(),
       workbooks: [
@@ -611,7 +785,12 @@ describe('cloud workbook controller interactions', () => {
           };
         }
         if (command === 'downloadWorkbook') {
-          return { ok: true, workbook: downloadedWorkbook, state: changedState };
+          return {
+            ok: true,
+            workbook: downloadedWorkbook,
+            metadata: changedState.workbooks[0],
+            state: changedState
+          };
         }
         return { ok: true, state: changedState };
       }),
@@ -619,17 +798,17 @@ describe('cloud workbook controller interactions', () => {
     };
     const forget = vi.fn(async () => ({ ok: true }));
     const setWorkbook = vi.fn();
-    const syncStorage = createSyncStorage(2);
+    const syncStorage = createSyncStorage(2, false, baseWorkbook);
     const { result } = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        workbook: localWorkbook,
         browserCache: { save: vi.fn(async () => ({ ok: true })) },
         workbookStorage: {
           forget,
           load: async () => ({
             status: 'loaded',
-            workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' }
+            workbook: localWorkbook
           })
         },
         saveStatus: 'saved',
@@ -648,7 +827,34 @@ describe('cloud workbook controller interactions', () => {
     expect(result.current.model.current).toMatchObject({
       conflict: true,
       revision: 3,
-      status: 'conflict'
+      status: 'conflict',
+      conflictNotice: {
+        sourceDevice: 'Mac',
+        report: {
+          entries: [
+            {
+              section: 'Transactions',
+              local: {
+                label: 'This Mac',
+                details: [{ label: 'Description', before: 'Original', after: 'Mac edit' }]
+              },
+              remote: {
+                label: 'iCloud copy',
+                details: [{ label: 'Description', before: 'Original', after: 'Phone edit' }]
+              }
+            }
+          ]
+        }
+      }
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('publishConflictNotice', {
+      workbookId: 'cloud-workbook',
+      conflictNotice: expect.objectContaining({
+        sourceDevice: 'Mac',
+        report: expect.objectContaining({ conflictCount: 1 })
+      }),
+      sourceWorkbook: localWorkbook,
+      baseWorkbook
     });
 
     let blockedUpload;
@@ -675,9 +881,465 @@ describe('cloud workbook controller interactions', () => {
       saveStatus: 'cache'
     });
     expect(result.current.model.current.conflict).toBe(false);
+    expect(result.current.model.current.conflictNotice).toBeNull();
+  });
+
+  it('reconciles reviewed transaction clashes and uploads the combined workbook', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const localWorkbook = cloneFixture(baseWorkbook);
+    localWorkbook.transactions[0].description = 'Mac edit';
+    localWorkbook.transactions.push(syncTransaction('mac-only', 'Mac only'));
+    const remoteWorkbook = cloneFixture(baseWorkbook);
+    remoteWorkbook.transactions[0].description = 'Phone edit';
+    remoteWorkbook.transactions.push(syncTransaction('phone-only', 'Phone only'));
+    const changedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 3 }]
+    };
+    const resolvedState = {
+      ...changedState,
+      workbooks: [{ ...changedState.workbooks[0], revision: 4 }]
+    };
+    let uploadCount = 0;
+    const cloud = {
+      invoke: vi.fn(async (command, payload) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'uploadWorkbook') {
+          uploadCount += 1;
+          return uploadCount === 1
+            ? {
+                ok: false,
+                code: 'workbook_revision_conflict',
+                conflict: true,
+                error: 'This workbook changed in iCloud.',
+                state: changedState
+              }
+            : {
+                ok: true,
+                metadata: resolvedState.workbooks[0],
+                state: resolvedState
+              };
+        }
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: remoteWorkbook,
+            metadata: changedState.workbooks[0],
+            state: changedState
+          };
+        }
+        if (command === 'downloadConflictPackage') {
+          return {
+            ok: true,
+            conflictNoticeId: payload.conflictNoticeId,
+            sourceWorkbook: localWorkbook,
+            baseWorkbook
+          };
+        }
+        return {
+          ok: true,
+          state: command === 'clearConflictNotice' ? resolvedState : changedState
+        };
+      }),
+      subscribe: () => () => {}
+    };
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+    const setWorkbook = vi.fn();
+    const syncStorage = createSyncStorage(2, false, baseWorkbook);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: localWorkbook,
+        workbookStorage: {
+          load: async () => ({ status: 'loaded', workbook: localWorkbook })
+        },
+        saveStatus: 'saved',
+        saveWorkbook,
+        syncStorage,
+        setWorkbook
+      })
+    );
+    await waitFor(() => expect(result.current.model.status).toBe('signed_in'));
+
+    await act(async () => {
+      await result.current.execute('upload');
+    });
+    const notice = result.current.model.current.conflictNotice;
+    expect(notice.report.entries[0].path).toBe('transactions["shared"]');
+
+    let resolved;
+    await act(async () => {
+      resolved = await result.current.execute('reconcile', {
+        conflictNoticeId: notice.id,
+        choices: [{ path: 'transactions["shared"]', side: 'remote' }]
+      });
+    });
+
+    expect(resolved).toMatchObject({ ok: true, reconciled: true });
+    const savedWorkbook = saveWorkbook.mock.calls[0][0];
+    expect(savedWorkbook.transactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'shared', description: 'Phone edit' }),
+        expect.objectContaining({ id: 'mac-only' }),
+        expect.objectContaining({ id: 'phone-only' })
+      ])
+    );
+    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      workbook: savedWorkbook,
+      expectedRevision: 3,
+      conflictResolution: 'keep_local'
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      workbookId: 'cloud-workbook'
+    });
+    expect(result.current.model.current.conflict).toBe(false);
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
+      revision: 4,
+      conflict: false,
+      baseRevision: 4
+    });
+  });
+
+  it('replaces legacy settings and timestamp decisions with the real transaction clash', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const localWorkbook = cloneFixture(baseWorkbook);
+    localWorkbook.updatedAt = '2026-08-30T05:00:00.000Z';
+    localWorkbook.settings = {
+      ...localWorkbook.settings,
+      activeAdvisorThreadId: 'advisor-mac',
+      dashboardLayout: ['cash']
+    };
+    localWorkbook.transactions[0].description = 'Mac edit';
+    localWorkbook.transactions.push(syncTransaction('mac-only', 'Mac only'));
+    const remoteWorkbook = cloneFixture(baseWorkbook);
+    remoteWorkbook.updatedAt = '2026-08-30T05:01:00.000Z';
+    remoteWorkbook.settings = {
+      ...remoteWorkbook.settings,
+      activeAdvisorThreadId: 'advisor-phone',
+      dashboardLayout: ['net-worth']
+    };
+    remoteWorkbook.transactions[0].description = 'Phone edit';
+    remoteWorkbook.transactions.push(syncTransaction('phone-only', 'Phone only'));
+    const legacyNotice = {
+      id: 'legacy-internal-review',
+      sourceDevice: 'Mac',
+      detectedAt: '2026-08-30T05:02:00.000Z',
+      baseRevision: 2,
+      remoteRevision: 3,
+      summary: '3 changes need review',
+      resolutionAvailable: true,
+      report: {
+        version: 1,
+        workbookId: 'cloud-workbook',
+        workbookName: 'Shared Plan',
+        conflictCount: 3,
+        omittedCount: 0,
+        entries: [
+          { path: 'settings', title: 'Settings' },
+          { path: 'updatedAt', title: 'Updated At' },
+          { path: 'transactions["shared"]', title: 'Original' }
+        ]
+      }
+    };
+    const conflictState = {
+      ...signedInState(),
+      workbooks: [
+        {
+          ...signedInState().workbooks[0],
+          revision: 3,
+          conflictNotice: legacyNotice
+        }
+      ]
+    };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: conflictState };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: remoteWorkbook,
+            metadata: conflictState.workbooks[0],
+            state: conflictState
+          };
+        }
+        return { ok: true, state: conflictState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage(2, true, baseWorkbook);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: localWorkbook,
+        saveStatus: 'saved',
+        syncStorage
+      })
+    );
+
+    await waitFor(() =>
+      expect(cloud.invoke).toHaveBeenCalledWith(
+        'publishConflictNotice',
+        expect.objectContaining({
+          conflictNotice: expect.objectContaining({
+            report: expect.objectContaining({
+              conflictCount: 1,
+              entries: [
+                expect.objectContaining({
+                  path: 'transactions["shared"]',
+                  section: 'Transactions'
+                })
+              ]
+            })
+          })
+        })
+      )
+    );
+    const published = cloud.invoke.mock.calls
+      .filter(([command]) => command === 'publishConflictNotice')
+      .at(-1)[1].conflictNotice;
+    expect(
+      published.report.entries.some(({ path }) => ['$', 'settings', 'updatedAt'].includes(path))
+    ).toBe(false);
+    expect(result.current.model.current.conflict).toBe(true);
+  });
+
+  it('automatically settles a legacy whole-workbook review when both copies safely combine', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const localWorkbook = cloneFixture(baseWorkbook);
+    localWorkbook.settings = {
+      ...localWorkbook.settings,
+      activeAdvisorThreadId: 'advisor-mac'
+    };
+    localWorkbook.transactions.push(syncTransaction('mac-only', 'Mac only'));
+    const remoteWorkbook = cloneFixture(baseWorkbook);
+    remoteWorkbook.settings = {
+      ...remoteWorkbook.settings,
+      activeAdvisorThreadId: 'advisor-phone'
+    };
+    remoteWorkbook.transactions.push(syncTransaction('phone-only', 'Phone only'));
+    const legacyNotice = {
+      id: 'legacy-whole-workbook-review',
+      sourceDevice: 'Mac',
+      detectedAt: '2026-08-30T06:02:00.000Z',
+      baseRevision: 2,
+      remoteRevision: 3,
+      summary: '1 change needs review',
+      resolutionAvailable: true,
+      report: {
+        version: 1,
+        workbookId: 'cloud-workbook',
+        workbookName: 'Shared Plan',
+        conflictCount: 1,
+        omittedCount: 0,
+        entries: [{ path: '$', title: 'Workbook' }]
+      }
+    };
+    const conflictState = {
+      ...signedInState(),
+      workbooks: [
+        {
+          ...signedInState().workbooks[0],
+          revision: 3,
+          conflictNotice: legacyNotice
+        }
+      ]
+    };
+    const resolvedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 4 }]
+    };
+    const cloud = {
+      invoke: vi.fn(async (command, payload) => {
+        if (command === 'getState') return { ok: true, state: conflictState };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: remoteWorkbook,
+            metadata: conflictState.workbooks[0],
+            state: conflictState
+          };
+        }
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: true,
+            metadata: resolvedState.workbooks[0],
+            state: resolvedState
+          };
+        }
+        if (command === 'clearConflictNotice') return { ok: true, state: resolvedState };
+        return { ok: true, state: conflictState, payload };
+      }),
+      subscribe: () => () => {}
+    };
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+    const setWorkbook = vi.fn();
+    const syncStorage = createSyncStorage(2, true, baseWorkbook);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: localWorkbook,
+        saveStatus: 'saved',
+        saveWorkbook,
+        setWorkbook,
+        syncStorage
+      })
+    );
+
+    await waitFor(() => expect(saveWorkbook).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.model.current.conflict).toBe(false));
+    expect(
+      cloud.invoke.mock.calls.filter(([command]) => command === 'publishConflictNotice')
+    ).toHaveLength(0);
+    const mergedWorkbook = saveWorkbook.mock.calls[0][0];
+    expect(mergedWorkbook.transactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'shared' }),
+        expect.objectContaining({ id: 'mac-only' }),
+        expect.objectContaining({ id: 'phone-only' })
+      ])
+    );
+    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      workbook: mergedWorkbook,
+      expectedRevision: 3,
+      conflictResolution: 'keep_local'
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      workbookId: 'cloud-workbook'
+    });
+  });
+
+  it('reconciles a shared conflict on the Mac even when the iPhone reported it', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const sourceWorkbook = cloneFixture(baseWorkbook);
+    sourceWorkbook.transactions[0].description = 'Mac edit';
+    sourceWorkbook.transactions.push(syncTransaction('mac-only', 'Mac only'));
+    const currentWorkbook = cloneFixture(baseWorkbook);
+    currentWorkbook.transactions[0].description = 'Phone edit';
+    currentWorkbook.transactions.push(syncTransaction('phone-only', 'Phone only'));
+    const conflictNotice = {
+      id: 'conflict-from-mac',
+      sourceDevice: 'iPhone',
+      detectedAt: '2026-08-30T03:00:00.000Z',
+      baseRevision: 2,
+      remoteRevision: 3,
+      summary: '1 change needs review',
+      resolutionAvailable: true,
+      report: {
+        version: 1,
+        workbookId: 'cloud-workbook',
+        workbookName: 'Shared Plan',
+        conflictCount: 1,
+        omittedCount: 0,
+        entries: [
+          {
+            key: 'transactions:shared',
+            path: 'transactions["shared"]',
+            kind: 'same_record_changed',
+            section: 'Transactions',
+            title: 'Original',
+            message: 'Both copies changed this item differently.',
+            local: { label: 'This iPhone', action: 'edited', details: [] },
+            remote: { label: 'iCloud copy', action: 'edited', details: [] }
+          }
+        ]
+      }
+    };
+    const reviewingState = {
+      ...signedInState(),
+      workbooks: [
+        {
+          ...signedInState().workbooks[0],
+          revision: 3,
+          conflictNotice
+        }
+      ]
+    };
+    const resolvedState = {
+      ...reviewingState,
+      workbooks: [{ ...reviewingState.workbooks[0], revision: 4, conflictNotice: undefined }]
+    };
+    const cloud = {
+      invoke: vi.fn(async (command, payload) => {
+        if (command === 'getState') return { ok: true, state: reviewingState };
+        if (command === 'downloadConflictPackage') {
+          return {
+            ok: true,
+            conflictNoticeId: payload.conflictNoticeId,
+            sourceWorkbook,
+            baseWorkbook
+          };
+        }
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: currentWorkbook,
+            metadata: reviewingState.workbooks[0],
+            state: reviewingState
+          };
+        }
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: true,
+            metadata: resolvedState.workbooks[0],
+            state: resolvedState
+          };
+        }
+        if (command === 'clearConflictNotice') {
+          return { ok: true, state: resolvedState };
+        }
+        return { ok: true, state: reviewingState };
+      }),
+      subscribe: () => () => {}
+    };
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+    const syncStorage = createSyncStorage(3, false, currentWorkbook);
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: currentWorkbook,
+        saveStatus: 'saved',
+        saveWorkbook,
+        syncStorage
+      })
+    );
+    await waitFor(() =>
+      expect(result.current.model.current.conflictNotice).toMatchObject({
+        id: 'conflict-from-mac',
+        resolutionAvailable: true
+      })
+    );
+
+    let resolved;
+    await act(async () => {
+      resolved = await result.current.execute('reconcile', {
+        conflictNoticeId: 'conflict-from-mac',
+        choices: [{ path: 'transactions["shared"]', side: 'local' }]
+      });
+    });
+
+    expect(resolved).toMatchObject({ ok: true, reconciled: true });
+    expect(saveWorkbook.mock.calls[0][0].transactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'shared', description: 'Mac edit' }),
+        expect.objectContaining({ id: 'mac-only' }),
+        expect.objectContaining({ id: 'phone-only' })
+      ])
+    );
+    expect(cloud.invoke).toHaveBeenCalledWith('downloadConflictPackage', {
+      workbookId: 'cloud-workbook',
+      conflictNoticeId: 'conflict-from-mac'
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      workbookId: 'cloud-workbook'
+    });
   });
 
   it('keeps the acknowledged revision and conflict latch across a remount', async () => {
+    const baseWorkbook = syncWorkbook('Shared Plan', [syncTransaction('shared', 'Original')]);
+    const localWorkbook = cloneFixture(baseWorkbook);
+    localWorkbook.transactions[0].description = 'Mac edit';
+    const remoteWorkbook = cloneFixture(baseWorkbook);
+    remoteWorkbook.transactions[0].description = 'Phone edit';
     const baseState = {
       ...signedInState(),
       workbooks: [{ ...signedInState().workbooks[0], revision: 7 }]
@@ -687,7 +1349,7 @@ describe('cloud workbook controller interactions', () => {
       workbooks: [{ ...signedInState().workbooks[0], revision: 8 }]
     };
     let serverState = baseState;
-    const syncStorage = createSyncStorage(7);
+    const syncStorage = createSyncStorage(7, false, baseWorkbook);
     const cloud = {
       invoke: vi.fn(async (command) => {
         if (command === 'getState') return { ok: true, state: serverState };
@@ -701,6 +1363,14 @@ describe('cloud workbook controller interactions', () => {
             state: latestState
           };
         }
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: remoteWorkbook,
+            metadata: latestState.workbooks[0],
+            state: latestState
+          };
+        }
         return { ok: true, state: latestState };
       }),
       subscribe: () => () => {}
@@ -708,7 +1378,7 @@ describe('cloud workbook controller interactions', () => {
     const first = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        workbook: localWorkbook,
         syncStorage
       })
     );
@@ -718,7 +1388,7 @@ describe('cloud workbook controller interactions', () => {
       await first.result.current.execute('upload');
     });
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
-      workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+      workbook: localWorkbook,
       expectedRevision: 7
     });
     expect(first.result.current.model.current.conflict).toBe(true);
@@ -727,7 +1397,7 @@ describe('cloud workbook controller interactions', () => {
     const second = renderHook(() =>
       useCloudWorkbookController({
         cloud,
-        workbook: { id: 'cloud-workbook', name: 'Stale Local Plan' },
+        workbook: localWorkbook,
         syncStorage
       })
     );
@@ -741,6 +1411,107 @@ describe('cloud workbook controller interactions', () => {
     expect(
       cloud.invoke.mock.calls.filter(([command]) => command === 'uploadWorkbook')
     ).toHaveLength(1);
+  });
+
+  it('adopts a completed resolution from the other device', async () => {
+    const conflictedWorkbook = syncWorkbook('Shared Plan', [
+      syncTransaction('shared', 'Unresolved Mac copy')
+    ]);
+    const resolvedWorkbook = syncWorkbook('Shared Plan', [
+      syncTransaction('shared', 'Resolved on iPhone')
+    ]);
+    const conflictNotice = {
+      id: 'conflict-before-iphone-resolution',
+      sourceDevice: 'Mac',
+      detectedAt: '2026-08-30T03:00:00.000Z',
+      baseRevision: 4,
+      remoteRevision: 5,
+      summary: '1 change needs review',
+      resolutionAvailable: true,
+      report: {
+        version: 1,
+        workbookId: 'cloud-workbook',
+        workbookName: 'Shared Plan',
+        conflictCount: 1,
+        omittedCount: 0,
+        entries: [
+          {
+            key: 'transactions:shared',
+            path: 'transactions["shared"]',
+            kind: 'same_record_changed',
+            section: 'Transactions',
+            title: 'Unresolved Mac copy',
+            message: 'Both copies changed this item differently.',
+            local: { label: 'This Mac', action: 'edited', details: [] },
+            remote: { label: 'iCloud copy', action: 'edited', details: [] }
+          }
+        ]
+      }
+    };
+    const conflictState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 5, conflictNotice }]
+    };
+    const resolvedState = {
+      ...signedInState(),
+      workbooks: [{ ...signedInState().workbooks[0], revision: 6 }]
+    };
+    let listener = null;
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: conflictState };
+        if (command === 'downloadWorkbook') {
+          return {
+            ok: true,
+            workbook: resolvedWorkbook,
+            metadata: resolvedState.workbooks[0],
+            state: resolvedState
+          };
+        }
+        return { ok: true, state: resolvedState };
+      }),
+      subscribe: vi.fn((callback) => {
+        listener = callback;
+        return () => {};
+      })
+    };
+    const syncStorage = createSyncStorage(4, true, conflictedWorkbook);
+    writeCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook', {
+      revision: 4,
+      conflict: true,
+      conflictNoticeId: conflictNotice.id,
+      conflictRemoteRevision: 5
+    });
+    const saveWorkbook = vi.fn(async () => ({ ok: true }));
+    const setWorkbook = vi.fn();
+    const { result } = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: conflictedWorkbook,
+        saveStatus: 'saved',
+        saveWorkbook,
+        setWorkbook,
+        syncStorage
+      })
+    );
+    await waitFor(() => expect(result.current.model.current.conflict).toBe(true));
+
+    act(() => listener({ state: resolvedState }));
+
+    await waitFor(() =>
+      expect(setWorkbook).toHaveBeenCalledWith(resolvedWorkbook, {
+        source: 'cloud-merge',
+        markDirty: true
+      })
+    );
+    await waitFor(() => expect(result.current.model.current.conflict).toBe(false));
+    expect(saveWorkbook).toHaveBeenCalledWith(resolvedWorkbook);
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
+      revision: 6,
+      conflict: false,
+      baseRevision: 6,
+      baseWorkbook: resolvedWorkbook
+    });
   });
 
   it('prevents a same-tick duplicate upload from reaching the main process', async () => {
@@ -838,16 +1609,18 @@ describe('cloud workbook controller interactions', () => {
       await pendingUpload;
     });
 
-    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toMatchObject({
       known: true,
       revision: 3,
-      conflict: false
+      conflict: false,
+      baseRevision: 3,
+      baseWorkbook: { id: 'cloud-workbook', name: 'Cloud Plan' }
     });
     expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'other-workbook').known).toBe(false);
     expect(hook.result.current.model.current.workbookId).toBe('other-workbook');
   });
 
-  it('records a slow conflict against the workbook that started it', async () => {
+  it('does not attach a slow conflict to a workbook opened afterward', async () => {
     let resolveUpload;
     const uploadResult = new Promise((resolve) => {
       resolveUpload = resolve;
@@ -899,7 +1672,7 @@ describe('cloud workbook controller interactions', () => {
     expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'cloud-workbook')).toEqual({
       known: true,
       revision: 2,
-      conflict: true
+      conflict: false
     });
     expect(readCloudWorkbookSyncState(syncStorage, 'user-1', 'other-workbook').known).toBe(false);
     expect(hook.result.current.model.current).toMatchObject({

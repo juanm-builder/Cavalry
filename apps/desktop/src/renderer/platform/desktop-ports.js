@@ -251,15 +251,13 @@ function createCompanionPort(bridge) {
 
 const CLOUD_BRIDGE_METHODS = Object.freeze({
   getState: 'getState',
-  linkAppleIdentity: 'linkAppleIdentity',
-  signInWithApple: 'signInWithApple',
-  signInWithGoogle: 'signInWithGoogle',
-  signOut: 'signOut',
-  updateProfile: 'updateProfile',
   listWorkbooks: 'listWorkbooks',
   uploadWorkbook: 'uploadWorkbook',
   downloadWorkbook: 'downloadWorkbook',
-  deleteWorkbook: 'deleteWorkbook'
+  downloadConflictPackage: 'downloadConflictPackage',
+  deleteWorkbook: 'deleteWorkbook',
+  publishConflictNotice: 'publishConflictNotice',
+  clearConflictNotice: 'clearConflictNotice'
 });
 
 function createCloudPort(bridge) {
@@ -271,7 +269,7 @@ function createCloudPort(bridge) {
         return {
           ok: false,
           unavailable: true,
-          error: 'Cavalry Cloud is unavailable in this build.'
+          error: 'iCloud sync is unavailable in this build.'
         };
       }
       try {
@@ -287,6 +285,9 @@ function createCloudPort(bridge) {
             schemaVersion: workbook.version,
             sourceUpdatedAt: workbook.updatedAt,
             expectedRevision: payload.expectedRevision,
+            ...(payload.conflictResolution === 'keep_local'
+              ? { conflictResolution: 'keep_local' }
+              : {}),
             portableHtml: portable.html
           };
         }
@@ -298,7 +299,7 @@ function createCloudPort(bridge) {
               ? deserializeWorkbookFromFile(result.portableHtml, { rejectInvalid: true }).workbook
               : null;
           if (!downloaded) {
-            return { ok: false, error: 'The cloud workbook did not contain a valid snapshot.' };
+            return { ok: false, error: 'The iCloud workbook did not contain a valid snapshot.' };
           }
           return {
             ...result,
@@ -310,7 +311,7 @@ function createCloudPort(bridge) {
       } catch (error) {
         return {
           ok: false,
-          error: error && error.message ? error.message : 'The cloud request failed.'
+          error: error && error.message ? error.message : 'The iCloud request failed.'
         };
       }
     },
@@ -318,36 +319,6 @@ function createCloudPort(bridge) {
       return bridge && typeof bridge.onStateChanged === 'function'
         ? bridge.onStateChanged(callback)
         : () => {};
-    }
-  };
-}
-
-const FEEDBACK_BRIDGE_METHODS = Object.freeze({
-  list: 'listFeedbackReports',
-  submit: 'submitFeedbackReport',
-  download: 'getFeedbackAttachment'
-});
-
-function createFeedbackPort(bridge) {
-  return {
-    async invoke(operation, payload = {}) {
-      const methodName = FEEDBACK_BRIDGE_METHODS[operation];
-      const method = methodName && bridge && bridge[methodName];
-      if (typeof method !== 'function') {
-        return {
-          ok: false,
-          unavailable: true,
-          error: 'Cloud feedback is unavailable in this build.'
-        };
-      }
-      try {
-        return (await method(payload)) || { ok: true };
-      } catch (error) {
-        return {
-          ok: false,
-          error: error && error.message ? error.message : 'The feedback request failed.'
-        };
-      }
     }
   };
 }
@@ -522,7 +493,6 @@ export function createDesktopRendererPorts(bridge = {}, globalObject = globalThi
     advisor: createAdvisorPort(nativeBridge.advisor),
     companion: createCompanionPort(nativeBridge.companion),
     cloud: createCloudPort(nativeBridge.cloud),
-    feedback: createFeedbackPort(nativeBridge.cloud),
     updates: createUpdatePort(nativeBridge.updates),
     downloads: createDownloadPort(browserWindow),
     filePicker: createFilePickerPort(browserWindow),

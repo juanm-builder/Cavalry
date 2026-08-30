@@ -2,22 +2,23 @@
 
 The finance workflow is local-first: open or create a workbook, record balanced ledger activity, plan and review money, and save the portable workbook through native and browser-cache adapters.
 
-| Feature slice                                         | Reusable owner                                   | App owner                                           |
-| ----------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------- |
-| Workbook schema, normalization, HTML/JSON portability | `finance-core`                                   | Mac storage/cache adapters and session reducer      |
-| Dashboard, reports, and budgets                       | `finance-core` queries and commands              | React route controllers/views                       |
-| Accounts and categories                               | `finance-core` management and safety rules       | React routes and modals                             |
-| Transactions and import/export                        | `finance-core` ledger and import/export services | React composer, table, preview, and file effects    |
-| Bills and recurring items                             | `finance-core` recurring services                | React bills route and editors                       |
-| Drafts and checkpoints                                | `action-review`                                  | React review route and approval effects             |
-| Advisor                                               | `advisor` plus `action-review` safety gates      | React conversation UI and injected transport        |
-| Cavalry Cloud                                         | Supabase owner-scoped snapshots and RLS          | desktop-host auth/transport and Account settings UI |
+| Feature slice                                         | Reusable owner                                   | App owner                                          |
+| ----------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| Workbook schema, normalization, HTML/JSON portability | `finance-core`                                   | Mac storage/cache adapters and session reducer     |
+| Dashboard, reports, and budgets                       | `finance-core` queries and commands              | React route controllers/views                      |
+| Accounts and categories                               | `finance-core` management and safety rules       | React routes and modals                            |
+| Transactions and import/export                        | `finance-core` ledger and import/export services | React composer, table, preview, and file effects   |
+| Bills and recurring items                             | `finance-core` recurring services                | React bills route and editors                      |
+| Drafts and checkpoints                                | `action-review`                                  | React review route and approval effects            |
+| Advisor                                               | `advisor` plus `action-review` safety gates      | React conversation UI and injected transport       |
+| iCloud sync                                           | local-first revision and conflict rules          | native CKSyncEngine transport and Account settings |
 
 See [Action Review](action-review.md) for the portable plan format,
 [Advisor acceptance](advisor-acceptance.md) for its safety contract,
 [AI Companion capabilities](ai-companion-capabilities.md) for the feature-tool registration contract,
-[Companion trust architecture](companion-trust-architecture.md) for the streaming, action receipt, and
-local-memory boundaries, and [Cavalry Cloud](cavalry-cloud.md) for the explicit-upload cloud boundary.
+[iCloud workbook sync](icloud-sync.md) for Apple-device synchronization, and
+[Companion trust architecture](companion-trust-architecture.md) for the streaming, action receipt,
+and local-memory boundaries.
 
 Treat the [architecture map](../architecture/README.md) as authoritative when choosing a home for new code.
 

@@ -590,11 +590,11 @@ describe('Cavalry assistant references', () => {
   it('rewrites an unsupported assertion as a natural verification failure', () => {
     expect(
       buildCavalryAssistantCitations({
-        text: 'Supabase is active. [[source:transaction:not-found]]',
+        text: 'Hosting is active. [[source:transaction:not-found]]',
         toolResults: [successfulResult({ transactions: [] })]
       })
     ).toEqual({
-      text: "I couldn't verify “Supabase is active” from the workbook.",
+      text: "I couldn't verify “Hosting is active” from the workbook.",
       references: []
     });
   });

@@ -152,6 +152,27 @@ describe('settings route view-model service', () => {
     });
   });
 
+  it('reports a selected OpenAI profile without a saved key as incomplete', () => {
+    const advisor = buildSettingsAdvisorViewModel(
+      makeSettingsOptions({
+        advisorSettings: {
+          provider: 'openai',
+          apiMode: 'responses',
+          model: 'gpt-5.4-mini',
+          hasApiKey: false,
+          apiKeyPreview: ''
+        },
+        advisorProviderLabel: 'OpenAI / API',
+        advisorStatus: '',
+        advisorConnection: ''
+      })
+    );
+
+    expect(advisor.summaryTitle).toBe('OpenAI / API');
+    expect(advisor.summaryDetail).toBe('API key required');
+    expect(advisor.apiKeyPlaceholder).toBe('OpenAI API key');
+  });
+
   it('locks local model context until the server has fully stopped', () => {
     const advisor = buildSettingsAdvisorViewModel(
       makeSettingsOptions({

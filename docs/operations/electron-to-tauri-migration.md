@@ -8,21 +8,21 @@
 - recent-workbook, backup, and recovery locations
 - Companion API and Advisor contracts
 - `cavalry://` callback scheme
-- macOS and Windows product identities
+- the Mac product identity and local application-data location
 
 ## Changed
 
-- Chromium/Electron application shell becomes Tauri using WKWebView on macOS and WebView2 on Windows.
+- Chromium/Electron application shell becomes Tauri using WKWebView on macOS.
 - Electron IPC/preload namespaces become a Tauri renderer bridge, Rust command boundary, and versioned sidecar protocol.
 - `electron-updater` becomes the signed Tauri updater.
 - Electron menu/window lifecycle becomes Rust/Tauri menu and lifecycle handling.
-- `safeStorage` becomes AES-256-GCM with a Keychain- or DPAPI-protected master key.
+- `safeStorage` becomes AES-256-GCM with a Keychain-protected master key.
 
 ## User-data transition
 
 The Rust host passes the previous application-data directory to the sidecar. Workbook recents, backups, and recovery metadata therefore remain at their established location.
 
-Old `safeStorage` ciphertext is intentionally not decrypted by Rust or written as plaintext. Users may need to sign in to Cavalry Cloud again and re-enter encrypted Advisor credentials. A future bridge utility may migrate values only if it runs inside a trusted final Electron release and writes the new envelope securely.
+Old `safeStorage` ciphertext is intentionally not decrypted by Rust or written as plaintext. Users may need to re-enter encrypted Advisor credentials. iCloud access follows the system Apple Account and has no Cavalry session token to migrate.
 
 ## Installed-client transition
 

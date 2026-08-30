@@ -34,7 +34,8 @@ Rust owns:
 - single-instance behavior;
 - `cavalry://` deep-link delivery;
 - signed updater integration and relaunch;
-- target-specific bundle identities;
+- the Mac bundle identity and shared CloudKit container;
+- native CloudKit synchronization through `CKSyncEngine`;
 - launching and supervising the named Cavalry host sidecar;
 - the allowlisted renderer-to-host request boundary.
 
@@ -45,7 +46,7 @@ Tauri capabilities grant dialog, opener, updater, and deep-link APIs to the main
 The sidecar preserves mature host services that rely on Node packages or process APIs:
 
 - workbook open/save, recents, backups, and recovery;
-- Cavalry Cloud session and snapshot operations;
+- private iCloud workbook snapshot operations;
 - Companion API server lifecycle;
 - Advisor streaming, cancellation, transcription, GGUF inspection, and llama.cpp supervision.
 
@@ -58,7 +59,7 @@ When a host service needs a native picker, message box, external URL, or reveal-
 ## Compatibility invariants
 
 - Portable workbook HTML/JSON stays independent of the desktop shell.
-- Existing macOS and Windows product names and identifiers are preserved by platform overlays.
+- The Mac app uses `com.juanmbuilder.cavalry.mac` and shares `iCloud.com.juanmbuilder.cavalry` with Cavalry for iPhone.
 - Existing app-data paths are passed to the host sidecar.
 - Existing renderer routes, CSS, assets, and finance packages remain in place.
 - Cloud and Advisor secrets fail closed when operating-system credential storage is unavailable.

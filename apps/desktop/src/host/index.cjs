@@ -8,9 +8,9 @@
 const readline = require('node:readline');
 const { createAdvisorRuntimeController } = require('./advisor-runtime-controller.cjs');
 const { createCloudController } = require('./cloud-controller.cjs');
-const { createCloudDeepLinkController } = require('./cloud-deep-link-controller.cjs');
 const { createCompanionApiController } = require('./companion-api-controller.cjs');
 const deepLink = require('./deep-link.cjs');
+const { createDeepLinkController } = require('./deep-link-controller.cjs');
 const { createSafeStorage } = require('./safe-storage.cjs');
 const { createWorkbookFileController } = require('./workbook-file-controller.cjs');
 const { createHostApp } = require('./runtime/host-app.cjs');
@@ -20,7 +20,6 @@ const {
   createDialogAdapter,
   createShellAdapter
 } = require('./runtime/native-bridge.cjs');
-const { createNativeImageAdapter } = require('./runtime/native-image.cjs');
 const {
   PROTOCOL_VERSION,
   decodeProtocolLine,
@@ -57,9 +56,7 @@ function sendProtocol(message) {
 
 function appTitleForPlatform() {
   if (process.env.CAVALRY_APP_NAME) return String(process.env.CAVALRY_APP_NAME);
-  if (process.platform === 'darwin') return 'Cavalry for Mac';
-  if (process.platform === 'win32') return 'Cavalry for Windows';
-  return 'Cavalry';
+  return 'Cavalry for Mac';
 }
 
 let shuttingDown = false;
@@ -107,7 +104,6 @@ async function start() {
   });
   const dialog = createDialogAdapter(nativeBridge);
   const shell = createShellAdapter(nativeBridge);
-  const nativeImage = createNativeImageAdapter();
   const router = createHostIpcRouter({
     emitEvent(channel, payload) {
       sendProtocol({ type: 'event', channel, payload });
@@ -152,14 +148,11 @@ async function start() {
     assertTrustedSender
   });
   cloudController = createCloudController({
-    app,
     BrowserWindow: router.BrowserWindow,
     ipcMain: router.ipcMain,
-    nativeImage,
-    safeStorage,
-    shell,
-    supabaseUrl: process.env.CAVALRY_SUPABASE_URL,
-    publishableKey: process.env.CAVALRY_SUPABASE_PUBLISHABLE_KEY,
+    cloudKit: {
+      request: (payload) => nativeBridge.request('cloudkit.request', payload)
+    },
     assertTrustedSender
   });
 
@@ -169,10 +162,9 @@ async function start() {
       channel: 'cavalry-command',
       payload: command
     });
-  const deepLinkController = createCloudDeepLinkController({
+  const deepLinkController = createDeepLinkController({
     app,
     BrowserWindow: router.BrowserWindow,
-    cloudController,
     deepLink,
     createWindow: () => router.mainWindow,
     sendCommand
@@ -198,12 +190,6 @@ async function start() {
     channels: router.getRegisteredChannels()
   }));
 
-  void cloudController.restoreExistingSession().catch((error) => {
-    console.warn(
-      'Cloud session restoration failed:',
-      error && error.message ? error.message : error
-    );
-  });
   void companionApiController.start();
 
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -212,6 +198,10 @@ async function start() {
     if (!message || message.version !== PROTOCOL_VERSION) return;
     if (message.type === 'native-response') {
       nativeBridge.respond(message.response || message);
+      return;
+    }
+    if (message.type === 'native-event') {
+      cloudController?.handleNativeEvent(String(message.source || ''), message.payload || {});
       return;
     }
     if (message.type === 'lifecycle' && message.action === 'shutdown') {

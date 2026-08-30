@@ -5,8 +5,7 @@
 - Node.js 22 and npm
 - Rust stable
 - package-registry access for the pinned Tauri CLI and sidecar packager
-- Xcode Command Line Tools on macOS
-- Microsoft C++ Build Tools and WebView2 on Windows
+- Xcode 15 or newer, including its Command Line Tools and the macOS 14 SDK
 
 Install the pinned native CLI with `cargo install tauri-cli --version 2.11.4 --locked`. Repository scripts then invoke it through `cargo tauri`.
 

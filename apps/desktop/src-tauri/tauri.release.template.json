@@ -6,7 +6,13 @@
       "../packaging/RUNTIME-DEPENDENCY-INVENTORY.txt",
       "../../../LICENSE",
       "../../../THIRD_PARTY_NOTICES.md"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "entitlements.release.plist",
+      "files": {
+        "embedded.provisionprofile": "Cavalry.provisionprofile"
+      }
+    }
   },
   "plugins": {
     "updater": {
