@@ -290,6 +290,7 @@ describe('Tauri desktop release tooling', () => {
     expect(workflow).toContain('APPLE_SIGNING_CERTIFICATE_SERIAL');
     expect(workflow).toContain('MAC_PROVISIONING_PROFILE_BASE64');
     expect(workflow).toContain('openssl base64 -d -A -out "$profile_path"');
+    expect(workflow).toContain("grep -Eq 'CloudKit|^[[:space:]]*\\*[[:space:]]*$'");
     expect(workflow).toContain('embedded.provisionprofile');
     expect(workflow).toContain('scripts/macos-codesign-shim');
     expect(workflow).toContain(

@@ -2,6 +2,19 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.2 - 2026-08-30
+
+### Fixed
+
+- Fixed Mac release-profile validation to recognize Apple's wildcard authorization for registered
+  iCloud services in Xcode-generated Developer ID profiles. The final signed app is still required
+  to request CloudKit explicitly and only the production Cavalry container.
+
+### Compatibility and release notes
+
+- This fix-forward release supersedes the unpublished `v2.2.1` build attempt. There are no further
+  application, workbook, sync, or interface changes.
+
 ## 2.2.1 - 2026-08-30
 
 ### Fixed
