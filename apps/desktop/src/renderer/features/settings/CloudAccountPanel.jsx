@@ -190,12 +190,10 @@ function LocalProfile() {
 }
 
 function ICloudIdentity({ cloud }) {
-  const actions = useActionBindings();
   const signedIn = cloud.status === 'signed_in';
   const checking = cloud.status === 'initializing';
   const unavailable = cloud.status === 'unavailable';
   const pendingCount = Math.max(0, Number(cloud.pendingCount) || 0);
-  const pending = !!asString(cloud.pendingOperation);
   const lastSyncAt = formatCloudTimestamp(cloud.lastSyncAt);
   const label = checking
     ? 'Checking iCloud'
@@ -235,17 +233,6 @@ function ICloudIdentity({ cloud }) {
           <strong>Your workbooks stay in sync</strong>
           <p>Changes save on this Mac first, then sync with your iPhone through iCloud.</p>
         </div>
-        <div className="settings-cloud-provider-actions">
-          <button
-            className="btn"
-            disabled={pending || checking}
-            type="button"
-            {...actions.action('refresh-cloud-workbooks')}
-          >
-            <Icon name="refresh" />
-            {pending ? 'Refreshing…' : 'Sync Now'}
-          </button>
-        </div>
       </div>
       <div className="settings-inline-message" role={cloud.error ? 'alert' : 'note'}>
         <Icon name={cloud.error ? 'error' : signedIn ? 'shield_lock' : 'info'} />
@@ -254,7 +241,7 @@ function ICloudIdentity({ cloud }) {
             ? lastSyncAt
               ? `iCloud · Last checked ${lastSyncAt}`
               : 'iCloud · Ready to sync'
-            : 'Sign in under System Settings › Apple Account › iCloud, then return here and choose Sync Now.')}
+            : 'Sign in under System Settings › Apple Account › iCloud. Cavalry reconnects automatically when you return.')}
       </div>
     </SettingsCard>
   );
@@ -482,7 +469,7 @@ function ConflictReview({ activePath, canResolve, choices, notice, onChoose, onR
 
 function CurrentWorkbookCloudAction({ cloud, workbook }) {
   const actions = useActionBindings();
-  const [confirmingKeepLocal, setConfirmingKeepLocal] = useState(false);
+  const [simpleConfirmation, setSimpleConfirmation] = useState('');
   const [confirmingReconcileNoticeId, setConfirmingReconcileNoticeId] = useState(null);
   const [reviewNoticeId, setReviewNoticeId] = useState(null);
   const [conflictChoiceState, setConflictChoiceState] = useState({
@@ -528,7 +515,47 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
   const queued = asString(current.status) === 'pending';
   const pending = !!pendingOperation;
   const workbookName = asString(workbook.name) || 'Current workbook';
-  const lastSyncedAt = formatCloudTimestamp(current.lastSyncedAt);
+  const currentWorkbookId = asString(current.workbookId);
+  const cloudCopyAvailable = asArray(cloud.workbooks).some(
+    (item) => asString(item?.id || item?.workbookId) === currentWorkbookId
+  );
+  const missingCloudCopy = conflict && !cloudCopyAvailable;
+  const cloudUpdatedAt = formatCloudTimestamp(current.cloudUpdatedAt);
+
+  const runSimpleAction = async (type, payload = {}) => {
+    const result = await actions.dispatch(type, payload);
+    if (result && result.ok) setSimpleConfirmation('');
+  };
+
+  const simpleConfirmationCopy =
+    simpleConfirmation === 'icloud'
+      ? {
+          message:
+            'Opens the iCloud version on this Mac. Your current Mac file stays saved locally.',
+          label: 'Confirm Use iCloud Version',
+          icon: 'download',
+          pendingLabel: 'Opening…',
+          tone: 'primary'
+        }
+      : simpleConfirmation === 'mac'
+        ? {
+            message: cloudCopyAvailable
+              ? 'Replaces the iCloud version with this Mac version on your Apple devices.'
+              : 'Adds this Mac version to iCloud so it is available on your Apple devices.',
+            label: cloudCopyAvailable ? 'Confirm Use Mac Version' : 'Confirm Add to iCloud',
+            icon: 'cloud_upload',
+            pendingLabel: 'Uploading…',
+            tone: 'primary'
+          }
+        : simpleConfirmation === 'delete'
+          ? {
+              message: 'Deletes only the iCloud version. This workbook stays saved on this Mac.',
+              label: 'Confirm Delete from iCloud',
+              icon: 'delete_forever',
+              pendingLabel: 'Deleting…',
+              tone: 'danger'
+            }
+          : null;
 
   return (
     <div
@@ -553,19 +580,29 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
               {conflictEntries.length} {conflictEntries.length === 1 ? 'decision' : 'decisions'}{' '}
               needed
             </StatusPill>
-          ) : null}
+          ) : missingCloudCopy ? (
+            <StatusPill tone="warn">Not in iCloud</StatusPill>
+          ) : conflict ? (
+            <StatusPill tone="warn">Choose a version</StatusPill>
+          ) : (
+            <StatusPill tone={linked ? 'good' : 'neutral'}>Current</StatusPill>
+          )}
         </span>
-        {conflict || sharedReview ? null : (
-          <small>
-            {queued
-              ? 'Saved on this Mac · waiting for iCloud'
-              : linked
-                ? lastSyncedAt
-                  ? `Last synced ${lastSyncedAt}`
-                  : 'This workbook is available in iCloud.'
-                : 'Saved on this Mac. Add it to begin continuous iCloud sync.'}
-          </small>
-        )}
+        <small>
+          {missingCloudCopy
+            ? 'No iCloud version was found. Your Mac workbook is safe and can be added again.'
+            : conflict && !hasReview
+              ? 'This Mac and iCloud have different versions. Choose which version to keep.'
+              : sharedReview || hasReview
+                ? 'Review the changed items, then apply your choices.'
+                : queued
+                  ? 'Saved on this Mac · waiting for iCloud'
+                  : linked
+                    ? cloudUpdatedAt
+                      ? `In iCloud · Workbook updated ${cloudUpdatedAt}`
+                      : 'This workbook is available in iCloud.'
+                    : 'Saved on this Mac. Add it to begin continuous iCloud sync.'}
+        </small>
       </div>
       {conflict || sharedReview ? (
         <div className="settings-cloud-current-actions">
@@ -585,51 +622,148 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
               {reviewOpen ? 'Hide Changes' : 'Review Changes'}
             </button>
           ) : null}
-          {conflict && !canReconcile && !conflictReviewNeedsRefresh && confirmingKeepLocal ? (
-            <>
+          {simpleConfirmationCopy ? (
+            <div
+              className="settings-cloud-confirmation"
+              role="group"
+              aria-label="Confirm iCloud action"
+            >
               <span className="settings-cloud-removal-warning">
-                Replaces or recreates the reviewed iCloud copy.
+                {simpleConfirmationCopy.message}
               </span>
               <button
-                className="btn btn-danger settings-cloud-current-action"
+                className={`btn ${simpleConfirmationCopy.tone === 'danger' ? 'btn-danger' : 'btn-primary'} settings-cloud-current-action`}
                 disabled={pending}
+                onClick={() => {
+                  if (simpleConfirmation === 'icloud') {
+                    void runSimpleAction('open-cloud-workbook', {
+                      workbookId: currentWorkbookId
+                    });
+                  } else if (simpleConfirmation === 'mac') {
+                    void runSimpleAction('keep-local-cloud-workbook');
+                  } else if (simpleConfirmation === 'delete') {
+                    void runSimpleAction('delete-cloud-workbook', {
+                      workbookId: currentWorkbookId
+                    });
+                  }
+                }}
                 type="button"
-                {...actions.action('keep-local-cloud-workbook')}
               >
-                <Icon name="cloud_upload" />
-                Confirm Keep Mac Copy
+                <Icon name={simpleConfirmationCopy.icon} />
+                {pending ? simpleConfirmationCopy.pendingLabel : simpleConfirmationCopy.label}
               </button>
               <button
                 className="btn"
                 disabled={pending}
-                onClick={() => setConfirmingKeepLocal(false)}
+                onClick={() => setSimpleConfirmation('')}
                 type="button"
               >
                 Cancel
               </button>
+            </div>
+          ) : (
+            <>
+              {conflict && !hasReview && !conflictReviewNeedsRefresh && cloudCopyAvailable ? (
+                <button
+                  aria-label={`Use iCloud version of ${workbookName}`}
+                  className="btn settings-cloud-current-action"
+                  disabled={pending}
+                  onClick={() => setSimpleConfirmation('icloud')}
+                  type="button"
+                >
+                  <Icon name="download" />
+                  Use iCloud Version
+                </button>
+              ) : null}
+              {conflict && !canReconcile && !conflictReviewNeedsRefresh ? (
+                <button
+                  className="btn btn-primary settings-cloud-current-action"
+                  disabled={pending}
+                  onClick={() => setSimpleConfirmation('mac')}
+                  type="button"
+                >
+                  <Icon name="cloud_upload" />
+                  {cloudCopyAvailable ? 'Use Mac Version' : 'Add Mac Version to iCloud'}
+                </button>
+              ) : null}
+              {cloudCopyAvailable ? (
+                <button
+                  aria-label={`Delete ${workbookName} from iCloud`}
+                  className="btn settings-cloud-remove settings-cloud-current-action"
+                  disabled={pending}
+                  onClick={() => setSimpleConfirmation('delete')}
+                  type="button"
+                >
+                  <Icon name="delete_outline" />
+                  Delete from iCloud
+                </button>
+              ) : null}
             </>
-          ) : conflict && !canReconcile && !conflictReviewNeedsRefresh ? (
-            <button
-              className="btn btn-primary settings-cloud-current-action"
-              disabled={pending}
-              onClick={() => setConfirmingKeepLocal(true)}
-              type="button"
-            >
-              <Icon name="cloud_upload" />
-              Keep Mac Copy
-            </button>
-          ) : null}
+          )}
         </div>
       ) : (
-        <button
-          className="btn btn-primary settings-cloud-current-action"
-          disabled={pending}
-          type="button"
-          {...actions.action('upload-current-workbook')}
-        >
-          <Icon name={linked ? 'sync' : 'cloud_upload'} />
-          {pendingOperation === 'upload' ? 'Saving…' : linked ? 'Sync Now' : 'Add to iCloud'}
-        </button>
+        <div className="settings-cloud-current-actions">
+          {simpleConfirmationCopy ? (
+            <div
+              className="settings-cloud-confirmation"
+              role="group"
+              aria-label="Confirm iCloud action"
+            >
+              <span className="settings-cloud-removal-warning">
+                {simpleConfirmationCopy.message}
+              </span>
+              <button
+                className="btn btn-danger settings-cloud-current-action"
+                disabled={pending}
+                onClick={() =>
+                  void runSimpleAction('delete-cloud-workbook', {
+                    workbookId: currentWorkbookId
+                  })
+                }
+                type="button"
+              >
+                <Icon name="delete_forever" />
+                {pending ? simpleConfirmationCopy.pendingLabel : simpleConfirmationCopy.label}
+              </button>
+              <button
+                className="btn"
+                disabled={pending}
+                onClick={() => setSimpleConfirmation('')}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                className="btn btn-primary settings-cloud-current-action"
+                disabled={pending}
+                type="button"
+                {...actions.action('upload-current-workbook')}
+              >
+                <Icon name={linked ? 'sync' : 'cloud_upload'} />
+                {pendingOperation === 'upload'
+                  ? 'Syncing…'
+                  : linked
+                    ? 'Sync Changes'
+                    : 'Add to iCloud'}
+              </button>
+              {cloudCopyAvailable ? (
+                <button
+                  aria-label={`Delete ${workbookName} from iCloud`}
+                  className="btn settings-cloud-remove settings-cloud-current-action"
+                  disabled={pending}
+                  onClick={() => setSimpleConfirmation('delete')}
+                  type="button"
+                >
+                  <Icon name="delete_outline" />
+                  Delete from iCloud
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
       )}
       {conflictReviewNeedsRefresh ? (
         <div className="settings-inline-message settings-cloud-conflict-refresh" role="status">
@@ -786,17 +920,17 @@ function CloudWorkbookRow({
         {confirmingRemoval ? (
           <>
             <span className="settings-cloud-removal-warning">
-              Permanently removes this iCloud copy.
+              Permanently deletes this iCloud copy. Separately saved local files are not deleted.
             </span>
             <button
-              aria-label={`Confirm removal of ${item.name} from iCloud`}
+              aria-label={`Confirm deletion of ${item.name} from iCloud`}
               className="btn btn-danger settings-cloud-remove"
               disabled={pending || !item.id}
               type="button"
               {...actions.action('delete-cloud-workbook', { workbookId: item.id })}
             >
               <Icon name="delete_forever" />
-              Confirm
+              Delete from iCloud
             </button>
             <button className="btn" disabled={pending} onClick={onCancelRemoval} type="button">
               Cancel
@@ -804,14 +938,14 @@ function CloudWorkbookRow({
           </>
         ) : (
           <button
-            aria-label={`Remove ${item.name} from iCloud`}
+            aria-label={`Delete ${item.name} from iCloud`}
             className="btn settings-cloud-remove"
             disabled={pending || !item.id}
             onClick={() => onRequestRemoval(item.id)}
             type="button"
           >
             <Icon name="delete_outline" />
-            Remove
+            Delete from iCloud
           </button>
         )}
       </div>
@@ -824,6 +958,9 @@ function ICloudLibrary({ cloud, workbook }) {
   const current = asObject(cloud.current);
   const workbooks = asArray(cloud.workbooks);
   const currentWorkbookId = asString(current.workbookId || cloud.currentWorkbookId);
+  const otherWorkbooks = workbooks.filter(
+    (item) => asString(item?.id || item?.workbookId) !== currentWorkbookId
+  );
   const pending = !!asString(cloud.pendingOperation);
 
   return (
@@ -837,10 +974,15 @@ function ICloudLibrary({ cloud, workbook }) {
         </StatusPill>
       }
     >
+      <div className="settings-inline-message settings-cloud-library-note" role="note">
+        <Icon name="info" />
+        Add, open, or delete iCloud workbooks here. Deleting the open workbook from iCloud keeps its
+        Mac copy.
+      </div>
       <CurrentWorkbookCloudAction cloud={cloud} workbook={workbook} />
-      {workbooks.length ? (
+      {otherWorkbooks.length ? (
         <ul aria-label="iCloud workbooks" className="settings-cloud-workbook-list">
-          {workbooks.map((item, index) => (
+          {otherWorkbooks.map((item, index) => (
             <CloudWorkbookRow
               confirmingRemoval={removalId === asString(item?.id || item?.workbookId)}
               currentWorkbookConflict={current.conflict === true}
@@ -853,13 +995,13 @@ function ICloudLibrary({ cloud, workbook }) {
             />
           ))}
         </ul>
-      ) : (
+      ) : current.linked !== true ? (
         <EmptyState
           detail="Add the current workbook above, or sync after changing it on your iPhone."
           icon="cloud_queue"
           title="No iCloud workbooks yet"
         />
-      )}
+      ) : null}
     </SettingsCard>
   );
 }

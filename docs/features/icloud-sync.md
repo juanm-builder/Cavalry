@@ -27,6 +27,8 @@ Each workbook is one `CavalryWorkbook` record in the private custom zone `Cavalr
 
 Pending saves and deletes, cached remote metadata, CloudKit system fields, sync-engine serialization, and payload files live in Application Support. A queued save can be edited again offline: Cavalry replaces the pending payload and advances its intended revision without creating redundant uploads. Reconnect uses the saved CKSyncEngine state and sends only pending changes.
 
+Manual **Add to iCloud** uses that same validated save path. Manual **Remove from iCloud** queues an idempotent deletion for the workbook's stable private-record ID and never removes the workbook stored on the device, even when the local CloudKit cache is incomplete. If a previously listed workbook is missing from the cache when the user opens it, Cavalry performs one exact-record lookup before reporting that the iCloud copy no longer exists.
+
 Temporary network, service, authentication, rate-limit, and zone-busy failures remain queued for system-managed retry. Terminal failures are removed from the outbox and surfaced to the UI instead of becoming permanent background work. Sync and send requests are single-flight, native event refreshes are coalesced, and no repeating timers are created.
 
 ## Conflict rules

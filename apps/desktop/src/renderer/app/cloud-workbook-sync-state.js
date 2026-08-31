@@ -1,4 +1,8 @@
-const CLOUD_WORKBOOK_SYNC_STORAGE_PREFIX = 'cavalry.cloud-workbook-sync.v1';
+// V1 anchors did not record the CloudKit environment. Never reuse those
+// optimistic-concurrency revisions after moving a development-signed Mac app
+// to the Production database: the same workbook can have unrelated revisions
+// in each environment. The native Production store is separately scoped too.
+const CLOUD_WORKBOOK_SYNC_STORAGE_PREFIX = 'cavalry.cloud-workbook-sync.v2';
 
 const memoryValues = new Map();
 const fallbackKeys = new Set();
@@ -53,6 +57,7 @@ function normalizedStoredState(parsed, workbookId) {
     known: true,
     revision: asRevision(parsed.revision),
     conflict,
+    ...(parsed.remoteDeleted === true ? { remoteDeleted: true } : {}),
     ...(conflictNoticeId && conflictRemoteRevision
       ? { conflictNoticeId, conflictRemoteRevision }
       : {}),
@@ -123,10 +128,15 @@ export function writeCloudWorkbookSyncState(storage, userId, workbookId, options
       ? asRevision(options.baseRevision || revision)
       : asRevision(previous.baseRevision)
     : null;
+  const hasRemoteDeleted = Object.prototype.hasOwnProperty.call(options, 'remoteDeleted');
+  const remoteDeleted = hasRemoteDeleted
+    ? options.remoteDeleted === true
+    : previous.remoteDeleted === true;
   const normalized = {
     known: true,
     revision,
     conflict: options.conflict === true,
+    ...(remoteDeleted ? { remoteDeleted: true } : {}),
     ...(options.conflict === true &&
     (asConflictNoticeId(options.conflictNoticeId) || previous.conflictNoticeId) &&
     (asRevision(options.conflictRemoteRevision) || previous.conflictRemoteRevision)
@@ -144,6 +154,7 @@ export function writeCloudWorkbookSyncState(storage, userId, workbookId, options
     version: 1,
     revision: normalized.revision,
     conflict: normalized.conflict,
+    ...(remoteDeleted ? { remoteDeleted: true } : {}),
     ...(normalized.conflictNoticeId && normalized.conflictRemoteRevision
       ? {
           conflictNoticeId: normalized.conflictNoticeId,

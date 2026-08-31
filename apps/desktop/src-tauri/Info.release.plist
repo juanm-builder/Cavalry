@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CavalryCloudKitEnvironment</key>
-  <string>Development</string>
+  <string>Production</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Cavalry uses the microphone only when you choose voice input for Advisor.</string>
 </dict>

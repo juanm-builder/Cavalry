@@ -181,10 +181,25 @@ describe('Tauri desktop release tooling', () => {
     expect(generated.bundle.createUpdaterArtifacts).toBe(true);
     expect(generated.bundle.macOS).toEqual({
       entitlements: 'entitlements.release.plist',
+      infoPlist: 'Info.release.plist',
       files: { 'embedded.provisionprofile': 'Cavalry.provisionprofile' }
     });
     expect(generated.bundle).toEqual(trackedTemplate.bundle);
     expect(trackedAfter).toBe(trackedBefore);
+  });
+
+  it('keeps the signed release on the Production CloudKit environment', () => {
+    // The native store picks its CloudKit state directory from this key, and
+    // Tauri merges the release overlay last. If the release plist ever loses
+    // the key, a signed build silently reuses development sync anchors and
+    // reports conflicts against an empty production library.
+    const developmentPlist = readFileSync(resolve('apps/desktop/src-tauri/Info.plist'), 'utf8');
+    const releasePlist = readFileSync(resolve('apps/desktop/src-tauri/Info.release.plist'), 'utf8');
+    const environmentOf = (plist) =>
+      plist.match(/<key>CavalryCloudKitEnvironment<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+
+    expect(environmentOf(developmentPlist)).toBe('Development');
+    expect(environmentOf(releasePlist)).toBe('Production');
   });
 
   it('verifies a signed Tauri updater payload and matching companion signature', () => {

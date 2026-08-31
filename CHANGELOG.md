@@ -2,6 +2,32 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.4 - 2026-08-30
+
+### Added
+
+- Added explicit **Add to iCloud** and **Remove from iCloud** controls for Mac workbooks. Removing
+  an iCloud copy always keeps the workbook stored on the Mac, and Cavalry will not upload it again
+  until the user deliberately adds it back.
+- Added clear conflict actions—**Use Mac Version** and **Use iCloud Version**—with confirmations
+  that explain which copy will be kept.
+
+### Fixed
+
+- Fixed production CloudKit state accidentally reusing development sync anchors, which could show
+  a phantom **Needs Review** state even when the production iCloud library was empty.
+- Fixed review and Mac-version recovery when the local CloudKit cache is incomplete by checking the
+  exact private record before reporting that an iCloud copy is unavailable.
+- Fixed same-revision CloudKit change-tag races and idempotent deletion, including interrupted
+  uploads, empty local caches, offline queued removal, and terminal delete failures.
+
+### Compatibility and release notes
+
+- Existing Mac workbooks remain local and unchanged. Development and production CloudKit engine
+  state are now isolated; no workbook schema migration is required.
+- Cavalry for iPhone receives its matching settings-navigation and iCloud-library controls through
+  TestFlight rather than this Mac GitHub release.
+
 ## 2.2.3 - 2026-08-30
 
 ### Fixed

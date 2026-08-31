@@ -1,6 +1,7 @@
 // Applies command-result workbook/effects in one place as mutation workflows migrate.
 
 import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import { scheduleWorkbookSaveCommand } from '@cavalry/finance-core';
 
 import { useWorkbookSession } from './WorkbookProvider.jsx';
 
@@ -20,13 +21,25 @@ export function normalizeCommandResult(result) {
 }
 
 export function CommandExecutorProvider({ children, onEvent, onEffect }) {
-  const { dispatch, scheduleWorkbookSave, setWorkbook } = useWorkbookSession();
+  const { dispatch, ports, scheduleWorkbookSave, setWorkbook } = useWorkbookSession();
   const executeCommandResult = useCallback(
     (result) => {
       const normalized = normalizeCommandResult(result);
+      const schedulesSave = normalized.events.some((event) => event.type === 'schedule-save');
+      const scheduledSave =
+        normalized.ok && schedulesSave && normalized.workbook
+          ? scheduleWorkbookSaveCommand(normalized.workbook, {
+              now: () => ports.clock.now()
+            })
+          : null;
+      const committedWorkbook = scheduledSave?.ok ? scheduledSave.workbook : normalized.workbook;
+      const committedResult =
+        committedWorkbook === normalized.workbook
+          ? normalized
+          : { ...normalized, workbook: committedWorkbook };
       let nextWorkbook;
-      if (normalized.ok && typeof normalized.workbook !== 'undefined') {
-        nextWorkbook = setWorkbook(normalized.workbook);
+      if (normalized.ok && typeof committedWorkbook !== 'undefined') {
+        nextWorkbook = setWorkbook(committedWorkbook);
       }
       if (!normalized.ok && normalized.errors.length) {
         dispatch({
@@ -42,17 +55,17 @@ export function CommandExecutorProvider({ children, onEvent, onEffect }) {
         else if (event.type === 'open-overlay' && event.overlay)
           dispatch({ type: 'overlay/opened', overlay: event.overlay });
         else if (event.type === 'schedule-save')
-          scheduleWorkbookSave(nextWorkbook || normalized.workbook);
+          scheduleWorkbookSave(nextWorkbook || committedWorkbook);
         else if (event.type === 'set-save-status') {
           dispatch(
             event.status === 'saving' ? { type: 'save/started' } : { type: 'save/succeeded' }
           );
         }
-        if (typeof eventHandler === 'function') eventHandler(event, normalized);
+        if (typeof eventHandler === 'function') eventHandler(event, committedResult);
       });
-      return normalized;
+      return committedResult;
     },
-    [dispatch, onEffect, onEvent, scheduleWorkbookSave, setWorkbook]
+    [dispatch, onEffect, onEvent, ports.clock, scheduleWorkbookSave, setWorkbook]
   );
   const value = useMemo(
     () => ({

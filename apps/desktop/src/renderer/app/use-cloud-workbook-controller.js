@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   readCloudWorkbookSyncState,
-  removeCloudWorkbookSyncState,
   resolveCloudWorkbookSyncStorage,
   writeCloudWorkbookSyncState
 } from './cloud-workbook-sync-state.js';
@@ -18,7 +17,8 @@ import {
   asRevision,
   asString,
   buildCloudSettingsModel,
-  createConflictNoticeId,
+  buildConflictNotice,
+  conflictNoticePublicationKey,
   errorMessageFromResult,
   isRetryableAutomaticSyncFailure,
   normalizeCloudState,
@@ -158,7 +158,7 @@ export function useCloudWorkbookController({
       force = false
     }) => {
       const targetId = asString(workbookId);
-      const publicationKey = `${targetId}:${asRevision(baseRevision) || 'none'}:${asRevision(remoteRevision)}`;
+      const publicationKey = conflictNoticePublicationKey(targetId, baseRevision, remoteRevision);
       if (
         !force &&
         conflictNoticePublicationRef.current === publicationKey &&
@@ -166,17 +166,7 @@ export function useCloudWorkbookController({
       ) {
         return { ok: true, notice: localConflictNoticeRef.current };
       }
-      const count = Math.max(0, Number(review && review.conflictCount) || 0);
-      const notice = {
-        id: createConflictNoticeId(),
-        sourceDevice: 'Mac',
-        detectedAt: new Date().toISOString(),
-        baseRevision: asRevision(baseRevision) || null,
-        remoteRevision: asRevision(remoteRevision),
-        summary: `${count} ${count === 1 ? 'change needs' : 'changes need'} review`,
-        resolutionAvailable: true,
-        report: review
-      };
+      const notice = buildConflictNotice({ review, baseRevision, remoteRevision });
       const normalized = normalizeConflictNotice(notice, targetId);
       if (!normalized) return { ok: false, code: 'invalid_conflict_notice' };
       conflictNoticePublicationRef.current = publicationKey;
@@ -365,6 +355,9 @@ export function useCloudWorkbookController({
         currentUserId,
         currentWorkbookId
       );
+      if (syncState.remoteDeleted === true) {
+        return { ok: false, retry: false, code: 'cloud_sync_disabled' };
+      }
       if (syncState.conflict || conflictedWorkbookIdsRef.current.has(currentWorkbookId)) {
         return { ok: false, retry: false, conflict: true, code: 'workbook_revision_conflict' };
       }
@@ -429,6 +422,7 @@ export function useCloudWorkbookController({
       writeCloudWorkbookSyncState(resolvedSyncStorage, currentUserId, currentWorkbookId, {
         revision,
         conflict: false,
+        remoteDeleted: false,
         ...(result.pending === true
           ? {}
           : {
@@ -529,12 +523,14 @@ export function useCloudWorkbookController({
     if (stateRef.current.status !== 'signed_in' || !(userId && workbookId && currentWorkbook)) {
       return;
     }
+    const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId);
+    if (syncState.remoteDeleted === true) return;
     autoSyncSchedulerRef.current?.enqueue({
       userId,
       workbookId,
       workbook: currentWorkbook
     });
-  }, [localSaveSequence, workbook]);
+  }, [localSaveSequence, resolvedSyncStorage, workbook]);
 
   const refreshCurrentWorkbookFromCloud = useCallback(
     async (userId, remote) => {
@@ -953,8 +949,8 @@ export function useCloudWorkbookController({
           result = {
             ...result,
             error: remoteStillExists
-              ? 'The iCloud copy changed. Save this local workbook, then review the iCloud copy before uploading again.'
-              : 'The previous iCloud copy was deleted. Review this workbook, then explicitly choose Keep Mac Copy to recreate it.'
+              ? 'The iCloud version changed. Choose which version to keep before syncing again.'
+              : 'The previous iCloud version was deleted. Your Mac workbook is safe. Choose Add Mac Version to iCloud to recreate it.'
           };
         } else if (
           ['upload', 'keep-local', 'reconcile'].includes(operationName) &&
@@ -973,6 +969,7 @@ export function useCloudWorkbookController({
             writeCloudWorkbookSyncState(resolvedSyncStorage, userId, currentWorkbookId, {
               revision,
               conflict: false,
+              remoteDeleted: false,
               ...(result.pending === true
                 ? {}
                 : {
@@ -998,6 +995,7 @@ export function useCloudWorkbookController({
             writeCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId, {
               revision,
               conflict: false,
+              remoteDeleted: false,
               baseRevision: revision,
               baseWorkbook: result.workbook
             });
@@ -1009,7 +1007,12 @@ export function useCloudWorkbookController({
         } else if (operationName === 'delete' && result && result.ok) {
           const workbookId = asString(deleteSyncContext && deleteSyncContext.workbookId);
           const userId = asString(deleteSyncContext && deleteSyncContext.userId);
-          removeCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId);
+          writeCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId, {
+            revision: null,
+            conflict: false,
+            remoteDeleted: true,
+            baseWorkbook: null
+          });
           updateWorkbookConflict(workbookId, false);
           if (asString(localConflictNoticeRef.current?.report?.workbookId) === workbookId) {
             localConflictNoticeRef.current = null;
@@ -1068,11 +1071,21 @@ export function useCloudWorkbookController({
 
   const model = useMemo(() => {
     const workbookId = asString(workbook && workbook.id);
+    const userId = asString(cloudState.user && cloudState.user.id);
+    const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, userId, workbookId);
     return buildCloudSettingsModel(cloudState, workbook, {
       ...uiState,
+      remoteDeleted: syncState.remoteDeleted === true,
       conflict: conflictedWorkbookIds.has(workbookId),
       conflictNotice: localConflictNotice
     });
-  }, [cloudState, conflictedWorkbookIds, localConflictNotice, uiState, workbook]);
+  }, [
+    cloudState,
+    conflictedWorkbookIds,
+    localConflictNotice,
+    resolvedSyncStorage,
+    uiState,
+    workbook
+  ]);
   return { execute, model, refreshState };
 }

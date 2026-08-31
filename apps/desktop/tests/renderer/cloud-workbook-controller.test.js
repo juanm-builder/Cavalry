@@ -94,7 +94,7 @@ describe('cloud workbook controller model', () => {
       linked: true,
       revision: 2,
       status: 'uploading',
-      lastSyncedAt: '2026-07-20T04:00:00.000Z'
+      cloudUpdatedAt: '2026-07-20T04:00:00.000Z'
     });
   });
 
