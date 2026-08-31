@@ -130,6 +130,205 @@ describe('workbook sync merge service', () => {
     });
   });
 
+  it('keeps manual review as the default while opt-in server ordering selects the local transaction', () => {
+    const base = workbook([transaction('shared', { amount: 500 })]);
+    const local = cloneFixture(base);
+    local.transactions[0].amount = 650;
+    local.transactions.push(transaction('phone', { amount: 125 }));
+    const remote = cloneFixture(base);
+    remote.transactions[0].amount = 700;
+    remote.transactions.push(transaction('mac', { amount: 250 }));
+
+    const defaultResult = mergeWorkbookSnapshots({ base, local, remote });
+    const explicitManualResult = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'manual'
+    });
+    const serverOrderedResult = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(defaultResult).toMatchObject({
+      ok: false,
+      conflicts: [{ path: 'transactions["shared"]', kind: 'same_record_changed' }]
+    });
+    expect(explicitManualResult).toEqual(defaultResult);
+    expect(serverOrderedResult).toMatchObject({ ok: true, needsUpload: true });
+    expect(serverOrderedResult.workbook.transactions.find(({ id }) => id === 'shared').amount).toBe(
+      650
+    );
+    expect(serverOrderedResult.workbook.transactions.map(({ id }) => id)).toEqual(
+      expect.arrayContaining(['shared', 'phone', 'mac'])
+    );
+  });
+
+  it('lets an opt-in local deletion win over a competing remote edit', () => {
+    const base = workbook([transaction('shared', { amount: 500 })]);
+    const local = cloneFixture(base);
+    local.transactions = [];
+    const remote = cloneFixture(base);
+    remote.transactions[0].amount = 700;
+
+    const result = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(result).toMatchObject({ ok: true, needsUpload: true });
+    expect(result.workbook.transactions).toEqual([]);
+  });
+
+  it('lets an opt-in local edit win over a competing remote deletion', () => {
+    const base = workbook([transaction('shared', { amount: 500 })]);
+    const local = cloneFixture(base);
+    local.transactions[0].amount = 650;
+    const remote = cloneFixture(base);
+    remote.transactions = [];
+
+    const result = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(result).toMatchObject({ ok: true, needsUpload: true });
+    expect(result.workbook.transactions).toEqual([
+      expect.objectContaining({ id: 'shared', amount: 650 })
+    ]);
+  });
+
+  it('selects local primitive and settings conflicts without consulting timestamps', () => {
+    const base = workbook([]);
+    base.name = 'Base plan';
+    base.settings.usdToBaseRate = 57;
+    base.settings.lastSavedAt = '2026-08-29T10:00:00.000Z';
+    const local = cloneFixture(base);
+    local.name = 'Local plan';
+    local.updatedAt = '2026-08-29T10:01:00.000Z';
+    local.settings.usdToBaseRate = 58;
+    local.settings.lastSavedAt = '2026-08-29T10:01:00.000Z';
+    const remote = cloneFixture(base);
+    remote.name = 'Remote plan';
+    remote.updatedAt = '2026-08-29T10:02:00.000Z';
+    remote.settings.usdToBaseRate = 59;
+    remote.settings.lastSavedAt = '2026-08-29T10:02:00.000Z';
+
+    const result = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.workbook).toMatchObject({
+      name: 'Local plan',
+      updatedAt: '2026-08-29T10:01:00.000Z',
+      settings: {
+        usdToBaseRate: 58,
+        lastSavedAt: '2026-08-29T10:01:00.000Z'
+      }
+    });
+  });
+
+  it('applies opt-in local ordering without a base while preserving independent entities', () => {
+    const local = workbook([
+      transaction('shared', { amount: 125 }),
+      transaction('local-new', { amount: 20 })
+    ]);
+    local.name = 'Local plan';
+    const remote = workbook([
+      transaction('shared', { amount: 150 }),
+      transaction('remote-new', { amount: 30 })
+    ]);
+    remote.name = 'Remote plan';
+
+    const first = mergeWorkbookSnapshots({
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+    const second = mergeWorkbookSnapshots({
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      ok: true,
+      usedConservativeUnion: true,
+      workbook: { name: 'Local plan' }
+    });
+    expect(first.workbook.transactions.find(({ id }) => id === 'shared').amount).toBe(125);
+    expect(first.workbook.transactions.map(({ id }) => id)).toEqual([
+      'local-new',
+      'remote-new',
+      'shared'
+    ]);
+  });
+
+  it('preserves ambiguous one-sided transactions when no merge base can prove a deletion', () => {
+    const localMissing = workbook([]);
+    const remotePresent = workbook([transaction('ambiguous-remote', { amount: 40 })]);
+    const localPresent = workbook([transaction('ambiguous-local', { amount: 60 })]);
+    const remoteMissing = workbook([]);
+
+    const remoteItemResult = mergeWorkbookSnapshots({
+      local: localMissing,
+      remote: remotePresent,
+      conflictPolicy: 'prefer_local'
+    });
+    const localItemResult = mergeWorkbookSnapshots({
+      local: localPresent,
+      remote: remoteMissing,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(remoteItemResult).toMatchObject({ ok: true, usedConservativeUnion: true });
+    expect(remoteItemResult.workbook.transactions.map(({ id }) => id)).toEqual([
+      'ambiguous-remote'
+    ]);
+    expect(localItemResult).toMatchObject({ ok: true, usedConservativeUnion: true });
+    expect(localItemResult.workbook.transactions.map(({ id }) => id)).toEqual(['ambiguous-local']);
+  });
+
+  it('does not route opt-in local ordering through the 50-entry review limit', () => {
+    const base = workbook(
+      Array.from({ length: 75 }, (_, index) => transaction(`shared-${index}`, { amount: index }))
+    );
+    const local = cloneFixture(base);
+    const remote = cloneFixture(base);
+    local.transactions.forEach((item, index) => {
+      item.amount = 1000 + index;
+    });
+    remote.transactions.forEach((item, index) => {
+      item.amount = 2000 + index;
+    });
+
+    const result = mergeWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      conflictPolicy: 'prefer_local'
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.review).toBeUndefined();
+    expect(result.workbook.transactions).toHaveLength(75);
+    expect(result.workbook.transactions.every((item, index) => item.amount === 1000 + index)).toBe(
+      true
+    );
+  });
+
   it('explains delete-versus-edit conflicts without dumping workbook JSON', () => {
     const base = workbook([transaction('shared', { description: 'Phone bill', note: '' })]);
     const local = cloneFixture(base);

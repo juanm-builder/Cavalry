@@ -257,7 +257,10 @@ const CLOUD_BRIDGE_METHODS = Object.freeze({
   downloadConflictPackage: 'downloadConflictPackage',
   deleteWorkbook: 'deleteWorkbook',
   publishConflictNotice: 'publishConflictNotice',
-  clearConflictNotice: 'clearConflictNotice'
+  clearConflictNotice: 'clearConflictNotice',
+  loadSyncState: 'loadSyncState',
+  saveSyncState: 'saveSyncState',
+  removeSyncState: 'removeSyncState'
 });
 
 function createCloudPort(bridge) {

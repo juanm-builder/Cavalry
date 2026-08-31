@@ -33,6 +33,7 @@ describe('cloud workbook controller model', () => {
     expect(state).toEqual({
       configured: true,
       status: 'signed_in',
+      cloudEnvironment: '',
       user: {
         id: 'user-1',
         email: 'alex@example.com',
@@ -138,6 +139,25 @@ describe('cloud workbook controller model', () => {
       linked: true,
       status: 'pending'
     });
+  });
+
+  it.each([
+    ['waiting', 'waiting'],
+    ['syncing', 'uploading'],
+    ['retrying', 'retrying'],
+    ['failed', 'attention']
+  ])('projects the automatic %s phase into current workbook status', (autoSyncPhase, status) => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [{ id: 'workbook-1', name: 'Home', revision: 2 }]
+      },
+      { id: 'workbook-1', name: 'Home' },
+      { autoSyncPhase }
+    );
+
+    expect(model.current.status).toBe(status);
   });
 
   it('retains actionable error metadata and the failed operation for Settings', () => {
@@ -301,5 +321,45 @@ describe('cloud workbook controller model', () => {
         report: { entries: [{ title: 'Groceries' }] }
       }
     });
+  });
+
+  it('never labels a listed revision below the durable anchor as synced', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [{ id: 'workbook-1', name: 'Home', revision: 2 }]
+      },
+      { id: 'workbook-1', name: 'Home' },
+      { anchorRevision: 3 }
+    );
+
+    expect(model.current).toMatchObject({
+      linked: true,
+      revision: 2,
+      anchorRevision: 3,
+      syncBlocked: true,
+      status: 'attention'
+    });
+  });
+
+  it('projects a durable remote deletion as a safe local-only workbook', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [{ id: 'workbook-1', name: 'Stale listing', revision: 2 }]
+      },
+      { id: 'workbook-1', name: 'Home' },
+      { anchorRevision: 2, autoSyncEnabled: false, remoteDeleted: true }
+    );
+
+    expect(model.current).toMatchObject({
+      linked: false,
+      remoteDeleted: true,
+      autoSyncEnabled: false,
+      status: 'local_only'
+    });
+    expect(model.workbooks).toEqual([]);
   });
 });

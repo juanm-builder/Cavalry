@@ -85,6 +85,17 @@ describe('Tauri desktop security and compatibility boundary', () => {
     );
   });
 
+  it('fails closed when CloudKit cannot resolve the private account identity', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).not.toContain('userId: "icloud-private"');
+    expect(cloudKitStore).toMatch(
+      /container\.userRecordID\(\)\.recordName[\s\S]*?catch \{[\s\S]*?CloudKitAccount\(status: "could_not_determine", userId: nil\)/
+    );
+  });
+
   it('isolates CKSyncEngine state between development and production', () => {
     const cloudKitStore = readFileSync(
       resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
@@ -112,6 +123,16 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(cloudKitStore).not.toContain(
       'guard diskState.remote[recordName]?.metadata.id == workbookId else'
     );
+  });
+
+  it('emits exact fetched deletion identities instead of inferring from a library listing', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('var deletedWorkbookIds = Set<String>()');
+    expect(cloudKitStore).toContain('diskState.remote[recordName]?.metadata.id');
+    expect(cloudKitStore).toContain('emit(reason: "deleted", workbookId: workbookId)');
   });
 
   it('unwraps terminal CloudKit partial failures into an actionable schema diagnosis', () => {

@@ -12,6 +12,7 @@ export const EMPTY_CLOUD_STATE = Object.freeze({
   configured: true,
   status: 'initializing',
   user: null,
+  cloudEnvironment: '',
   workbooks: [],
   sessionGeneration: 0,
   sessionPersistence: true
@@ -189,6 +190,7 @@ export function normalizeCloudState(value) {
     configured,
     status,
     user: normalizeCloudUser(source.user),
+    cloudEnvironment: asString(source.cloudEnvironment),
     sessionGeneration: Math.max(0, Number(source.sessionGeneration) || 0),
     pendingCount: Math.max(0, Number(source.pendingCount) || 0),
     lastSyncAt: asString(source.lastSyncAt),
@@ -254,11 +256,19 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
   const state = normalizeCloudState(cloudState);
   const workbookId = asString(workbook && workbook.id);
   const currentRemoteDeleted = uiState.remoteDeleted === true;
+  const anchorRevision = asRevision(uiState.anchorRevision);
   const workbooks = currentRemoteDeleted
     ? state.workbooks.filter((item) => item.id !== workbookId)
     : state.workbooks;
   const remote = workbooks.find((item) => item.id === workbookId) || null;
+  const revisionRegressed =
+    !!remote && !!anchorRevision && (!remote.revision || remote.revision < anchorRevision);
   const pendingOperation = asString(uiState.pendingOperation);
+  const autoSyncPhase = ['failed', 'idle', 'retrying', 'syncing', 'waiting'].includes(
+    asString(uiState.autoSyncPhase)
+  )
+    ? asString(uiState.autoSyncPhase)
+    : 'idle';
   const conflict = uiState.conflict === true;
   const conflictNotice =
     normalizeConflictNotice(uiState.conflictNotice, workbookId) || remote?.conflictNotice || null;
@@ -311,19 +321,33 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
     failedWorkbookId: uiErrorApplies ? failedWorkbookId : '',
     current: {
       workbookId,
+      autoSyncEnabled: uiState.autoSyncEnabled !== false,
+      remoteDeleted: currentRemoteDeleted,
       linked: !!remote,
       conflict,
       conflictNotice,
+      syncBlocked: revisionRegressed,
+      anchorRevision,
       revision: remote ? remote.revision : 0,
       status: ['upload', 'keep-local', 'reconcile'].includes(pendingOperation)
         ? 'uploading'
         : conflict
           ? 'conflict'
-          : remote?.pending === true
-            ? 'pending'
-            : remote
-              ? 'synced'
-              : 'local_only',
+          : revisionRegressed
+            ? 'attention'
+            : autoSyncPhase === 'failed'
+              ? 'attention'
+              : autoSyncPhase === 'syncing'
+                ? 'uploading'
+                : autoSyncPhase === 'retrying'
+                  ? 'retrying'
+                  : autoSyncPhase === 'waiting'
+                    ? 'waiting'
+                    : remote?.pending === true
+                      ? 'pending'
+                      : remote
+                        ? 'synced'
+                        : 'local_only',
       cloudUpdatedAt: remote ? remote.updatedAt : ''
     }
   };

@@ -141,6 +141,9 @@ export function createTauriBridge() {
       deleteWorkbook: (payload) => invoke('cavalry-cloud:delete-workbook', payload),
       publishConflictNotice: (payload) => invoke('cavalry-cloud:publish-conflict-notice', payload),
       clearConflictNotice: (payload) => invoke('cavalry-cloud:clear-conflict-notice', payload),
+      loadSyncState: (payload) => invoke('cavalry-cloud:load-sync-state', payload),
+      saveSyncState: (payload) => invoke('cavalry-cloud:save-sync-state', payload),
+      removeSyncState: (payload) => invoke('cavalry-cloud:remove-sync-state', payload),
       onStateChanged: (callback) => subscribe('cavalry-cloud:state-changed', callback)
     },
     updates

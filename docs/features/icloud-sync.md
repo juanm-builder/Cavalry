@@ -29,25 +29,33 @@ Pending saves and deletes, cached remote metadata, CloudKit system fields, sync-
 
 Manual **Add to iCloud** uses that same validated save path. Manual **Remove from iCloud** queues an idempotent deletion for the workbook's stable private-record ID and never removes the workbook stored on the device, even when the local CloudKit cache is incomplete. If a previously listed workbook is missing from the cache when the user opens it, Cavalry performs one exact-record lookup before reporting that the iCloud copy no longer exists.
 
+A deletion fetched from another device carries the exact workbook ID from the native CloudKit change event. The Mac persists a `remoteDeleted` tombstone, turns off automatic sync for that workbook, and keeps both clean and unsaved local changes untouched. A missing or incomplete library listing alone is never treated as a deletion; after a restart or missed event, an exact-record `not found` response is required. **Add to iCloud** is the explicit relink action and resumes autosave after the recreated record is confirmed.
+
 Temporary network, service, authentication, rate-limit, and zone-busy failures remain queued for system-managed retry. Terminal failures are removed from the outbox and surfaced to the UI instead of becoming permanent background work. Sync and send requests are single-flight, native event refreshes are coalesced, and no repeating timers are created.
 
-## Conflict rules
+## Autosave and conflict rules
+
+**Autosave with iCloud** is a per-device, per-workbook preference. It defaults on for compatibility with earlier releases. Turning it off never stops local saves and never removes an iCloud copy; it only stops future automatic enrollment, uploads, and remote application on that device. Explicit **Add to iCloud** and **Sync now** actions remain available.
 
 Cavalry uses CloudKit record change tags, a durable workbook revision anchor, and the last server-confirmed workbook as a three-way merge base.
 
 - A queued local save is marked pending; it does not advance the merge base until CloudKit confirms it.
 - Two offline devices can both propose the same next numeric revision. The native layer therefore exposes CloudKit's record conflict separately instead of relying on revision numbers alone.
 - After a conflict, Cavalry downloads the server winner and combines independent stable-ID changes. Separate transaction additions, one-sided edits, and one-sided deletes are preserved automatically.
-- If both devices changed the same transaction or workbook item differently, Cavalry stops for review instead of inventing a financial result.
-- The device that retains the unresolved branch creates a compact, human-readable change report. It lists affected transactions or workbook items and the changed fields for each side; it never uploads a second workbook branch or raw workbook JSON for this purpose.
-- That report is stored in encrypted fields on the existing workbook record, so the other device also shows the warning and can inspect the differences. Only the device retaining the unresolved branch offers resolution controls; the other device presents the report as read-only.
-- Resolving the conflict clears the shared report. Pending report writes and clears use the same durable CKSyncEngine outbox, with one bounded record-change retry and no polling loop.
+- If both devices changed the same stable-ID item differently, the local branch being submitted is selected for that complete item, then the merged workbook is retried against the downloaded CloudKit revision. In effect, the last same-item write accepted by iCloud wins while unrelated edits from both devices survive.
+- Delete-versus-edit follows the same server order: the later submitted branch decides whether that stable-ID item exists.
+- This policy deliberately does not compare device wall clocks. An older offline edit uploaded later can win, but clock skew cannot choose a different result on each device.
+- Conflict notice/package fields remain readable for records created by older builds. New same-item races settle automatically; legacy notices can be cleared after the deterministic merge succeeds.
 - A conflicted pending upload is removed from the native outbox so it cannot overwrite the server later.
 - The merged result is saved locally first, then sent with one fresh compare-and-swap revision. A second race gets one bounded retry; there is no retry loop.
-- Upgrading from an older revision-only anchor first downloads and verifies the actual server snapshot. A conservative transaction union is allowed only when all shared transactions and substantive non-transaction fields agree.
+- Upgrading from an older revision-only anchor first downloads and verifies the actual server snapshot.
+- A library revision below the durable Mac anchor is never displayed as synced. Cavalry verifies the exact record once: a current exact revision repairs the stale listing, while a confirmed lower revision latches recovery and blocks automatic writes until the user explicitly chooses the Mac or iCloud copy.
+- If a legacy or damaged installation has no confirmed merge base, a one-sided stable ID is ambiguous: it could be a new item on one device or a deletion on the other. Cavalry preserves that item instead of guessing and deleting financial data. A restored confirmed base makes later edit-versus-delete races fully server-ordered again; a completely missing anchor still requires the one-time legacy recovery choice.
 - A server echo whose revision and payload hash match the pending save is recognized as the device's own upload, including after an app restart.
 
 The UI reports `Synced`, `Saving to iCloud`, `Saved locally · sync pending`, and `Needs sync review` rather than treating a local save as a completed network transfer.
+
+CloudKit stores one current workbook record, not an append-only backup log. Cavalry must not display cloud version-history or name-version controls until retained version snapshots are implemented.
 
 ## Apple Developer setup
 

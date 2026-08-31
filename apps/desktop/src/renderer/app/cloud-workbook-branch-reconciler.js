@@ -222,7 +222,10 @@ export async function reconcileCloudWorkbookBranches({
       };
     }
     if (asString(download.workbook.id) !== workbookId) {
-      latchConflict(latestRemoteRevision);
+      const persistedConflict = await latchConflict(latestRemoteRevision);
+      if (persistedConflict && persistedConflict.ok === false) {
+        return { ...persistedConflict, ok: false, retry: false, conflict: true };
+      }
       return {
         ok: false,
         retry: false,
@@ -243,7 +246,8 @@ export async function reconcileCloudWorkbookBranches({
     const merged = mergeWorkbookSnapshots({
       base: mergeBase,
       local: localBranch,
-      remote: remoteWorkbook
+      remote: remoteWorkbook,
+      conflictPolicy: 'prefer_local'
     });
     if (!merged.ok) {
       if (typeof reportConflict === 'function') {
@@ -268,7 +272,10 @@ export async function reconcileCloudWorkbookBranches({
           // review is temporarily unavailable.
         }
       }
-      latchConflict(remoteRevision);
+      const persistedConflict = await latchConflict(remoteRevision);
+      if (persistedConflict && persistedConflict.ok === false) {
+        return { ...persistedConflict, ok: false, retry: false, conflict: true };
+      }
       return {
         ok: false,
         retry: false,
@@ -289,12 +296,13 @@ export async function reconcileCloudWorkbookBranches({
     }
 
     if (!merged.needsUpload) {
-      writeSyncState({
+      const persistedSyncState = await writeSyncState({
         revision: remoteRevision,
         conflict: false,
         baseRevision: remoteRevision,
         baseWorkbook: remoteWorkbook
       });
+      if (persistedSyncState && persistedSyncState.ok === false) return persistedSyncState;
       clearConflict();
       if (!downloadState) await refreshState();
       return {
@@ -334,23 +342,23 @@ export async function reconcileCloudWorkbookBranches({
         code: asString(metadata.id) ? 'cloud_workbook_identity_mismatch' : 'cloud_revision_missing'
       };
     }
-    writeSyncState({
+    const persistedSyncState = await writeSyncState({
       revision: uploadedRevision,
       conflict: false,
       baseRevision: upload.pending === true ? remoteRevision : uploadedRevision,
       baseWorkbook: upload.pending === true ? remoteWorkbook : localBranch
     });
+    if (persistedSyncState && persistedSyncState.ok === false) return persistedSyncState;
     clearConflict();
     if (!uploadState) await refreshState();
     return { ...upload, retry: false, workbook: localBranch, merged: true };
   }
 
-  latchConflict(latestRemoteRevision);
   return {
     ok: false,
-    retry: false,
-    conflict: true,
-    code: 'workbook_revision_conflict',
-    error: 'The iCloud workbook kept changing while Cavalry was combining it. Try again.'
+    retry: true,
+    retryable: true,
+    code: 'cloud_workbook_changed_again',
+    error: 'iCloud kept changing. Try again.'
   };
 }

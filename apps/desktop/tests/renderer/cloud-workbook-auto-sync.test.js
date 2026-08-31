@@ -53,6 +53,7 @@ describe('Cloud workbook automatic sync scheduler', () => {
 
   it('retries an offline save with the same CAS revision and the newest local snapshot', async () => {
     const timers = createManualTimers();
+    const statuses = [];
     const expectedRevisions = [];
     const names = [];
     const performSync = vi.fn(async (queued) => {
@@ -68,7 +69,8 @@ describe('Cloud workbook automatic sync scheduler', () => {
     const scheduler = createCloudWorkbookAutoSyncScheduler({
       performSync,
       scheduleTimer: timers.scheduleTimer,
-      cancelTimer: timers.cancelTimer
+      cancelTimer: timers.cancelTimer,
+      onStatus: (status) => statuses.push(status)
     });
 
     scheduler.enqueue(entry('Offline'));
@@ -77,6 +79,12 @@ describe('Cloud workbook automatic sync scheduler', () => {
     await vi.waitFor(() =>
       expect(timers.timers.some((timer) => !timer.canceled && timer.delay === 5_000)).toBe(true)
     );
+    expect(statuses.map((status) => status.phase)).toContain('retrying');
+    expect(statuses.at(-1)).toMatchObject({
+      phase: 'retrying',
+      userId: 'user-1',
+      workbookId: 'workbook-1'
+    });
 
     scheduler.enqueue(entry('Newest while offline'));
     expect(timers.runLatest().delay).toBe(800);
@@ -85,6 +93,40 @@ describe('Cloud workbook automatic sync scheduler', () => {
     expect(expectedRevisions).toEqual([7, 7]);
     expect(names).toEqual(['Offline', 'Newest while offline']);
     expect(scheduler.hasWork()).toBe(false);
+  });
+
+  it('publishes a scoped terminal failure after automatic retries stop', async () => {
+    const timers = createManualTimers();
+    const statuses = [];
+    const scheduler = createCloudWorkbookAutoSyncScheduler({
+      performSync: async () => ({
+        ok: false,
+        retry: false,
+        code: 'cloud_record_invalid',
+        error: 'iCloud rejected this workbook.'
+      }),
+      scheduleTimer: timers.scheduleTimer,
+      cancelTimer: timers.cancelTimer,
+      onStatus: (status) => statuses.push(status)
+    });
+
+    scheduler.enqueue(entry('Rejected'));
+    expect(statuses.at(-1)).toMatchObject({ phase: 'waiting', workbookId: 'workbook-1' });
+    timers.runLatest();
+    await vi.waitFor(() => expect(scheduler.hasWork()).toBe(false));
+
+    expect(statuses.map((status) => status.phase)).toContain('syncing');
+    expect(statuses.at(-1)).toMatchObject({
+      phase: 'failed',
+      userId: 'user-1',
+      workbookId: 'workbook-1',
+      result: {
+        ok: false,
+        retry: false,
+        code: 'cloud_record_invalid',
+        error: 'iCloud rejected this workbook.'
+      }
+    });
   });
 
   it('never schedules an automatic retry after an optimistic-concurrency conflict', async () => {
@@ -107,5 +149,25 @@ describe('Cloud workbook automatic sync scheduler', () => {
 
     expect(timers.timers.filter((timer) => !timer.canceled)).toHaveLength(1);
     expect(scheduler.hasWork()).toBe(false);
+  });
+
+  it('cancels a queued automatic upload without stopping future manual re-enablement', async () => {
+    const timers = createManualTimers();
+    const performSync = vi.fn(async () => ({ ok: true }));
+    const scheduler = createCloudWorkbookAutoSyncScheduler({
+      performSync,
+      scheduleTimer: timers.scheduleTimer,
+      cancelTimer: timers.cancelTimer
+    });
+
+    scheduler.enqueue(entry('Do not upload'));
+    scheduler.cancelPending();
+    expect(scheduler.hasWork()).toBe(false);
+    expect(timers.timers.at(-1).canceled).toBe(true);
+
+    scheduler.enqueue(entry('Upload after re-enabling'));
+    timers.runLatest();
+    await vi.waitFor(() => expect(performSync).toHaveBeenCalledOnce());
+    expect(performSync.mock.calls[0][0].workbook.name).toBe('Upload after re-enabling');
   });
 });

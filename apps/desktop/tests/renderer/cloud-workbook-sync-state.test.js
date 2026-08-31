@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cloudWorkbookAutoSyncStorageKey,
   cloudWorkbookSyncStorageKey,
+  readCloudWorkbookAutoSyncPreference,
   readCloudWorkbookSyncState,
   removeCloudWorkbookSyncState,
+  writeCloudWorkbookAutoSyncPreference,
   writeCloudWorkbookSyncState
 } from '../../src/renderer/app/cloud-workbook-sync-state.js';
 
@@ -18,6 +21,20 @@ function createStorage() {
 }
 
 describe('cloud workbook sync state', () => {
+  it('persists an account-scoped per-workbook autosave preference and defaults to on', () => {
+    const storage = createStorage();
+
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'user-1', 'workbook-1')).toBe(true);
+    writeCloudWorkbookAutoSyncPreference(storage, 'user-1', 'workbook-1', false);
+
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'user-1', 'workbook-1')).toBe(false);
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'user-1', 'workbook-2')).toBe(true);
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'user-2', 'workbook-1')).toBe(true);
+    expect(cloudWorkbookAutoSyncStorageKey('user-1', 'workbook-1')).toContain(
+      'cavalry.cloud-workbook-auto-sync.v1:'
+    );
+  });
+
   it('does not reuse an unscoped legacy CloudKit revision anchor', () => {
     const storage = createStorage();
     storage.setItem(
