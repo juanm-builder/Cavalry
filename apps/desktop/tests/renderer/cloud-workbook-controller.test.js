@@ -50,14 +50,21 @@ describe('cloud workbook controller model', () => {
           revision: 4,
           updatedAt: '2026-07-20T04:00:00.000Z',
           conflict: false,
-          pending: false
+          pending: false,
+          inCloud: true
         }
       ],
       sessionGeneration: 0,
       sessionPersistence: false,
       pendingCount: 0,
       lastSyncAt: '',
-      error: ''
+      error: '',
+      errorCode: '',
+      errorDetails: '',
+      errorRetryable: false,
+      errorOperation: '',
+      errorWorkbookId: '',
+      errorWorkbookName: ''
     });
     expect(JSON.stringify(state)).not.toContain('must-not-cross');
     expect(JSON.stringify(state)).not.toContain('<secret>');
@@ -95,6 +102,148 @@ describe('cloud workbook controller model', () => {
       revision: 2,
       status: 'uploading',
       cloudUpdatedAt: '2026-07-20T04:00:00.000Z'
+    });
+  });
+
+  it("uses the current record's pending flag instead of another workbook's outbox state", () => {
+    const confirmedCurrent = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        pendingCount: 1,
+        workbooks: [
+          { id: 'workbook-1', name: 'Home', revision: 4, pending: false },
+          { id: 'workbook-2', name: 'Business', revision: 2, pending: true }
+        ]
+      },
+      { id: 'workbook-1', name: 'Home' }
+    );
+    expect(confirmedCurrent.current).toMatchObject({
+      workbookId: 'workbook-1',
+      linked: true,
+      status: 'synced'
+    });
+
+    const queuedCurrent = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        pendingCount: 1,
+        workbooks: [{ id: 'workbook-1', name: 'Home', revision: 5, pending: true }]
+      },
+      { id: 'workbook-1', name: 'Home' }
+    );
+    expect(queuedCurrent.current).toMatchObject({
+      workbookId: 'workbook-1',
+      linked: true,
+      status: 'pending'
+    });
+  });
+
+  it('retains actionable error metadata and the failed operation for Settings', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [],
+        error: 'The saved Production error',
+        errorCode: 'cloud_database_update_required',
+        errorDetails: 'Technical code: CKError.serverRejectedRequest.',
+        errorRetryable: false
+      },
+      { id: 'workbook-1', name: 'Home' },
+      {
+        error: 'iCloud needs a Cavalry database update.',
+        errorCode: 'cloud_database_update_required',
+        errorDetails: 'Technical code: CKError.serverRejectedRequest.',
+        errorRetryable: false,
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-1',
+        failedOperation: 'upload',
+        failedWorkbookId: 'workbook-1'
+      }
+    );
+
+    expect(model).toMatchObject({
+      error: 'iCloud needs a Cavalry database update.',
+      errorCode: 'cloud_database_update_required',
+      errorDetails: 'Technical code: CKError.serverRejectedRequest.',
+      errorRetryable: false,
+      errorOperation: 'upload',
+      errorWorkbookId: 'workbook-1',
+      failedOperation: 'upload',
+      failedWorkbookId: 'workbook-1',
+      current: { linked: false, status: 'local_only' },
+      workbooks: []
+    });
+  });
+
+  it('does not project a workbook-scoped UI failure onto another workbook', () => {
+    const model = buildCloudSettingsModel(
+      { configured: true, status: 'signed_in', workbooks: [] },
+      { id: 'workbook-2', name: 'Business' },
+      {
+        error: 'Plan One failed to upload.',
+        errorCode: 'cloud_upload_failed',
+        failedOperation: 'upload',
+        failedWorkbookId: 'workbook-1'
+      }
+    );
+
+    expect(model.error).toBe('');
+    expect(model.failedOperation).toBe('');
+    expect(model.failedWorkbookId).toBe('');
+  });
+
+  it('does not project a persisted native workbook failure onto another workbook', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [],
+        error: 'Plan One failed to upload.',
+        errorCode: 'cloud_upload_failed',
+        errorDetails: 'Technical code: CKError.networkFailure.',
+        errorRetryable: true,
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-1'
+      },
+      { id: 'workbook-2', name: 'Business' }
+    );
+
+    expect(model).toMatchObject({
+      error: '',
+      errorCode: '',
+      errorDetails: '',
+      errorRetryable: false,
+      errorOperation: '',
+      errorWorkbookId: ''
+    });
+  });
+
+  it('keeps a non-current library delete failure visible without attributing it to the current workbook', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [
+          { id: 'workbook-1', name: 'Home', revision: 2 },
+          { id: 'workbook-2', name: 'Business', revision: 1 }
+        ],
+        error: 'Business could not be removed from iCloud.',
+        errorCode: 'cloud_delete_failed',
+        errorOperation: 'delete',
+        errorWorkbookId: 'workbook-2'
+      },
+      { id: 'workbook-1', name: 'Home' }
+    );
+
+    expect(model).toMatchObject({
+      error: 'Business could not be removed from iCloud.',
+      errorCode: 'cloud_delete_failed',
+      errorOperation: 'delete',
+      errorWorkbookId: 'workbook-2',
+      current: { workbookId: 'workbook-1' }
     });
   });
 

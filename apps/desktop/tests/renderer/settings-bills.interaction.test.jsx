@@ -650,17 +650,15 @@ describe('Settings and Bills interactions', () => {
       />
     );
 
-    const identityCard = screen.getByRole('heading', { name: 'iCloud Sync' }).closest('section');
-    expect(within(identityCard).getByText('Your workbooks stay in sync')).not.toBeNull();
-    expect(within(identityCard).queryByText(/CKSyncEngine/)).toBeNull();
-    expect(within(identityCard).queryByRole('button')).toBeNull();
-
-    const libraryCard = screen
-      .getByRole('heading', { name: 'iCloud Workbooks' })
-      .closest('section');
-    expect(within(libraryCard).getAllByText('The Plan')).toHaveLength(1);
+    const iCloudCard = screen.getByRole('heading', { name: 'iCloud' }).closest('section');
+    expect(within(iCloudCard).getByText('Connected to your private iCloud library')).not.toBeNull();
+    expect(within(iCloudCard).queryByText(/CKSyncEngine/)).toBeNull();
+    expect(within(iCloudCard).getByRole('button', { name: 'Check Now' })).not.toBeNull();
+    expect(within(iCloudCard).getByRole('heading', { name: 'Current workbook' })).not.toBeNull();
+    expect(within(iCloudCard).getByRole('heading', { name: 'Cloud library' })).not.toBeNull();
+    expect(within(iCloudCard).getAllByText('The Plan')).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Sync Changes' })).toHaveLength(1);
-    await user.click(within(libraryCard).getByRole('button', { name: 'Sync Changes' }));
+    await user.click(within(iCloudCard).getByRole('button', { name: 'Sync Changes' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'upload-current-workbook', payload: {} });
 
     await user.click(screen.getByRole('button', { name: 'Delete The Plan from iCloud' }));
@@ -696,6 +694,173 @@ describe('Settings and Bills interactions', () => {
       type: 'delete-cloud-workbook',
       payload: { workbookId: 'workbook-business' }
     });
+  });
+
+  it('shows retained iCloud diagnostics and retries the failed add explicitly', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: {
+              workbookId: 'workbook-plan',
+              linked: false,
+              conflict: false,
+              status: 'local_only'
+            },
+            workbooks: [],
+            error:
+              'iCloud needs a Cavalry database update before it can save this workbook. Your Mac copy is safe.',
+            errorCode: 'cloud_database_update_required',
+            errorDetails:
+              'Technical code: CKError.serverRejectedRequest. Deploy CavalryWorkbook to Production.',
+            errorRetryable: false,
+            failedOperation: 'upload'
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.getByText('Sync needs attention')).not.toBeNull();
+    expect(screen.getByText('Connected to your private iCloud library')).not.toBeNull();
+    expect(screen.getByText('Local copy safe')).not.toBeNull();
+    expect(screen.getByText('Your iCloud library is empty')).not.toBeNull();
+    expect(screen.queryByText(/CKError\.serverRejectedRequest/)).toBeNull();
+    expect(within(screen.getByRole('alert')).queryByRole('button')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    expect(screen.getByText(/CKError\.serverRejectedRequest/)).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Retry Add' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'upload-current-workbook',
+      payload: {}
+    });
+  });
+
+  it('surfaces and retries a failed delete for a non-current iCloud workbook in the library', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: { workbookId: 'workbook-plan', linked: true, status: 'synced' },
+            workbooks: [
+              { id: 'workbook-plan', name: 'Main Plan', revision: 2 },
+              { id: 'workbook-business', name: 'Business', revision: 1 }
+            ],
+            error: 'Business could not be removed from iCloud.',
+            errorCode: 'cloud_delete_failed',
+            errorOperation: 'delete',
+            errorWorkbookId: 'workbook-business',
+            failedOperation: 'delete',
+            failedWorkbookId: 'workbook-business'
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    const currentSurface = screen
+      .getByRole('heading', { name: 'Current workbook' })
+      .closest('section');
+    const librarySurface = screen
+      .getByRole('heading', { name: 'Cloud library' })
+      .closest('section');
+    expect(within(currentSurface).queryByRole('alert')).toBeNull();
+    expect(within(librarySurface).getByRole('alert').textContent).toContain(
+      "Business's iCloud copy was not removed"
+    );
+
+    await user.click(within(librarySurface).getByRole('button', { name: 'Retry Delete' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'delete-cloud-workbook',
+      payload: { workbookId: 'workbook-business' }
+    });
+  });
+
+  it('retries opening the exact non-current iCloud workbook that failed', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: { workbookId: 'workbook-plan', linked: true, status: 'synced' },
+            workbooks: [
+              { id: 'workbook-plan', name: 'Main Plan', revision: 2 },
+              { id: 'workbook-business', name: 'Business', revision: 1 }
+            ],
+            error: 'Business could not be opened from iCloud.',
+            errorCode: 'cloud_download_failed',
+            errorOperation: 'open',
+            errorWorkbookId: 'workbook-business',
+            errorWorkbookName: 'Business',
+            failedOperation: 'open',
+            failedWorkbookId: 'workbook-business'
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    const currentSurface = screen
+      .getByRole('heading', { name: 'Current workbook' })
+      .closest('section');
+    const librarySurface = screen
+      .getByRole('heading', { name: 'Cloud library' })
+      .closest('section');
+    expect(within(currentSurface).queryByRole('alert')).toBeNull();
+    expect(within(librarySurface).getByRole('alert').textContent).toContain(
+      'Business could not be opened'
+    );
+
+    await user.click(within(librarySurface).getByRole('button', { name: 'Retry Open' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'open-cloud-workbook',
+      payload: { workbookId: 'workbook-business' }
+    });
+  });
+
+  it('disables an iCloud error retry while another cloud operation is pending', () => {
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: { workbookId: 'workbook-plan', linked: false, status: 'local_only' },
+            workbooks: [],
+            error: 'iCloud needs attention.',
+            errorOperation: 'upload',
+            errorWorkbookId: 'workbook-plan',
+            failedOperation: 'upload',
+            failedWorkbookId: 'workbook-plan',
+            pendingOperation: 'refresh'
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Retry Add' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'View Details' }).disabled).toBe(false);
   });
 
   it('lets the user manually add the open Mac workbook to iCloud', async () => {

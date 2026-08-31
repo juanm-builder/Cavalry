@@ -104,10 +104,104 @@ describe('cloud workbook controller interactions', () => {
     expect(
       isRetryableAutomaticSyncFailure({
         ok: false,
+        code: 'cloud_database_update_required',
+        error: 'The Production database schema needs an update.'
+      })
+    ).toBe(false);
+    expect(
+      isRetryableAutomaticSyncFailure({
+        ok: false,
         code: 'cloud_upload_failed',
         error: 'The network is offline.'
       })
     ).toBe(true);
+  });
+
+  it('does not carry a failed workbook action into a different open workbook', async () => {
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') {
+          return { ok: true, state: { ...signedInState(), workbooks: [] } };
+        }
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: false,
+            code: 'cloud_database_update_required',
+            error: 'iCloud needs a Cavalry database update.',
+            retryable: false
+          };
+        }
+        return { ok: true, state: signedInState() };
+      }),
+      subscribe: () => () => {}
+    };
+    const hook = renderHook(
+      ({ currentWorkbook }) => useCloudWorkbookController({ cloud, workbook: currentWorkbook }),
+      { initialProps: { currentWorkbook: { id: 'workbook-one', name: 'Plan One' } } }
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+
+    await act(async () => {
+      await hook.result.current.execute('upload');
+    });
+    expect(hook.result.current.model).toMatchObject({
+      error: 'iCloud needs a Cavalry database update.',
+      failedOperation: 'upload',
+      failedWorkbookId: 'workbook-one'
+    });
+
+    hook.rerender({ currentWorkbook: { id: 'workbook-two', name: 'Plan Two' } });
+    await waitFor(() => expect(hook.result.current.model.error).toBe(''));
+    expect(hook.result.current.model.failedOperation).toBe('');
+  });
+
+  it('clears a retryable UI error after a newer successful native sync state', async () => {
+    let listener = null;
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') {
+          return {
+            ok: true,
+            state: { ...signedInState(), workbooks: [], lastSyncAt: '2026-08-31T01:00:00Z' }
+          };
+        }
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: false,
+            code: 'cloud_upload_failed',
+            error: 'iCloud is temporarily unavailable.',
+            retryable: true
+          };
+        }
+        return { ok: true, state: signedInState() };
+      }),
+      subscribe(callback) {
+        listener = callback;
+        return () => {};
+      }
+    };
+    const hook = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'workbook-one', name: 'Plan One' }
+      })
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+
+    await act(async () => {
+      await hook.result.current.execute('upload');
+    });
+    expect(hook.result.current.model.error).toBe('iCloud is temporarily unavailable.');
+
+    act(() => {
+      listener({
+        ...signedInState(),
+        workbooks: [{ id: 'workbook-one', name: 'Plan One', revision: 1 }],
+        lastSyncAt: '2026-08-31T01:05:00Z',
+        error: ''
+      });
+    });
+    await waitFor(() => expect(hook.result.current.model.error).toBe(''));
   });
 
   it('automatically uploads the latest workbook after its local file save succeeds', async () => {
@@ -718,6 +812,11 @@ describe('cloud workbook controller interactions', () => {
 
     expect(opened).toMatchObject({ ok: false });
     expect(result.current.model.error).toContain('disconnect the current file');
+    expect(result.current.model).toMatchObject({
+      errorOperation: 'open',
+      errorWorkbookId: 'cloud-workbook',
+      errorWorkbookName: 'Cloud Plan'
+    });
     expect(setWorkbook).not.toHaveBeenCalled();
   });
 

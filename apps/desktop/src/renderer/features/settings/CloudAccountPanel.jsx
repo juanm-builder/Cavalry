@@ -121,8 +121,25 @@ function normalizeCloudWorkbook(value, currentWorkbookId) {
     currency: asString(source.currency).toUpperCase(),
     revision: Number(source.revision) || 0,
     updatedAt: formatCloudTimestamp(source.updatedAt),
+    pending: source.pending === true,
+    inCloud: source.inCloud === true || source.pending !== true,
     isCurrent: source.isCurrent === true || (!!id && id === currentWorkbookId)
   };
+}
+
+function cloudLibraryCounts(workbooks) {
+  const queued = asArray(workbooks).filter((workbook) => workbook?.pending === true).length;
+  return {
+    confirmed: asArray(workbooks).filter(
+      (workbook) => workbook?.inCloud === true || workbook?.pending !== true
+    ).length,
+    queued
+  };
+}
+
+function cloudLibraryCountLabel(counts) {
+  const confirmed = `${counts.confirmed} in iCloud`;
+  return counts.queued ? `${confirmed} · ${counts.queued} waiting` : confirmed;
 }
 
 function LocalProfile() {
@@ -190,10 +207,12 @@ function LocalProfile() {
 }
 
 function ICloudIdentity({ cloud }) {
+  const actions = useActionBindings();
   const signedIn = cloud.status === 'signed_in';
   const checking = cloud.status === 'initializing';
   const unavailable = cloud.status === 'unavailable';
   const pendingCount = Math.max(0, Number(cloud.pendingCount) || 0);
+  const pending = !!asString(cloud.pendingOperation);
   const lastSyncAt = formatCloudTimestamp(cloud.lastSyncAt);
   const label = checking
     ? 'Checking iCloud'
@@ -211,39 +230,150 @@ function ICloudIdentity({ cloud }) {
         ? 'cloud_upload'
         : 'cloud_done'
       : 'cloud_off';
-  const tone = signedIn && !pendingCount ? 'good' : unavailable || !signedIn ? 'warn' : 'info';
 
   return (
-    <SettingsCard
-      className="settings-cloud-welcome-card"
-      headingId="settings-account-cloud-heading"
-      icon="cloud_sync"
-      title="iCloud Sync"
-      trailing={
-        <StatusPill icon={icon} tone={tone}>
+    <div className="settings-cloud-overview">
+      <span className="settings-cloud-welcome-icon" aria-hidden="true">
+        <Icon name={icon} />
+      </span>
+      <div className="settings-cloud-welcome-copy">
+        <strong>
+          {signedIn
+            ? 'Connected to your private iCloud library'
+            : checking
+              ? 'Checking your iCloud connection'
+              : 'iCloud is not connected'}
+        </strong>
+        <p>
+          {signedIn
+            ? lastSyncAt
+              ? `Last checked ${lastSyncAt}. Changes save on this Mac before they sync.`
+              : 'Changes save on this Mac before they sync to your other Apple devices.'
+            : 'Sign in under System Settings › Apple Account › iCloud. Cavalry reconnects when you return.'}
+        </p>
+      </div>
+      <div className="settings-cloud-overview-actions">
+        <StatusPill
+          icon={icon}
+          tone={signedIn && !pendingCount ? 'good' : unavailable || !signedIn ? 'warn' : 'info'}
+        >
           {label}
         </StatusPill>
-      }
-    >
-      <div className="settings-cloud-welcome">
-        <span className="settings-cloud-welcome-icon" aria-hidden="true">
-          <Icon name="cloud_sync" />
-        </span>
-        <div className="settings-cloud-welcome-copy">
-          <strong>Your workbooks stay in sync</strong>
-          <p>Changes save on this Mac first, then sync with your iPhone through iCloud.</p>
-        </div>
+        {signedIn ? (
+          <button
+            className="btn"
+            disabled={pending || checking}
+            type="button"
+            {...actions.action('refresh-cloud-workbooks')}
+          >
+            <Icon name="refresh" />
+            {pendingOperationLabel(cloud.pendingOperation, 'Checking…', 'Check Now')}
+          </button>
+        ) : null}
       </div>
-      <div className="settings-inline-message" role={cloud.error ? 'alert' : 'note'}>
-        <Icon name={cloud.error ? 'error' : signedIn ? 'shield_lock' : 'info'} />
-        {cloud.error ||
-          (signedIn
-            ? lastSyncAt
-              ? `iCloud · Last checked ${lastSyncAt}`
-              : 'iCloud · Ready to sync'
-            : 'Sign in under System Settings › Apple Account › iCloud. Cavalry reconnects automatically when you return.')}
+    </div>
+  );
+}
+
+function pendingOperationLabel(operation, pendingLabel, idleLabel) {
+  return asString(operation) === 'refresh' ? pendingLabel : idleLabel;
+}
+
+function CloudSyncError({ cloud, workbook, scope = 'global' }) {
+  const actions = useActionBindings();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const error = asString(cloud.error);
+  if (!error) return null;
+
+  const failedOperation = asString(cloud.failedOperation);
+  const errorOperation = asString(cloud.errorOperation);
+  const errorWorkbookId = asString(cloud.errorWorkbookId || cloud.failedWorkbookId);
+  const currentWorkbookId = asString(asObject(cloud.current).workbookId);
+  const retryScope = failedOperation || errorOperation;
+  const currentOperations = ['upload', 'keep-local', 'reconcile', 'conflict'];
+  const libraryOperations = ['delete', 'open'];
+  const errorSurface = currentOperations.includes(retryScope)
+    ? 'current'
+    : libraryOperations.includes(retryScope)
+      ? 'library'
+      : 'global';
+  if (scope !== errorSurface) return null;
+  const appliesToCurrentWorkbook =
+    currentOperations.includes(retryScope) &&
+    (!errorWorkbookId || errorWorkbookId === currentWorkbookId);
+  const retryAction =
+    appliesToCurrentWorkbook && retryScope === 'upload'
+      ? 'upload-current-workbook'
+      : appliesToCurrentWorkbook && retryScope === 'keep-local'
+        ? 'keep-local-cloud-workbook'
+        : retryScope === 'delete' && errorWorkbookId
+          ? 'delete-cloud-workbook'
+          : retryScope === 'open' && errorWorkbookId
+            ? 'open-cloud-workbook'
+            : 'refresh-cloud-workbooks';
+  const retryPayload =
+    libraryOperations.includes(retryScope) && errorWorkbookId
+      ? { workbookId: errorWorkbookId }
+      : {};
+  const retryLabel =
+    appliesToCurrentWorkbook && retryScope === 'upload'
+      ? 'Retry Add'
+      : appliesToCurrentWorkbook && retryScope === 'keep-local'
+        ? 'Retry Upload'
+        : retryScope === 'delete'
+          ? 'Retry Delete'
+          : retryScope === 'open'
+            ? 'Retry Open'
+            : 'Check Again';
+  const errorCode = asString(cloud.errorCode);
+  const details = asString(cloud.errorDetails);
+  const workbookName = asString(workbook.name) || 'The current workbook';
+  const targetWorkbook = asArray(cloud.workbooks).find(
+    (item) => asString(item?.id || item?.workbookId) === errorWorkbookId
+  );
+  const targetWorkbookName =
+    asString(cloud.errorWorkbookName || targetWorkbook?.name || targetWorkbook?.title) ||
+    'The selected workbook';
+  const pending = !!asString(cloud.pendingOperation);
+
+  return (
+    <div className="settings-cloud-error">
+      <span className="settings-cloud-error-icon" aria-hidden="true">
+        <Icon name="error" />
+      </span>
+      <div className="settings-cloud-error-copy" role="alert">
+        <strong>{error}</strong>
+        <p>
+          {appliesToCurrentWorkbook
+            ? `${workbookName} remains saved on this Mac. No local data was replaced or deleted.`
+            : retryScope === 'delete'
+              ? `${targetWorkbookName}'s iCloud copy was not removed. Nothing saved on this Mac was deleted.`
+              : retryScope === 'open'
+                ? `${targetWorkbookName} could not be opened. The workbook already open on this Mac is unchanged.`
+                : 'No workbook saved on this Mac was changed or deleted.'}
+        </p>
+        {detailsOpen ? (
+          <div className="settings-cloud-error-details" role="note">
+            {details || `Technical code: ${errorCode || 'cloud_request_failed'}.`}
+          </div>
+        ) : null}
       </div>
-    </SettingsCard>
+      <div className="settings-cloud-error-actions">
+        <button
+          className="btn btn-primary"
+          disabled={pending}
+          type="button"
+          {...actions.action(retryAction, retryPayload)}
+        >
+          <Icon name="refresh" />
+          {retryLabel}
+        </button>
+        <button className="btn" onClick={() => setDetailsOpen((open) => !open)} type="button">
+          <Icon name="info" />
+          {detailsOpen ? 'Hide Details' : 'View Details'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -516,9 +646,11 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
   const pending = !!pendingOperation;
   const workbookName = asString(workbook.name) || 'Current workbook';
   const currentWorkbookId = asString(current.workbookId);
-  const cloudCopyAvailable = asArray(cloud.workbooks).some(
+  const currentCloudItem = asArray(cloud.workbooks).find(
     (item) => asString(item?.id || item?.workbookId) === currentWorkbookId
   );
+  const cloudCopyAvailable = !!currentCloudItem;
+  const queuedCreate = currentCloudItem?.pending === true && currentCloudItem?.inCloud !== true;
   const missingCloudCopy = conflict && !cloudCopyAvailable;
   const cloudUpdatedAt = formatCloudTimestamp(current.cloudUpdatedAt);
 
@@ -549,8 +681,10 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
           }
         : simpleConfirmation === 'delete'
           ? {
-              message: 'Deletes only the iCloud version. This workbook stays saved on this Mac.',
-              label: 'Confirm Delete from iCloud',
+              message: queuedCreate
+                ? 'Cancels this queued upload. This workbook stays saved on this Mac.'
+                : 'Deletes only the iCloud version. This workbook stays saved on this Mac.',
+              label: queuedCreate ? 'Confirm Cancel Upload' : 'Confirm Delete from iCloud',
               icon: 'delete_forever',
               pendingLabel: 'Deleting…',
               tone: 'danger'
@@ -565,9 +699,17 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
         (reviewOpen ? ' is-reviewing' : '')
       }
     >
-      <span className={'settings-cloud-current-icon' + (linked ? ' is-linked' : '')}>
+      <span className={'settings-cloud-current-icon' + (linked && !queued ? ' is-linked' : '')}>
         <Icon
-          name={conflict || sharedReview ? 'sync_problem' : linked ? 'cloud_done' : 'cloud_upload'}
+          name={
+            conflict || sharedReview
+              ? 'sync_problem'
+              : queued
+                ? 'cloud_upload'
+                : linked
+                  ? 'cloud_done'
+                  : 'cloud_upload'
+          }
         />
       </span>
       <div className="settings-cloud-current-copy">
@@ -584,8 +726,12 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
             <StatusPill tone="warn">Not in iCloud</StatusPill>
           ) : conflict ? (
             <StatusPill tone="warn">Choose a version</StatusPill>
+          ) : queued ? (
+            <StatusPill tone="info">Waiting for iCloud</StatusPill>
           ) : (
-            <StatusPill tone={linked ? 'good' : 'neutral'}>Current</StatusPill>
+            <StatusPill tone={linked ? 'good' : 'neutral'}>
+              {linked ? 'In iCloud' : 'On this Mac'}
+            </StatusPill>
           )}
         </span>
         <small>
@@ -599,9 +745,9 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
                   ? 'Saved on this Mac · waiting for iCloud'
                   : linked
                     ? cloudUpdatedAt
-                      ? `In iCloud · Workbook updated ${cloudUpdatedAt}`
-                      : 'This workbook is available in iCloud.'
-                    : 'Saved on this Mac. Add it to begin continuous iCloud sync.'}
+                      ? `Local copy is safe · iCloud copy updated ${cloudUpdatedAt}`
+                      : 'A separate iCloud copy is available on your Apple devices.'
+                    : 'Saved on this Mac only. Add a separate copy to your iCloud library.'}
         </small>
       </div>
       {conflict || sharedReview ? (
@@ -688,14 +834,18 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
               ) : null}
               {cloudCopyAvailable ? (
                 <button
-                  aria-label={`Delete ${workbookName} from iCloud`}
+                  aria-label={
+                    queuedCreate
+                      ? `Cancel upload of ${workbookName}`
+                      : `Delete ${workbookName} from iCloud`
+                  }
                   className="btn settings-cloud-remove settings-cloud-current-action"
                   disabled={pending}
                   onClick={() => setSimpleConfirmation('delete')}
                   type="button"
                 >
                   <Icon name="delete_outline" />
-                  Delete from iCloud
+                  {queuedCreate ? 'Cancel Upload' : 'Delete from iCloud'}
                 </button>
               ) : null}
             </>
@@ -751,14 +901,18 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
               </button>
               {cloudCopyAvailable ? (
                 <button
-                  aria-label={`Delete ${workbookName} from iCloud`}
+                  aria-label={
+                    queuedCreate
+                      ? `Cancel upload of ${workbookName}`
+                      : `Delete ${workbookName} from iCloud`
+                  }
                   className="btn settings-cloud-remove settings-cloud-current-action"
                   disabled={pending}
                   onClick={() => setSimpleConfirmation('delete')}
                   type="button"
                 >
                   <Icon name="delete_outline" />
-                  Delete from iCloud
+                  {queuedCreate ? 'Cancel Upload' : 'Delete from iCloud'}
                 </button>
               ) : null}
             </>
@@ -857,12 +1011,6 @@ function CurrentWorkbookCloudAction({ cloud, workbook }) {
               )}
             </div>
           ) : null}
-          {cloud.error ? (
-            <div className="settings-inline-message" role="alert">
-              <Icon name="error" />
-              {cloud.error}
-            </div>
-          ) : null}
         </>
       ) : null}
     </div>
@@ -881,6 +1029,7 @@ function CloudWorkbookRow({
   const actions = useActionBindings();
   const item = normalizeCloudWorkbook(workbook, currentWorkbookId);
   const resolvingCurrentConflict = item.isCurrent && currentWorkbookConflict;
+  const queuedCreate = item.pending && !item.inCloud;
   const metadata = [
     item.year,
     item.currency,
@@ -903,34 +1052,47 @@ function CloudWorkbookRow({
               {resolvingCurrentConflict ? 'Review changes' : 'Current'}
             </StatusPill>
           ) : null}
+          {item.pending ? <StatusPill tone="info">Waiting for iCloud</StatusPill> : null}
         </div>
         <small>{metadata || 'iCloud workbook'}</small>
       </div>
       <div className="settings-cloud-workbook-actions">
         <button
-          aria-label={`${resolvingCurrentConflict ? 'Review' : 'Open'} ${item.name} from iCloud`}
+          aria-label={
+            item.pending
+              ? `${item.name} is waiting for iCloud`
+              : `${resolvingCurrentConflict ? 'Review' : 'Open'} ${item.name} from iCloud`
+          }
           className="btn"
-          disabled={pending || !item.id || (item.isCurrent && !resolvingCurrentConflict)}
+          disabled={
+            pending || item.pending || !item.id || (item.isCurrent && !resolvingCurrentConflict)
+          }
           type="button"
           {...actions.action('open-cloud-workbook', { workbookId: item.id })}
         >
           <Icon name="open_in_new" />
-          {resolvingCurrentConflict ? 'Review' : 'Open'}
+          {item.pending ? 'Waiting' : resolvingCurrentConflict ? 'Review' : 'Open'}
         </button>
-        {confirmingRemoval ? (
+        {item.isCurrent ? null : confirmingRemoval ? (
           <>
             <span className="settings-cloud-removal-warning">
-              Permanently deletes this iCloud copy. Separately saved local files are not deleted.
+              {queuedCreate
+                ? 'Cancels this queued upload. Any separately saved Mac file is not deleted.'
+                : 'Removes this iCloud copy from your Apple devices. Any separately saved Mac file is not deleted.'}
             </span>
             <button
-              aria-label={`Confirm deletion of ${item.name} from iCloud`}
+              aria-label={
+                queuedCreate
+                  ? `Confirm canceling upload of ${item.name}`
+                  : `Confirm deletion of ${item.name} from iCloud`
+              }
               className="btn btn-danger settings-cloud-remove"
               disabled={pending || !item.id}
               type="button"
               {...actions.action('delete-cloud-workbook', { workbookId: item.id })}
             >
               <Icon name="delete_forever" />
-              Delete from iCloud
+              {queuedCreate ? 'Cancel Upload' : 'Delete from iCloud'}
             </button>
             <button className="btn" disabled={pending} onClick={onCancelRemoval} type="button">
               Cancel
@@ -938,14 +1100,16 @@ function CloudWorkbookRow({
           </>
         ) : (
           <button
-            aria-label={`Delete ${item.name} from iCloud`}
+            aria-label={
+              queuedCreate ? `Cancel upload of ${item.name}` : `Delete ${item.name} from iCloud`
+            }
             className="btn settings-cloud-remove"
             disabled={pending || !item.id}
             onClick={() => onRequestRemoval(item.id)}
             type="button"
           >
             <Icon name="delete_outline" />
-            Delete from iCloud
+            {queuedCreate ? 'Cancel Upload' : 'Delete from iCloud'}
           </button>
         )}
       </div>
@@ -957,51 +1121,116 @@ function ICloudLibrary({ cloud, workbook }) {
   const [removalId, setRemovalId] = useState('');
   const current = asObject(cloud.current);
   const workbooks = asArray(cloud.workbooks);
+  const counts = cloudLibraryCounts(workbooks);
   const currentWorkbookId = asString(current.workbookId || cloud.currentWorkbookId);
-  const otherWorkbooks = workbooks.filter(
-    (item) => asString(item?.id || item?.workbookId) !== currentWorkbookId
-  );
   const pending = !!asString(cloud.pendingOperation);
 
   return (
+    <div className="settings-cloud-surfaces">
+      <section
+        aria-labelledby="settings-current-local-workbook-heading"
+        className="settings-cloud-surface"
+      >
+        <header className="settings-cloud-surface-header">
+          <div>
+            <span>On this Mac</span>
+            <h4 id="settings-current-local-workbook-heading">Current workbook</h4>
+            <p>This is the editable copy. Cavalry always saves it locally before iCloud runs.</p>
+          </div>
+          <StatusPill icon="shield_lock" tone="neutral">
+            Local copy safe
+          </StatusPill>
+        </header>
+        <CloudSyncError cloud={cloud} scope="current" workbook={workbook} />
+        <CurrentWorkbookCloudAction cloud={cloud} workbook={workbook} />
+      </section>
+
+      <section aria-labelledby="settings-icloud-library-heading" className="settings-cloud-surface">
+        <header className="settings-cloud-surface-header">
+          <div>
+            <span>In iCloud</span>
+            <h4 id="settings-icloud-library-heading">Cloud library</h4>
+            <p>Only workbooks confirmed or queued in iCloud appear in this list.</p>
+          </div>
+          <StatusPill
+            icon={counts.queued ? 'cloud_upload' : 'cloud_done'}
+            tone={counts.queued ? 'info' : counts.confirmed ? 'good' : 'neutral'}
+          >
+            {cloudLibraryCountLabel(counts)}
+          </StatusPill>
+        </header>
+        <CloudSyncError cloud={cloud} scope="library" workbook={workbook} />
+        {workbooks.length ? (
+          <ul aria-label="iCloud workbooks" className="settings-cloud-workbook-list">
+            {workbooks.map((item, index) => (
+              <CloudWorkbookRow
+                confirmingRemoval={removalId === asString(item?.id || item?.workbookId)}
+                currentWorkbookConflict={current.conflict === true}
+                currentWorkbookId={currentWorkbookId}
+                key={asString(item?.id || item?.workbookId) || `icloud-workbook-${index}`}
+                onCancelRemoval={() => setRemovalId('')}
+                onRequestRemoval={setRemovalId}
+                pending={pending}
+                workbook={item}
+              />
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            detail="Nothing has been uploaded. Your current workbook remains safely in the On This Mac section above."
+            icon="cloud_queue"
+            title="Your iCloud library is empty"
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ICloudWorkspace({ cloud, signedIn, workbook }) {
+  const workbooks = asArray(cloud.workbooks);
+  const counts = cloudLibraryCounts(workbooks);
+  const checking = cloud.status === 'initializing';
+  const connected = cloud.status === 'signed_in';
+  const needsAttention = connected && !!asString(cloud.error);
+  const headerLabel = checking
+    ? 'Checking'
+    : needsAttention
+      ? 'Sync needs attention'
+      : connected
+        ? cloudLibraryCountLabel(counts)
+        : cloud.status === 'unavailable'
+          ? 'Unavailable'
+          : 'Sign in needed';
+
+  return (
     <SettingsCard
-      headingId="settings-account-sync-heading"
-      icon="cloud_done"
-      title="iCloud Workbooks"
+      className="settings-cloud-workspace"
+      headingId="settings-account-cloud-heading"
+      icon="cloud_sync"
+      title="iCloud"
       trailing={
-        <StatusPill icon="cloud_done" tone="good">
-          {workbooks.length} {workbooks.length === 1 ? 'workbook' : 'workbooks'}
+        <StatusPill
+          icon={
+            checking
+              ? 'progress_activity'
+              : needsAttention
+                ? 'sync_problem'
+                : connected
+                  ? counts.queued
+                    ? 'cloud_upload'
+                    : 'cloud_done'
+                  : 'cloud_off'
+          }
+          tone={connected && !needsAttention ? (counts.queued ? 'info' : 'good') : 'warn'}
+        >
+          {headerLabel}
         </StatusPill>
       }
     >
-      <div className="settings-inline-message settings-cloud-library-note" role="note">
-        <Icon name="info" />
-        Add, open, or delete iCloud workbooks here. Deleting the open workbook from iCloud keeps its
-        Mac copy.
-      </div>
-      <CurrentWorkbookCloudAction cloud={cloud} workbook={workbook} />
-      {otherWorkbooks.length ? (
-        <ul aria-label="iCloud workbooks" className="settings-cloud-workbook-list">
-          {otherWorkbooks.map((item, index) => (
-            <CloudWorkbookRow
-              confirmingRemoval={removalId === asString(item?.id || item?.workbookId)}
-              currentWorkbookConflict={current.conflict === true}
-              currentWorkbookId={currentWorkbookId}
-              key={asString(item?.id || item?.workbookId) || `icloud-workbook-${index}`}
-              onCancelRemoval={() => setRemovalId('')}
-              onRequestRemoval={setRemovalId}
-              pending={pending}
-              workbook={item}
-            />
-          ))}
-        </ul>
-      ) : current.linked !== true ? (
-        <EmptyState
-          detail="Add the current workbook above, or sync after changing it on your iPhone."
-          icon="cloud_queue"
-          title="No iCloud workbooks yet"
-        />
-      ) : null}
+      <ICloudIdentity cloud={cloud} />
+      <CloudSyncError cloud={cloud} scope="global" workbook={workbook} />
+      {signedIn ? <ICloudLibrary cloud={cloud} workbook={workbook} /> : null}
     </SettingsCard>
   );
 }
@@ -1018,8 +1247,7 @@ export function CloudAccountPanel({ cloud: rawCloud, feedback, workbook = {} }) 
       <SettingsFeedback feedback={feedback} />
       <SettingsFeedback feedback={cloudFeedback} />
       <LocalProfile />
-      <ICloudIdentity cloud={cloud} />
-      {signedIn ? <ICloudLibrary cloud={cloud} workbook={workbook} /> : null}
+      <ICloudWorkspace cloud={cloud} signedIn={signedIn} workbook={workbook} />
     </div>
   );
 }

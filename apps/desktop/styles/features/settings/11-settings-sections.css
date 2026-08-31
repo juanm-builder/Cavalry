@@ -463,6 +463,150 @@
   background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface-subtle));
 }
 
+.settings-cloud-overview {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 15px;
+  padding: 16px;
+  border: 1px solid var(--accent-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface-subtle));
+}
+
+.settings-cloud-overview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-cloud-overview-actions .btn {
+  width: auto;
+  min-height: 36px;
+}
+
+.settings-cloud-error {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--bad) 38%, var(--line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bad) 7%, var(--panel));
+}
+
+.settings-cloud-error-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.settings-cloud-error-copy {
+  min-width: 0;
+}
+
+.settings-cloud-error-copy strong,
+.settings-cloud-error-copy p {
+  display: block;
+}
+
+.settings-cloud-error-copy strong {
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.settings-cloud-error-copy p {
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.settings-cloud-error-details {
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: var(--surface-subtle);
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-cloud-error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-cloud-error-actions .btn {
+  width: auto;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.settings-cloud-surfaces {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-cloud-surface {
+  min-width: 0;
+  display: grid;
+  gap: 11px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-cloud-surface-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-cloud-surface-header > div {
+  min-width: 0;
+}
+
+.settings-cloud-surface-header span,
+.settings-cloud-surface-header h4,
+.settings-cloud-surface-header p {
+  display: block;
+}
+
+.settings-cloud-surface-header > div > span {
+  color: var(--text-dim);
+  font-size: 8.5px;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.settings-cloud-surface-header h4 {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.settings-cloud-surface-header p {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
 .settings-cloud-welcome-icon,
 .settings-cloud-current-icon,
 .settings-cloud-workbook-icon {
@@ -1850,8 +1994,23 @@ html[data-density='compact'] .settings-setting-row {
     justify-self: start;
   }
 
-  .settings-cloud-welcome {
+  .settings-cloud-welcome,
+  .settings-cloud-overview {
     grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .settings-cloud-overview-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .settings-cloud-error {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .settings-cloud-error-actions {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 
   .settings-cloud-provider-actions {
@@ -1934,6 +2093,8 @@ html[data-density='compact'] .settings-setting-row {
   }
 
   .settings-cloud-welcome,
+  .settings-cloud-overview,
+  .settings-cloud-error,
   .settings-cloud-identity,
   .settings-cloud-current,
   .settings-cloud-workbook-row {
@@ -1948,6 +2109,8 @@ html[data-density='compact'] .settings-setting-row {
   }
 
   .settings-cloud-provider-actions,
+  .settings-cloud-overview-actions,
+  .settings-cloud-error-actions,
   .settings-cloud-identity-actions,
   .settings-cloud-current-actions,
   .settings-cloud-current-action,
@@ -1957,10 +2120,27 @@ html[data-density='compact'] .settings-setting-row {
   }
 
   .settings-cloud-identity-actions,
+  .settings-cloud-overview-actions,
+  .settings-cloud-error-actions,
   .settings-cloud-current-actions,
   .settings-cloud-confirmation,
   .settings-cloud-workbook-actions {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-cloud-overview-actions,
+  .settings-cloud-error-actions {
+    align-items: stretch;
+  }
+
+  .settings-cloud-overview-actions .btn,
+  .settings-cloud-error-actions .btn {
+    width: 100%;
+  }
+
+  .settings-cloud-surface-header {
+    align-items: flex-start;
     flex-direction: column;
   }
 

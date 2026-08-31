@@ -41,6 +41,11 @@ function createCloudController(dependencies = {}) {
   let pendingCount = 0;
   let lastSyncAt = '';
   let stateError = '';
+  let stateErrorCode = '';
+  let stateErrorDetails = '';
+  let stateErrorRetryable = false;
+  let stateErrorOperation = '';
+  let stateErrorWorkbookId = '';
   let sessionGeneration = 0;
   let workbookChange = null;
   let workbookChangeSequence = 0;
@@ -98,6 +103,11 @@ function createCloudController(dependencies = {}) {
       pendingCount,
       lastSyncAt,
       error: accountMessage(),
+      errorCode: stateErrorCode,
+      errorDetails: stateErrorDetails,
+      errorRetryable: stateErrorRetryable,
+      errorOperation: stateErrorOperation,
+      errorWorkbookId: stateErrorWorkbookId,
       ...(workbookChange ? { workbookChange: { ...workbookChange } } : {})
     };
   }
@@ -124,6 +134,11 @@ function createCloudController(dependencies = {}) {
     statusChecked = true;
     if (!(result && result.ok)) {
       stateError = text(result && result.error) || 'iCloud status is temporarily unavailable.';
+      stateErrorCode = text(result && result.code, 96);
+      stateErrorDetails = text(result && result.errorDetails, 1024);
+      stateErrorRetryable = result && result.retryable === true;
+      stateErrorOperation = text(result && result.errorOperation, 32);
+      stateErrorWorkbookId = text(result && result.errorWorkbookId, 128);
       return false;
     }
     const nextAccount = result.account && typeof result.account === 'object' ? result.account : {};
@@ -144,12 +159,22 @@ function createCloudController(dependencies = {}) {
       : pendingCount;
     lastSyncAt = text(result.lastSyncAt, 64) || lastSyncAt;
     stateError = text(result.error, 512);
+    stateErrorCode = text(result.code, 96);
+    stateErrorDetails = text(result.errorDetails, 1024);
+    stateErrorRetryable = result.retryable === true;
+    stateErrorOperation = text(result.errorOperation, 32);
+    stateErrorWorkbookId = text(result.errorWorkbookId, 128);
     return true;
   }
 
   function applyLibrary(result) {
     if (!(result && result.ok)) {
       stateError = text(result && result.error) || 'iCloud workbooks could not be loaded.';
+      stateErrorCode = text(result && result.code, 96);
+      stateErrorDetails = text(result && result.errorDetails, 1024);
+      stateErrorRetryable = result && result.retryable === true;
+      stateErrorOperation = text(result && result.errorOperation, 32);
+      stateErrorWorkbookId = text(result && result.errorWorkbookId, 128);
       return false;
     }
     workbooks = result.workbooks;
@@ -157,7 +182,12 @@ function createCloudController(dependencies = {}) {
       ? Number(result.pendingCount)
       : pendingCount;
     lastSyncAt = text(result.lastSyncAt, 64) || lastSyncAt;
-    stateError = '';
+    stateError = text(result.error, 512);
+    stateErrorCode = text(result.errorCode, 96);
+    stateErrorDetails = text(result.errorDetails, 1024);
+    stateErrorRetryable = result.retryable === true;
+    stateErrorOperation = text(result.errorOperation, 32);
+    stateErrorWorkbookId = text(result.errorWorkbookId, 128);
     return true;
   }
 
@@ -270,6 +300,11 @@ function createCloudController(dependencies = {}) {
     void operation
       .catch((error) => {
         stateError = text(error && error.message) || 'iCloud state could not be refreshed.';
+        stateErrorCode = 'cloud_state_refresh_failed';
+        stateErrorDetails = '';
+        stateErrorRetryable = true;
+        stateErrorOperation = 'refresh';
+        stateErrorWorkbookId = '';
         broadcastState();
       })
       .finally(() => {

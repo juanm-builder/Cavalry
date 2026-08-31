@@ -19,6 +19,7 @@ import {
   buildCloudSettingsModel,
   buildConflictNotice,
   conflictNoticePublicationKey,
+  errorDetailsFromResult,
   errorMessageFromResult,
   isRetryableAutomaticSyncFailure,
   normalizeCloudState,
@@ -31,6 +32,21 @@ export {
   isRetryableAutomaticSyncFailure,
   normalizeCloudState
 } from './cloud-workbook-model.js';
+
+const EMPTY_CLOUD_UI_STATE = Object.freeze({
+  pendingOperation: '',
+  notice: '',
+  error: '',
+  errorCode: '',
+  errorDetails: '',
+  errorRetryable: false,
+  errorOperation: '',
+  errorWorkbookId: '',
+  errorWorkbookName: '',
+  errorStateSyncAt: '',
+  failedOperation: '',
+  failedWorkbookId: ''
+});
 
 export function useCloudWorkbookController({
   cloud,
@@ -46,7 +62,7 @@ export function useCloudWorkbookController({
   autoSyncSchedulerOptions
 } = {}) {
   const [cloudState, setCloudState] = useState(EMPTY_CLOUD_STATE);
-  const [uiState, setUiState] = useState({ pendingOperation: '', notice: '', error: '' });
+  const [uiState, setUiState] = useState(() => ({ ...EMPTY_CLOUD_UI_STATE }));
   const [localConflictNotice, setLocalConflictNotice] = useState(null);
   const resolvedSyncStorage = useMemo(
     () => resolveCloudWorkbookSyncStorage(syncStorage),
@@ -70,6 +86,10 @@ export function useCloudWorkbookController({
   const autoSyncSchedulerRef = useRef(null);
   const cloudUserId = asString(cloudState.user && cloudState.user.id);
   const localWorkbookId = asString(workbook && workbook.id);
+  const uiContextRef = useRef({
+    workbookId: localWorkbookId,
+    sessionGeneration: Number(cloudState.sessionGeneration) || 0
+  });
 
   useEffect(() => {
     stateRef.current = cloudState;
@@ -93,6 +113,24 @@ export function useCloudWorkbookController({
       setLocalConflictNotice(null);
     }
   }, [localWorkbookId]);
+  useEffect(() => {
+    const nextContext = {
+      workbookId: localWorkbookId,
+      sessionGeneration: Number(cloudState.sessionGeneration) || 0
+    };
+    const previousContext = uiContextRef.current;
+    uiContextRef.current = nextContext;
+    if (
+      previousContext.workbookId === nextContext.workbookId &&
+      previousContext.sessionGeneration === nextContext.sessionGeneration
+    ) {
+      return;
+    }
+    setUiState((current) => ({
+      ...EMPTY_CLOUD_UI_STATE,
+      pendingOperation: current.pendingOperation
+    }));
+  }, [cloudState.sessionGeneration, localWorkbookId]);
 
   const updateWorkbookConflict = useCallback((workbookId, conflicted) => {
     const id = asString(workbookId);
@@ -120,6 +158,21 @@ export function useCloudWorkbookController({
     const normalized = normalizeCloudState(value);
     stateRef.current = normalized;
     setCloudState(normalized);
+    if (!normalized.error && normalized.lastSyncAt) {
+      setUiState((current) => {
+        if (
+          !current.error ||
+          !current.errorRetryable ||
+          current.errorStateSyncAt === normalized.lastSyncAt
+        ) {
+          return current;
+        }
+        return {
+          ...EMPTY_CLOUD_UI_STATE,
+          pendingOperation: current.pendingOperation
+        };
+      });
+    }
     return normalized;
   }, []);
 
@@ -647,6 +700,17 @@ export function useCloudWorkbookController({
   const execute = useCallback(
     async (operation, payload = {}) => {
       const operationName = asString(operation);
+      const operationWorkbookId =
+        operationName === 'refresh'
+          ? ''
+          : asString(payload.workbookId || payload.id || workbookRef.current?.id);
+      const operationWorkbookName =
+        asString(
+          stateRef.current.workbooks.find((item) => item.id === operationWorkbookId)?.name
+        ) ||
+        (operationWorkbookId === asString(workbookRef.current?.id)
+          ? asString(workbookRef.current?.name)
+          : '');
       if (pendingOperationRef.current) {
         return {
           ok: false,
@@ -655,7 +719,13 @@ export function useCloudWorkbookController({
         };
       }
       pendingOperationRef.current = operationName || 'unknown';
-      setUiState({ pendingOperation: operationName, notice: '', error: '' });
+      setUiState({
+        ...EMPTY_CLOUD_UI_STATE,
+        pendingOperation: operationName,
+        errorOperation: operationName,
+        errorWorkbookId: operationWorkbookId,
+        errorWorkbookName: operationWorkbookName
+      });
       let result;
       let uploadSyncContext = null;
       let openSyncContext = null;
@@ -1022,7 +1092,20 @@ export function useCloudWorkbookController({
 
         if (!(result && result.ok)) {
           const error = errorMessageFromResult(result) || 'The cloud request failed.';
-          setUiState({ pendingOperation: '', notice: '', error });
+          setUiState({
+            ...EMPTY_CLOUD_UI_STATE,
+            pendingOperation: '',
+            error,
+            errorCode: asString(result && result.code),
+            errorDetails: errorDetailsFromResult(result),
+            errorRetryable: result && result.retryable === true,
+            errorOperation: asString(result && result.errorOperation) || operationName,
+            errorWorkbookId: asString(result && result.errorWorkbookId) || operationWorkbookId,
+            errorWorkbookName: operationWorkbookName,
+            errorStateSyncAt: asString(stateRef.current.lastSyncAt),
+            failedOperation: operationName,
+            failedWorkbookId: operationWorkbookId
+          });
           return { ...(result || {}), ok: false, error };
         }
 
@@ -1042,11 +1125,29 @@ export function useCloudWorkbookController({
             ? 'Workbook removal queued for iCloud.'
             : 'Workbook removed from iCloud.'
         };
-        setUiState({ pendingOperation: '', notice: notices[operationName] || '', error: '' });
+        setUiState({
+          ...EMPTY_CLOUD_UI_STATE,
+          pendingOperation: '',
+          notice: notices[operationName] || '',
+          errorOperation: '',
+          errorWorkbookId: ''
+        });
         return result;
       } catch (error) {
         const message = error && error.message ? error.message : 'The iCloud request failed.';
-        setUiState({ pendingOperation: '', notice: '', error: message });
+        setUiState({
+          ...EMPTY_CLOUD_UI_STATE,
+          pendingOperation: '',
+          error: message,
+          errorCode: 'cloud_request_failed',
+          errorRetryable: true,
+          errorOperation: operationName,
+          errorWorkbookId: operationWorkbookId,
+          errorWorkbookName: operationWorkbookName,
+          errorStateSyncAt: asString(stateRef.current.lastSyncAt),
+          failedOperation: operationName,
+          failedWorkbookId: operationWorkbookId
+        });
         return { ok: false, error: message };
       } finally {
         pendingOperationRef.current = '';

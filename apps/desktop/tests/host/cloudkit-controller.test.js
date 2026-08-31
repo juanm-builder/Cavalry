@@ -175,7 +175,8 @@ describe('native CloudKit workbook boundary', () => {
     ).resolves.toEqual({
       ok: false,
       code: 'cloud_workbook_not_found',
-      error: 'That workbook is no longer in iCloud.'
+      error: 'That workbook is no longer in iCloud.',
+      retryable: false
     });
   });
 
@@ -194,9 +195,40 @@ describe('native CloudKit workbook boundary', () => {
       ok: false,
       code: 'workbook_revision_conflict',
       error: 'Changed on another device.',
-      conflict: true
+      conflict: true,
+      retryable: false
     });
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('preserves an actionable terminal Production schema rejection', async () => {
+    const controller = createCloudWorkbookController({
+      cloudKit: {
+        request: vi.fn(async () => ({
+          ok: false,
+          code: 'cloud_database_update_required',
+          error: 'iCloud needs a Cavalry database update before it can save this workbook.',
+          errorDetails:
+            'Technical code: CKError.serverRejectedRequest. Deploy CavalryWorkbook to Production.',
+          errorOperation: 'upload',
+          errorWorkbookId: 'workbook-cloudkit-1',
+          retryable: false
+        }))
+      }
+    });
+
+    await expect(controller.uploadWorkbook({ workbook: workbookFixture() })).resolves.toMatchObject(
+      {
+        ok: false,
+        code: 'cloud_database_update_required',
+        error: 'iCloud needs a Cavalry database update before it can save this workbook.',
+        errorDetails:
+          'Technical code: CKError.serverRejectedRequest. Deploy CavalryWorkbook to Production.',
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-cloudkit-1',
+        retryable: false
+      }
+    );
   });
 
   it('surfaces a same-revision native conflict in library metadata', async () => {
@@ -239,7 +271,8 @@ describe('native CloudKit workbook boundary', () => {
               currency: 'PHP',
               revision: 6,
               updatedAt: '2026-08-28T08:00:00.000Z',
-              pending: true
+              pending: true,
+              inCloud: false
             }
           ],
           pendingCount: 1
@@ -249,7 +282,7 @@ describe('native CloudKit workbook boundary', () => {
 
     await expect(controller.listWorkbooks()).resolves.toMatchObject({
       ok: true,
-      workbooks: [{ id: 'workbook-cloudkit-1', revision: 6, pending: true }],
+      workbooks: [{ id: 'workbook-cloudkit-1', revision: 6, pending: true, inCloud: false }],
       pendingCount: 1
     });
   });
@@ -503,6 +536,60 @@ describe('desktop iCloud state controller', () => {
     expect(controller.getState()).toMatchObject({
       status: 'unavailable',
       error: expect.stringContaining('could not determine')
+    });
+  });
+
+  it('keeps account connectivity separate from a retained terminal sync diagnosis', async () => {
+    const detail =
+      'Technical code: CKError.serverRejectedRequest. Deploy CavalryWorkbook to Production.';
+    const controller = createCloudController({
+      assertTrustedSender: () => {},
+      cloudKit: {
+        request: vi.fn(async ({ operation }) => {
+          if (operation === 'status') {
+            return {
+              ok: true,
+              account: { status: 'available', userId: 'icloud-owner-1' },
+              error: 'iCloud needs a Cavalry database update.',
+              code: 'cloud_database_update_required',
+              errorDetails: detail,
+              errorOperation: 'upload',
+              errorWorkbookId: 'workbook-cloudkit-1',
+              retryable: false
+            };
+          }
+          if (operation === 'list') {
+            return {
+              ok: true,
+              workbooks: [],
+              pendingCount: 0,
+              error: 'iCloud needs a Cavalry database update.',
+              code: 'cloud_database_update_required',
+              errorDetails: detail,
+              errorOperation: 'upload',
+              errorWorkbookId: 'workbook-cloudkit-1',
+              retryable: false
+            };
+          }
+          throw new Error(`Unexpected operation: ${operation}`);
+        })
+      },
+      ipcMain: { handle() {} },
+      BrowserWindow: { getAllWindows: () => [] }
+    });
+
+    await controller.initialize();
+
+    expect(controller.getState()).toMatchObject({
+      status: 'signed_in',
+      user: { id: 'icloud-owner-1' },
+      workbooks: [],
+      error: 'iCloud needs a Cavalry database update.',
+      errorCode: 'cloud_database_update_required',
+      errorDetails: detail,
+      errorRetryable: false,
+      errorOperation: 'upload',
+      errorWorkbookId: 'workbook-cloudkit-1'
     });
   });
 });

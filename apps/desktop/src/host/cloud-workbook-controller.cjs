@@ -137,6 +137,7 @@ function normalizeCloudWorkbookMetadata(raw) {
     updatedAt: text(source.updatedAt, 64),
     ...(source.conflict === true ? { conflict: true } : {}),
     ...(source.pending === true ? { pending: true } : {}),
+    inCloud: source.inCloud === true || source.pending !== true,
     ...(conflictNotice ? { conflictNotice } : {})
   };
 }
@@ -157,10 +158,19 @@ function normalizeExpectedRevision(value) {
 function nativeFailure(result, fallbackCode, fallbackMessage) {
   const source = result && typeof result === 'object' ? result : {};
   const conflict = source.conflict === true || source.code === 'workbook_revision_conflict';
+  const errorDetails = text(source.errorDetails, 1024);
+  const errorOperation = text(source.errorOperation, 32);
+  const errorWorkbookId = text(source.errorWorkbookId, 128);
   return publicFailure(
     conflict ? 'workbook_revision_conflict' : text(source.code, 96) || fallbackCode,
     text(source.error, 512) || fallbackMessage,
-    conflict ? { conflict: true } : {}
+    {
+      ...(conflict ? { conflict: true } : {}),
+      ...(errorDetails ? { errorDetails } : {}),
+      ...(errorOperation ? { errorOperation } : {}),
+      ...(errorWorkbookId ? { errorWorkbookId } : {}),
+      retryable: source.retryable === true
+    }
   );
 }
 
@@ -221,7 +231,13 @@ function createCloudWorkbookController(dependencies = {}) {
       pendingCount: Number.isSafeInteger(Number(result.pendingCount))
         ? Number(result.pendingCount)
         : 0,
-      lastSyncAt: text(result.lastSyncAt, 64)
+      lastSyncAt: text(result.lastSyncAt, 64),
+      error: text(result.error, 512),
+      errorCode: text(result.code, 96),
+      errorDetails: text(result.errorDetails, 1024),
+      errorOperation: text(result.errorOperation, 32),
+      errorWorkbookId: text(result.errorWorkbookId, 128),
+      retryable: result.retryable === true
     };
   }
 

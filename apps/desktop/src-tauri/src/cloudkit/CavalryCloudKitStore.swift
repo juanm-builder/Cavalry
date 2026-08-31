@@ -34,6 +34,7 @@ private struct CloudWorkbookMetadata: Codable, Sendable {
   let updatedAt: String
   var conflict: Bool? = nil
   var pending: Bool? = nil
+  var inCloud: Bool? = nil
   var conflictNotice: CloudConflictNotice? = nil
 }
 
@@ -86,11 +87,24 @@ private struct CloudKitDiskState: Codable {
   var remote: [String: RemoteWorkbook] = [:]
   var pending: [String: PendingWorkbook] = [:]
   var pendingDeletes: Set<String> = []
+  var pendingDeleteWorkbookIds: [String: String]?
   var conflicts: [String: WorkbookConflict] = [:]
   var pendingConflictNotices: [String: PendingConflictNoticeUpdate]?
   var rejectedSaves: [String: String]?
+  var rejectedSaveCodes: [String: String]?
+  var rejectedSaveDetails: [String: String]?
+  var rejectedConflictNotices: [String: String]?
+  var rejectedConflictNoticeCodes: [String: String]?
+  var rejectedConflictNoticeDetails: [String: String]?
   var rejectedDeletes: [String: String]?
+  var rejectedDeleteCodes: [String: String]?
+  var rejectedDeleteDetails: [String: String]?
   var lastError: String?
+  var lastErrorCode: String?
+  var lastErrorDetails: String?
+  var lastErrorRetryable: Bool?
+  var lastErrorOperation: String?
+  var lastErrorWorkbookId: String?
   var lastSyncAt: String?
 }
 
@@ -133,6 +147,10 @@ private struct CloudKitBridgeResponse: Codable, Sendable {
   var cloudEnvironment: String?
   var code: String?
   var error: String?
+  var errorDetails: String?
+  var retryable: Bool?
+  var errorOperation: String?
+  var errorWorkbookId: String?
   var conflict: Bool?
   var account: CloudKitAccount?
   var workbooks: [CloudWorkbookMetadata]?
@@ -157,6 +175,7 @@ private struct CloudKitBridgeResponse: Codable, Sendable {
       ok: false,
       code: code,
       error: error,
+      retryable: false,
       conflict: conflict ? true : nil
     )
   }
@@ -200,6 +219,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private var engine: CKSyncEngine?
   private var syncTask: Task<Void, Error>?
   private var sendTask: Task<Void, Error>?
+  private var fetchCycleHadError = false
   private var eventSink: (@Sendable ([String: String]) -> Void)?
 
   init() {
@@ -304,11 +324,16 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         }
       }
       var visible = Dictionary(
-        uniqueKeysWithValues: diskState.remote.map { ($0.key, $0.value.metadata) }
+        uniqueKeysWithValues: diskState.remote.map { recordName, remote in
+          var metadata = remote.metadata
+          metadata.inCloud = true
+          return (recordName, metadata)
+        }
       )
       for (recordName, pending) in diskState.pending {
         var metadata = pending.metadata
         metadata.pending = true
+        metadata.inCloud = diskState.remote[recordName] != nil
         metadata.conflictNotice = diskState.remote[recordName]?.metadata.conflictNotice
         visible[recordName] = metadata
       }
@@ -323,6 +348,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
           updatedAt: metadata.updatedAt,
           conflict: true,
           pending: metadata.pending,
+          inCloud: metadata.inCloud,
           conflictNotice: metadata.conflictNotice
         )
       }
@@ -336,6 +362,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       }
       return CloudKitBridgeResponse(
         ok: true,
+        code: diskState.lastErrorCode,
+        error: diskState.lastError,
+        errorDetails: diskState.lastErrorDetails,
+        retryable: diskState.lastErrorRetryable,
+        errorOperation: diskState.lastErrorOperation,
+        errorWorkbookId: diskState.lastErrorWorkbookId,
         workbooks: visible.values
           .sorted { $0.updatedAt > $1.updatedAt },
         pendingCount: diskState.pending.count + diskState.pendingDeletes.count
@@ -403,10 +435,16 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     response.containerIdentifier = cavalryContainerIdentifier
     response.cloudEnvironment = cloudEnvironment
     response.account = account
-    response.pendingCount = diskState.pending.count + diskState.pendingDeletes.count
+    response.pendingCount =
+      diskState.pending.count + diskState.pendingDeletes.count
       + (diskState.pendingConflictNotices?.count ?? 0)
     response.lastSyncAt = diskState.lastSyncAt
+    response.code = diskState.lastErrorCode
     response.error = diskState.lastError
+    response.errorDetails = diskState.lastErrorDetails
+    response.retryable = diskState.lastErrorRetryable
+    response.errorOperation = diskState.lastErrorOperation
+    response.errorWorkbookId = diskState.lastErrorWorkbookId
     return response
   }
 
@@ -456,7 +494,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     defer { syncTask = nil }
     try await task.value
     diskState.lastSyncAt = isoDate(Date())
-    diskState.lastError = nil
+    // A successful fetch/send cycle can contain an item-level terminal failure
+    // delivered through the delegate. Keep that diagnosis until a record save
+    // actually succeeds or the user starts a new explicit save attempt.
     try persist()
   }
 
@@ -549,8 +589,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         recordChangeRetryCount: previousPending?.recordChangeRetryCount
       )
       diskState.pendingDeletes.remove(recordName)
+      diskState.pendingDeleteWorkbookIds?.removeValue(forKey: recordName)
+      if diskState.pendingDeleteWorkbookIds?.isEmpty == true {
+        diskState.pendingDeleteWorkbookIds = nil
+      }
       diskState.rejectedSaves?.removeValue(forKey: recordName)
-      diskState.lastError = nil
+      diskState.rejectedSaveCodes?.removeValue(forKey: recordName)
+      diskState.rejectedSaveDetails?.removeValue(forKey: recordName)
+      clearLastError(workbookId: workbookId)
       try persist()
       guard let engine else { throw CloudStoreError.engineUnavailable }
       if !diskState.zoneReady {
@@ -565,19 +611,44 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       do {
         try await sendNow()
       } catch {
-        diskState.lastError = publicMessage(error)
+        setLastError(
+          error,
+          fallbackCode: "cloud_upload_failed",
+          operation: "upload",
+          workbookId: workbookId,
+          itemID: AnyHashable(recordID(recordName))
+        )
         try? persist()
       }
     } catch {
-      diskState.lastError = publicMessage(error)
+      setLastError(
+        error,
+        fallbackCode: "cloud_upload_failed",
+        operation: "upload",
+        workbookId: workbookId,
+        itemID: AnyHashable(recordID(recordName))
+      )
       try? persist()
-      return cloudFailure(error, fallbackCode: "cloud_upload_failed")
+      return cloudFailure(
+        error,
+        fallbackCode: "cloud_upload_failed",
+        itemID: AnyHashable(recordID(recordName))
+      )
     }
 
     if let rejection = diskState.rejectedSaves?[recordName] {
+      let rejectionCode = diskState.rejectedSaveCodes?[recordName] ?? "cloud_change_rejected"
+      let rejectionDetails = diskState.rejectedSaveDetails?[recordName]
       diskState.rejectedSaves?.removeValue(forKey: recordName)
+      diskState.rejectedSaveCodes?.removeValue(forKey: recordName)
+      diskState.rejectedSaveDetails?.removeValue(forKey: recordName)
       try? persist()
-      return .failure("cloud_change_rejected", rejection)
+      var response = CloudKitBridgeResponse.failure(rejectionCode, rejection)
+      response.errorDetails = rejectionDetails
+      response.retryable = false
+      response.errorOperation = "upload"
+      response.errorWorkbookId = workbookId
+      return response
     }
     if diskState.conflicts[recordName] != nil { return revisionConflict() }
     if diskState.pending[recordName] != nil {
@@ -586,10 +657,15 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     if diskState.remote[recordName]?.metadata.revision == revision {
       return CloudKitBridgeResponse(ok: true, metadata: metadata, pending: false)
     }
-    return .failure(
-      "cloud_upload_failed",
+    var response = CloudKitBridgeResponse.failure(
+      diskState.lastErrorCode ?? "cloud_upload_failed",
       diskState.lastError ?? "The workbook could not be queued for iCloud sync."
     )
+    response.errorDetails = diskState.lastErrorDetails
+    response.retryable = diskState.lastErrorRetryable ?? false
+    response.errorOperation = diskState.lastErrorOperation
+    response.errorWorkbookId = diskState.lastErrorWorkbookId
+    return response
   }
 
   private func updateConflictNotice(
@@ -651,7 +727,10 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     )
     diskState.pendingConflictNotices = updates
     if clearing { diskState.conflicts.removeValue(forKey: recordName) }
-    diskState.lastError = nil
+    diskState.rejectedConflictNotices?.removeValue(forKey: recordName)
+    diskState.rejectedConflictNoticeCodes?.removeValue(forKey: recordName)
+    diskState.rejectedConflictNoticeDetails?.removeValue(forKey: recordName)
+    clearLastError(workbookId: workbookId)
     do {
       try persist()
       guard let engine else { throw CloudStoreError.engineUnavailable }
@@ -662,13 +741,39 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       do {
         try await sendNow()
       } catch {
-        diskState.lastError = publicMessage(error)
+        setLastError(
+          error,
+          fallbackCode: "cloud_conflict_notice_failed",
+          operation: "conflict",
+          workbookId: workbookId,
+          itemID: AnyHashable(recordID(recordName))
+        )
         try? persist()
       }
     } catch {
-      return cloudFailure(error, fallbackCode: "cloud_conflict_notice_failed")
+      return cloudFailure(
+        error,
+        fallbackCode: "cloud_conflict_notice_failed",
+        itemID: AnyHashable(recordID(recordName))
+      )
     }
 
+    if let rejection = diskState.rejectedConflictNotices?[recordName] {
+      let rejectionCode =
+        diskState.rejectedConflictNoticeCodes?[recordName]
+        ?? "cloud_conflict_notice_failed"
+      let rejectionDetails = diskState.rejectedConflictNoticeDetails?[recordName]
+      diskState.rejectedConflictNotices?.removeValue(forKey: recordName)
+      diskState.rejectedConflictNoticeCodes?.removeValue(forKey: recordName)
+      diskState.rejectedConflictNoticeDetails?.removeValue(forKey: recordName)
+      try? persist()
+      var response = CloudKitBridgeResponse.failure(rejectionCode, rejection)
+      response.errorDetails = rejectionDetails
+      response.retryable = false
+      response.errorOperation = "conflict"
+      response.errorWorkbookId = workbookId
+      return response
+    }
     var metadata = diskState.remote[recordName]?.metadata ?? remote.metadata
     let pending = diskState.pendingConflictNotices?[recordName] != nil
     if pending { metadata.conflictNotice = notice }
@@ -705,7 +810,11 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       do {
         _ = try await recoverRemote(workbookId: workbookId, recordName: recordName)
       } catch {
-        return cloudFailure(error, fallbackCode: "cloud_download_failed")
+        return cloudFailure(
+          error,
+          fallbackCode: "cloud_download_failed",
+          itemID: AnyHashable(recordID(recordName))
+        )
       }
     }
     guard let remote = diskState.remote[recordName], remote.metadata.id == workbookId else {
@@ -753,14 +862,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     let recordName = hashedRecordName(workbookId)
     let pendingUpdate = diskState.pendingConflictNotices?[recordName]
     let package: StoredConflictPackage?
-    if
-      pendingUpdate?.clear == false,
+    if pendingUpdate?.clear == false,
       pendingUpdate?.notice?.id == noticeId,
       pendingUpdate?.conflictPackage?.noticeId == noticeId
     {
       package = pendingUpdate?.conflictPackage
-    } else if
-      diskState.remote[recordName]?.metadata.id == workbookId,
+    } else if diskState.remote[recordName]?.metadata.id == workbookId,
       diskState.remote[recordName]?.metadata.conflictNotice?.id == noticeId,
       diskState.remote[recordName]?.conflictPackage?.noticeId == noticeId
     {
@@ -808,6 +915,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       return .failure("invalid_workbook_id", "Choose a valid iCloud workbook.")
     }
     let recordName = hashedRecordName(workbookId)
+    clearLastError(workbookId: workbookId)
     // Deletion is deliberately idempotent. A valid workbook ID is enough to
     // address its deterministic private-record name, even when this device's
     // cache is empty or an upload acknowledgement was interrupted. CloudKit's
@@ -820,7 +928,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       pendingRecordZoneChanges: [.saveRecord(recordID(recordName))]
     )
     diskState.pendingDeletes.insert(recordName)
+    var pendingDeleteWorkbookIds = diskState.pendingDeleteWorkbookIds ?? [:]
+    pendingDeleteWorkbookIds[recordName] = workbookId
+    diskState.pendingDeleteWorkbookIds = pendingDeleteWorkbookIds
     diskState.rejectedDeletes?.removeValue(forKey: recordName)
+    diskState.rejectedDeleteCodes?.removeValue(forKey: recordName)
+    diskState.rejectedDeleteDetails?.removeValue(forKey: recordName)
     diskState.conflicts.removeValue(forKey: recordName)
     do {
       try persist()
@@ -832,28 +945,58 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       do {
         try await sendNow()
       } catch {
-        diskState.lastError = publicMessage(error)
+        setLastError(
+          error,
+          fallbackCode: "cloud_delete_failed",
+          operation: "delete",
+          workbookId: workbookId,
+          itemID: AnyHashable(recordID(recordName))
+        )
         try? persist()
       }
       if let rejection = diskState.rejectedDeletes?[recordName] {
+        let rejectionCode = diskState.rejectedDeleteCodes?[recordName] ?? "cloud_delete_failed"
+        let rejectionDetails = diskState.rejectedDeleteDetails?[recordName]
         diskState.rejectedDeletes?.removeValue(forKey: recordName)
+        diskState.rejectedDeleteCodes?.removeValue(forKey: recordName)
+        diskState.rejectedDeleteDetails?.removeValue(forKey: recordName)
         try? persist()
-        return .failure("cloud_delete_failed", rejection)
+        var response = CloudKitBridgeResponse.failure(rejectionCode, rejection)
+        response.errorDetails = rejectionDetails
+        response.retryable = false
+        response.errorOperation = "delete"
+        response.errorWorkbookId = workbookId
+        return response
       }
       if diskState.pendingDeletes.contains(recordName) {
         return CloudKitBridgeResponse(ok: true, id: workbookId, pending: true)
       }
       guard diskState.remote[recordName] == nil else {
-        return .failure(
-          "cloud_delete_failed",
+        var response = CloudKitBridgeResponse.failure(
+          diskState.lastErrorCode ?? "cloud_delete_failed",
           diskState.lastError ?? "The iCloud workbook could not be removed."
         )
+        response.errorDetails = diskState.lastErrorDetails
+        response.retryable = diskState.lastErrorRetryable ?? false
+        response.errorOperation = diskState.lastErrorOperation ?? "delete"
+        response.errorWorkbookId = diskState.lastErrorWorkbookId ?? workbookId
+        return response
       }
       return CloudKitBridgeResponse(ok: true, id: workbookId, pending: false)
     } catch {
-      diskState.lastError = publicMessage(error)
+      setLastError(
+        error,
+        fallbackCode: "cloud_delete_failed",
+        operation: "delete",
+        workbookId: workbookId,
+        itemID: AnyHashable(recordID(recordName))
+      )
       try? persist()
-      return cloudFailure(error, fallbackCode: "cloud_delete_failed")
+      return cloudFailure(
+        error,
+        fallbackCode: "cloud_delete_failed",
+        itemID: AnyHashable(recordID(recordName))
+      )
     }
   }
 
@@ -932,18 +1075,22 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       }
       if changed {
         diskState.lastSyncAt = isoDate(Date())
-        diskState.lastError = nil
         try? persist()
         emit(reason: "fetched")
       }
     case .sentDatabaseChanges(let event):
       if event.savedZones.contains(where: { $0.zoneID == zoneID }) {
         diskState.zoneReady = true
-        diskState.lastError = nil
+        clearLastError(operation: "zone")
       }
       if let failed = event.failedZoneSaves.first(where: { $0.zone.zoneID == zoneID }) {
         diskState.zoneReady = false
-        diskState.lastError = publicMessage(failed.error)
+        setLastError(
+          failed.error,
+          fallbackCode: "cloud_zone_unavailable",
+          operation: "zone",
+          itemID: AnyHashable(zoneID)
+        )
       }
       try? persist()
     case .sentRecordZoneChanges(let event):
@@ -967,17 +1114,22 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       }
     case .didFetchRecordZoneChanges(let event):
       if let error = event.error {
-        diskState.lastError = publicMessage(error)
+        fetchCycleHadError = true
+        setLastError(error, fallbackCode: "cloud_fetch_failed", operation: "refresh")
         try? persist()
       }
     case .didFetchChanges:
+      if !fetchCycleHadError, diskState.lastErrorRetryable == true {
+        clearLastError(operation: "refresh")
+      }
       diskState.lastSyncAt = isoDate(Date())
       try? persist()
     case .didSendChanges:
       diskState.lastSyncAt = isoDate(Date())
       try? persist()
-    case .willFetchChanges, .willFetchRecordZoneChanges,
-      .willSendChanges:
+    case .willFetchChanges:
+      fetchCycleHadError = false
+    case .willFetchRecordZoneChanges, .willSendChanges:
       break
     @unknown default:
       break
@@ -1002,6 +1154,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     let recordName = recordID.recordName
     let pendingWorkbook = diskState.pending[recordName]
     let pendingNotice = diskState.pendingConflictNotices?[recordName]
+    let workbookId = pendingWorkbook?.metadata.id ?? diskState.remote[recordName]?.metadata.id
     guard pendingWorkbook != nil || pendingNotice != nil else {
       engine?.state.remove(
         pendingRecordZoneChanges: [.saveRecord(recordID)]
@@ -1018,21 +1171,43 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       record = CKRecord(recordType: cavalryRecordType, recordID: recordID)
     }
     if let pendingWorkbook {
-      guard FileManager.default.fileExists(atPath: payloadURL(pendingWorkbook.payloadFile).path) else {
-        diskState.lastError = "A pending iCloud workbook payload is missing."
+      guard FileManager.default.fileExists(atPath: payloadURL(pendingWorkbook.payloadFile).path)
+      else {
+        setLastError(
+          message: "A pending iCloud workbook payload is missing.",
+          code: "cloud_snapshot_invalid",
+          details: "Technical code: pending_workbook_payload_missing.",
+          retryable: false,
+          operation: "upload",
+          workbookId: workbookId
+        )
         return nil
       }
       populate(record, from: pendingWorkbook)
     } else if let remote = diskState.remote[recordName] {
       guard FileManager.default.fileExists(atPath: payloadURL(remote.payloadFile).path) else {
-        diskState.lastError = "The cached iCloud workbook payload is missing."
+        setLastError(
+          message: "The cached iCloud workbook payload is missing.",
+          code: "cloud_snapshot_invalid",
+          details: "Technical code: cached_workbook_payload_missing.",
+          retryable: false,
+          operation: pendingNotice == nil ? "upload" : "conflict",
+          workbookId: workbookId
+        )
         return nil
       }
       populate(record, from: remote)
     }
     if let pendingNotice {
       if let package = pendingNotice.conflictPackage, !conflictPackageFilesExist(package) {
-        diskState.lastError = "The conflict review payload is missing."
+        setLastError(
+          message: "The conflict review payload is missing.",
+          code: "cloud_snapshot_invalid",
+          details: "Technical code: pending_conflict_payload_missing.",
+          retryable: false,
+          operation: "conflict",
+          workbookId: workbookId
+        )
         return nil
       }
       populateConflictNotice(
@@ -1045,7 +1220,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       )
     } else if let remote = diskState.remote[recordName] {
       if let package = remote.conflictPackage, !conflictPackageFilesExist(package) {
-        diskState.lastError = "The cached conflict review payload is missing."
+        setLastError(
+          message: "The cached conflict review payload is missing.",
+          code: "cloud_snapshot_invalid",
+          details: "Technical code: cached_conflict_payload_missing.",
+          retryable: false,
+          operation: "conflict",
+          workbookId: workbookId
+        )
         return nil
       }
       populateConflictNotice(record, notice: remote.metadata.conflictNotice)
@@ -1116,7 +1298,11 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private func applyFetchedRecord(_ record: CKRecord) -> Bool {
     guard let decoded = decodeRemoteRecord(record) else { return false }
     let recordName = record.recordID.recordName
+    let hadPendingConflictNotice = diskState.pendingConflictNotices?[recordName] != nil
     acknowledgeConflictNoticeIfMatched(recordName: recordName, metadata: decoded.metadata)
+    if hadPendingConflictNotice, diskState.pendingConflictNotices?[recordName] == nil {
+      clearLastError(operation: "conflict", workbookId: decoded.metadata.id)
+    }
     if let pending = diskState.pending[recordName] {
       if pending.metadata.revision == decoded.metadata.revision,
         pending.payloadHash == decoded.payloadHash
@@ -1133,6 +1319,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
             pendingRecordZoneChanges: [.saveRecord(recordID(recordName))]
           )
         }
+        clearLastError(operation: "upload", workbookId: decoded.metadata.id)
         return true
       }
       let remoteRevision = decoded.metadata.revision
@@ -1170,6 +1357,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     let recordName = record.recordID.recordName
     guard let decoded = decodeRemoteRecord(record) else { return false }
     let pending = diskState.pending[recordName]
+    let hadPendingConflictNotice = diskState.pendingConflictNotices?[recordName] != nil
     if let pending, decoded.metadata.revision != pending.metadata.revision { return false }
     guard pending != nil || diskState.pendingConflictNotices?[recordName] != nil else {
       return false
@@ -1186,7 +1374,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         pendingRecordZoneChanges: [.saveRecord(recordID(recordName))]
       )
     }
-    diskState.lastError = nil
+    if pending != nil {
+      clearLastError(operation: "upload", workbookId: decoded.metadata.id)
+    }
+    if hadPendingConflictNotice, diskState.pendingConflictNotices?[recordName] == nil {
+      clearLastError(operation: "conflict", workbookId: decoded.metadata.id)
+    }
     return true
   }
 
@@ -1206,6 +1399,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
 
   private func applySavedDeletion(_ recordID: CKRecord.ID) -> Bool {
     let recordName = recordID.recordName
+    let workbookId =
+      diskState.pendingDeleteWorkbookIds?[recordName]
+      ?? diskState.remote[recordName]?.metadata.id
     removeRemotePayload(recordName: recordName)
     removePendingPayload(recordName: recordName)
     diskState.remote.removeValue(forKey: recordName)
@@ -1213,9 +1409,15 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     removePendingConflictPackage(recordName: recordName)
     diskState.pendingConflictNotices?.removeValue(forKey: recordName)
     diskState.pendingDeletes.remove(recordName)
+    diskState.pendingDeleteWorkbookIds?.removeValue(forKey: recordName)
+    if diskState.pendingDeleteWorkbookIds?.isEmpty == true {
+      diskState.pendingDeleteWorkbookIds = nil
+    }
     diskState.conflicts.removeValue(forKey: recordName)
     diskState.rejectedDeletes?.removeValue(forKey: recordName)
-    diskState.lastError = nil
+    diskState.rejectedDeleteCodes?.removeValue(forKey: recordName)
+    diskState.rejectedDeleteDetails?.removeValue(forKey: recordName)
+    if let workbookId { clearLastError(operation: "delete", workbookId: workbookId) }
     return true
   }
 
@@ -1224,11 +1426,22 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     syncEngine: CKSyncEngine
   ) -> Bool {
     let recordName = failure.record.recordID.recordName
-    switch failure.error.code {
+    let workbookId =
+      diskState.pending[recordName]?.metadata.id ?? diskState.remote[recordName]?.metadata.id
+    let operation = diskState.pending[recordName] != nil ? "upload" : "conflict"
+    let fallbackCode =
+      operation == "conflict" ? "cloud_conflict_notice_failed" : "cloud_upload_failed"
+    let actionableError =
+      actionableCloudError(
+        failure.error,
+        itemID: AnyHashable(failure.record.recordID)
+      ) ?? failure.error
+    switch actionableError.code {
     case .serverRecordChanged:
-      if let serverRecord = failure.error.serverRecord {
+      if let serverRecord = actionableError.serverRecord {
         _ = applyFetchedRecord(serverRecord)
       }
+      var shouldRetryRecord = false
       if var pending = diskState.pending[recordName] {
         let remoteRevision = diskState.remote[recordName]?.metadata.revision
         let retryCount = pending.recordChangeRetryCount ?? 0
@@ -1238,9 +1451,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
           // retry exactly once instead of relatching the conflict immediately.
           pending.recordChangeRetryCount = retryCount + 1
           diskState.pending[recordName] = pending
-          syncEngine.state.add(
-            pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)]
-          )
+          shouldRetryRecord = true
         } else {
           latchConflict(
             recordName: recordName,
@@ -1253,15 +1464,38 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       if var update = diskState.pendingConflictNotices?[recordName], update.retryCount < 1 {
         update.retryCount += 1
         diskState.pendingConflictNotices?[recordName] = update
+        shouldRetryRecord = true
+      } else {
+        if diskState.pendingConflictNotices?[recordName] != nil {
+          let message = "Conflict details could not be shared with your other devices."
+          let code = "cloud_conflict_notice_failed"
+          let details = "Technical code: conflict_notice_retry_exhausted."
+          removePendingConflictPackage(recordName: recordName)
+          diskState.pendingConflictNotices?.removeValue(forKey: recordName)
+          setLastError(
+            message: message,
+            code: code,
+            details: details,
+            retryable: false,
+            operation: "conflict",
+            workbookId: workbookId
+          )
+          var rejected = diskState.rejectedConflictNotices ?? [:]
+          rejected[recordName] = message
+          diskState.rejectedConflictNotices = rejected
+          var rejectedCodes = diskState.rejectedConflictNoticeCodes ?? [:]
+          rejectedCodes[recordName] = code
+          diskState.rejectedConflictNoticeCodes = rejectedCodes
+          var rejectedDetails = diskState.rejectedConflictNoticeDetails ?? [:]
+          rejectedDetails[recordName] = details
+          diskState.rejectedConflictNoticeDetails = rejectedDetails
+        }
+      }
+      if shouldRetryRecord {
         syncEngine.state.add(
           pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)]
         )
       } else {
-        if diskState.pendingConflictNotices?[recordName] != nil {
-          removePendingConflictPackage(recordName: recordName)
-          diskState.pendingConflictNotices?.removeValue(forKey: recordName)
-          diskState.lastError = "Conflict details could not be shared with your other devices."
-        }
         syncEngine.state.remove(
           pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)]
         )
@@ -1269,6 +1503,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       return true
     case .zoneNotFound:
       diskState.zoneReady = false
+      setLastError(
+        actionableError,
+        fallbackCode: "cloud_zone_unavailable",
+        operation: operation,
+        workbookId: workbookId
+      )
       syncEngine.state.add(
         pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))]
       )
@@ -1278,9 +1518,28 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       return true
     case .unknownItem:
       if diskState.pendingConflictNotices?[recordName] != nil {
+        let message = "The workbook was removed before its conflict details could be shared."
+        let code = "cloud_conflict_notice_failed"
+        let details = "Technical code: conflict_notice_workbook_missing."
         removePendingConflictPackage(recordName: recordName)
         diskState.pendingConflictNotices?.removeValue(forKey: recordName)
-        diskState.lastError = "The workbook was removed before its conflict details could be shared."
+        setLastError(
+          message: message,
+          code: code,
+          details: details,
+          retryable: false,
+          operation: "conflict",
+          workbookId: workbookId
+        )
+        var rejected = diskState.rejectedConflictNotices ?? [:]
+        rejected[recordName] = message
+        diskState.rejectedConflictNotices = rejected
+        var rejectedCodes = diskState.rejectedConflictNoticeCodes ?? [:]
+        rejectedCodes[recordName] = code
+        diskState.rejectedConflictNoticeCodes = rejectedCodes
+        var rejectedDetails = diskState.rejectedConflictNoticeDetails ?? [:]
+        rejectedDetails[recordName] = details
+        diskState.rejectedConflictNoticeDetails = rejectedDetails
         syncEngine.state.remove(
           pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)]
         )
@@ -1303,11 +1562,21 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable,
       .notAuthenticated, .accountTemporarilyUnavailable, .requestRateLimited,
       .operationCancelled:
-      diskState.lastError = publicMessage(failure.error)
+      setLastError(
+        actionableError,
+        fallbackCode: fallbackCode,
+        operation: operation,
+        workbookId: workbookId
+      )
       return true
     default:
-      let message = publicMessage(failure.error)
-      diskState.lastError = message
+      let message = publicMessage(actionableError)
+      setLastError(
+        actionableError,
+        fallbackCode: fallbackCode,
+        operation: operation,
+        workbookId: workbookId
+      )
       syncEngine.state.remove(
         pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)]
       )
@@ -1317,6 +1586,29 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         var rejectedSaves = diskState.rejectedSaves ?? [:]
         rejectedSaves[recordName] = message
         diskState.rejectedSaves = rejectedSaves
+        var rejectedSaveCodes = diskState.rejectedSaveCodes ?? [:]
+        rejectedSaveCodes[recordName] = publicCode(
+          actionableError,
+          fallbackCode: "cloud_change_rejected"
+        )
+        diskState.rejectedSaveCodes = rejectedSaveCodes
+        var rejectedSaveDetails = diskState.rejectedSaveDetails ?? [:]
+        rejectedSaveDetails[recordName] = publicDetails(actionableError)
+        diskState.rejectedSaveDetails = rejectedSaveDetails
+      }
+      if diskState.pendingConflictNotices?[recordName] != nil {
+        var rejected = diskState.rejectedConflictNotices ?? [:]
+        rejected[recordName] = message
+        diskState.rejectedConflictNotices = rejected
+        var rejectedCodes = diskState.rejectedConflictNoticeCodes ?? [:]
+        rejectedCodes[recordName] = publicCode(
+          actionableError,
+          fallbackCode: "cloud_conflict_notice_failed"
+        )
+        diskState.rejectedConflictNoticeCodes = rejectedCodes
+        var rejectedDetails = diskState.rejectedConflictNoticeDetails ?? [:]
+        rejectedDetails[recordName] = publicDetails(actionableError)
+        diskState.rejectedConflictNoticeDetails = rejectedDetails
       }
       removePendingConflictPackage(recordName: recordName)
       diskState.pendingConflictNotices?.removeValue(forKey: recordName)
@@ -1325,12 +1617,22 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func handleFailedDelete(_ recordID: CKRecord.ID, error: CKError) -> Bool {
-    if error.code == .unknownItem {
+    let workbookId =
+      diskState.pendingDeleteWorkbookIds?[recordID.recordName]
+      ?? diskState.remote[recordID.recordName]?.metadata.id
+    let actionableError =
+      actionableCloudError(error, itemID: AnyHashable(recordID)) ?? error
+    if actionableError.code == .unknownItem {
       return applySavedDeletion(recordID)
     }
-    let message = publicMessage(error)
-    diskState.lastError = message
-    switch error.code {
+    let message = publicMessage(actionableError)
+    setLastError(
+      actionableError,
+      fallbackCode: "cloud_delete_failed",
+      operation: "delete",
+      workbookId: workbookId
+    )
+    switch actionableError.code {
     case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable,
       .notAuthenticated, .accountTemporarilyUnavailable, .requestRateLimited,
       .operationCancelled:
@@ -1339,20 +1641,47 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       return applySavedDeletion(recordID)
     default:
       diskState.pendingDeletes.remove(recordID.recordName)
+      diskState.pendingDeleteWorkbookIds?.removeValue(forKey: recordID.recordName)
+      if diskState.pendingDeleteWorkbookIds?.isEmpty == true {
+        diskState.pendingDeleteWorkbookIds = nil
+      }
       var rejectedDeletes = diskState.rejectedDeletes ?? [:]
       rejectedDeletes[recordID.recordName] = message
       diskState.rejectedDeletes = rejectedDeletes
+      var rejectedDeleteCodes = diskState.rejectedDeleteCodes ?? [:]
+      rejectedDeleteCodes[recordID.recordName] = publicCode(
+        actionableError,
+        fallbackCode: "cloud_delete_failed"
+      )
+      diskState.rejectedDeleteCodes = rejectedDeleteCodes
+      var rejectedDeleteDetails = diskState.rejectedDeleteDetails ?? [:]
+      rejectedDeleteDetails[recordID.recordName] = publicDetails(actionableError)
+      diskState.rejectedDeleteDetails = rejectedDeleteDetails
     }
     return true
   }
 
   private func decodeRemoteRecord(_ record: CKRecord) -> RemoteWorkbook? {
+    let recoverableWorkbookId = normalizedWorkbookId(
+      record.encryptedValues[.workbookId] as? String
+    )
     guard
       let metadata = metadata(from: record),
       let payloadHash = record.encryptedValues[.payloadHash] as? String,
       let asset = record[.payloadAsset] as? CKAsset,
       let assetURL = asset.fileURL
-    else { return nil }
+    else {
+      fetchCycleHadError = true
+      setLastError(
+        message: "An iCloud workbook could not be read safely. Your Mac workbooks are unchanged.",
+        code: "cloud_snapshot_invalid",
+        details: "Technical code: remote_record_fields_invalid.",
+        retryable: false,
+        operation: "refresh",
+        workbookId: recoverableWorkbookId
+      )
+      return nil
+    }
     do {
       let data = try Data(contentsOf: assetURL)
       guard
@@ -1363,6 +1692,10 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       let recordName = record.recordID.recordName
       let fileName = "remote-\(recordName)-\(metadata.revision).html"
       try data.write(to: payloadURL(fileName), options: [.atomic])
+      // A valid replacement for this exact workbook resolves a prior
+      // snapshot/integrity diagnosis. Conflict assets are decoded afterward,
+      // so a fresh package failure can immediately set a new scoped error.
+      clearLastError(operation: "refresh", workbookId: metadata.id)
       let conflictPackage = decodeConflictPackage(
         from: record,
         recordName: recordName,
@@ -1380,7 +1713,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         conflictPackage: conflictPackage
       )
     } catch {
-      diskState.lastError = publicMessage(error)
+      fetchCycleHadError = true
+      setLastError(
+        error,
+        fallbackCode: "cloud_snapshot_invalid",
+        operation: "refresh",
+        workbookId: metadata.id,
+        itemID: AnyHashable(record.recordID)
+      )
       return nil
     }
   }
@@ -1399,7 +1739,6 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         decoded.metadata.id == workbookId
       else { throw CloudStoreError.invalidPayload }
       replaceRemote(recordName: recordName, with: decoded)
-      diskState.lastError = nil
       try persist()
       return decoded
     case .failure(let error):
@@ -1528,7 +1867,15 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         basePayloadHash: baseHash
       )
     } catch {
-      diskState.lastError = "The shared conflict details failed their integrity check."
+      fetchCycleHadError = true
+      setLastError(
+        message: "The shared conflict details failed their integrity check.",
+        code: "cloud_snapshot_invalid",
+        details: "Technical code: shared_conflict_payload_integrity_failed.",
+        retryable: false,
+        operation: "refresh",
+        workbookId: normalizedWorkbookId(record.encryptedValues[.workbookId] as? String)
+      )
       return nil
     }
   }
@@ -1571,6 +1918,8 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   ) {
     let retainedPending = preservePending ? diskState.pending : [:]
     let retainedPendingDeletes = preservePending ? diskState.pendingDeletes : []
+    let retainedPendingDeleteWorkbookIds =
+      preservePending ? diskState.pendingDeleteWorkbookIds : nil
     clearRemoteCache()
     if !preservePending {
       for recordName in diskState.pending.keys {
@@ -1585,6 +1934,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     diskState.accountRecordName = accountRecordName
     diskState.pending = retainedPending
     diskState.pendingDeletes = retainedPendingDeletes
+    diskState.pendingDeleteWorkbookIds = retainedPendingDeleteWorkbookIds
     try? persist()
   }
 
@@ -1722,6 +2072,63 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     try data.write(to: stateURL, options: [.atomic])
   }
 
+  private func clearLastError(
+    operation: String? = nil,
+    workbookId: String? = nil
+  ) {
+    if let operation, diskState.lastErrorOperation != operation { return }
+    if let workbookId, diskState.lastErrorWorkbookId != workbookId { return }
+    diskState.lastError = nil
+    diskState.lastErrorCode = nil
+    diskState.lastErrorDetails = nil
+    diskState.lastErrorRetryable = nil
+    diskState.lastErrorOperation = nil
+    diskState.lastErrorWorkbookId = nil
+  }
+
+  private func setLastError(
+    _ error: Error,
+    fallbackCode: String,
+    operation: String,
+    workbookId: String? = nil,
+    itemID: AnyHashable? = nil
+  ) {
+    let diagnosedError: Error = actionableCloudError(error, itemID: itemID) ?? error
+    setLastError(
+      message: publicMessage(diagnosedError),
+      code: publicCode(diagnosedError, fallbackCode: fallbackCode),
+      details: publicDetails(diagnosedError),
+      retryable: isRetryable(diagnosedError),
+      operation: operation,
+      workbookId: workbookId
+    )
+  }
+
+  private func setLastError(
+    message: String,
+    code: String,
+    details: String,
+    retryable: Bool,
+    operation: String,
+    workbookId: String? = nil
+  ) {
+    if
+      ["refresh", "zone"].contains(operation),
+      diskState.lastErrorRetryable == false,
+      diskState.lastErrorOperation != operation
+    {
+      // A background read/zone problem must not overwrite an actionable
+      // terminal mutation failure that the user still needs to resolve.
+      return
+    }
+    diskState.lastError = message
+    diskState.lastErrorCode = code
+    diskState.lastErrorDetails = details
+    diskState.lastErrorRetryable = retryable
+    diskState.lastErrorOperation = operation
+    diskState.lastErrorWorkbookId = workbookId
+  }
+
   private func emit(reason: String, workbookId: String? = nil) {
     var payload = ["reason": reason]
     if let workbookId { payload["workbookId"] = workbookId }
@@ -1763,6 +2170,7 @@ private func cloudMetadata(
     updatedAt: metadata.updatedAt,
     conflict: metadata.conflict,
     pending: metadata.pending,
+    inCloud: metadata.inCloud,
     conflictNotice: metadata.conflictNotice.map {
       noticeWithResolutionAvailability(
         $0,
@@ -1773,9 +2181,10 @@ private func cloudMetadata(
 }
 
 private func cavalryConfiguredCloudKitEnvironment() -> String {
-  let configured = Bundle.main.object(
-    forInfoDictionaryKey: cavalryEnvironmentInfoPlistKey
-  ) as? String
+  let configured =
+    Bundle.main.object(
+      forInfoDictionaryKey: cavalryEnvironmentInfoPlistKey
+    ) as? String
   return configured == "Development" ? "Development" : "Production"
 }
 
@@ -1908,28 +2317,151 @@ private func decodeSystemFields(_ data: Data) -> CKRecord? {
 
 private func cloudFailure(
   _ error: Error,
-  fallbackCode: String
+  fallbackCode: String,
+  itemID: AnyHashable? = nil
 ) -> CloudKitBridgeResponse {
-  let cloudError = error as? CKError
-  let code: String
-  if cloudError?.code == .notAuthenticated {
-    code = "icloud_account_unavailable"
-  } else if cloudError?.code == .quotaExceeded || cloudError?.code == .limitExceeded {
-    code = "cloud_quota_exceeded"
-  } else if cloudError?.code == .serverRecordChanged {
+  let diagnosedError: Error = actionableCloudError(error, itemID: itemID) ?? error
+  if (diagnosedError as? CKError)?.code == .serverRecordChanged {
     return .failure(
       "workbook_revision_conflict",
       "This workbook changed on another device. Review the iCloud copy before replacing either version.",
       conflict: true
     )
-  } else {
-    code = fallbackCode
   }
-  return .failure(code, publicMessage(error))
+  var response = CloudKitBridgeResponse.failure(
+    publicCode(diagnosedError, fallbackCode: fallbackCode),
+    publicMessage(diagnosedError)
+  )
+  response.errorDetails = publicDetails(diagnosedError)
+  response.retryable = isRetryable(diagnosedError)
+  return response
+}
+
+// CKSyncEngine reports a batch as `partialFailure`, while the actionable code
+// lives on the failed record. Always unwrap that record error before deciding
+// whether an operation can be retried or needs a database deployment.
+private func actionableCloudError(
+  _ error: Error,
+  itemID: AnyHashable? = nil
+) -> CKError? {
+  guard var cloudError = error as? CKError else { return nil }
+  for _ in 0..<4 where cloudError.code == .partialFailure {
+    guard let partialErrors = cloudError.partialErrorsByItemID else { break }
+    let nestedError: Error?
+    if let itemID, let itemError = partialErrors[itemID] {
+      nestedError = itemError
+    } else if partialErrors.count == 1 {
+      nestedError = partialErrors.values.first
+    } else {
+      // A multi-item wrapper must never borrow another record's diagnosis.
+      // Callers handling a record pass its exact CKRecord.ID above.
+      nestedError = nil
+    }
+    guard let nestedCloudError = nestedError as? CKError else { break }
+    cloudError = nestedCloudError
+  }
+  return cloudError
+}
+
+private func publicCode(_ error: Error, fallbackCode: String) -> String {
+  guard let cloudError = actionableCloudError(error) else { return fallbackCode }
+  switch cloudError.code {
+  case .notAuthenticated, .accountTemporarilyUnavailable:
+    return "icloud_account_unavailable"
+  case .quotaExceeded, .limitExceeded:
+    return "cloud_quota_exceeded"
+  case .serverRejectedRequest where cavalryConfiguredCloudKitEnvironment() == "Production":
+    return "cloud_database_update_required"
+  case .missingEntitlement, .badContainer, .badDatabase:
+    return "icloud_configuration_error"
+  case .permissionFailure, .managedAccountRestricted:
+    return "icloud_access_denied"
+  case .invalidArguments, .constraintViolation, .referenceViolation:
+    return "cloud_record_invalid"
+  case .assetFileNotFound, .assetFileModified, .assetNotAvailable:
+    return "cloud_asset_unavailable"
+  case .serverRecordChanged:
+    return "workbook_revision_conflict"
+  default:
+    return fallbackCode
+  }
+}
+
+private func publicDetails(_ error: Error) -> String {
+  guard let cloudError = actionableCloudError(error) else {
+    switch error {
+    case CloudStoreError.engineUnavailable:
+      return "Technical code: cloud_sync_engine_unavailable."
+    case CloudStoreError.invalidPayload:
+      return "Technical code: cloud_snapshot_integrity_failed."
+    default:
+      return "Technical code: cloud_request_failed."
+    }
+  }
+  switch cloudError.code {
+  case .serverRejectedRequest where cavalryConfiguredCloudKitEnvironment() == "Production":
+    return
+      "Technical code: CKError.serverRejectedRequest. The current CavalryWorkbook schema must be deployed to the Production CloudKit database."
+  case .partialFailure:
+    return "Technical code: CKError.partialFailure. CloudKit did not provide an item-level error."
+  case .missingEntitlement:
+    return "Technical code: CKError.missingEntitlement."
+  case .badContainer:
+    return "Technical code: CKError.badContainer."
+  case .badDatabase:
+    return "Technical code: CKError.badDatabase."
+  case .permissionFailure:
+    return "Technical code: CKError.permissionFailure."
+  case .managedAccountRestricted:
+    return "Technical code: CKError.managedAccountRestricted."
+  case .invalidArguments:
+    return "Technical code: CKError.invalidArguments."
+  case .constraintViolation:
+    return "Technical code: CKError.constraintViolation."
+  case .referenceViolation:
+    return "Technical code: CKError.referenceViolation."
+  case .notAuthenticated:
+    return "Technical code: CKError.notAuthenticated."
+  case .accountTemporarilyUnavailable:
+    return "Technical code: CKError.accountTemporarilyUnavailable."
+  case .quotaExceeded:
+    return "Technical code: CKError.quotaExceeded."
+  case .limitExceeded:
+    return "Technical code: CKError.limitExceeded."
+  case .networkUnavailable:
+    return "Technical code: CKError.networkUnavailable."
+  case .networkFailure:
+    return "Technical code: CKError.networkFailure."
+  case .serviceUnavailable:
+    return "Technical code: CKError.serviceUnavailable."
+  case .zoneBusy:
+    return "Technical code: CKError.zoneBusy."
+  case .requestRateLimited:
+    return "Technical code: CKError.requestRateLimited."
+  case .serverRecordChanged:
+    return "Technical code: CKError.serverRecordChanged."
+  default:
+    return "Technical CloudKit code: \(cloudError.code.rawValue)."
+  }
+}
+
+private func isRetryable(_ error: Error) -> Bool {
+  guard let cloudError = actionableCloudError(error) else {
+    if case CloudStoreError.engineUnavailable = error { return true }
+    return false
+  }
+  switch cloudError.code {
+  case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable,
+    .accountTemporarilyUnavailable, .requestRateLimited, .operationCancelled,
+    .serverResponseLost, .zoneNotFound:
+    return true
+  default:
+    return false
+  }
 }
 
 private func publicMessage(_ error: Error) -> String {
-  guard let cloudError = error as? CKError else {
+  guard let cloudError = actionableCloudError(error) else {
     switch error {
     case CloudStoreError.engineUnavailable:
       return "The iCloud sync engine is not available yet."
@@ -1946,6 +2478,15 @@ private func publicMessage(_ error: Error) -> String {
     return "Cavalry is offline. Your changes are saved locally and will sync later."
   case .quotaExceeded, .limitExceeded:
     return "Your iCloud storage cannot accept this workbook right now."
+  case .serverRejectedRequest where cavalryConfiguredCloudKitEnvironment() == "Production":
+    return
+      "iCloud needs a Cavalry database update before it can save this workbook. Your Mac copy is safe."
+  case .missingEntitlement, .badContainer, .badDatabase:
+    return "This Cavalry build cannot access its iCloud container. Your Mac copy is safe."
+  case .permissionFailure, .managedAccountRestricted:
+    return "This Apple Account cannot save Cavalry workbooks to iCloud. Your Mac copy is safe."
+  case .invalidArguments, .constraintViolation, .referenceViolation:
+    return "iCloud rejected this workbook snapshot. Your Mac copy is safe."
   case .serverRecordChanged:
     return "This workbook changed on another device. Review both versions before continuing."
   case .accountTemporarilyUnavailable, .serviceUnavailable, .zoneBusy,
