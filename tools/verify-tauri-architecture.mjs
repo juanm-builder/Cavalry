@@ -95,6 +95,7 @@ requireCondition(
 );
 requireCondition(
   releaseTemplate.bundle?.macOS?.entitlements === 'entitlements.release.plist' &&
+    releaseTemplate.bundle?.macOS?.infoPlist === 'Info.release.plist' &&
     releaseTemplate.bundle?.macOS?.files?.['embedded.provisionprofile'] ===
       'Cavalry.provisionprofile',
   'The signed release must embed its CloudKit provisioning profile.'

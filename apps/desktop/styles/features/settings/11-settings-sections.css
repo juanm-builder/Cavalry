@@ -841,7 +841,23 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.settings-cloud-confirmation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-cloud-confirmation .settings-cloud-removal-warning {
+  max-width: 15rem;
+}
+
+.settings-cloud-library-note {
+  line-height: 1.45;
 }
 
 .settings-cloud-conflict-refresh {
@@ -1942,9 +1958,14 @@ html[data-density='compact'] .settings-setting-row {
 
   .settings-cloud-identity-actions,
   .settings-cloud-current-actions,
+  .settings-cloud-confirmation,
   .settings-cloud-workbook-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-cloud-confirmation .settings-cloud-removal-warning {
+    max-width: none;
   }
 
   .settings-cloud-conflict-sides {

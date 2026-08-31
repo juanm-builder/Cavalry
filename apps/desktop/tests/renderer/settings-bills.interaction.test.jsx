@@ -624,7 +624,7 @@ describe('Settings and Bills interactions', () => {
               workbookId: 'workbook-current',
               linked: true,
               status: 'synced',
-              lastSyncedAt: '2026-07-20T04:00:00.000Z'
+              cloudUpdatedAt: '2026-07-20T04:00:00.000Z'
             },
             workbooks: [
               {
@@ -653,14 +653,30 @@ describe('Settings and Bills interactions', () => {
     const identityCard = screen.getByRole('heading', { name: 'iCloud Sync' }).closest('section');
     expect(within(identityCard).getByText('Your workbooks stay in sync')).not.toBeNull();
     expect(within(identityCard).queryByText(/CKSyncEngine/)).toBeNull();
-    await user.click(within(identityCard).getByRole('button', { name: 'Sync Now' }));
-    expect(onAction).toHaveBeenLastCalledWith({ type: 'refresh-cloud-workbooks', payload: {} });
+    expect(within(identityCard).queryByRole('button')).toBeNull();
 
     const libraryCard = screen
       .getByRole('heading', { name: 'iCloud Workbooks' })
       .closest('section');
-    await user.click(within(libraryCard).getByRole('button', { name: 'Sync Now' }));
+    expect(within(libraryCard).getAllByText('The Plan')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Sync Changes' })).toHaveLength(1);
+    await user.click(within(libraryCard).getByRole('button', { name: 'Sync Changes' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'upload-current-workbook', payload: {} });
+
+    await user.click(screen.getByRole('button', { name: 'Delete The Plan from iCloud' }));
+    expect(onAction).not.toHaveBeenCalledWith({
+      type: 'delete-cloud-workbook',
+      payload: { workbookId: 'workbook-current' }
+    });
+    expect(
+      screen.getByText('Deletes only the iCloud version. This workbook stays saved on this Mac.')
+    ).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete from iCloud' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'delete-cloud-workbook',
+      payload: { workbookId: 'workbook-current' }
+    });
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     await user.click(screen.getByRole('button', { name: 'Open Business from iCloud' }));
     expect(onAction).toHaveBeenLastCalledWith({
@@ -668,16 +684,137 @@ describe('Settings and Bills interactions', () => {
       payload: { workbookId: 'workbook-business' }
     });
 
-    await user.click(screen.getByRole('button', { name: 'Remove Business from iCloud' }));
-    expect(onAction).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'delete-cloud-workbook' })
-    );
+    await user.click(screen.getByRole('button', { name: 'Delete Business from iCloud' }));
+    expect(onAction).not.toHaveBeenCalledWith({
+      type: 'delete-cloud-workbook',
+      payload: { workbookId: 'workbook-business' }
+    });
     await user.click(
-      screen.getByRole('button', { name: 'Confirm removal of Business from iCloud' })
+      screen.getByRole('button', { name: 'Confirm deletion of Business from iCloud' })
     );
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'delete-cloud-workbook',
       payload: { workbookId: 'workbook-business' }
+    });
+  });
+
+  it('lets the user manually add the open Mac workbook to iCloud', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: {
+              workbookId: 'workbook-plan',
+              linked: false,
+              conflict: false,
+              status: 'local_only'
+            },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add to iCloud' }));
+
+    expect(onAction).toHaveBeenCalledWith({
+      type: 'upload-current-workbook',
+      payload: {}
+    });
+  });
+
+  it('recreates a missing iCloud workbook without offering an unavailable copy', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn(async () => ({ ok: true }));
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: {
+              workbookId: 'workbook-plan',
+              linked: false,
+              conflict: true,
+              status: 'conflict'
+            },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.getByText('Not in iCloud')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /Use iCloud Version/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Delete .* from iCloud/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Add Mac Version to iCloud' }));
+    expect(onAction).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Adds this Mac version to iCloud so it is available on your Apple devices.')
+    ).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Confirm Add to iCloud' }));
+
+    expect(onAction).toHaveBeenCalledWith({
+      type: 'keep-local-cloud-workbook',
+      payload: {}
+    });
+  });
+
+  it('uses plain version choices before replacing either side of a conflict', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn(async () => ({ ok: true }));
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: 'user-1', name: 'iCloud' },
+            current: {
+              workbookId: 'workbook-plan',
+              linked: true,
+              conflict: true,
+              status: 'conflict'
+            },
+            workbooks: [{ id: 'workbook-plan', name: 'The Plan', revision: 7 }]
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.queryByText('Review iCloud Copy')).toBeNull();
+    expect(screen.queryByText('Keep Mac Copy')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Use iCloud version of The Plan' }));
+    expect(onAction).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Confirm Use iCloud Version' }));
+    expect(onAction).toHaveBeenCalledWith({
+      type: 'open-cloud-workbook',
+      payload: { workbookId: 'workbook-plan' }
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Use Mac Version' })).not.toBeNull()
+    );
+    await user.click(screen.getByRole('button', { name: 'Use Mac Version' }));
+    expect(
+      screen.getByText('Replaces the iCloud version with this Mac version on your Apple devices.')
+    ).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Confirm Use Mac Version' }));
+    expect(onAction).toHaveBeenLastCalledWith({
+      type: 'keep-local-cloud-workbook',
+      payload: {}
     });
   });
 

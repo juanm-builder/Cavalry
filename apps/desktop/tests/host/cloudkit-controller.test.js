@@ -104,6 +104,81 @@ describe('native CloudKit workbook boundary', () => {
     expect(requests[0].portableHtml).toContain('ledger-grove-export');
   });
 
+  it('supports explicit iCloud recreation and idempotent removal by workbook ID', async () => {
+    const requests = [];
+    const cloudKit = {
+      async request(payload) {
+        requests.push(payload);
+        if (payload.operation === 'save') {
+          return {
+            ok: true,
+            metadata: {
+              id: payload.workbookId,
+              name: payload.name,
+              year: payload.year,
+              currency: payload.currency,
+              revision: 1,
+              updatedAt: payload.updatedAt
+            },
+            pending: true
+          };
+        }
+        return { ok: true, id: payload.workbookId, pending: true };
+      }
+    };
+    const controller = createCloudWorkbookController({ cloudKit });
+
+    await expect(
+      controller.uploadWorkbook({
+        workbook: workbookFixture(),
+        expectedRevision: null,
+        conflictResolution: 'keep_local'
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      pending: true,
+      metadata: { id: 'workbook-cloudkit-1', revision: 1 }
+    });
+    await expect(controller.deleteWorkbook({ workbookId: 'workbook-cloudkit-1' })).resolves.toEqual(
+      {
+        ok: true,
+        id: 'workbook-cloudkit-1',
+        pending: true
+      }
+    );
+
+    expect(requests[0]).toMatchObject({
+      operation: 'save',
+      workbookId: 'workbook-cloudkit-1',
+      expectedRevision: null,
+      conflictResolution: 'keep_local'
+    });
+    expect(requests[1]).toEqual({
+      operation: 'delete',
+      workbookId: 'workbook-cloudkit-1'
+    });
+  });
+
+  it('preserves a native missing-workbook result after exact-record recovery', async () => {
+    const controller = createCloudWorkbookController({
+      cloudKit: {
+        request: vi.fn(async () => ({
+          ok: false,
+          code: 'cloud_workbook_not_found',
+          error: 'That workbook is no longer in iCloud.'
+        }))
+      }
+    });
+
+    await expect(
+      controller.downloadWorkbook({ workbookId: 'workbook-cloudkit-1' })
+    ).resolves.toEqual({
+      ok: false,
+      code: 'cloud_workbook_not_found',
+      error: 'That workbook is no longer in iCloud.'
+    });
+  });
+
   it('preserves native revision conflicts without retrying or replacing data', async () => {
     const request = vi.fn(async () => ({
       ok: false,

@@ -230,13 +230,14 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('Connected');
     expect(html).toContain('Add to iCloud');
-    expect(html).toContain('Sync Now');
+    expect(html).not.toContain('Sync Now');
+    expect(html).not.toContain('Sync Workbook');
     expect(html).toContain('2 workbooks');
     expect(html).toContain('aria-label="iCloud workbooks"');
-    expect(html).toContain('aria-label="Open The Plan from iCloud"');
-    expect(html).toContain('aria-label="Remove The Plan from iCloud"');
+    expect(html).not.toContain('aria-label="Open The Plan from iCloud"');
+    expect(html).not.toContain('aria-label="Remove The Plan from iCloud"');
     expect(html).toContain('aria-label="Open Business 2026 from iCloud"');
-    expect(html).toContain('aria-label="Remove Business 2026 from iCloud"');
+    expect(html).toContain('aria-label="Delete Business 2026 from iCloud"');
     expect(html).toContain('Current');
     expect(html).toContain('id="account-profile-form"');
     expect(html).not.toContain('Alex Example');
@@ -254,16 +255,26 @@ describe('SettingsRoute', () => {
         name: 'The Plan',
         linked: true,
         status: 'synced',
-        lastSyncedAt: '2026-07-20T04:00:00.000Z'
+        cloudUpdatedAt: '2026-07-20T04:00:00.000Z'
       },
-      workbooks: []
+      workbooks: [
+        {
+          id: 'workbook-plan',
+          name: 'The Plan',
+          year: 2026,
+          currency: 'PHP',
+          updatedAt: '2026-07-20T04:00:00.000Z'
+        }
+      ]
     };
 
     const html = renderSettingsRoute(model);
 
-    expect(html).toContain('Sync Now');
-    expect(html).toContain('Last synced');
-    expect(html).toContain('No iCloud workbooks yet');
+    expect(html).toContain('Sync Changes');
+    expect(html).toContain('aria-label="Delete The Plan from iCloud"');
+    expect(html).toContain('In iCloud · Workbook updated');
+    expect(html).not.toContain('Last synced');
+    expect(html).not.toContain('No iCloud workbooks yet');
     expect(html).not.toContain('Add to iCloud</button>');
   });
 
@@ -295,9 +306,36 @@ describe('SettingsRoute', () => {
 
     expect(html).not.toContain('Both copies are safe. Review each clash and choose what to keep.');
     expect(html).not.toContain('0 decisions needed');
-    expect(html).toContain('Keep Mac Copy');
-    expect(html).toContain('Review The Plan from iCloud');
-    expect(html).toContain('>Review</button>');
+    expect(html).toContain('Choose a version');
+    expect(html).toContain('Use Mac Version');
+    expect(html).toContain('Use iCloud Version');
+    expect(html).toContain('aria-label="Delete The Plan from iCloud"');
+    expect(html).not.toContain('Keep Mac Copy');
+    expect(html).not.toContain('Review iCloud Copy');
+  });
+
+  it('does not offer a missing iCloud version as a conflict choice', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'iCloud' },
+      current: {
+        workbookId: 'workbook-plan',
+        linked: false,
+        conflict: true,
+        status: 'conflict'
+      },
+      workbooks: []
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('Not in iCloud');
+    expect(html).toContain('No iCloud version was found');
+    expect(html).toContain('Add Mac Version to iCloud');
+    expect(html).not.toContain('Use iCloud Version');
+    expect(html).not.toContain('Delete The Plan from iCloud');
   });
 
   it('hides the retired microphone controls from the assistant settings', () => {

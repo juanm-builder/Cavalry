@@ -52,6 +52,10 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(entitlements).toContain('<string>Development</string>');
     expect(releaseEntitlements).toContain('U8H23USGUJ.com.juanmbuilder.cavalry.mac');
     expect(releaseEntitlements).toContain('<string>Production</string>');
+    const developmentInfo = readFileSync(resolve(desktopRoot, 'src-tauri/Info.plist'), 'utf8');
+    const releaseInfo = readFileSync(resolve(desktopRoot, 'src-tauri/Info.release.plist'), 'utf8');
+    expect(developmentInfo).toContain('<string>Development</string>');
+    expect(releaseInfo).toContain('<string>Production</string>');
     expect(sidecarEntitlements).toContain('com.apple.security.cs.allow-jit');
     expect(sidecarEntitlements).toContain('com.apple.security.cs.allow-unsigned-executable-memory');
     expect(sidecarEntitlements).not.toContain('com.apple.developer.icloud');
@@ -78,6 +82,35 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(cloudKitStore).not.toContain('configuration.subscriptionID =');
     expect(cloudKitStore).toMatch(
       /if accountChanged \{[\s\S]*?resetForAccountChange\([\s\S]*?\n\s*\}/
+    );
+  });
+
+  it('isolates CKSyncEngine state between development and production', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('CavalryCloudKitEnvironment');
+    expect(cloudKitStore).toContain('.appendingPathComponent("environments"');
+    expect(cloudKitStore).toContain('.appendingPathComponent("production"');
+  });
+
+  it('keeps manual CloudKit recovery bounded and cache-independent', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('var recordChangeRetryCount: Int?');
+    expect(cloudKitStore).toContain(
+      'if pending.expectedRevision == remoteRevision, retryCount < 1'
+    );
+    expect(cloudKitStore).toContain('private func recoverRemote(');
+    expect(cloudKitStore).toContain(
+      'container.privateCloudDatabase.records(for: [targetRecordID])'
+    );
+    expect(cloudKitStore).toContain('Deletion is deliberately idempotent.');
+    expect(cloudKitStore).not.toContain(
+      'guard diskState.remote[recordName]?.metadata.id == workbookId else'
     );
   });
 

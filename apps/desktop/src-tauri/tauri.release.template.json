@@ -9,6 +9,7 @@
     ],
     "macOS": {
       "entitlements": "entitlements.release.plist",
+      "infoPlist": "Info.release.plist",
       "files": {
         "embedded.provisionprofile": "Cavalry.provisionprofile"
       }

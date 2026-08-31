@@ -18,6 +18,23 @@ function createStorage() {
 }
 
 describe('cloud workbook sync state', () => {
+  it('does not reuse an unscoped legacy CloudKit revision anchor', () => {
+    const storage = createStorage();
+    storage.setItem(
+      'cavalry.cloud-workbook-sync.v1:user-1:workbook-1',
+      JSON.stringify({ version: 1, revision: 19, conflict: false })
+    );
+
+    expect(cloudWorkbookSyncStorageKey('user-1', 'workbook-1')).toContain(
+      'cavalry.cloud-workbook-sync.v2:'
+    );
+    expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
+      known: false,
+      revision: null,
+      conflict: false
+    });
+  });
+
   it('persists account-scoped acknowledged revisions and conflict latches', () => {
     const storage = createStorage();
 
@@ -63,6 +80,33 @@ describe('cloud workbook sync state', () => {
     expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
       known: true,
       revision: 9,
+      conflict: false
+    });
+  });
+
+  it('keeps a manual cloud-deletion tombstone until an explicit upload clears it', () => {
+    const storage = createStorage();
+
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: null,
+      conflict: false,
+      remoteDeleted: true
+    });
+    expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
+      known: true,
+      revision: null,
+      conflict: false,
+      remoteDeleted: true
+    });
+
+    writeCloudWorkbookSyncState(storage, 'user-1', 'workbook-1', {
+      revision: 1,
+      conflict: false,
+      remoteDeleted: false
+    });
+    expect(readCloudWorkbookSyncState(storage, 'user-1', 'workbook-1')).toEqual({
+      known: true,
+      revision: 1,
       conflict: false
     });
   });

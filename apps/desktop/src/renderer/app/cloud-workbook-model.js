@@ -122,6 +122,26 @@ export function createConflictNoticeId() {
   return `conflict-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+// Republishing the same base/remote revision pair describes the same conflict,
+// so the key lets callers skip a redundant publication.
+export function conflictNoticePublicationKey(workbookId, baseRevision, remoteRevision) {
+  return `${asString(workbookId)}:${asRevision(baseRevision) || 'none'}:${asRevision(remoteRevision)}`;
+}
+
+export function buildConflictNotice({ review, baseRevision, remoteRevision }) {
+  const count = Math.max(0, Number(review && review.conflictCount) || 0);
+  return {
+    id: createConflictNoticeId(),
+    sourceDevice: 'Mac',
+    detectedAt: new Date().toISOString(),
+    baseRevision: asRevision(baseRevision) || null,
+    remoteRevision: asRevision(remoteRevision),
+    summary: `${count} ${count === 1 ? 'change needs' : 'changes need'} review`,
+    resolutionAvailable: true,
+    report: review
+  };
+}
+
 function normalizeCloudWorkbook(value) {
   const source = asObject(value);
   const id = asString(source.id || source.localWorkbookId || source.local_workbook_id);
@@ -216,13 +236,18 @@ export function isRetryableAutomaticSyncFailure(result) {
 export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
   const state = normalizeCloudState(cloudState);
   const workbookId = asString(workbook && workbook.id);
-  const remote = state.workbooks.find((item) => item.id === workbookId) || null;
+  const currentRemoteDeleted = uiState.remoteDeleted === true;
+  const workbooks = currentRemoteDeleted
+    ? state.workbooks.filter((item) => item.id !== workbookId)
+    : state.workbooks;
+  const remote = workbooks.find((item) => item.id === workbookId) || null;
   const pendingOperation = asString(uiState.pendingOperation);
   const conflict = uiState.conflict === true;
   const conflictNotice =
     normalizeConflictNotice(uiState.conflictNotice, workbookId) || remote?.conflictNotice || null;
   return {
     ...state,
+    workbooks,
     pendingOperation,
     notice: asString(uiState.notice),
     error: asString(uiState.error) || state.error,
@@ -241,7 +266,7 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
             : remote
               ? 'synced'
               : 'local_only',
-      lastSyncedAt: remote ? remote.updatedAt : ''
+      cloudUpdatedAt: remote ? remote.updatedAt : ''
     }
   };
 }

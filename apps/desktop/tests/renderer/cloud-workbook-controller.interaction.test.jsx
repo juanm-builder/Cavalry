@@ -85,6 +85,9 @@ function createAutoSyncTimers() {
       const timer = [...timers].reverse().find((candidate) => !candidate.canceled);
       timer.callback();
       return timer;
+    },
+    hasPending() {
+      return timers.some((candidate) => !candidate.canceled);
     }
   };
 }
@@ -250,6 +253,80 @@ describe('cloud workbook controller interactions', () => {
       revision: 1,
       status: 'synced'
     });
+  });
+
+  it('does not recreate a manually deleted iCloud copy until Add to iCloud is chosen', async () => {
+    const timers = createAutoSyncTimers();
+    const workbook = { id: 'cloud-workbook', name: 'Mac Plan' };
+    const deletedState = { ...signedInState(), workbooks: [] };
+    const recreatedMetadata = { id: workbook.id, name: workbook.name, revision: 1 };
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'deleteWorkbook') {
+          return { ok: true, id: workbook.id, state: deletedState };
+        }
+        if (command === 'uploadWorkbook') {
+          return {
+            ok: true,
+            metadata: recreatedMetadata,
+            state: { ...signedInState(), workbooks: [recreatedMetadata] }
+          };
+        }
+        return { ok: true, state: deletedState };
+      }),
+      subscribe: () => () => {}
+    };
+    const syncStorage = createSyncStorage(2, false, workbook);
+    const hook = renderHook(
+      ({ currentWorkbook, localSaveSequence }) =>
+        useCloudWorkbookController({
+          cloud,
+          workbook: currentWorkbook,
+          saveStatus: 'saved',
+          localSaveSequence,
+          syncStorage,
+          autoSyncSchedulerOptions: timers.options
+        }),
+      { initialProps: { currentWorkbook: workbook, localSaveSequence: 0 } }
+    );
+    await waitFor(() => expect(hook.result.current.model.current.linked).toBe(true));
+
+    await act(async () => {
+      await hook.result.current.execute('delete', { workbookId: workbook.id });
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', workbook.id)).toMatchObject({
+      revision: null,
+      conflict: false,
+      remoteDeleted: true
+    });
+    expect(hook.result.current.model.current).toMatchObject({
+      linked: false,
+      status: 'local_only'
+    });
+
+    hook.rerender({
+      currentWorkbook: { ...workbook, name: 'Mac Plan edited locally' },
+      localSaveSequence: 1
+    });
+    await act(async () => Promise.resolve());
+    expect(timers.hasPending()).toBe(false);
+    expect(cloud.invoke).not.toHaveBeenCalledWith('uploadWorkbook', expect.anything());
+
+    await act(async () => {
+      await hook.result.current.execute('upload');
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      workbook: { ...workbook, name: 'Mac Plan edited locally' },
+      expectedRevision: null
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', workbook.id)).toMatchObject({
+      revision: 1,
+      conflict: false
+    });
+    expect(readCloudWorkbookSyncState(syncStorage, 'user-1', workbook.id).remoteDeleted).toBe(
+      undefined
+    );
   });
 
   it('combines both devices after CloudKit rejects two queued copies of the same revision', async () => {
