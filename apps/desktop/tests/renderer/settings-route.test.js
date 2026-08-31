@@ -142,9 +142,9 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('id="account-profile-form"');
     expect(html).toContain('Stored on this Mac');
-    expect(html).toContain('iCloud Sync');
+    expect(html).toContain('>iCloud<');
     expect(html).toContain('Unavailable');
-    expect(html).toContain('Your workbooks stay in sync');
+    expect(html).toContain('iCloud is not connected');
     expect(html).toContain('System Settings');
     expect(html).not.toContain('Continue with Google');
   });
@@ -186,7 +186,8 @@ describe('SettingsRoute', () => {
     const html = renderSettingsRoute(model);
 
     expect(html).toContain('Connected');
-    expect(html).toContain('iCloud · Ready to sync');
+    expect(html).toContain('Connected to your private iCloud library');
+    expect(html).toContain('Changes save on this Mac before they sync');
     expect(html).not.toContain('apple-user');
     expect(html).not.toContain('relay@privaterelay.appleid.com');
   });
@@ -232,16 +233,78 @@ describe('SettingsRoute', () => {
     expect(html).toContain('Add to iCloud');
     expect(html).not.toContain('Sync Now');
     expect(html).not.toContain('Sync Workbook');
-    expect(html).toContain('2 workbooks');
+    expect(html).toContain('2 in iCloud');
     expect(html).toContain('aria-label="iCloud workbooks"');
-    expect(html).not.toContain('aria-label="Open The Plan from iCloud"');
-    expect(html).not.toContain('aria-label="Remove The Plan from iCloud"');
+    expect(html).toContain('aria-label="Open The Plan from iCloud"');
+    expect(html).toContain('aria-label="Delete The Plan from iCloud"');
     expect(html).toContain('aria-label="Open Business 2026 from iCloud"');
     expect(html).toContain('aria-label="Delete Business 2026 from iCloud"');
     expect(html).toContain('Current');
     expect(html).toContain('id="account-profile-form"');
     expect(html).not.toContain('Alex Example');
     expect(html).not.toContain('alex@example.com');
+  });
+
+  it('counts confirmed and queued iCloud workbooks separately', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'iCloud' },
+      current: {
+        workbookId: 'workbook-plan',
+        linked: true,
+        status: 'pending'
+      },
+      pendingCount: 1,
+      workbooks: [
+        {
+          id: 'workbook-plan',
+          name: 'The Plan',
+          revision: 1,
+          pending: true
+        }
+      ]
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('0 in iCloud · 1 waiting');
+    expect(html).toContain('Waiting for iCloud');
+    expect(html).toContain('Saved on this Mac · waiting for iCloud');
+    expect(html).toContain('aria-label="The Plan is waiting for iCloud"');
+    expect(html).toContain('aria-label="Cancel upload of The Plan"');
+    expect(html).not.toContain('1 in iCloud');
+  });
+
+  it('keeps a confirmed workbook counted while its update is waiting', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'iCloud' },
+      current: {
+        workbookId: 'workbook-plan',
+        linked: true,
+        status: 'pending'
+      },
+      pendingCount: 1,
+      workbooks: [
+        {
+          id: 'workbook-plan',
+          name: 'The Plan',
+          revision: 2,
+          pending: true,
+          inCloud: true
+        }
+      ]
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('1 in iCloud · 1 waiting');
+    expect(html).toContain('Waiting for iCloud');
+    expect(html).not.toContain('0 in iCloud');
   });
 
   it('shows explicit sync state for a linked current workbook', () => {
@@ -272,10 +335,64 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('Sync Changes');
     expect(html).toContain('aria-label="Delete The Plan from iCloud"');
-    expect(html).toContain('In iCloud · Workbook updated');
+    expect(html).toContain('Local copy is safe · iCloud copy updated');
     expect(html).not.toContain('Last synced');
-    expect(html).not.toContain('No iCloud workbooks yet');
+    expect(html).not.toContain('Your iCloud library is empty');
     expect(html).not.toContain('Add to iCloud</button>');
+  });
+
+  it('separates an account connection from a terminal iCloud sync problem', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'iCloud' },
+      current: {
+        workbookId: 'workbook-plan',
+        linked: false,
+        status: 'local_only'
+      },
+      workbooks: [],
+      error:
+        'iCloud needs a Cavalry database update before it can save this workbook. Your Mac copy is safe.',
+      errorCode: 'cloud_database_update_required',
+      errorDetails:
+        'Technical code: CKError.serverRejectedRequest. The CavalryWorkbook schema must be deployed to Production.',
+      errorRetryable: false,
+      failedOperation: 'upload'
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('Sync needs attention');
+    expect(html).toContain('Connected to your private iCloud library');
+    expect(html).toContain('Local copy safe');
+    expect(html).toContain('Retry Add');
+    expect(html).toContain('View Details');
+    expect(html).toContain('The Plan remains saved on this Mac');
+    expect(html).toContain('0 in iCloud');
+    expect(html).toContain('Your iCloud library is empty');
+    expect(html).not.toContain('No iCloud workbooks yet');
+  });
+
+  it('does not attribute a library refresh error to the current workbook', () => {
+    const model = buildSettingsRouteFixture();
+    model.cloud = {
+      configured: true,
+      status: 'signed_in',
+      user: { id: 'user-1', name: 'iCloud' },
+      current: { workbookId: 'workbook-plan', linked: false, status: 'local_only' },
+      workbooks: [],
+      error: 'The iCloud library could not be refreshed.',
+      errorOperation: 'refresh',
+      errorRetryable: true
+    };
+
+    const html = renderSettingsRoute(model);
+
+    expect(html).toContain('No workbook saved on this Mac was changed or deleted.');
+    expect(html).not.toContain('The Plan remains saved on this Mac');
+    expect(html).toContain('Check Again');
   });
 
   it('requires explicit review when the current iCloud workbook has changed', () => {

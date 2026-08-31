@@ -2,6 +2,33 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.5 - 2026-08-31
+
+### Added
+
+- Redesigned iCloud settings into one coherent surface that separates Apple Account availability,
+  the current local workbook, and the confirmed iCloud workbook library.
+- Added accurate confirmed-versus-waiting counts, scoped error details, and target-specific retry
+  actions for adding, opening, updating, and removing iCloud workbooks.
+
+### Fixed
+
+- Fixed item-level CloudKit failures being hidden behind a generic partial-failure message, including
+  actionable Production database/schema guidance without risking the local workbook.
+- Fixed queued creates being counted as confirmed iCloud workbooks while preserving confirmed counts
+  for queued updates to an existing cloud copy.
+- Fixed stale or cross-workbook sync errors, stuck change-tag retries, false success after terminal
+  conflict/delete failures, and malformed remote records disappearing without an explanation.
+
+### Compatibility and release notes
+
+- Existing Mac workbooks remain stored locally and unchanged. Development CloudKit records are not
+  copied into Production; the current local workbook can be added again after Production is ready.
+- Production iCloud writes require the complete `CavalryWorkbook` schema to be deployed in the shared
+  CloudKit container. Cavalry now preserves the local workbook and offers an explicit retry after an
+  administrator completes that deployment.
+- The matching iPhone redesign and error handling are distributed separately through TestFlight.
+
 ## 2.2.4 - 2026-08-30
 
 ### Added

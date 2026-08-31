@@ -156,6 +156,7 @@ function normalizeCloudWorkbook(value) {
     updatedAt: asString(source.updatedAt || source.updated_at),
     conflict: source.conflict === true,
     pending: source.pending === true,
+    inCloud: source.inCloud === true || source.pending !== true,
     ...(conflictNotice ? { conflictNotice } : {})
   };
 }
@@ -197,7 +198,13 @@ export function normalizeCloudState(value) {
     ...(workbookChange ? { workbookChange } : {}),
     sessionPersistence:
       source.sessionPersistence === true || source.sessionPersistence === 'secure',
-    error: asString(asObject(source.error).message || source.error)
+    error: asString(asObject(source.error).message || source.error),
+    errorCode: asString(source.errorCode || asObject(source.error).code),
+    errorDetails: asString(source.errorDetails),
+    errorRetryable: source.errorRetryable === true,
+    errorOperation: asString(source.errorOperation),
+    errorWorkbookId: asString(source.errorWorkbookId),
+    errorWorkbookName: asString(source.errorWorkbookName)
   };
 }
 
@@ -215,6 +222,12 @@ export function errorMessageFromResult(result) {
   );
 }
 
+export function errorDetailsFromResult(result) {
+  const source = asObject(result);
+  const state = asObject(source.state);
+  return asString(source.errorDetails || state.errorDetails);
+}
+
 export function isRetryableAutomaticSyncFailure(result) {
   const source = asObject(result);
   if (source.conflict === true || source.code === 'workbook_revision_conflict') return false;
@@ -223,8 +236,12 @@ export function isRetryableAutomaticSyncFailure(result) {
     [
       'cloud_quota_exceeded',
       'cloud_change_rejected',
+      'cloud_database_update_required',
+      'cloud_record_invalid',
+      'icloud_access_denied',
       'invalid_workbook_id',
       'invalid_revision',
+      'icloud_configuration_error',
       'icloud_account_unavailable'
     ].includes(code)
   ) {
@@ -245,12 +262,53 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
   const conflict = uiState.conflict === true;
   const conflictNotice =
     normalizeConflictNotice(uiState.conflictNotice, workbookId) || remote?.conflictNotice || null;
+  const failedWorkbookId = asString(uiState.failedWorkbookId);
+  const uiErrorOperation = asString(uiState.errorOperation || uiState.failedOperation);
+  const uiErrorIsLibraryScoped = ['delete', 'open'].includes(uiErrorOperation);
+  const uiErrorApplies =
+    !!asString(uiState.error) &&
+    (uiErrorIsLibraryScoped || !failedWorkbookId || failedWorkbookId === workbookId);
+  const stateErrorWorkbookId = asString(state.errorWorkbookId);
+  const stateErrorIsLibraryScoped = ['delete', 'open'].includes(state.errorOperation);
+  const stateErrorApplies =
+    !!state.error &&
+    (stateErrorIsLibraryScoped || !stateErrorWorkbookId || stateErrorWorkbookId === workbookId);
   return {
     ...state,
     workbooks,
     pendingOperation,
     notice: asString(uiState.notice),
-    error: asString(uiState.error) || state.error,
+    error: uiErrorApplies ? asString(uiState.error) : stateErrorApplies ? state.error : '',
+    errorCode: uiErrorApplies
+      ? asString(uiState.errorCode)
+      : stateErrorApplies
+        ? state.errorCode
+        : '',
+    errorDetails: uiErrorApplies
+      ? asString(uiState.errorDetails)
+      : stateErrorApplies
+        ? state.errorDetails
+        : '',
+    errorRetryable: uiErrorApplies
+      ? uiState.errorRetryable === true
+      : stateErrorApplies && state.errorRetryable === true,
+    errorOperation: uiErrorApplies
+      ? asString(uiState.errorOperation || uiState.failedOperation)
+      : stateErrorApplies
+        ? state.errorOperation
+        : '',
+    errorWorkbookId: uiErrorApplies
+      ? asString(uiState.errorWorkbookId || failedWorkbookId)
+      : stateErrorApplies
+        ? stateErrorWorkbookId
+        : '',
+    errorWorkbookName: uiErrorApplies
+      ? asString(uiState.errorWorkbookName)
+      : stateErrorApplies
+        ? state.errorWorkbookName
+        : '',
+    failedOperation: uiErrorApplies ? asString(uiState.failedOperation) : '',
+    failedWorkbookId: uiErrorApplies ? failedWorkbookId : '',
     current: {
       workbookId,
       linked: !!remote,
@@ -261,7 +319,7 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
         ? 'uploading'
         : conflict
           ? 'conflict'
-          : state.pendingCount > 0 && remote
+          : remote?.pending === true
             ? 'pending'
             : remote
               ? 'synced'

@@ -114,6 +114,75 @@ describe('Tauri desktop security and compatibility boundary', () => {
     );
   });
 
+  it('unwraps terminal CloudKit partial failures into an actionable schema diagnosis', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('partialErrorsByItemID');
+    expect(cloudKitStore).toContain('.serverRejectedRequest');
+    expect(cloudKitStore).toContain('cloud_database_update_required');
+    expect(cloudKitStore).toContain('The current CavalryWorkbook schema must be deployed');
+    expect(cloudKitStore).toContain('var rejectedSaveCodes: [String: String]?');
+    expect(cloudKitStore).toContain('var rejectedSaveDetails: [String: String]?');
+    expect(cloudKitStore).toContain('var lastErrorDetails: String?');
+    expect(cloudKitStore).toContain('response.retryable = false');
+    expect(cloudKitStore).toMatch(
+      /actionableCloudError\([\s\S]*?itemID: AnyHashable\(failure\.record\.recordID\)/
+    );
+    expect(cloudKitStore).toContain('switch actionableError.code');
+    expect(cloudKitStore).toContain('actionableError.serverRecord');
+    expect(cloudKitStore).not.toContain('switch failure.error.code');
+    expect(cloudKitStore).toContain('var lastErrorOperation: String?');
+    expect(cloudKitStore).toContain('var lastErrorWorkbookId: String?');
+    expect(cloudKitStore).toContain('metadata.inCloud = diskState.remote[recordName] != nil');
+    expect(cloudKitStore).toContain(
+      'case .serverRejectedRequest where cavalryConfiguredCloudKitEnvironment() == "Production"'
+    );
+  });
+
+  it('keeps retry and delete diagnostics scoped until their matching operation recovers', () => {
+    const cloudKitStore = readFileSync(
+      resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
+      'utf8'
+    );
+    expect(cloudKitStore).toContain('private var fetchCycleHadError = false');
+    expect(cloudKitStore).toMatch(
+      /case \.didFetchChanges:[\s\S]*?if !fetchCycleHadError, diskState\.lastErrorRetryable == true \{[\s\S]*?clearLastError\(operation: "refresh"\)/
+    );
+    expect(cloudKitStore).toMatch(/case \.willFetchChanges:[\s\S]*?fetchCycleHadError = false/);
+    expect(cloudKitStore).toContain('var pendingDeleteWorkbookIds: [String: String]?');
+    expect(cloudKitStore).toContain('pendingDeleteWorkbookIds[recordName] = workbookId');
+    expect(cloudKitStore).toMatch(
+      /handleFailedDelete[\s\S]*?diskState\.pendingDeleteWorkbookIds\?\[recordID\.recordName\]/
+    );
+    expect(cloudKitStore).toMatch(
+      /applySavedDeletion[\s\S]*?diskState\.pendingDeleteWorkbookIds\?\[recordName\]/
+    );
+    expect(cloudKitStore).toMatch(
+      /pending\.payloadHash == decoded\.payloadHash[\s\S]*?clearLastError\(operation: "upload", workbookId: decoded\.metadata\.id\)/
+    );
+    expect(cloudKitStore).toContain('var rejectedConflictNotices: [String: String]?');
+    expect(cloudKitStore).toContain('var rejectedConflictNoticeCodes: [String: String]?');
+    expect(cloudKitStore).toContain('var rejectedConflictNoticeDetails: [String: String]?');
+    expect(cloudKitStore).toMatch(
+      /if let rejection = diskState\.rejectedConflictNotices\?\[recordName\][\s\S]*?response\.errorOperation = "conflict"[\s\S]*?return response/
+    );
+    expect(cloudKitStore).toContain('var rejectedDeleteCodes: [String: String]?');
+    expect(cloudKitStore).toContain('var rejectedDeleteDetails: [String: String]?');
+    expect(cloudKitStore).toContain('details: "Technical code: remote_record_fields_invalid."');
+    expect(cloudKitStore).toMatch(
+      /let recoverableWorkbookId = normalizedWorkbookId\([\s\S]*?code: "cloud_snapshot_invalid"[\s\S]*?workbookId: recoverableWorkbookId/
+    );
+    expect(cloudKitStore).toContain('var shouldRetryRecord = false');
+    expect(cloudKitStore).toMatch(
+      /pending\.recordChangeRetryCount = retryCount \+ 1[\s\S]*?shouldRetryRecord = true/
+    );
+    expect(cloudKitStore).toMatch(
+      /if shouldRetryRecord \{[\s\S]*?syncEngine\.state\.add\([\s\S]*?\} else \{[\s\S]*?syncEngine\.state\.remove\(/
+    );
+  });
+
   it('does not start the host CloudKit request before the renderer listener is ready', () => {
     const hostSource = readFileSync(resolve(desktopRoot, 'src/host/index.cjs'), 'utf8');
     expect(hostSource).not.toContain('cloudController.restoreExistingSession()');

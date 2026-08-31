@@ -62,7 +62,46 @@ Before a signed build can sync, configure the following in the Apple Developer a
 
 Development builds use the development push and CloudKit environments. The Mac release overlay uses `entitlements.release.plist`, embeds the Developer ID provisioning profile, and requires the production environments. No CloudKit API key, database URL, or user credential belongs in an app environment file.
 
-The conflict-review feature adds encrypted `conflictId`, `conflictSourceDevice`, `conflictDetectedAt`, `conflictBaseRevision`, `conflictRemoteRevision`, `conflictSummary`, and `conflictReport` fields to `CavalryWorkbook`. Exercise conflict reporting in Development before deploying that updated schema to Production.
+The Production database must contain the complete `CavalryWorkbook` contract below. The record lives in the private custom zone `CavalryWorkbooksV1`; fields marked encrypted are written through `CKRecord.encryptedValues`. CloudKit automatically encrypts asset contents in the private database.
+
+| Field                      | CloudKit type | Storage                | Required for a normal workbook |
+| -------------------------- | ------------- | ---------------------- | ------------------------------ |
+| `schemaVersion`            | Int(64)       | Plain record field     | Yes                            |
+| `workbookId`               | String        | Encrypted              | Yes                            |
+| `name`                     | String        | Encrypted              | Yes                            |
+| `year`                     | Int(64)       | Encrypted              | No                             |
+| `currency`                 | String        | Encrypted              | Yes                            |
+| `revision`                 | Int(64)       | Encrypted              | Yes                            |
+| `sourceUpdatedAt`          | String        | Encrypted              | Yes                            |
+| `payloadHash`              | String        | Encrypted              | Yes                            |
+| `payloadAsset`             | Asset         | Private-database asset | Yes                            |
+| `conflictId`               | String        | Encrypted              | No                             |
+| `conflictSourceDevice`     | String        | Encrypted              | No                             |
+| `conflictDetectedAt`       | String        | Encrypted              | No                             |
+| `conflictBaseRevision`     | Int(64)       | Encrypted              | No                             |
+| `conflictRemoteRevision`   | Int(64)       | Encrypted              | No                             |
+| `conflictSummary`          | String        | Encrypted              | No                             |
+| `conflictReport`           | String        | Encrypted              | No                             |
+| `conflictPackageNoticeId`  | String        | Encrypted              | No                             |
+| `conflictPayloadHash`      | String        | Encrypted              | No                             |
+| `conflictPayloadAsset`     | Asset         | Private-database asset | No                             |
+| `conflictBasePayloadHash`  | String        | Encrypted              | No                             |
+| `conflictBasePayloadAsset` | Asset         | Private-database asset | No                             |
+
+The conflict notice and conflict package fields are optional as a group during ordinary sync. A device writes them only while sharing an unresolved conflict and clears them after resolution. Cavalry fetches changes by zone or stable record ID, so this contract does not require app-defined query or sort indexes.
+
+`cloud_database_update_required` is a terminal, user-safe diagnostic: CloudKit rejected a `CavalryWorkbook` write because the Production record type or one of the fields above is absent or behind Development. The local workbook remains unchanged and safe. Do not treat this code as a connectivity problem or queue automatic retries; deploy the current Development schema to Production, validate it, and then let the user retry explicitly.
+
+### Production schema release gate
+
+Before shipping either app with a new or changed CloudKit field:
+
+1. Exercise creation, update, deletion, and conflict reporting against Development so every intended record type and field is registered.
+2. Compare the Development `CavalryWorkbook` record type with the contract above, including all five conflict package fields and their exact types.
+3. Deploy the Development schema to Production in CloudKit Console for `iCloud.com.juanmbuilder.cavalry`.
+4. Re-open the Production schema and verify the `CavalryWorkbook` record type, the `CavalryWorkbooksV1` custom zone, and every field and type in the table. Do not rely only on the deployment success banner.
+5. With release-signed iPhone and Mac builds, create a new workbook record in Production, update it from the other platform, exercise a conflict package, clear the conflict, and delete the iCloud copy while confirming both local copies remain usable.
+6. Block distribution if a Production write returns `cloud_database_update_required`, `CKError.serverRejectedRequest`, or a partial failure containing that per-record error.
 
 Tauri signs the Node host sidecar separately from the application. The build's codesign shim gives the app the CloudKit, push, application-identifier, and team entitlements while giving the sidecar only the JIT permissions it needs. Applying the app's CloudKit entitlements to the sidecar causes macOS to terminate it. The architecture and release checks enforce that separation.
 
