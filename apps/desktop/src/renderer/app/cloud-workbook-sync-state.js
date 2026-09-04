@@ -3,6 +3,7 @@
 // to the Production database: the same workbook can have unrelated revisions
 // in each environment. The native Production store is separately scoped too.
 const CLOUD_WORKBOOK_SYNC_STORAGE_PREFIX = 'cavalry.cloud-workbook-sync.v2';
+const CLOUD_WORKBOOK_AUTO_SYNC_STORAGE_PREFIX = 'cavalry.cloud-workbook-auto-sync.v1';
 
 const memoryValues = new Map();
 const fallbackKeys = new Set();
@@ -93,6 +94,121 @@ export function cloudWorkbookSyncStorageKey(userId, workbookId) {
   const workbook = asId(workbookId);
   if (!owner || !workbook) return '';
   return `${CLOUD_WORKBOOK_SYNC_STORAGE_PREFIX}:${encodeURIComponent(owner)}:${encodeURIComponent(workbook)}`;
+}
+
+export function cloudWorkbookAutoSyncStorageKey(userId, workbookId) {
+  const owner = asId(userId);
+  const workbook = asId(workbookId);
+  if (!owner || !workbook) return '';
+  return `${CLOUD_WORKBOOK_AUTO_SYNC_STORAGE_PREFIX}:${encodeURIComponent(owner)}:${encodeURIComponent(workbook)}`;
+}
+
+export function parseCloudWorkbookAutoSyncPreferenceValue(value) {
+  let parsed = value;
+  try {
+    if (typeof value === 'string') parsed = JSON.parse(value);
+  } catch (_error) {
+    return null;
+  }
+  if (
+    !(parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ||
+    Number(parsed.version) !== 1 ||
+    typeof parsed.enabled !== 'boolean'
+  ) {
+    return null;
+  }
+  return { version: 1, enabled: parsed.enabled };
+}
+
+// Migration is intentionally stricter than the runtime reader. Older malformed
+// values may fail closed in place, but they must never become authoritative
+// Application Support state.
+export function parseCloudWorkbookSyncStateValue(value, workbookId) {
+  let parsed = value;
+  try {
+    if (typeof value === 'string') parsed = JSON.parse(value);
+  } catch (_error) {
+    return null;
+  }
+  if (
+    !(parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ||
+    Number(parsed.version) !== 1 ||
+    typeof parsed.conflict !== 'boolean'
+  ) {
+    return null;
+  }
+  const revision = parsed.revision == null ? null : asRevision(parsed.revision);
+  if (parsed.revision != null && !revision) return null;
+  if (parsed.remoteDeleted != null && typeof parsed.remoteDeleted !== 'boolean') return null;
+
+  const conflictNoticeId =
+    parsed.conflictNoticeId == null ? '' : asConflictNoticeId(parsed.conflictNoticeId);
+  const conflictRemoteRevision =
+    parsed.conflictRemoteRevision == null ? null : asRevision(parsed.conflictRemoteRevision);
+  const hasConflictNoticeId = parsed.conflictNoticeId != null;
+  const hasConflictRemoteRevision = parsed.conflictRemoteRevision != null;
+  if (
+    hasConflictNoticeId !== hasConflictRemoteRevision ||
+    (hasConflictNoticeId && (!parsed.conflict || !conflictNoticeId || !conflictRemoteRevision))
+  ) {
+    return null;
+  }
+  if (hasConflictRemoteRevision && !conflictRemoteRevision) return null;
+
+  const hasBaseWorkbook = Object.prototype.hasOwnProperty.call(parsed, 'baseWorkbook');
+  const hasBaseRevision = Object.prototype.hasOwnProperty.call(parsed, 'baseRevision');
+  let baseWorkbook = null;
+  let baseRevision = null;
+  if (hasBaseWorkbook || hasBaseRevision) {
+    baseWorkbook = asWorkbook(parsed.baseWorkbook, workbookId);
+    baseRevision = asRevision(parsed.baseRevision);
+    if (!(baseWorkbook && baseRevision) || (revision && baseRevision > revision)) return null;
+  }
+
+  return {
+    version: 1,
+    revision,
+    conflict: parsed.conflict,
+    ...(parsed.remoteDeleted === true ? { remoteDeleted: true } : {}),
+    ...(conflictNoticeId && conflictRemoteRevision
+      ? { conflictNoticeId, conflictRemoteRevision }
+      : {}),
+    ...(baseWorkbook && baseRevision ? { baseRevision, baseWorkbook } : {})
+  };
+}
+
+// Existing linked workbooks have always synced automatically. Missing or
+// unreadable preferences therefore preserve that behavior and fail open to ON.
+export function readCloudWorkbookAutoSyncPreference(storage, userId, workbookId) {
+  const key = cloudWorkbookAutoSyncStorageKey(userId, workbookId);
+  if (!key || !(storage && typeof storage.getItem === 'function')) return true;
+  try {
+    const raw = storage.getItem(key) || (fallbackKeys.has(key) ? memoryStorage.getItem(key) : null);
+    if (!raw) return true;
+    return JSON.parse(raw)?.enabled !== false;
+  } catch (_error) {
+    try {
+      const fallback = memoryStorage.getItem(key);
+      return fallback ? JSON.parse(fallback)?.enabled !== false : true;
+    } catch (_fallbackError) {
+      return true;
+    }
+  }
+}
+
+export function writeCloudWorkbookAutoSyncPreference(storage, userId, workbookId, enabled) {
+  const key = cloudWorkbookAutoSyncStorageKey(userId, workbookId);
+  const value = enabled !== false;
+  if (!key || !(storage && typeof storage.setItem === 'function')) return value;
+  const serialized = JSON.stringify({ version: 1, enabled: value });
+  memoryStorage.setItem(key, serialized);
+  try {
+    storage.setItem(key, serialized);
+    fallbackKeys.delete(key);
+  } catch (_error) {
+    fallbackKeys.add(key);
+  }
+  return value;
 }
 
 export function readCloudWorkbookSyncState(storage, userId, workbookId) {

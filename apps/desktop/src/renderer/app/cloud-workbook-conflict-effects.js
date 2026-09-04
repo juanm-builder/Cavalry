@@ -19,6 +19,8 @@ import { asObject, asRevision, asString, stateFromResult } from './cloud-workboo
  */
 export function useCloudWorkbookConflictEffects({
   applyRemoteState,
+  autoSyncEnabled,
+  syncAnchorHydrated,
   autoSyncSchedulerRef,
   clearSharedConflictNotice,
   cloudState,
@@ -31,6 +33,7 @@ export function useCloudWorkbookConflictEffects({
   localWorkbookId,
   pendingOperationRef,
   persistMergedWorkbook,
+  persistSyncState,
   publishConflictReport,
   reconcileWorkbookBranches,
   resolvedConflictAdoptionRef,
@@ -42,6 +45,8 @@ export function useCloudWorkbookConflictEffects({
 }) {
   useEffect(() => {
     if (
+      !syncAnchorHydrated ||
+      !autoSyncEnabled ||
       cloudState.status !== 'signed_in' ||
       !cloudUserId ||
       !localWorkbookId ||
@@ -72,6 +77,11 @@ export function useCloudWorkbookConflictEffects({
       return;
     }
     const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
+    if (syncState.revision && remote.revision < syncState.revision) {
+      // A recreated/rolled-back record is not a legacy content conflict. Keep
+      // the durable anchor latched until the user explicitly chooses a copy.
+      return;
+    }
     const reviewKey = `${cloudUserId}:${localWorkbookId}:${syncState.baseRevision || 'none'}:${remote.revision}:decision-policy-v2`;
     if (conflictReviewInFlightRef.current === reviewKey) return;
     conflictReviewInFlightRef.current = reviewKey;
@@ -130,6 +140,8 @@ export function useCloudWorkbookConflictEffects({
       active = false;
     };
   }, [
+    autoSyncEnabled,
+    syncAnchorHydrated,
     autoSyncSchedulerRef,
     clearSharedConflictNotice,
     cloudState.status,
@@ -149,6 +161,8 @@ export function useCloudWorkbookConflictEffects({
 
   useEffect(() => {
     if (
+      !syncAnchorHydrated ||
+      !autoSyncEnabled ||
       cloudState.status !== 'signed_in' ||
       !cloudUserId ||
       !localWorkbookId ||
@@ -162,6 +176,7 @@ export function useCloudWorkbookConflictEffects({
     const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId);
     if (
       !remote ||
+      (syncState.revision && remote.revision < syncState.revision) ||
       remote.conflictNotice ||
       !syncState.conflictNoticeId ||
       !syncState.conflictRemoteRevision ||
@@ -196,6 +211,10 @@ export function useCloudWorkbookConflictEffects({
           baseRevision: revision,
           baseWorkbook: persisted.workbook
         });
+        if (typeof persistSyncState === 'function') {
+          const durableResult = await persistSyncState(cloudUserId, localWorkbookId);
+          if (!(durableResult && durableResult.ok)) return;
+        }
         updateWorkbookConflict(localWorkbookId, false);
         conflictNoticePublicationRef.current = '';
         localConflictNoticeRef.current = null;
@@ -216,6 +235,8 @@ export function useCloudWorkbookConflictEffects({
     };
   }, [
     applyRemoteState,
+    autoSyncEnabled,
+    syncAnchorHydrated,
     autoSyncSchedulerRef,
     cloudState.status,
     cloudState.workbooks,
@@ -227,6 +248,7 @@ export function useCloudWorkbookConflictEffects({
     localWorkbookId,
     pendingOperationRef,
     persistMergedWorkbook,
+    persistSyncState,
     resolvedConflictAdoptionRef,
     resolvedSyncStorage,
     setLocalConflictNotice,

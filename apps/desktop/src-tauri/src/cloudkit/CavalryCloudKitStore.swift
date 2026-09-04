@@ -463,7 +463,10 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
           }
           return CloudKitAccount(status: "available", userId: userId)
         } catch {
-          return CloudKitAccount(status: "available", userId: "icloud-private")
+          // A synthetic identity would make account-scoped merge bases and
+          // autosave preferences reusable by a different Apple Account.
+          // Fail closed until CloudKit can return the real private user ID.
+          return CloudKitAccount(status: "could_not_determine", userId: nil)
         }
       case .noAccount:
         return CloudKitAccount(status: "no_account", userId: nil)
@@ -1066,17 +1069,36 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       try? persist()
     case .fetchedRecordZoneChanges(let event):
       var changed = false
+      var deletedWorkbookIds = Set<String>()
       for modification in event.modifications
       where modification.record.recordType == cavalryRecordType {
         changed = applyFetchedRecord(modification.record) || changed
       }
       for deletion in event.deletions where deletion.recordID.zoneID == zoneID {
-        changed = applyFetchedDeletion(deletion.recordID) || changed
+        let recordName = deletion.recordID.recordName
+        let workbookId =
+          diskState.pending[recordName]?.metadata.id
+          ?? diskState.remote[recordName]?.metadata.id
+        let applied = applyFetchedDeletion(deletion.recordID)
+        changed = applied || changed
+        if applied, let workbookId {
+          deletedWorkbookIds.insert(workbookId)
+        }
       }
       if changed {
         diskState.lastSyncAt = isoDate(Date())
         try? persist()
-        emit(reason: "fetched")
+        // A renderer must never infer deletion from a temporarily incomplete
+        // library listing. Preserve the exact workbook identity while the
+        // record is still present in the native cache and publish an explicit
+        // delete signal after the refreshed cache has been persisted.
+        if deletedWorkbookIds.isEmpty {
+          emit(reason: "fetched")
+        } else {
+          for workbookId in deletedWorkbookIds.sorted() {
+            emit(reason: "deleted", workbookId: workbookId)
+          }
+        }
       }
     case .sentDatabaseChanges(let event):
       if event.savedZones.contains(where: { $0.zoneID == zoneID }) {

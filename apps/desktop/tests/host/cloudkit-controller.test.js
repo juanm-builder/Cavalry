@@ -486,8 +486,11 @@ describe('desktop iCloud state controller', () => {
         CLOUD_IPC_CHANNELS.downloadWorkbook,
         CLOUD_IPC_CHANNELS.getState,
         CLOUD_IPC_CHANNELS.listWorkbooks,
+        CLOUD_IPC_CHANNELS.loadSyncState,
         CLOUD_IPC_CHANNELS.publishConflictNotice,
         CLOUD_IPC_CHANNELS.clearConflictNotice,
+        CLOUD_IPC_CHANNELS.removeSyncState,
+        CLOUD_IPC_CHANNELS.saveSyncState,
         CLOUD_IPC_CHANNELS.uploadWorkbook
       ].sort()
     );
@@ -517,6 +520,69 @@ describe('desktop iCloud state controller', () => {
     expect(controller.handleNativeEvent('cloudkit', { reason: 'fetched' })).toBe(false);
   });
 
+  it('publishes an exact DELETE signal only after the native library refresh', async () => {
+    const sent = [];
+    let remotePresent = true;
+    const request = vi.fn(async ({ operation }) => {
+      if (operation === 'status') {
+        return {
+          ok: true,
+          account: { status: 'available', userId: 'icloud-owner-1' },
+          cloudEnvironment: 'Production'
+        };
+      }
+      if (operation === 'list') {
+        return {
+          ok: true,
+          workbooks: remotePresent
+            ? [{ id: 'workbook-cloudkit-1', name: 'Household', revision: 3 }]
+            : []
+        };
+      }
+      throw new Error(`Unexpected operation: ${operation}`);
+    });
+    const controller = createCloudController({
+      assertTrustedSender: () => {},
+      cloudKit: { request },
+      ipcMain: { handle() {} },
+      BrowserWindow: {
+        getAllWindows: () => [
+          {
+            isDestroyed: () => false,
+            webContents: {
+              isDestroyed: () => false,
+              send: (...args) => sent.push(args)
+            }
+          }
+        ]
+      }
+    });
+    await controller.initialize();
+    remotePresent = false;
+
+    expect(
+      controller.handleNativeEvent('cloudkit', {
+        reason: 'deleted',
+        workbookId: 'workbook-cloudkit-1'
+      })
+    ).toBe(true);
+    await vi.waitFor(() =>
+      expect(sent.at(-1)).toEqual([
+        CLOUD_IPC_CHANNELS.stateChanged,
+        expect.objectContaining({
+          workbooks: [],
+          workbookChange: {
+            sequence: 1,
+            eventType: 'DELETE',
+            workbookId: 'workbook-cloudkit-1',
+            revision: 0,
+            updatedAt: ''
+          }
+        })
+      ])
+    );
+  });
+
   it('finishes account checks as unavailable instead of remaining in a loading state', async () => {
     const controller = createCloudController({
       assertTrustedSender: () => {},
@@ -535,6 +601,29 @@ describe('desktop iCloud state controller', () => {
     await controller.initialize();
     expect(controller.getState()).toMatchObject({
       status: 'unavailable',
+      error: expect.stringContaining('could not determine')
+    });
+  });
+
+  it('rejects an available account response without a verified private user ID', async () => {
+    const controller = createCloudController({
+      assertTrustedSender: () => {},
+      cloudKit: {
+        request: async () => ({
+          ok: true,
+          account: { status: 'available', userId: null },
+          cloudEnvironment: 'Production',
+          pendingCount: 0
+        })
+      },
+      ipcMain: { handle() {} },
+      BrowserWindow: { getAllWindows: () => [] }
+    });
+
+    await controller.initialize();
+    expect(controller.getState()).toMatchObject({
+      status: 'unavailable',
+      user: null,
       error: expect.stringContaining('could not determine')
     });
   });

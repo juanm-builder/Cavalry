@@ -223,6 +223,7 @@ describe('settings controller', () => {
 
     const cloudActions = [
       ['refresh-cloud-workbooks', 'refresh'],
+      ['retry-cloud-sync-state', 'retry-sync-state'],
       ['upload-current-workbook', 'upload'],
       ['keep-local-cloud-workbook', 'keep-local'],
       ['open-cloud-workbook', 'open'],
@@ -237,6 +238,16 @@ describe('settings controller', () => {
         type: 'test/cloud',
         payload: { operation, workbookId: 'cloud-workbook' }
       });
+    });
+
+    expect(
+      controller.handleAction(workbook, {
+        type: 'set-cloud-autosave',
+        payload: { checked: false }
+      }).events[0]
+    ).toMatchObject({
+      type: 'test/cloud',
+      payload: { operation: 'set-auto-sync', enabled: false }
     });
   });
 

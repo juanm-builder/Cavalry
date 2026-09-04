@@ -5,9 +5,11 @@
 // is exposed only through a versioned request/event protocol owned by Rust.
 'use strict';
 
+const path = require('node:path');
 const readline = require('node:readline');
 const { createAdvisorRuntimeController } = require('./advisor-runtime-controller.cjs');
 const { createCloudController } = require('./cloud-controller.cjs');
+const { createCloudSyncStateStorage } = require('./cloud-sync-state-storage.cjs');
 const { createCompanionApiController } = require('./companion-api-controller.cjs');
 const deepLink = require('./deep-link.cjs');
 const { createDeepLinkController } = require('./deep-link-controller.cjs');
@@ -119,6 +121,9 @@ async function start() {
     platform: process.platform
   });
   const assertTrustedSender = () => true;
+  const cloudSyncStateStorage = createCloudSyncStateStorage({
+    rootDir: path.join(userDataDir, 'Cloud Sync')
+  });
   const systemPreferences = {
     getMediaAccessStatus: () => 'unknown',
     askForMediaAccess: async () => false
@@ -153,6 +158,7 @@ async function start() {
     cloudKit: {
       request: (payload) => nativeBridge.request('cloudkit.request', payload)
     },
+    syncStateStorage: cloudSyncStateStorage,
     assertTrustedSender
   });
 

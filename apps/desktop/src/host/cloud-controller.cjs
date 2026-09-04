@@ -12,6 +12,9 @@ const CLOUD_IPC_CHANNELS = Object.freeze({
   deleteWorkbook: 'cavalry-cloud:delete-workbook',
   publishConflictNotice: 'cavalry-cloud:publish-conflict-notice',
   clearConflictNotice: 'cavalry-cloud:clear-conflict-notice',
+  loadSyncState: 'cavalry-cloud:load-sync-state',
+  saveSyncState: 'cavalry-cloud:save-sync-state',
+  removeSyncState: 'cavalry-cloud:remove-sync-state',
   stateChanged: 'cavalry-cloud:state-changed'
 });
 
@@ -33,9 +36,11 @@ function createCloudController(dependencies = {}) {
     cloudKit: dependencies.cloudKit,
     getPersistenceService: dependencies.getPersistenceService
   });
+  const syncStateStorage = dependencies.syncStateStorage;
   let handlersRegistered = false;
   let disposed = false;
   let account = { status: 'could_not_determine', userId: '' };
+  let cloudEnvironment = '';
   let statusChecked = false;
   let workbooks = [];
   let pendingCount = 0;
@@ -53,12 +58,12 @@ function createCloudController(dependencies = {}) {
   let initializationPromise = null;
   let nativeRefreshPromise = null;
   let nativeRefreshQueued = false;
-  let queuedNativeEvent = null;
+  let queuedNativeEvents = [];
 
   function userForAccount() {
-    if (account.status !== 'available') return null;
+    if (account.status !== 'available' || !account.userId) return null;
     return {
-      id: text(account.userId, 256) || 'icloud-private',
+      id: account.userId,
       name: 'iCloud',
       email: '',
       avatarUrl: '',
@@ -97,6 +102,7 @@ function createCloudController(dependencies = {}) {
       configured: true,
       status: publicStatus(),
       user: userForAccount(),
+      cloudEnvironment,
       sessionGeneration,
       sessionPersistence: true,
       workbooks: workbooks.map((workbook) => ({ ...workbook })),
@@ -142,18 +148,26 @@ function createCloudController(dependencies = {}) {
       return false;
     }
     const nextAccount = result.account && typeof result.account === 'object' ? result.account : {};
+    const reportedStatus = text(nextAccount.status, 64) || 'could_not_determine';
+    const reportedUserId = text(nextAccount.userId, 256);
+    const hasVerifiedIdentity = reportedStatus === 'available' && Boolean(reportedUserId);
     const next = {
-      status: text(nextAccount.status, 64) || 'could_not_determine',
-      userId: text(nextAccount.userId, 256)
+      status:
+        reportedStatus === 'available' && !hasVerifiedIdentity
+          ? 'could_not_determine'
+          : reportedStatus,
+      userId: hasVerifiedIdentity ? reportedUserId : ''
     };
-    const previousIdentity = `${account.status}:${account.userId}`;
-    const nextIdentity = `${next.status}:${next.userId}`;
+    const nextCloudEnvironment = text(result.cloudEnvironment, 32);
+    const previousIdentity = `${cloudEnvironment}:${account.status}:${account.userId}`;
+    const nextIdentity = `${nextCloudEnvironment}:${next.status}:${next.userId}`;
     if (previousIdentity !== nextIdentity) {
       sessionGeneration += 1;
       workbooks = [];
       workbookChange = null;
     }
     account = next;
+    cloudEnvironment = nextCloudEnvironment;
     pendingCount = Number.isSafeInteger(Number(result.pendingCount))
       ? Number(result.pendingCount)
       : pendingCount;
@@ -241,6 +255,109 @@ function createCloudController(dependencies = {}) {
     return { ...result, state: broadcastState() };
   }
 
+  function syncStateFailure(error, fallbackCode = 'cloud_sync_state_unavailable') {
+    return {
+      ok: false,
+      code: text(error && error.code, 96) || fallbackCode,
+      error:
+        text(error && error.message, 512) ||
+        'Cavalry could not access its local iCloud sync state.',
+      failClosed: true
+    };
+  }
+
+  async function currentSyncStateScope(payload = {}) {
+    if (!statusChecked) await refreshStatus();
+    const workbookId = String(payload.workbookId || payload.id || '').trim();
+    if (workbookId.length > 128 || !/^[A-Za-z0-9._:-]{1,128}$/.test(workbookId)) {
+      return {
+        error: syncStateFailure(
+          Object.assign(new Error('Choose a valid iCloud workbook.'), {
+            code: 'invalid_workbook_id'
+          })
+        )
+      };
+    }
+    if (
+      account.status !== 'available' ||
+      !account.userId ||
+      !['Development', 'Production'].includes(cloudEnvironment)
+    ) {
+      return {
+        error: syncStateFailure(
+          Object.assign(new Error('Connect iCloud before loading its local sync state.'), {
+            code: 'icloud_account_unavailable'
+          })
+        )
+      };
+    }
+    if (
+      !syncStateStorage ||
+      typeof syncStateStorage.load !== 'function' ||
+      typeof syncStateStorage.save !== 'function' ||
+      typeof syncStateStorage.remove !== 'function'
+    ) {
+      return {
+        error: syncStateFailure(
+          Object.assign(new Error('Durable iCloud sync state is unavailable in this build.'), {
+            code: 'cloud_sync_state_unavailable'
+          })
+        )
+      };
+    }
+    return {
+      scope: {
+        cloudEnvironment,
+        accountId: account.userId,
+        workbookId
+      }
+    };
+  }
+
+  async function loadSyncState(payload) {
+    const resolved = await currentSyncStateScope(payload);
+    if (resolved.error) return resolved.error;
+    try {
+      const result = await syncStateStorage.load(resolved.scope);
+      if (!(result && result.ok)) {
+        return {
+          ok: false,
+          code: text(result && result.code, 96) || 'cloud_sync_state_corrupt',
+          error: 'Cavalry found unreadable local iCloud sync state.',
+          status: text(result && result.status, 32) || 'corrupt',
+          failClosed: true
+        };
+      }
+      return result;
+    } catch (error) {
+      return syncStateFailure(error);
+    }
+  }
+
+  async function saveSyncState(payload = {}) {
+    const resolved = await currentSyncStateScope(payload);
+    if (resolved.error) return resolved.error;
+    try {
+      return await syncStateStorage.save({
+        ...resolved.scope,
+        syncState: payload.syncState == null ? null : payload.syncState,
+        autoSyncEnabled: payload.autoSyncEnabled
+      });
+    } catch (error) {
+      return syncStateFailure(error, 'cloud_sync_state_save_failed');
+    }
+  }
+
+  async function removeSyncState(payload) {
+    const resolved = await currentSyncStateScope(payload);
+    if (resolved.error) return resolved.error;
+    try {
+      return await syncStateStorage.remove(resolved.scope);
+    } catch (error) {
+      return syncStateFailure(error, 'cloud_sync_state_remove_failed');
+    }
+  }
+
   function mutateWorkbook(method, payload) {
     if (workbookMutationInProgress) {
       return {
@@ -264,6 +381,11 @@ function createCloudController(dependencies = {}) {
 
   async function downloadWorkbook(payload) {
     const result = await workbookController.downloadWorkbook(payload || {});
+    // An exact record download is stronger evidence than a cached renderer
+    // listing. Refresh the native-cache projection before returning so a stale
+    // lower revision can be repaired without the renderer pretending it is
+    // already synced.
+    if (result && result.ok) await refreshLibrary({ refresh: false });
     return { ...result, state: getState() };
   }
 
@@ -287,14 +409,16 @@ function createCloudController(dependencies = {}) {
 
   function drainNativeRefreshes() {
     if (disposed || nativeRefreshPromise || initializationPromise || !statusChecked) return;
-    const event = queuedNativeEvent || {};
-    queuedNativeEvent = null;
+    const events = queuedNativeEvents.length ? queuedNativeEvents : [{}];
+    queuedNativeEvents = [];
     nativeRefreshQueued = false;
     const operation = (async () => {
-      if (event.reason === 'account_changed') await refreshStatus();
+      if (events.some((event) => event.reason === 'account_changed')) await refreshStatus();
       if (account.status === 'available') await refreshLibrary({ refresh: false });
-      noteWorkbookChange(event);
-      broadcastState();
+      events.forEach((event) => {
+        noteWorkbookChange(event);
+        broadcastState();
+      });
     })();
     nativeRefreshPromise = operation;
     void operation
@@ -315,7 +439,16 @@ function createCloudController(dependencies = {}) {
 
   function handleNativeEvent(source, payload) {
     if (disposed || source !== 'cloudkit') return false;
-    queuedNativeEvent = payload && typeof payload === 'object' ? payload : {};
+    const event = payload && typeof payload === 'object' ? payload : {};
+    const eventKey = `${text(event.reason, 32)}:${text(event.workbookId, 128)}`;
+    if (
+      !queuedNativeEvents.some(
+        (candidate) =>
+          `${text(candidate.reason, 32)}:${text(candidate.workbookId, 128)}` === eventKey
+      )
+    ) {
+      queuedNativeEvents.push(event);
+    }
     nativeRefreshQueued = true;
     drainNativeRefreshes();
     return true;
@@ -354,11 +487,14 @@ function createCloudController(dependencies = {}) {
       CLOUD_IPC_CHANNELS.clearConflictNotice,
       trusted((payload) => mutateWorkbook('clearConflictNotice', payload))
     );
+    ipcMain.handle(CLOUD_IPC_CHANNELS.loadSyncState, trusted(loadSyncState));
+    ipcMain.handle(CLOUD_IPC_CHANNELS.saveSyncState, trusted(saveSyncState));
+    ipcMain.handle(CLOUD_IPC_CHANNELS.removeSyncState, trusted(removeSyncState));
   }
 
   function dispose() {
     disposed = true;
-    queuedNativeEvent = null;
+    queuedNativeEvents = [];
     nativeRefreshQueued = false;
   }
 

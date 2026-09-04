@@ -307,6 +307,8 @@ export function createSettingsController(dependencies = {}) {
 
         const cloudOperations = {
           'refresh-cloud-workbooks': 'refresh',
+          'retry-cloud-sync-state': 'retry-sync-state',
+          'set-cloud-autosave': 'set-auto-sync',
           'upload-current-workbook': 'upload',
           'keep-local-cloud-workbook': 'keep-local',
           'reconcile-cloud-workbook': 'reconcile',
@@ -316,6 +318,9 @@ export function createSettingsController(dependencies = {}) {
         if (cloudOperations[type]) {
           const cloudPayload = {
             workbookId: asString(payload.workbookId),
+            ...(type === 'set-cloud-autosave'
+              ? { enabled: payload.enabled === true || payload.checked === true }
+              : {}),
             ...(type === 'reconcile-cloud-workbook'
               ? {
                   choices: Array.isArray(payload.choices) ? payload.choices : [],

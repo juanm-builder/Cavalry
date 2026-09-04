@@ -35,33 +35,51 @@ export function createCloudWorkbookAutoSyncScheduler({
   let activeEntry = null;
   let pendingEntry = null;
   let scheduledTimer = null;
+  let scheduledPhase = '';
   let stopped = false;
 
-  function getStatus() {
+  function getStatus(completion = null) {
+    const target = activeEntry || pendingEntry || completion?.entry || null;
+    const phase = activeEntry
+      ? 'syncing'
+      : pendingEntry || scheduledTimer !== null
+        ? scheduledPhase === 'retrying'
+          ? 'retrying'
+          : 'waiting'
+        : completion?.result && completion.result.ok === false
+          ? 'failed'
+          : 'idle';
     return {
       active: !!activeEntry,
       pending: !!pendingEntry,
-      scheduled: scheduledTimer !== null
+      scheduled: scheduledTimer !== null,
+      phase,
+      userId: target?.userId || '',
+      workbookId: target?.workbookId || '',
+      ...(completion ? { result: completion.result } : {})
     };
   }
 
-  function publishStatus() {
-    onStatus(getStatus());
+  function publishStatus(completion = null) {
+    onStatus(getStatus(completion));
   }
 
   function clearScheduledTimer() {
     if (scheduledTimer === null) return;
     cancelTimer(scheduledTimer);
     scheduledTimer = null;
+    scheduledPhase = '';
   }
 
-  function schedule(delay) {
+  function schedule(delay, phase = 'waiting') {
     if (stopped || !pendingEntry) return;
     clearScheduledTimer();
+    scheduledPhase = phase;
     const timer = scheduleTimer(
       () => {
         if (scheduledTimer !== timer) return;
         scheduledTimer = null;
+        scheduledPhase = '';
         void startPendingSync();
       },
       Math.max(0, Number(delay) || 0)
@@ -97,11 +115,11 @@ export function createCloudWorkbookAutoSyncScheduler({
       } else {
         pendingEntry = entry;
       }
-      schedule(retryMs);
+      schedule(retryMs, 'retrying');
     } else if (pendingEntry) {
-      schedule(debounceMs);
+      schedule(debounceMs, 'waiting');
     } else {
-      publishStatus();
+      publishStatus({ entry, result });
     }
     return result;
   }
@@ -112,8 +130,22 @@ export function createCloudWorkbookAutoSyncScheduler({
     }
     const nextEntry = carryExpectedRevision(pendingEntry, { ...entry });
     pendingEntry = nextEntry;
-    schedule(debounceMs);
+    schedule(debounceMs, 'waiting');
     return true;
+  }
+
+  function cancelPending() {
+    const canceledEntry = pendingEntry;
+    pendingEntry = null;
+    clearScheduledTimer();
+    publishStatus(
+      canceledEntry
+        ? {
+            entry: canceledEntry,
+            result: { ok: false, code: 'cloud_sync_cancelled', canceled: true }
+          }
+        : null
+    );
   }
 
   function stop() {
@@ -123,6 +155,7 @@ export function createCloudWorkbookAutoSyncScheduler({
   }
 
   return Object.freeze({
+    cancelPending,
     enqueue,
     getStatus,
     hasWork: () => !!(activeEntry || pendingEntry || scheduledTimer !== null),

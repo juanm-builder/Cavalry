@@ -298,11 +298,13 @@ describe('workbook session', () => {
     const cloudState = {
       configured: true,
       status: 'signed_in',
+      cloudEnvironment: 'Production',
       user: { id: 'user-1', email: 'alex@example.com', name: 'Alex Example' },
       workbooks: [
         { id: cloudWorkbook.id, name: cloudWorkbook.name, year: 2026, currency: 'PHP', revision: 3 }
       ]
     };
+    let syncEnvelope = null;
     const cacheSave = vi.fn(async () => ({ ok: true }));
     const ports = createNullRendererPorts({
       workbookStorage: {
@@ -314,7 +316,23 @@ describe('workbook session', () => {
         save: cacheSave
       },
       cloud: {
-        invoke: async (command) => {
+        invoke: async (command, payload = {}) => {
+          if (command === 'loadSyncState') {
+            return syncEnvelope
+              ? { ok: true, status: 'loaded', envelope: structuredClone(syncEnvelope) }
+              : { ok: true, status: 'missing', envelope: null };
+          }
+          if (command === 'saveSyncState') {
+            syncEnvelope = {
+              version: 1,
+              cloudEnvironment: 'Production',
+              accountId: 'user-1',
+              workbookId: payload.workbookId,
+              syncState: payload.syncState || null,
+              autoSyncEnabled: payload.autoSyncEnabled !== false
+            };
+            return { ok: true, status: 'saved', envelope: structuredClone(syncEnvelope) };
+          }
           if (command === 'downloadWorkbook') {
             return { ok: true, workbook: cloudWorkbook, state: cloudState };
           }

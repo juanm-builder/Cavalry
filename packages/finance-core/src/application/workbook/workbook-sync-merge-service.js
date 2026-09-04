@@ -462,17 +462,40 @@ export function shouldRefreshWorkbookConflictReview(review = {}) {
   });
 }
 
-function selectedConflictValue(path, localValue, remoteValue, resolutions) {
-  if (!(resolutions && resolutions.choices.has(path))) return { selected: false };
-  const side = resolutions.choices.get(path);
-  resolutions.used.add(path);
-  return {
-    selected: true,
-    value: cloneJson(side === 'local' ? localValue : remoteValue)
-  };
+function prefersLocalConflicts(conflictPolicy) {
+  return conflictPolicy === 'prefer_local';
 }
 
-function mergeIdCollection(base, local, remote, path, conflicts, resolutions = null) {
+function selectedConflictValue(
+  path,
+  localValue,
+  remoteValue,
+  resolutions,
+  conflictPolicy = 'manual'
+) {
+  if (resolutions && resolutions.choices.has(path)) {
+    const side = resolutions.choices.get(path);
+    resolutions.used.add(path);
+    return {
+      selected: true,
+      value: cloneJson(side === 'local' ? localValue : remoteValue)
+    };
+  }
+  if (prefersLocalConflicts(conflictPolicy)) {
+    return { selected: true, value: cloneJson(localValue) };
+  }
+  return { selected: false };
+}
+
+function mergeIdCollection(
+  base,
+  local,
+  remote,
+  path,
+  conflicts,
+  resolutions = null,
+  conflictPolicy = 'manual'
+) {
   const baseMap = itemMap(base);
   const localMap = itemMap(local);
   const remoteMap = itemMap(remote);
@@ -509,7 +532,7 @@ function mergeIdCollection(base, local, remote, path, conflicts, resolutions = n
       continue;
     }
 
-    if (isAutomaticCollectionPath(path)) {
+    if (isAutomaticCollectionPath(path) && !prefersLocalConflicts(conflictPolicy)) {
       const automaticValue = preferredAutomaticValue(
         localHas ? localValue : undefined,
         remoteHas ? remoteValue : undefined
@@ -528,7 +551,8 @@ function mergeIdCollection(base, local, remote, path, conflicts, resolutions = n
       itemPath,
       localHas ? localValue : undefined,
       remoteHas ? remoteValue : undefined,
-      resolutions
+      resolutions,
+      conflictPolicy
     );
     if (selected.selected) {
       if (typeof selected.value !== 'undefined') merged.set(id, selected.value);
@@ -553,13 +577,22 @@ function latestTimestamp(...values) {
     .at(-1);
 }
 
-function mergeValue(base, local, remote, path, conflicts, resolutions = null) {
+function mergeValue(
+  base,
+  local,
+  remote,
+  path,
+  conflicts,
+  resolutions = null,
+  conflictPolicy = 'manual'
+) {
   if (deepEqual(local, remote)) return cloneJson(local);
   if (deepEqual(local, base)) return cloneJson(remote);
   if (deepEqual(remote, base)) return cloneJson(local);
 
   if (
     isAutomaticMergePath(path) &&
+    !prefersLocalConflicts(conflictPolicy) &&
     !(isPlainObject(base) && isPlainObject(local) && isPlainObject(remote))
   ) {
     return automaticMergeValue(path, base, local, remote);
@@ -577,7 +610,8 @@ function mergeValue(base, local, remote, path, conflicts, resolutions = null) {
         remote[key],
         path ? `${path}.${key}` : key,
         conflicts,
-        resolutions
+        resolutions,
+        conflictPolicy
       );
       if (typeof merged !== 'undefined') result[key] = merged;
     }
@@ -590,10 +624,10 @@ function mergeValue(base, local, remote, path, conflicts, resolutions = null) {
     Array.isArray(remote) &&
     isIdCollection([base, local, remote])
   ) {
-    return mergeIdCollection(base, local, remote, path, conflicts, resolutions);
+    return mergeIdCollection(base, local, remote, path, conflicts, resolutions, conflictPolicy);
   }
 
-  const selected = selectedConflictValue(path || '$', local, remote, resolutions);
+  const selected = selectedConflictValue(path || '$', local, remote, resolutions, conflictPolicy);
   if (selected.selected) return selected.value;
   conflicts.push(conflict(path, 'both_changed'));
   return cloneJson(local);
@@ -607,7 +641,14 @@ function deterministicTransactionOrder(left, right) {
   return normalizedId(left && left.id).localeCompare(normalizedId(right && right.id));
 }
 
-function mergeIdCollectionWithoutBase(local, remote, path, conflicts, resolutions = null) {
+function mergeIdCollectionWithoutBase(
+  local,
+  remote,
+  path,
+  conflicts,
+  resolutions = null,
+  conflictPolicy = 'manual'
+) {
   const localMap = itemMap(local);
   const remoteMap = itemMap(remote);
   const ids = new Set([...localMap.keys(), ...remoteMap.keys()]);
@@ -628,14 +669,20 @@ function mergeIdCollectionWithoutBase(local, remote, path, conflicts, resolution
       merged.set(id, withMergedEntityBookkeeping(localValue, localValue, remoteValue));
       continue;
     }
-    if (isAutomaticCollectionPath(path)) {
+    if (isAutomaticCollectionPath(path) && !prefersLocalConflicts(conflictPolicy)) {
       const automaticValue = preferredAutomaticValue(localValue, remoteValue);
       merged.set(id, withMergedEntityBookkeeping(automaticValue, localValue, remoteValue));
       continue;
     }
 
     const itemPath = `${path}[${JSON.stringify(id)}]`;
-    const selected = selectedConflictValue(itemPath, localValue, remoteValue, resolutions);
+    const selected = selectedConflictValue(
+      itemPath,
+      localValue,
+      remoteValue,
+      resolutions,
+      conflictPolicy
+    );
     if (selected.selected) {
       if (typeof selected.value !== 'undefined') merged.set(id, selected.value);
       continue;
@@ -650,12 +697,23 @@ function mergeIdCollectionWithoutBase(local, remote, path, conflicts, resolution
   return [...new Set([...remoteOrder, ...localAdditions])].map((id) => merged.get(id));
 }
 
-function mergeWithoutBaseValue(local, remote, path, conflicts, resolutions = null) {
+function mergeWithoutBaseValue(
+  local,
+  remote,
+  path,
+  conflicts,
+  resolutions = null,
+  conflictPolicy = 'manual'
+) {
   if (deepEqual(local, remote)) return cloneJson(local);
   if (typeof local === 'undefined') return cloneJson(remote);
   if (typeof remote === 'undefined') return cloneJson(local);
 
-  if (isAutomaticMergePath(path) && !(isPlainObject(local) && isPlainObject(remote))) {
+  if (
+    isAutomaticMergePath(path) &&
+    !prefersLocalConflicts(conflictPolicy) &&
+    !(isPlainObject(local) && isPlainObject(remote))
+  ) {
     return automaticMergeValue(path, undefined, local, remote);
   }
 
@@ -668,7 +726,8 @@ function mergeWithoutBaseValue(local, remote, path, conflicts, resolutions = nul
         remote[key],
         path ? `${path}.${key}` : key,
         conflicts,
-        resolutions
+        resolutions,
+        conflictPolicy
       );
       if (typeof merged !== 'undefined') result[key] = merged;
     }
@@ -676,18 +735,25 @@ function mergeWithoutBaseValue(local, remote, path, conflicts, resolutions = nul
   }
 
   if (Array.isArray(local) && Array.isArray(remote) && isIdCollection([local, remote])) {
-    return mergeIdCollectionWithoutBase(local, remote, path, conflicts, resolutions);
+    return mergeIdCollectionWithoutBase(
+      local,
+      remote,
+      path,
+      conflicts,
+      resolutions,
+      conflictPolicy
+    );
   }
 
-  const selected = selectedConflictValue(path || '$', local, remote, resolutions);
+  const selected = selectedConflictValue(path || '$', local, remote, resolutions, conflictPolicy);
   if (selected.selected) return selected.value;
   conflicts.push(conflict(path, 'copies_differ_without_base'));
   return cloneJson(local);
 }
 
-function mergeWithoutBaseSnapshots(local, remote, resolutions = null) {
+function mergeWithoutBaseSnapshots(local, remote, resolutions = null, conflictPolicy = 'manual') {
   const conflicts = [];
-  const workbook = mergeWithoutBaseValue(local, remote, '', conflicts, resolutions);
+  const workbook = mergeWithoutBaseValue(local, remote, '', conflicts, resolutions, conflictPolicy);
   if (conflicts.length) {
     return {
       ok: false,
@@ -710,14 +776,21 @@ function mergeWithoutBaseSnapshots(local, remote, resolutions = null) {
 /**
  * Three-way merges two independently edited workbook snapshots. Collections
  * with stable IDs merge additions and one-sided edits/deletes. The same entity
- * changed differently on both devices remains an explicit conflict so Cavalry
- * never invents a financial result.
+ * changed differently on both devices remains an explicit conflict by default
+ * so Cavalry never invents a financial result. The opt-in `prefer_local` policy
+ * treats this invocation as the later server-ordered write and selects the
+ * complete local entity/value for overlaps without consulting client clocks.
  *
  * A missing base is supported only for legacy sync anchors. In that mode the
  * service performs a no-loss union, auto-resolves bookkeeping and device UI
  * metadata, and asks only about meaningful values that genuinely disagree.
  */
-export function mergeWorkbookSnapshots({ base = null, local, remote } = {}) {
+export function mergeWorkbookSnapshots({
+  base = null,
+  local,
+  remote,
+  conflictPolicy = 'manual'
+} = {}) {
   if (!(isPlainObject(local) && isPlainObject(remote))) {
     return { ok: false, conflicts: [conflict('$', 'invalid_workbook')] };
   }
@@ -726,13 +799,13 @@ export function mergeWorkbookSnapshots({ base = null, local, remote } = {}) {
   if (!localId || localId !== remoteId) {
     return { ok: false, conflicts: [conflict('id', 'workbook_identity_mismatch')] };
   }
-  if (!base) return mergeWithoutBaseSnapshots(local, remote);
+  if (!base) return mergeWithoutBaseSnapshots(local, remote, null, conflictPolicy);
   if (!isPlainObject(base) || normalizedId(base.id) !== localId) {
     return { ok: false, conflicts: [conflict('id', 'merge_base_mismatch')] };
   }
 
   const conflicts = [];
-  const workbook = mergeValue(base, local, remote, '', conflicts);
+  const workbook = mergeValue(base, local, remote, '', conflicts, null, conflictPolicy);
   if (conflicts.length) {
     return {
       ok: false,
