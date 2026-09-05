@@ -170,6 +170,29 @@ describe('CloudKit selected-account routing', () => {
     expect(h.disk.get('browser-session:owner-b')).toBe(null);
   });
 
+  it('removes temporary authentication credentials after selection, cancellation and sign-out', async () => {
+    for (const owner of ['owner-b', null]) {
+      const h = harness();
+      const router = createCloudKitAccountRouter({
+        ...h.options,
+        authenticate: async () => {
+          h.disk.set('browser-candidate', { token: 'temporary-test-session' });
+          return owner;
+        }
+      });
+      await router.selectAccount({ source: 'browser' });
+      expect(h.disk.has('browser-candidate')).toBe(false);
+      if (owner) {
+        expect(h.disk.get('browser-session:owner-b').token).toBe('owner-b');
+        // An interrupted older sign-in may have left its scratch session.
+        h.disk.set('browser-candidate', { token: 'interrupted-test-session' });
+        expect((await router.signOut()).ok).toBe(true);
+        expect(h.disk.has('browser-candidate')).toBe(false);
+        expect(h.disk.get('browser-session:owner-b')).toBe(null);
+      }
+    }
+  });
+
   it('preserves the previous browser session if selecting a new owner fails to persist', async () => {
     const h = harness();
     await h.router.selectAccount({ source: 'browser' });

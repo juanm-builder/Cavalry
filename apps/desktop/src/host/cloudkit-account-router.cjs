@@ -486,6 +486,9 @@ function createCloudKitAccountRouter(options) {
         try {
           return await choose(source);
         } finally {
+          // Scratch authentication is never a resumable account. Only the
+          // verified owner's committed session may survive this attempt.
+          await storage.remove?.('browser-candidate').catch(() => undefined);
           authenticationController = null;
           authenticationCommitting = false;
         }
@@ -506,6 +509,7 @@ function createCloudKitAccountRouter(options) {
         await saveSelection({ ...selection, signedOut: true, paused: false });
         if (selection.source === 'browser' && selection.userId)
           await storage.write(`browser-session:${selection.userId}`, null);
+        await storage.remove?.('browser-candidate');
         return {
           ok: true,
           account: { status: 'no_account', userId: null },
