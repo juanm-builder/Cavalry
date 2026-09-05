@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <title>Choose your iCloud account · Cavalry</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./bridge.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="mark" aria-hidden="true">C</span> Cavalry</div>
+      <p class="eyebrow">Account &amp; sync</p>
+      <h1>Choose your iCloud account</h1>
+      <p class="description">
+        Continue to Apple and choose the account for your Cavalry workbooks. This changes the
+        account Cavalry uses, while your Mac stays signed in to its current Apple Account.
+      </p>
+      <div class="actions">
+        <button id="continue" type="button" disabled>Continue to Apple</button>
+        <button id="cancel" type="button" class="secondary" disabled>Cancel</button>
+      </div>
+      <p id="status" role="status" aria-live="polite">Connecting to Cavalry…</p>
+      <p class="footnote">Keep this page open until Cavalry receives your sign-in.</p>
+      <noscript
+        ><p>JavaScript is required. Return to Cavalry and try signing in again.</p></noscript
+      >
+    </main>
+  </body>
+</html>
