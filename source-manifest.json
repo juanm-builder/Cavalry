@@ -1,10 +1,10 @@
 {
   "sourceRepository": "https://github.com/juanm-builder/Cavalry",
   "sourceBranch": "codex/icloud-account-selection",
-  "sourceCommit": "55b9aedbc1b7dbc6075a61c4b7edea835a747137",
+  "sourceCommit": "5e1f0ee97ef2f9a6726280808e9289c36ed5c2fe",
   "files": {
-    "index.html": "5ff2cdc64d3a0986cb796fe57ff3ea3779f02b3d5fb5e47b4f62cb1e453f078b",
-    "bridge.js": "9c95383a025805a0dae0646157c7fc58d269aeed7705b301b517215b47366ade",
+    "index.html": "279ddabf60c93cab0dde3dea4cd1d92a6c80d0ef6155ab6029823494fc6e4463",
+    "bridge.js": "e147313aeb290e55c8e9ee8c1a5b58105ffc23a2d5e8d794f9289b2d49a9fb55",
     "style.css": "20175fc921c3d8e61d25a991ab7fbbc0d41edcb767e304fa3a53cd2f4ba8a66e"
   }
 }

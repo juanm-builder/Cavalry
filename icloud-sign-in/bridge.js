@@ -11,7 +11,8 @@
   ];
   const APPLE_CALLBACK_ORIGINS = [
     ...APPLE_AUTH_HOSTS.map((host) => `https://${host}`),
-    'https://api.apple-cloudkit.com'
+    'https://api.apple-cloudkit.com',
+    'https://cdn.apple-cloudkit.com'
   ];
   const start = document.getElementById('continue');
   const cancel = document.getElementById('cancel');
