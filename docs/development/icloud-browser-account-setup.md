@@ -63,6 +63,10 @@ The local page opens the fixed HTTPS bridge with a random nonce in its fragment.
 The bridge removes that fragment immediately and uses a nonce-bound handshake
 with the exact local opener before enabling its Apple sign-in button. It accepts
 Apple's result only from the exact Apple popup and approved Apple HTTPS origins.
+Those callback origins include `https://cdn.apple-cloudkit.com`: the live Firefox
+diagnostic on 2026-09-06 received a valid-shaped `ckSession` from that exact origin
+and expected popup. This callback permission does not allow starting sign-in at
+the CDN or at other Apple subdomains.
 It relays the token in memory through `postMessage`; the local page checks the
 HTTPS origin, popup source, nonce and protocol state, then uses a same-origin
 POST. Cancellation, expiry and duplicate callbacks cannot complete another

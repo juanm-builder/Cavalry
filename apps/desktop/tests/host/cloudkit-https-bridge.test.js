@@ -202,6 +202,7 @@ test('rejects redirect URLs outside the native Apple authentication allowlist', 
     'https://idmsa.apple.com.attacker.example/signin',
     'https://attacker.example/idmsa.apple.com',
     'https://api.apple-cloudkit.com/signin',
+    'https://cdn.apple-cloudkit.com/signin',
     'https://idmsa.apple.com:8443/signin',
     credentials.href,
     'javascript:alert(1)',
@@ -289,7 +290,8 @@ test('each trusted Apple origin can return either documented token field', () =>
     'https://account.apple.com',
     'https://www.icloud.com',
     'https://icloud.com',
-    'https://api.apple-cloudkit.com'
+    'https://api.apple-cloudkit.com',
+    'https://cdn.apple-cloudkit.com'
   ]) {
     for (const field of ['ckSession', 'ckWebAuthToken']) {
       const bridge = page();
@@ -302,6 +304,35 @@ test('each trusted Apple origin can return either documented token field', () =>
       });
     }
   }
+});
+
+test('the observed Apple CDN callback requires its exact HTTPS origin and original popup', () => {
+  const bridge = page();
+  bridge.init();
+  bridge.click('continue');
+  const session = { ckSession: 'example-cdn-session' };
+  const origin = 'https://cdn.apple-cloudkit.com';
+  bridge.message(session, origin, {});
+  bridge.message(session, origin, bridge.opener);
+  for (const untrustedOrigin of [
+    'http://cdn.apple-cloudkit.com',
+    'https://cdn.apple-cloudkit.com:8443',
+    'https://cdn.apple-cloudkit.com.attacker.example',
+    'https://other.cdn.apple-cloudkit.com',
+    'https://cdn-apple-cloudkit.com'
+  ]) {
+    bridge.apple(session, untrustedOrigin);
+    assert.equal(bridge.outgoing.length, 1, untrustedOrigin);
+  }
+  bridge.apple(session, origin);
+  assert.deepEqual(bridge.outgoing[1], {
+    data: { type: 'cavalry-icloud-complete', nonce: NONCE, token: session.ckSession },
+    origin: LOCAL_ORIGIN
+  });
+  bridge.popup.closed = true;
+  [...bridge.intervals.values()][0].callback();
+  assert.equal(bridge.outgoing.length, 2);
+  assert.equal(bridge.outgoing[1].data.type, 'cavalry-icloud-complete');
 });
 
 test('invalid or oversized tokens are rejected before a single bounded relay', () => {
