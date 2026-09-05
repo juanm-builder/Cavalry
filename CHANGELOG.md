@@ -2,7 +2,7 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
-## 2.2.8 - 2026-09-05
+## 2.2.9 - 2026-09-05
 
 ### Added
 
@@ -22,6 +22,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 - Updating, quitting, and reloading now wait for the latest workbook save. A failed save keeps
   Cavalry open and explains the problem; updates save again after installation before restarting.
 - Local save success now requires a durable Mac copy, including workbooks without an exported file.
+- Recovery saves record their version order explicitly. A clock correction or restored file timestamp
+  cannot cause retention cleanup to delete the newest acknowledged save or reopen an older version.
 - CloudKit writes use separate payload files and atomic state commits, preserving the previous
   payload while a newer save is being committed. Failed local sync-state writes are reported.
 - Development iCloud libraries are explicitly identified as test libraries, and production mobile
@@ -29,6 +31,8 @@ Notable user-visible and compatibility-relevant changes are recorded here. Relea
 
 ### Compatibility and release notes
 
+- Version 2.2.8 remained an unpublished draft after a final recovery ordering check found a defect.
+  Version 2.2.9 includes the correction and is the first published release of these recovery changes.
 - Existing workbook IDs, portable HTML files, and the shared CloudKit container remain compatible.
   Saved local data is adopted without requiring a new workbook or a new iCloud account. Retained
   history starts as this version saves workbooks; it cannot recreate data absent from every copy.

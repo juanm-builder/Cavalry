@@ -1,7 +1,7 @@
 # Workbook storage and recovery
 
 Cavalry keeps a local workbook on each device so you can continue working offline. iCloud is an
-additional synchronized copy. Starting with Mac 2.2.8 and iPhone 1.0.1, both apps also retain recent
+additional synchronized copy. Starting with Mac 2.2.9 and iPhone 1.0.1, both apps also retain recent
 local saved versions to help recover from an interrupted or damaged save.
 
 ## Where to find your workbook
@@ -54,7 +54,8 @@ file in iCloud Drive alone does not mean the private Cavalry iCloud workbook was
 
 The Mac library lives under
 `~/Library/Application Support/Cavalry for Mac/Workbook Recovery`, outside the `.app` that updates
-replace. Each workbook keeps up to 30 distinct recent validated HTML saves. The iPhone repository
+replace. Each workbook keeps up to 30 distinct recent validated HTML saves. An atomic per-workbook
+record tracks their order independently of the system clock and filesystem timestamps. The iPhone repository
 keeps the latest 10 distinct saved versions per workbook in its local database. Retention starts
 with saves made by these versions; it cannot recreate historical copies that were never retained.
 
