@@ -41,11 +41,11 @@
     "release:security": "node tools/release/security-check.mjs"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.0.0",
-    "@testing-library/user-event": "^14.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "eslint": "^10.8.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.0.0",
     "globals": "^16.0.0",
     "jsdom": "^26.0.0",
@@ -54,7 +54,7 @@
     "react-dom": "^19.2.8",
     "typescript": "^7.0.2",
     "vite": "7.3.6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22"
