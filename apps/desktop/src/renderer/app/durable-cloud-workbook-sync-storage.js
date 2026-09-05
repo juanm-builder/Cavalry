@@ -1,6 +1,7 @@
 import {
   cloudWorkbookAutoSyncStorageKey,
   cloudWorkbookSyncStorageKey,
+  defaultCloudWorkbookAutoSyncPreference,
   parseCloudWorkbookAutoSyncPreferenceValue,
   parseCloudWorkbookSyncStateValue
 } from './cloud-workbook-sync-state.js';
@@ -151,7 +152,7 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
       : null;
     const preference = rawPreference
       ? parseCloudWorkbookAutoSyncPreferenceValue(rawPreference)
-      : { version: 1, enabled: true };
+      : { version: 1, enabled: defaultCloudWorkbookAutoSyncPreference(entry.scope.workbookId) };
     if ((rawSyncState && !syncState) || !preference) return null;
     return {
       workbookId: entry.scope.workbookId,
@@ -291,7 +292,13 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
           readLegacy(entry.scope.preferenceStorageKey)
         );
         if (legacySyncState || legacyPreference) {
-          seed(entry, legacySyncState, legacyPreference ? legacyPreference.enabled : true);
+          seed(
+            entry,
+            legacySyncState,
+            legacyPreference
+              ? legacyPreference.enabled
+              : defaultCloudWorkbookAutoSyncPreference(entry.scope.workbookId)
+          );
         }
         const failure = durableFailure(loaded);
         entry.status = 'error';
@@ -317,7 +324,9 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
         return failure;
       }
 
-      const autoSyncEnabled = legacyPreference ? legacyPreference.enabled : true;
+      const autoSyncEnabled = legacyPreference
+        ? legacyPreference.enabled
+        : defaultCloudWorkbookAutoSyncPreference(entry.scope.workbookId);
       seed(entry, legacySyncState, autoSyncEnabled);
       const persisted = await saveAndVerify(entry, legacySyncState, autoSyncEnabled);
       if (!(persisted && persisted.ok)) {

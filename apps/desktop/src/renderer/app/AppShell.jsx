@@ -168,6 +168,10 @@ function SessionContent({ routeId, routeModels, onAction }) {
         error={state.hydration.error}
         onOpen={openWorkbook}
         onRetry={retryHydration}
+        onOpenRecent={openRecentWorkbook}
+        recentWorkbooks={recentWorkbooks}
+        cloud={application.cloud.model}
+        onCloudAction={application.cloud.execute}
       />
     );
   }

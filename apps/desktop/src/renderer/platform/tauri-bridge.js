@@ -1,5 +1,6 @@
 import { getCavalryHostBroker, openExternalUrl } from './tauri-host-broker.js';
 import { createTauriUpdateBridge } from './tauri-updates.js';
+import { createTauriLifecycleBridge } from './tauri-lifecycle.js';
 
 const invoke = (channel, payload) => getCavalryHostBroker().invoke(channel, payload || {});
 const subscribe = (channel, callback) => getCavalryHostBroker().subscribe(channel, callback);
@@ -79,14 +80,24 @@ async function openMicrophoneSettings() {
 }
 
 export function createTauriBridge() {
-  const updates = createTauriUpdateBridge();
+  const lifecycle = createTauriLifecycleBridge();
+  const updates = createTauriUpdateBridge({ beforeExit: lifecycle.prepareToExit });
   const broker = getCavalryHostBroker();
   broker.subscribe('cavalry-command', (command) => {
     if (command === 'check-for-updates') void updates.checkForUpdates();
+    if (command === 'reload-window') {
+      void lifecycle
+        .prepareToExit('reload')
+        .then(() => globalThis.location.reload())
+        .catch(() => {});
+    }
   });
 
   return Object.freeze({
     files: {
+      loadRecoveryWorkbook: () => invoke('cavalry-files:recovery-load'),
+      saveRecoveryWorkbook: (payload) => invoke('cavalry-files:recovery-save', payload),
+      clearRecoveryWorkbook: () => invoke('cavalry-files:recovery-clear'),
       getActiveWorkbookFile: () => invoke('cavalry-files:get-active'),
       listRecentWorkbooks: () => invoke('cavalry-files:list-recent'),
       openRecentWorkbook: (payload) => invoke('cavalry-files:open-recent', payload),
@@ -147,6 +158,7 @@ export function createTauriBridge() {
       removeSyncState: (payload) => invoke('cavalry-cloud:remove-sync-state', payload),
       onStateChanged: (callback) => subscribe('cavalry-cloud:state-changed', callback)
     },
-    updates
+    updates,
+    lifecycle
   });
 }

@@ -2,6 +2,11 @@
 
 Cavalry is local-first on both iPhone and Mac. Each app keeps its own usable local copy; a private CloudKit database carries validated workbook snapshots between devices when connectivity is available. The HTML workbook remains the portable import/export format, not the live shared database.
 
+Open synchronized workbooks inside Cavalry's iCloud library. Private CloudKit records do not appear
+as files in iCloud Drive. Use **Save Workbook As…** on Mac or **Files & Data → Export Copy → Save
+to Files** on iPhone to create a separate portable file. See
+[workbook storage and recovery](workbook-recovery.md) for retained local versions and update migration.
+
 ## Shared Apple identity
 
 - iPhone bundle identifier: `com.juanmbuilder.cavalry.ios`

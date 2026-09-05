@@ -38,6 +38,13 @@ unsafe extern "C" {
 static CLOUDKIT_HOST_STATE: OnceLock<Arc<HostState>> = OnceLock::new();
 
 #[derive(Default)]
+struct ExitState {
+    ready: AtomicBool,
+    pending: AtomicBool,
+    approved: AtomicBool,
+}
+
+#[derive(Default)]
 struct HostState {
     child: Mutex<Option<CommandChild>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Value>>>,
@@ -216,7 +223,31 @@ extern "C" fn handle_cloudkit_event(raw_event: *const c_char) {
 
 #[tauri::command]
 fn relaunch_app(app: tauri::AppHandle) {
+    // The renderer awaits its workbook save guard before invoking this command.
+    app.state::<ExitState>()
+        .approved
+        .store(true, Ordering::Release);
     app.restart();
+}
+
+#[tauri::command]
+fn enable_exit_guard(app: tauri::AppHandle, state: tauri::State<'_, ExitState>) {
+    state.ready.store(true, Ordering::Release);
+    // A quit requested while the WebView was reloading must reach the new listener.
+    if state.pending.load(Ordering::Acquire) {
+        let _ = app.emit("cavalry-before-exit", ());
+    }
+}
+
+#[tauri::command]
+fn complete_exit(app: tauri::AppHandle, state: tauri::State<'_, ExitState>, allow: bool) {
+    if !state.pending.swap(false, Ordering::AcqRel) {
+        return;
+    }
+    if allow {
+        state.approved.store(true, Ordering::Release);
+        app.exit(0);
+    }
 }
 
 fn legacy_user_data_dir() -> String {
@@ -434,9 +465,6 @@ fn handle_menu<R: Runtime>(app: &tauri::AppHandle<R>, id: &str) {
         return;
     };
     match id {
-        "reload-window" => {
-            let _ = window.eval("window.location.reload()");
-        }
         "toggle-fullscreen" => {
             let fullscreen = window.is_fullscreen().unwrap_or(false);
             let _ = window.set_fullscreen(!fullscreen);
@@ -473,11 +501,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(managed_state)
+        .manage(ExitState::default())
         .invoke_handler(tauri::generate_handler![
             cloudkit_request,
             host_invoke,
             host_native_response,
-            relaunch_app
+            relaunch_app,
+            enable_exit_guard,
+            complete_exit
         ])
         .setup(move |app| {
             install_menu(app)?;
@@ -500,7 +531,19 @@ pub fn run() {
     app.run(|app_handle, event| match event {
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => show_main_window(app_handle),
-        tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            let state = app_handle.state::<ExitState>();
+            if state.ready.load(Ordering::Acquire) && !state.approved.load(Ordering::Acquire) {
+                api.prevent_exit();
+                show_main_window(app_handle);
+                if !state.pending.swap(true, Ordering::AcqRel)
+                    && app_handle.emit("cavalry-before-exit", ()).is_err()
+                {
+                    state.pending.store(false, Ordering::Release);
+                }
+            }
+        }
+        tauri::RunEvent::Exit => {
             if let Some(state) = app_handle.try_state::<Arc<HostState>>() {
                 let _ = state.write(&json!({
                     "version": PROTOCOL_VERSION,

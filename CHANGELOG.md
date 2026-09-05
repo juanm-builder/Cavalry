@@ -2,6 +2,46 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.8 - 2026-09-05
+
+### Added
+
+- Workbooks now have a durable library on the Mac, outside the application and its WebView cache,
+  with up to 30 distinct recent saved copies per workbook. Saved workbooks remain discoverable in
+  Recent workbooks even when the selected-workbook pointer or an exported file is unavailable.
+- Startup validates saved copies and can recover an earlier verified copy when the latest copy is
+  damaged. An older recovered version opens as a separate **(Recovered)** workbook with iCloud
+  autosave off; recovery errors remain visible and original copies are retained.
+- Readable snapshots from the older local Production iCloud cache are discoverable for explicit
+  recovery. Opening one creates a separate local copy without modifying the old cache or cloud copy.
+- Added [workbook storage and recovery guidance](docs/features/workbook-recovery.md), including
+  where to find iCloud workbooks and how to export an independent file.
+
+### Fixed
+
+- Updating, quitting, and reloading now wait for the latest workbook save. A failed save keeps
+  Cavalry open and explains the problem; updates save again after installation before restarting.
+- Local save success now requires a durable Mac copy, including workbooks without an exported file.
+- CloudKit writes use separate payload files and atomic state commits, preserving the previous
+  payload while a newer save is being committed. Failed local sync-state writes are reported.
+- Development iCloud libraries are explicitly identified as test libraries, and production mobile
+  build profiles reject a Development environment override.
+
+### Compatibility and release notes
+
+- Existing workbook IDs, portable HTML files, and the shared CloudKit container remain compatible.
+  Saved local data is adopted without requiring a new workbook or a new iCloud account. Retained
+  history starts as this version saves workbooks; it cannot recreate data absent from every copy.
+- iCloud workbooks are opened inside Cavalry. They are private CloudKit records and do not appear
+  as files in iCloud Drive unless the user exports a copy there.
+- Signed Mac 2.2.7 and iOS 1.0.0 (17) artifacts were verified to use the same Production environment,
+  container, and Apple team. The reported differing account references have not been reproduced on
+  the affected devices; this release adds accurate environment diagnostics without inventing a
+  shared account reference.
+- The matching iPhone update is 1.0.1 through TestFlight, with explicit startup recovery and the
+  latest 10 distinct saved versions per workbook. Final signing, artifact certification, source
+  commit, and validation evidence belong to the immutable GitHub release record.
+
 ## 2.2.5 - 2026-08-31
 
 ### Added

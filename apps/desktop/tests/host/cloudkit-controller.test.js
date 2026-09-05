@@ -1,6 +1,7 @@
 import { createWorkbook } from '@cavalry/finance-core';
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
+import { normalizeCloudState } from '../../src/renderer/app/cloud-workbook-model.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -60,6 +61,29 @@ function conflictNoticeFixture() {
 }
 
 describe('native CloudKit workbook boundary', () => {
+  it('preserves the native owner through the host and renderer account model', async () => {
+    const rawIdentity = '_1234567890abcdef1234567890abcdef';
+    const controller = createCloudController({
+      assertTrustedSender: vi.fn(),
+      cloudKit: {
+        request: async ({ operation }) =>
+          operation === 'list'
+            ? { ok: true, workbooks: [], pendingCount: 0 }
+            : {
+                ok: true,
+                account: { status: 'available', userId: rawIdentity },
+                cloudEnvironment: 'Production',
+                pendingCount: 0
+              }
+      }
+    });
+    await controller.initialize();
+    const state = normalizeCloudState(controller.getState());
+    expect(state.user.id).toBe(rawIdentity);
+    expect(state.cloudEnvironment).toBe('Production');
+    controller.dispose();
+  });
+
   it('disconnects and reconnects through trusted native IPC without deleting data', async () => {
     const handlers = new Map();
     let enabled = true;

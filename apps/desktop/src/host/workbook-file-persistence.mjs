@@ -9,6 +9,10 @@ import {
 
 const pendingWritesByFileSystem = new WeakMap();
 
+export function getWorkbookIdentityFromText(text) {
+  return deserializeWorkbookFromFile(text, { rejectInvalid: true }).workbook.id;
+}
+
 async function fileExists(filePath, fileSystem) {
   try {
     await fileSystem.access(filePath);
@@ -132,7 +136,13 @@ async function writeWorkbookFile(filePath, text, options) {
   );
 
   try {
-    await fileSystem.writeFile(tempPath, String(text || ''), 'utf8');
+    const handle = await fileSystem.open(tempPath, 'w', 0o600);
+    try {
+      await handle.writeFile(String(text || ''), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     if (typeof options.beforeRename === 'function') {
       await options.beforeRename({
         targetPath,
@@ -141,6 +151,12 @@ async function writeWorkbookFile(filePath, text, options) {
       });
     }
     await fileSystem.rename(tempPath, targetPath);
+    const directory = await fileSystem.open(pathApi.dirname(targetPath), 'r');
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   } catch (error) {
     try {
       await fileSystem.rm(tempPath, { force: true });

@@ -542,61 +542,75 @@ describe('cloud workbook controller interactions', () => {
     );
   });
 
-  it('keeps automatic enrollment and post-save upload off while manual Add remains available', async () => {
-    const timers = createAutoSyncTimers();
-    const workbook = { id: 'local-plan', name: 'Main Plan' };
-    const initialState = { ...signedInState(), workbooks: [] };
-    const metadata = { ...workbook, revision: 1 };
-    const cloud = {
-      invoke: vi.fn(async (command) => {
-        if (command === 'getState') return { ok: true, state: initialState };
-        if (command === 'uploadWorkbook') {
-          return {
-            ok: true,
-            metadata,
-            state: { ...signedInState(), workbooks: [metadata] }
-          };
-        }
-        return { ok: true, state: initialState };
-      }),
-      subscribe: () => () => {}
-    };
-    const syncStorage = createSyncStorage();
-    writeCloudWorkbookAutoSyncPreference(syncStorage, 'user-1', workbook.id, false);
-    const hook = renderHook(
-      ({ currentWorkbook, localSaveSequence }) =>
-        useCloudWorkbookController({
-          cloud,
-          workbook: currentWorkbook,
-          saveStatus: 'saved',
-          localSaveSequence,
-          syncStorage,
-          autoSyncSchedulerOptions: timers.options
+  it.each([
+    { id: 'local-plan', explicitPause: true },
+    { id: 'workbook-recovered-historical-copy', explicitPause: false }
+  ])(
+    'keeps $id local through startup and later saves while manual Add remains available',
+    async ({ id, explicitPause }) => {
+      const timers = createAutoSyncTimers();
+      const workbook = { id, name: 'Main Plan' };
+      const initialState = signedInState();
+      const metadata = { ...workbook, revision: 1 };
+      const cloud = {
+        invoke: vi.fn(async (command) => {
+          if (command === 'getState') return { ok: true, state: initialState };
+          if (command === 'uploadWorkbook') {
+            return {
+              ok: true,
+              metadata,
+              state: { ...signedInState(), workbooks: [metadata] }
+            };
+          }
+          return { ok: true, state: initialState };
         }),
-      { initialProps: { currentWorkbook: workbook, localSaveSequence: 0 } }
-    );
+        subscribe: () => () => {}
+      };
+      // The original workbook has a valid anchor. A recovered copy must never
+      // apply its older content to that server record or automatically enroll.
+      const original = syncWorkbook('Current original');
+      const syncStorage = createSyncStorage(2, false, original);
+      if (explicitPause)
+        writeCloudWorkbookAutoSyncPreference(syncStorage, 'user-1', workbook.id, false);
+      const hook = renderHook(
+        ({ currentWorkbook, localSaveSequence }) =>
+          useCloudWorkbookController({
+            cloud,
+            workbook: currentWorkbook,
+            saveStatus: 'saved',
+            localSaveSequence,
+            syncStorage,
+            autoSyncSchedulerOptions: timers.options
+          }),
+        { initialProps: { currentWorkbook: workbook, localSaveSequence: 0 } }
+      );
 
-    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
-    expect(hook.result.current.model.current.autoSyncEnabled).toBe(false);
-    expect(timers.hasPending()).toBe(false);
+      await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+      expect(hook.result.current.model.current.autoSyncEnabled).toBe(false);
+      expect(timers.hasPending()).toBe(false);
 
-    hook.rerender({
-      currentWorkbook: { ...workbook, name: 'Saved while paused' },
-      localSaveSequence: 1
-    });
-    await act(async () => Promise.resolve());
-    expect(timers.hasPending()).toBe(false);
-    expect(cloud.invoke).not.toHaveBeenCalledWith('uploadWorkbook', expect.anything());
+      hook.rerender({
+        currentWorkbook: { ...workbook, name: 'Saved while paused' },
+        localSaveSequence: 1
+      });
+      await act(async () => Promise.resolve());
+      expect(timers.hasPending()).toBe(false);
+      expect(cloud.invoke).not.toHaveBeenCalledWith('uploadWorkbook', expect.anything());
 
-    await act(async () => {
-      await hook.result.current.execute('upload');
-    });
-    expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
-      workbook: { ...workbook, name: 'Saved while paused' },
-      expectedRevision: null
-    });
-    expect(hook.result.current.model.current.autoSyncEnabled).toBe(false);
-  });
+      await act(async () => {
+        await hook.result.current.execute('upload');
+      });
+      expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        workbook: { ...workbook, name: 'Saved while paused' },
+        expectedRevision: null
+      });
+      expect(hook.result.current.model.current.autoSyncEnabled).toBe(false);
+      expect(readCloudWorkbookSyncState(syncStorage, 'user-1', original.id)).toMatchObject({
+        revision: 2,
+        baseWorkbook: original
+      });
+    }
+  );
 
   it('resumes automatic sync when the persistent workbook preference is turned back on', async () => {
     const timers = createAutoSyncTimers();

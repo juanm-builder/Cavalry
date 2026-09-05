@@ -232,6 +232,9 @@ jobs:
           node apps/desktop/scripts/sidecar-smoke.mjs \
             --binary "$sidecar" \
             --expect-icloud-enabled
+          # Exercise the signed architecture's real bundled persistence and IPC
+          # through forced process death, relaunch, and clearing only selection.
+          node apps/desktop/scripts/workbook-recovery-smoke.mjs --binary "$sidecar"
 
       - name: Notarize and staple the DMG
         shell: bash

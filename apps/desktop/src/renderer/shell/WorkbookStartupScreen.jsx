@@ -36,7 +36,7 @@ function cloudText(value) {
 
 function RecentWorkbookLibrary({ recent: rawRecent, onOpenRecent }) {
   const recent = rawRecent && typeof rawRecent === 'object' ? rawRecent : {};
-  const items = Array.isArray(recent.items) ? recent.items.slice(0, 5) : [];
+  const items = Array.isArray(recent.items) ? recent.items : [];
   const openingId = cloudText(recent.openingId);
   const loading = recent.status === 'loading';
 
@@ -413,7 +413,15 @@ export function WorkbookLoadingScreen({ message = 'Loading workbook…' }) {
   );
 }
 
-export function WorkbookErrorScreen({ error = 'Workbook could not be opened.', onRetry, onOpen }) {
+export function WorkbookErrorScreen({
+  error = 'Workbook could not be opened.',
+  onRetry,
+  onOpen,
+  recentWorkbooks,
+  onOpenRecent,
+  cloud,
+  onCloudAction
+}) {
   return (
     <main className="landing">
       <div className="landing-card">
@@ -438,6 +446,8 @@ export function WorkbookErrorScreen({ error = 'Workbook could not be opened.', o
             ) : null}
           </div>
         </div>
+        <RecentWorkbookLibrary recent={recentWorkbooks} onOpenRecent={onOpenRecent} />
+        <StartupCloudLibrary cloud={cloud} onCloudAction={onCloudAction} />
       </div>
     </main>
   );
@@ -448,9 +458,7 @@ export function WorkbookStartupScreen({ status = WORKBOOK_STARTUP_STATUS.EMPTY, 
     return <WorkbookLoadingScreen message={props.loadingMessage} />;
   }
   if (status === WORKBOOK_STARTUP_STATUS.ERROR) {
-    return (
-      <WorkbookErrorScreen error={props.error} onOpen={props.onOpen} onRetry={props.onRetry} />
-    );
+    return <WorkbookErrorScreen {...props} />;
   }
   return <WorkbookLandingScreen {...props} />;
 }

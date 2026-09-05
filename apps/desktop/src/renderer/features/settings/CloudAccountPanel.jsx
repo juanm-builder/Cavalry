@@ -173,6 +173,7 @@ function ICloudConnection({ cloud }) {
   const [copyNotice, setCopyNotice] = useState('');
   const signedIn = cloud.status === 'signed_in';
   const disconnected = cloud.status === 'disconnected';
+  const testLibrary = cloud.cloudEnvironment === 'Development';
   const accountReference = asString(asObject(cloud.user).id)
     .replace(/^_/, '')
     .slice(-12)
@@ -208,13 +209,21 @@ function ICloudConnection({ cloud }) {
           </strong>
           <p>
             {signedIn
-              ? 'Private iCloud library'
+              ? testLibrary
+                ? 'Test iCloud library'
+                : 'Private iCloud library'
               : disconnected
                 ? 'Local workbooks are available. Connect again to resume syncing.'
                 : 'Check iCloud in System Settings.'}
           </p>
         </div>
       </div>
+      {signedIn && testLibrary ? (
+        <p className="settings-cloud-account-notice" role="status">
+          This development build uses a separate test library. Use the released Mac app and
+          TestFlight app to see the same workbooks and account reference.
+        </p>
+      ) : null}
       <div className="settings-cloud-account-actions">
         <button
           className="btn"

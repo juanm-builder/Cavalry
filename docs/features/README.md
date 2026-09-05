@@ -16,7 +16,8 @@ The finance workflow is local-first: open or create a workbook, record balanced 
 See [Action Review](action-review.md) for the portable plan format,
 [Advisor acceptance](advisor-acceptance.md) for its safety contract,
 [AI Companion capabilities](ai-companion-capabilities.md) for the feature-tool registration contract,
-[iCloud workbook sync](icloud-sync.md) for Apple-device synchronization, and
+[iCloud workbook sync](icloud-sync.md) for Apple-device synchronization,
+[workbook storage and recovery](workbook-recovery.md) for local copies, migration, and exports, and
 [Companion trust architecture](companion-trust-architecture.md) for the streaming, action receipt,
 and local-memory boundaries.
 

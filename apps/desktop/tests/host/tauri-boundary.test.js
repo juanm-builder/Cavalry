@@ -103,7 +103,9 @@ describe('Tauri desktop security and compatibility boundary', () => {
     );
     expect(cloudKitStore).toContain('CavalryCloudKitEnvironment');
     expect(cloudKitStore).toContain('.appendingPathComponent("environments"');
-    expect(cloudKitStore).toContain('.appendingPathComponent("production"');
+    expect(cloudKitStore).toContain(
+      'configuredCloudEnvironment == "Invalid" ? "invalid" : "production"'
+    );
   });
 
   it('keeps manual CloudKit recovery bounded and cache-independent', () => {

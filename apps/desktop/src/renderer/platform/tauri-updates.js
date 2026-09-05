@@ -1,10 +1,17 @@
 import { getTauriGlobal } from './tauri-host-broker.js';
 
-export function createTauriUpdateBridge() {
-  let state = import.meta.env.DEV
+export function createTauriUpdateBridge({
+  beforeExit = async () => {
+    throw new Error('The workbook save guard is unavailable. Restart has been stopped.');
+  },
+  getTauri = getTauriGlobal,
+  enabled = !import.meta.env.DEV
+} = {}) {
+  let state = !enabled
     ? { enabled: false, status: 'disabled', error: '', sequence: 0 }
     : { enabled: true, status: 'idle', error: '', sequence: 0 };
   let update = null;
+  let restartPromise = null;
   const listeners = new Set();
 
   function publish(patch) {
@@ -17,7 +24,7 @@ export function createTauriUpdateBridge() {
     if (!state.enabled) return { ok: false, disabled: true, state: { ...state } };
     publish({ status: 'checking', error: '' });
     try {
-      const updater = getTauriGlobal().updater;
+      const updater = getTauri().updater;
       if (!(updater && typeof updater.check === 'function')) {
         throw new Error('The signed desktop updater is unavailable.');
       }
@@ -50,6 +57,7 @@ export function createTauriUpdateBridge() {
           publish({ status: 'downloading', downloadedBytes, contentLength });
         });
       } else if (typeof update.downloadAndInstall === 'function') {
+        await beforeExit('update');
         await update.downloadAndInstall((event) => {
           const kind = String(event && event.event ? event.event : '').toLowerCase();
           if (kind === 'started') contentLength = Number(event.data?.contentLength) || 0;
@@ -67,22 +75,44 @@ export function createTauriUpdateBridge() {
     }
   }
 
-  async function restartAndInstall() {
+  async function performRestart() {
     if (!update) return { ok: false, error: 'No downloaded update is ready.', state: { ...state } };
-    publish({ status: 'installing', error: '' });
+    const selectedUpdate = update;
+    let saved = false;
     try {
-      if (!update.__cavalryInstalled) {
-        if (typeof update.install !== 'function') {
+      await beforeExit('update');
+      saved = true;
+      publish({ status: 'installing', error: '' });
+      if (!selectedUpdate.__cavalryInstalled) {
+        if (typeof selectedUpdate.install !== 'function') {
           throw new Error('This updater cannot install the downloaded update.');
         }
-        await update.install();
+        await selectedUpdate.install();
+        selectedUpdate.__cavalryInstalled = true;
       }
-      await getTauriGlobal().core.invoke('relaunch_app');
+      // Installation can take time. Save again so edits made while it was running survive too.
+      saved = false;
+      await beforeExit('update');
+      saved = true;
+      await getTauri().core.invoke('relaunch_app');
       return { ok: true, state: { ...state } };
     } catch (error) {
       const text = error && error.message ? error.message : 'Unable to install the update.';
-      return { ok: false, error: text, state: publish({ status: 'error', error: text }) };
+      return {
+        ok: false,
+        error: text,
+        state: publish({ status: saved ? 'error' : 'ready', error: text })
+      };
     }
+  }
+
+  function restartAndInstall() {
+    if (!restartPromise) {
+      restartPromise = performRestart().finally(() => {
+        restartPromise = null;
+      });
+    }
+    return restartPromise;
   }
 
   return Object.freeze({

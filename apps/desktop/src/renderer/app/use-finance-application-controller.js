@@ -389,7 +389,15 @@ export function useFinanceApplicationController({
           });
           if (result && result.ok) navigate('ledger');
         } else if (operation === 'exit') {
-          await Promise.allSettled([ports.browserCache.clear(), ports.workbookStorage.forget()]);
+          if (currentWorkbook) {
+            const saved = await saveWorkbook(currentWorkbook);
+            if (!saved?.ok)
+              return fail(saved?.error || 'The workbook must be saved before leaving it.');
+          }
+          const cleared = await ports.browserCache.clear();
+          if (cleared?.ok === false && !cleared.unavailable) return fail(cleared.error);
+          const forgotten = await ports.workbookStorage.forget();
+          if (forgotten?.ok === false && !forgotten.unavailable) return fail(forgotten.error);
           setWorkbook(null, { source: 'exit', markDirty: false });
           result = { ok: true };
         } else {

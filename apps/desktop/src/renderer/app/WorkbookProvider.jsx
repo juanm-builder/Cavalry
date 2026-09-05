@@ -140,6 +140,7 @@ export function WorkbookProvider({
             ? structuredClone(workbook)
             : JSON.parse(JSON.stringify(workbook))
           : workbook;
+      currentWorkbookRef.current = nextWorkbook;
       dispatch({ type: 'workbook/replaced', workbook: nextWorkbook, ...options });
       return nextWorkbook;
     },
@@ -216,9 +217,21 @@ export function WorkbookProvider({
           storageAttempt.status === 'fulfilled'
             ? storageAttempt.value
             : { ok: false, error: storageAttempt.reason?.message || String(storageAttempt.reason) };
-        if (storageResult && storageResult.ok) {
+        if ((storageResult && storageResult.ok) || (cacheResult?.ok && cacheResult.durable)) {
           saveStatusTracker.set('saved');
-          dispatch({ type: 'save/succeeded', savedAt: storageResult.savedAt || savedAt });
+          dispatch({
+            type: 'save/succeeded',
+            savedAt: storageResult?.savedAt || cacheResult?.savedAt || savedAt
+          });
+          if (storageResult?.error && !storageResult.needsFile && cacheResult?.durable) {
+            dispatch({
+              type: 'error/reported',
+              error: {
+                code: 'workbook.export_failed',
+                message: `Saved on this Mac, but the linked file could not be updated: ${storageResult.error}`
+              }
+            });
+          }
           void refreshRecentWorkbooks({ quiet: true });
         } else if (cacheResult && cacheResult.ok) {
           saveStatusTracker.set('cache');
@@ -235,7 +248,9 @@ export function WorkbookProvider({
         resolvedPorts.companion.publish({ workbook }).catch(() => {});
         return storageResult && storageResult.ok
           ? storageResult
-          : { ok: true, cached: true, savedAt };
+          : cacheResult?.durable
+            ? cacheResult
+            : { ok: true, cached: true, savedAt };
       } catch (error) {
         saveStatusTracker.set('error');
         dispatch({
@@ -318,6 +333,30 @@ export function WorkbookProvider({
     [performWorkbookSave, performWorkbookSaveAs, saveScheduler, state.workbook]
   );
 
+  useEffect(
+    () =>
+      resolvedPorts.lifecycle.onBeforeExit(async () => {
+        if (['idle', 'loading'].includes(state.hydration.status)) {
+          return {
+            ok: false,
+            error: 'Wait for your workbook to finish opening before closing Cavalry.'
+          };
+        }
+        // Await the latest snapshot, including changes made while an earlier save ran.
+        let result = await saveScheduler.flush();
+        let workbook = currentWorkbookRef.current;
+        while (workbook) {
+          result = await saveScheduler.enqueue(workbook);
+          if (!result?.ok)
+            return result || { ok: false, error: 'The workbook could not be saved.' };
+          if (workbook === currentWorkbookRef.current) break;
+          workbook = currentWorkbookRef.current;
+        }
+        return result;
+      }),
+    [resolvedPorts, saveScheduler, state.hydration.status]
+  );
+
   useEffect(() => {
     const flushPendingSave = () => {
       void saveScheduler.flush().catch(() => {});
@@ -341,9 +380,21 @@ export function WorkbookProvider({
   }, [saveScheduler]);
 
   const applyOpenedWorkbook = useCallback(
-    (result) => {
+    async (result) => {
+      try {
+        const saved = await resolvedPorts.browserCache.save(result.workbook);
+        if (saved?.ok === false && !saved.unavailable) {
+          throw new Error(
+            saved.error || 'The opened workbook could not be saved to local recovery.'
+          );
+        }
+      } catch (error) {
+        // The picker already selected a new file. Do not leave it linked to the
+        // old in-memory workbook when accepting the new copy fails.
+        await resolvedPorts.workbookStorage.forget();
+        throw error;
+      }
       applyHydrationResult(result);
-      resolvedPorts.browserCache.save(result.workbook).catch(() => {});
       resolvedPorts.companion
         .publish({ workbook: result.workbook, reason: 'workbook_opened' })
         .catch(() => {});
@@ -352,10 +403,24 @@ export function WorkbookProvider({
   );
 
   const openWorkbook = useCallback(async () => {
+    if (currentWorkbookRef.current) {
+      const saved = await saveWorkbook(currentWorkbookRef.current);
+      if (!saved?.ok)
+        return {
+          status: 'error',
+          error: saved?.error || 'Save the current workbook before opening another.'
+        };
+    }
     const result = await resolvedPorts.workbookStorage.open();
     if (result && result.status === 'canceled') return result;
     if (result && result.status === 'loaded') {
-      applyOpenedWorkbook(result);
+      try {
+        await applyOpenedWorkbook(result);
+      } catch (error) {
+        const message = error.message || 'The selected workbook could not be saved locally.';
+        dispatch({ type: 'error/reported', error: { code: 'workbook.open_failed', message } });
+        return { status: 'error', error: message };
+      }
       void refreshRecentWorkbooks({ quiet: true });
       return result;
     }
@@ -377,7 +442,13 @@ export function WorkbookProvider({
       applyHydrationResult({ status: 'error', source: 'native', error: message });
     }
     return result;
-  }, [applyHydrationResult, applyOpenedWorkbook, refreshRecentWorkbooks, resolvedPorts]);
+  }, [
+    applyHydrationResult,
+    applyOpenedWorkbook,
+    refreshRecentWorkbooks,
+    resolvedPorts,
+    saveWorkbook
+  ]);
 
   const openRecentWorkbook = useCallback(
     async (id) => {
@@ -387,9 +458,14 @@ export function WorkbookProvider({
       }
       setRecentWorkbooks((current) => ({ ...current, openingId: recentId, error: '' }));
       try {
+        if (currentWorkbookRef.current) {
+          const saved = await saveWorkbook(currentWorkbookRef.current);
+          if (!saved?.ok)
+            throw new Error(saved?.error || 'Save the current workbook before opening another.');
+        }
         const result = await resolvedPorts.workbookStorage.openRecent(recentId);
         if (result && result.status === 'loaded') {
-          applyOpenedWorkbook(result);
+          await applyOpenedWorkbook(result);
         } else if (result && !['canceled', 'unavailable'].includes(result.status)) {
           setRecentWorkbooks((current) => ({
             ...current,
@@ -408,7 +484,13 @@ export function WorkbookProvider({
         setRecentWorkbooks((current) => ({ ...current, openingId: '' }));
       }
     },
-    [applyOpenedWorkbook, recentWorkbooks.openingId, refreshRecentWorkbooks, resolvedPorts]
+    [
+      applyOpenedWorkbook,
+      recentWorkbooks.openingId,
+      refreshRecentWorkbooks,
+      resolvedPorts,
+      saveWorkbook
+    ]
   );
 
   useEffect(

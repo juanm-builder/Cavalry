@@ -29,6 +29,7 @@ export function createNullRendererPorts(overrides = {}) {
       save: noop,
       clear: noop
     },
+    lifecycle: { onBeforeExit: () => () => {} },
     advisor: {
       invoke: async () => ({ ok: false, unavailable: true }),
       subscribe: () => () => {}
@@ -85,6 +86,7 @@ export function createNullRendererPorts(overrides = {}) {
       ...(overrides.workbookStorage || {})
     }),
     browserCache: Object.freeze({ ...defaults.browserCache, ...(overrides.browserCache || {}) }),
+    lifecycle: Object.freeze({ ...defaults.lifecycle, ...(overrides.lifecycle || {}) }),
     advisor: Object.freeze({ ...defaults.advisor, ...(overrides.advisor || {}) }),
     companion: Object.freeze({ ...defaults.companion, ...(overrides.companion || {}) }),
     cloud: Object.freeze({ ...defaults.cloud, ...(overrides.cloud || {}) }),

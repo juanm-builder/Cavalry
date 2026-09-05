@@ -42,7 +42,7 @@ function createWorkbookStorage(bridge) {
       const decoded = deserializeWorkbookFromFile(result.text, { rejectInvalid: true });
       return {
         status: 'loaded',
-        source: 'native',
+        source: result.recovery ? 'recovery' : 'native',
         workbook: decoded.workbook,
         warnings: [
           ...(Array.isArray(decoded.validation.warnings) ? decoded.validation.warnings : []),
@@ -473,12 +473,41 @@ export function createDesktopRendererPorts(bridge = {}, globalObject = globalThi
       }
     : bridge;
   const cache = createIndexedDbWorkbookCache(browserWindow && browserWindow.indexedDB);
+  const recovery = nativeBridge.files;
+  const durableCache = typeof recovery?.saveRecoveryWorkbook === 'function';
   const browserCache = {
     async load() {
+      if (durableCache) {
+        try {
+          const saved = await recovery.loadRecoveryWorkbook();
+          if (saved?.cleared) return { status: 'empty', source: 'recovery', cleared: true };
+          if (saved?.ok && saved.text) {
+            const decoded = deserializeWorkbookFromFile(saved.text, { rejectInvalid: true });
+            return {
+              status: 'loaded',
+              source: 'recovery',
+              workbook: decoded.workbook,
+              file: { savedAt: saved.savedAt, fileName: saved.fileName },
+              warnings: [
+                ...decoded.validation.warnings,
+                ...(saved.warning ? [{ code: 'workbook.recovered', message: saved.warning }] : [])
+              ]
+            };
+          }
+          if (saved?.error) throw new Error(saved.error);
+        } catch (error) {
+          return {
+            status: 'error',
+            source: 'recovery',
+            error: error.message || 'The saved workbook could not be recovered.'
+          };
+        }
+      }
       const result = await cache.load();
       if (result.status !== 'loaded') return result;
       try {
-        return { ...result, workbook: normalizeLoadedWorkbook(result.workbook) };
+        const workbook = normalizeLoadedWorkbook(result.workbook);
+        return { ...result, workbook };
       } catch (error) {
         return {
           status: 'error',
@@ -487,13 +516,31 @@ export function createDesktopRendererPorts(bridge = {}, globalObject = globalThi
         };
       }
     },
-    save: (workbook) => cache.save(workbook),
-    clear: () => cache.clear()
+    async save(workbook) {
+      if (!durableCache) return cache.save(workbook);
+      const result = await recovery.saveRecoveryWorkbook({
+        html: serializeWorkbookForSave(workbook, { rejectInvalid: true }).html
+      });
+      if (!result?.ok) return result;
+      // IndexedDB is a compatibility copy, never the sole successful save on Mac.
+      await cache.save(workbook).catch(() => {});
+      return { ...result, durable: true };
+    },
+    async clear() {
+      if (durableCache) {
+        const result = await recovery.clearRecoveryWorkbook();
+        if (!result?.ok) return result;
+        await cache.clear().catch(() => {});
+        return result;
+      }
+      return cache.clear();
+    }
   };
   let idSequence = 0;
   return createNullRendererPorts({
     workbookStorage: createWorkbookStorage(nativeBridge.files),
     browserCache,
+    lifecycle: nativeBridge.lifecycle,
     advisor: createAdvisorPort(nativeBridge.advisor),
     companion: createCompanionPort(nativeBridge.companion),
     cloud: createCloudPort(nativeBridge.cloud),
