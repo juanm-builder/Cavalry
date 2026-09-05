@@ -40,6 +40,7 @@
     "test": "npm run test:unit && npm run test:renderer",
     "test:unit": "vitest run",
     "test:renderer": "vitest run --config vitest.renderer.config.mjs",
+    "test:cloudkit:native": "node scripts/verify-cloudkit-durability.mjs && node scripts/verify-cloudkit-account-events.mjs",
     "test:integration": "vitest run tests/application tests/host",
     "test:e2e": "npm run build && node scripts/core-dom-smoke.mjs",
     "check": "npm run lint && npm run typecheck && npm run build && npm run test && npm run sidecar:smoke && npm run recovery:smoke",

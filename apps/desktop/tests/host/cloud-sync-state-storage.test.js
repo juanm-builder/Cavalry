@@ -45,6 +45,58 @@ afterEach(async () => {
 });
 
 describe('durable cloud sync state storage', () => {
+  it('durably disables autosave for a newly encountered owner without exposing the other library', async () => {
+    const rootDir = await temporaryRoot();
+    const first = createCloudSyncStateStorage({ rootDir });
+    await first.save({
+      ...scope(),
+      syncState: syncState('Private account one workbook'),
+      autoSyncEnabled: true
+    });
+    const original = await first.load(scope());
+    const otherScope = scope({ accountId: '_icloud-account-2' });
+    const second = createCloudSyncStateStorage({ rootDir });
+    const incoming = await second.load(otherScope);
+    expect(incoming).toMatchObject({
+      ok: true,
+      status: 'loaded',
+      envelope: { accountId: '_icloud-account-2', autoSyncEnabled: false, syncState: null }
+    });
+    expect(JSON.stringify(incoming)).not.toContain('_icloud-account-1');
+    expect(JSON.stringify(incoming)).not.toContain('Private account one workbook');
+    expect(await second.load(scope())).toEqual(original);
+    expect(await createCloudSyncStateStorage({ rootDir }).load(otherScope)).toEqual(incoming);
+    await second.save({ ...otherScope, syncState: null, autoSyncEnabled: true });
+    expect(await createCloudSyncStateStorage({ rootDir }).load(otherScope)).toMatchObject({
+      envelope: { autoSyncEnabled: true }
+    });
+  });
+
+  it('does not reuse a different workbook or environment as an account boundary', async () => {
+    const rootDir = await temporaryRoot();
+    const storage = createCloudSyncStateStorage({ rootDir });
+    await storage.save({ ...scope(), syncState: syncState(), autoSyncEnabled: true });
+    expect(
+      await storage.load(scope({ accountId: '_icloud-account-2', workbookId: 'workbook-2' }))
+    ).toEqual({ ok: true, status: 'missing', envelope: null });
+    expect(
+      await storage.load(scope({ accountId: '_icloud-account-2', cloudEnvironment: 'Development' }))
+    ).toEqual({ ok: true, status: 'missing', envelope: null });
+  });
+
+  it('fails closed when another saved account envelope cannot be verified', async () => {
+    const rootDir = await temporaryRoot();
+    const storage = createCloudSyncStateStorage({ rootDir });
+    await storage.save({ ...scope(), syncState: syncState(), autoSyncEnabled: true });
+    const directory = path.join(rootDir, 'production', 'anchors');
+    const [file] = await fs.readdir(directory);
+    await fs.writeFile(path.join(directory, file), '{damaged');
+    await expect(storage.load(scope({ accountId: '_icloud-account-2' }))).rejects.toMatchObject({
+      code: 'cloud_sync_state_corrupt'
+    });
+    expect(await fs.readdir(directory)).toEqual([file]);
+  });
+
   it('uses an opaque SHA-256 filename and private Application Support permissions', async () => {
     const rootDir = await temporaryRoot();
     const storage = createCloudSyncStateStorage({

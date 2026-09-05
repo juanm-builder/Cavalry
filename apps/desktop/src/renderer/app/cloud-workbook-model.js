@@ -190,6 +190,10 @@ export function normalizeCloudState(value) {
   return {
     configured,
     status,
+    accountSource: source.accountSource === 'browser' ? 'browser' : 'system',
+    browserSignInAvailable: source.browserSignInAvailable === true,
+    browserSignInUnavailableReason: asString(source.browserSignInUnavailableReason),
+    syncPaused: source.syncPaused === true || status === 'disconnected',
     user: normalizeCloudUser(source.user),
     cloudEnvironment: asString(source.cloudEnvironment),
     sessionGeneration: Math.max(0, Number(source.sessionGeneration) || 0),

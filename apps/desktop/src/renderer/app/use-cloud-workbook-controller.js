@@ -14,19 +14,17 @@ import { useCloudWorkbookAutoSyncStatus } from './use-cloud-workbook-auto-sync-s
 import { useCloudWorkbookOperations } from './use-cloud-workbook-operations.js';
 import { reconcileCloudWorkbookBranches } from './cloud-workbook-branch-reconciler.js';
 import { useCloudWorkbookConflictEffects } from './cloud-workbook-conflict-effects.js';
+import { useCloudWorkbookConflictState } from './use-cloud-workbook-conflict-state.js';
 import {
   EMPTY_CLOUD_STATE,
   asObject,
   asRevision,
   asString,
   buildCloudSettingsModel,
-  buildConflictNotice,
-  conflictNoticePublicationKey,
   errorDetailsFromResult,
   errorMessageFromResult,
   isRetryableAutomaticSyncFailure,
   normalizeCloudState,
-  normalizeConflictNotice,
   stateFromResult
 } from './cloud-workbook-model.js';
 
@@ -93,6 +91,9 @@ export function useCloudWorkbookController({
   );
   const resolvedSyncStorage = durableSyncStorage?.storage || legacySyncStorage;
   const stateRef = useRef(cloudState);
+  const lastAccountRef = useRef('');
+  const accountBoundaryRef = useRef(null);
+  const [accountBoundary, setAccountBoundary] = useState(null);
   const workbookRef = useRef(workbook);
   const saveStatusRef = useRef(saveStatus);
   const pendingOperationRef = useRef('');
@@ -125,11 +126,12 @@ export function useCloudWorkbookController({
     Boolean(
       cloudUserId && localWorkbookId && durableSyncStorage.status(currentSyncScope) === 'ready'
     );
-  const autoSyncEnabled = readCloudWorkbookAutoSyncPreference(
-    resolvedSyncStorage,
-    cloudUserId,
-    localWorkbookId
-  );
+  const accountChangePending =
+    accountBoundary?.userId === cloudUserId && accountBoundary?.workbookId === localWorkbookId;
+  const accountBoundaryRetrying = uiState.pendingOperation === 'retry-sync-state';
+  const autoSyncEnabled =
+    !accountChangePending &&
+    readCloudWorkbookAutoSyncPreference(resolvedSyncStorage, cloudUserId, localWorkbookId);
   const { autoSyncStatus, handleAutoSyncStatus } = useCloudWorkbookAutoSyncStatus({
     autoSyncEnabled,
     emptyCloudUiState: EMPTY_CLOUD_UI_STATE,
@@ -211,6 +213,20 @@ export function useCloudWorkbookController({
 
   const applyRemoteState = useCallback((value) => {
     const normalized = normalizeCloudState(value);
+    const nextAccount = asString(normalized.user?.id);
+    const previousAccount = lastAccountRef.current;
+    if (nextAccount && previousAccount && nextAccount !== previousAccount) {
+      autoSyncSchedulerRef.current?.cancelPending();
+      const currentWorkbookId = asString(workbookRef.current?.id);
+      accountBoundaryRef.current = currentWorkbookId
+        ? {
+            userId: nextAccount,
+            workbookId: currentWorkbookId
+          }
+        : null;
+      setAccountBoundary(accountBoundaryRef.current);
+    }
+    if (nextAccount) lastAccountRef.current = nextAccount;
     stateRef.current = normalized;
     setCloudState(normalized);
     if (!normalized.error && normalized.lastSyncAt) {
@@ -237,7 +253,12 @@ export function useCloudWorkbookController({
         return { ok: false, unavailable: true, error: 'iCloud sync is unavailable.' };
       }
       try {
-        return (await cloud.invoke(command, payload || {})) || { ok: true };
+        return (
+          (await cloud.invoke(command, {
+            expectedUserId: asString(stateRef.current.user?.id),
+            ...payload
+          })) || { ok: true }
+        );
       } catch (error) {
         return {
           ok: false,
@@ -288,12 +309,16 @@ export function useCloudWorkbookController({
 
   const isDurableSyncStateReady = useCallback(
     (userId, workbookId) =>
-      !durableSyncStorage ||
-      durableSyncStorage.status({
-        userId,
-        workbookId,
-        cloudEnvironment: asString(stateRef.current.cloudEnvironment)
-      }) === 'ready',
+      !(
+        accountBoundaryRef.current?.userId === userId &&
+        accountBoundaryRef.current?.workbookId === workbookId
+      ) &&
+      (!durableSyncStorage ||
+        durableSyncStorage.status({
+          userId,
+          workbookId,
+          cloudEnvironment: asString(stateRef.current.cloudEnvironment)
+        }) === 'ready'),
     [durableSyncStorage]
   );
 
@@ -304,77 +329,18 @@ export function useCloudWorkbookController({
     return result;
   }, [applyRemoteState, invoke]);
 
-  const publishConflictReport = useCallback(
-    async ({
-      workbookId,
-      baseRevision,
-      remoteRevision,
-      review,
-      sourceWorkbook,
-      baseWorkbook,
-      force = false
-    }) => {
-      const targetId = asString(workbookId);
-      const publicationKey = conflictNoticePublicationKey(targetId, baseRevision, remoteRevision);
-      if (
-        !force &&
-        conflictNoticePublicationRef.current === publicationKey &&
-        localConflictNoticeRef.current?.resolutionAvailable === true
-      ) {
-        return { ok: true, notice: localConflictNoticeRef.current };
-      }
-      const notice = buildConflictNotice({ review, baseRevision, remoteRevision });
-      const normalized = normalizeConflictNotice(notice, targetId);
-      if (!normalized) return { ok: false, code: 'invalid_conflict_notice' };
-      conflictNoticePublicationRef.current = publicationKey;
-      localConflictNoticeRef.current = normalized;
-      setLocalConflictNotice(normalized);
-      const result = await invoke('publishConflictNotice', {
-        workbookId: targetId,
-        conflictNotice: normalized,
-        sourceWorkbook,
-        baseWorkbook
-      });
-      const resultState = stateFromResult(result);
-      if (resultState) applyRemoteState(resultState);
-      if (!(result && result.ok)) {
-        conflictNoticePublicationRef.current = '';
-        const unavailableNotice = { ...normalized, resolutionAvailable: false };
-        localConflictNoticeRef.current = unavailableNotice;
-        setLocalConflictNotice(unavailableNotice);
-      } else {
-        const userId = asString(stateRef.current.user && stateRef.current.user.id);
-        if (userId) {
-          const syncState = readCloudWorkbookSyncState(resolvedSyncStorage, userId, targetId);
-          writeCloudWorkbookSyncState(resolvedSyncStorage, userId, targetId, {
-            revision: syncState.revision,
-            conflict: true,
-            conflictNoticeId: normalized.id,
-            conflictRemoteRevision: normalized.remoteRevision
-          });
-          const durableResult = await flushDurableSyncState(userId, targetId);
-          if (!(durableResult && durableResult.ok)) return durableResult;
-        }
-      }
-      return result;
-    },
-    [applyRemoteState, flushDurableSyncState, invoke, resolvedSyncStorage]
-  );
-
-  const clearSharedConflictNotice = useCallback(
-    async (workbookId) => {
-      const targetId = asString(workbookId);
-      conflictNoticePublicationRef.current = '';
-      localConflictNoticeRef.current = null;
-      setLocalConflictNotice(null);
-      if (!targetId) return { ok: false, code: 'invalid_workbook_id' };
-      const result = await invoke('clearConflictNotice', { workbookId: targetId });
-      const resultState = stateFromResult(result);
-      if (resultState) applyRemoteState(resultState);
-      return result;
-    },
-    [applyRemoteState, invoke]
-  );
+  const { publishConflictReport, clearSharedConflictNotice, latchWorkbookConflict } =
+    useCloudWorkbookConflictState({
+      applyRemoteState,
+      conflictNoticePublicationRef,
+      flushDurableSyncState,
+      invoke,
+      localConflictNoticeRef,
+      resolvedSyncStorage,
+      setLocalConflictNotice,
+      stateRef,
+      updateWorkbookConflict
+    });
 
   useEffect(() => {
     let active = true;
@@ -433,20 +399,57 @@ export function useCloudWorkbookController({
     localWorkbookId
   ]);
 
-  const latchWorkbookConflict = useCallback(
-    async (userId, workbookId, revision) => {
-      const ownerId = asString(userId);
-      const targetId = asString(workbookId);
-      if (!(ownerId && targetId)) return { ok: false, code: 'cloud_sync_state_scope_invalid' };
-      writeCloudWorkbookSyncState(resolvedSyncStorage, ownerId, targetId, {
-        revision: asRevision(revision) || null,
-        conflict: true
-      });
-      updateWorkbookConflict(targetId, true);
-      return flushDurableSyncState(ownerId, targetId);
-    },
-    [flushDurableSyncState, resolvedSyncStorage, updateWorkbookConflict]
-  );
+  useEffect(() => {
+    if (!accountChangePending || accountBoundaryRetrying || cloudState.status !== 'signed_in')
+      return;
+    const boundary = accountBoundaryRef.current;
+    let active = true;
+    void (async () => {
+      let result = await ensureDurableSyncState(boundary.userId, boundary.workbookId);
+      if (result?.ok) {
+        writeCloudWorkbookAutoSyncPreference(
+          resolvedSyncStorage,
+          boundary.userId,
+          boundary.workbookId,
+          false
+        );
+        result = await flushDurableSyncState(boundary.userId, boundary.workbookId);
+      }
+      if (!active || accountBoundaryRef.current !== boundary) return;
+      if (result?.ok) {
+        accountBoundaryRef.current = null;
+        setAccountBoundary(null);
+        setAutoSyncPreferenceEpoch((value) => value + 1);
+        setUiState((current) => ({
+          ...current,
+          notice:
+            'Account changed. This Mac copy will stay local until you choose Add to iCloud or enable autosave for this account.'
+        }));
+      } else {
+        setUiState((current) => ({
+          ...current,
+          error:
+            result?.error ||
+            'Cavalry could not save this account’s sync preference. Automatic syncing remains off.',
+          errorCode: result?.code || 'cloud_sync_state_save_failed',
+          errorOperation: 'sync-state',
+          errorWorkbookId: boundary.workbookId,
+          errorRetryable: true
+        }));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [
+    accountBoundary,
+    accountBoundaryRetrying,
+    accountChangePending,
+    cloudState.status,
+    ensureDurableSyncState,
+    flushDurableSyncState,
+    resolvedSyncStorage
+  ]);
 
   const markRemoteWorkbookDeleted = useCallback(
     async (userId, workbookId) => {
@@ -508,7 +511,13 @@ export function useCloudWorkbookController({
   );
 
   const persistMergedWorkbook = useCallback(
-    async (expectedWorkbook, mergedWorkbook) => {
+    async (
+      expectedWorkbook,
+      mergedWorkbook,
+      expectedUserId = asString(stateRef.current.user?.id)
+    ) => {
+      if (expectedUserId !== asString(stateRef.current.user?.id))
+        return { ok: false, code: 'cloud_sync_scope_changed' };
       const workbookId = asString(expectedWorkbook && expectedWorkbook.id);
       if (
         !workbookId ||
@@ -560,15 +569,18 @@ export function useCloudWorkbookController({
         workbookId,
         localWorkbook,
         syncState,
-        invoke,
+        invoke: (command, payload) => invoke(command, { ...payload, expectedUserId: userId }),
         applyRemoteState,
         refreshState,
         isRetryableFailure: isRetryableAutomaticSyncFailure,
-        getCurrentWorkbook: () => workbookRef.current,
-        persistMergedWorkbook,
+        getCurrentWorkbook: () =>
+          userId === asString(stateRef.current.user?.id) ? workbookRef.current : null,
+        persistMergedWorkbook: (expected, merged) =>
+          persistMergedWorkbook(expected, merged, userId),
         latchConflict: (revision) => latchWorkbookConflict(userId, workbookId, revision),
         reportConflict: ({ baseRevision, remoteRevision, review, sourceWorkbook, baseWorkbook }) =>
           publishConflictReport({
+            expectedUserId: userId,
             workbookId,
             baseRevision,
             remoteRevision,
@@ -607,7 +619,10 @@ export function useCloudWorkbookController({
       }
 
       const operation = (async () => {
-        const exact = await invoke('downloadWorkbook', { workbookId: targetId });
+        const exact = await invoke('downloadWorkbook', {
+          workbookId: targetId,
+          expectedUserId: ownerId
+        });
         const exactState = stateFromResult(exact);
         if (exactState) applyRemoteState(exactState);
 
@@ -819,6 +834,8 @@ export function useCloudWorkbookController({
       return;
     }
     if (
+      (accountBoundaryRef.current?.userId === userId &&
+        accountBoundaryRef.current?.workbookId === workbookId) ||
       !syncAnchorHydrated ||
       !readCloudWorkbookAutoSyncPreference(resolvedSyncStorage, userId, workbookId) ||
       stateRef.current.status !== 'signed_in' ||
@@ -1032,6 +1049,7 @@ export function useCloudWorkbookController({
     refreshState,
     resolvedSyncStorage,
     saveStatusRef,
+    saveWorkbook,
     setAutoSyncPreferenceEpoch,
     setLocalConflictNotice,
     setUiState,

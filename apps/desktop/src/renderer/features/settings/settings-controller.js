@@ -289,6 +289,8 @@ export function createSettingsController(dependencies = {}) {
 
         const storageOperations = {
           'open-workbook-file': 'open',
+          'refresh-workbook-recovery': 'recovery-list',
+          'open-workbook-recovery': 'recovery-open',
           'run-file-autosave': 'save',
           'choose-autosave-file': 'save-as',
           'reveal-workbook-file': 'reveal',
@@ -301,12 +303,18 @@ export function createSettingsController(dependencies = {}) {
         if (storageOperations[type]) {
           return createIntentResult(workbook, storageIntent, storageOperations[type], {
             workbookId: asString(workbook.id),
-            suggestedName: asString(workbook.name) || 'Cavalry Workbook'
+            suggestedName: asString(workbook.name) || 'Cavalry Workbook',
+            ...(type === 'open-workbook-recovery' ? { id: asString(payload.id) } : {})
           });
         }
 
         const cloudOperations = {
           'connect-icloud': 'connect',
+          'select-icloud-account': 'select-account',
+          'pause-icloud-sync': 'disconnect',
+          'resume-icloud-sync': 'connect',
+          'sign-out-icloud': 'sign-out',
+          'cancel-icloud-sign-in': 'cancel-sign-in',
           'disconnect-icloud': 'disconnect',
           'refresh-cloud-workbooks': 'refresh',
           'retry-cloud-sync-state': 'retry-sync-state',
@@ -320,6 +328,7 @@ export function createSettingsController(dependencies = {}) {
         if (cloudOperations[type]) {
           const cloudPayload = {
             workbookId: asString(payload.workbookId),
+            ...(type === 'select-icloud-account' ? { source: asString(payload.source) } : {}),
             ...(type === 'set-cloud-autosave'
               ? { enabled: payload.enabled === true || payload.checked === true }
               : {}),

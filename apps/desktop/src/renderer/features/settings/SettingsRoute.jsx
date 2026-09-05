@@ -130,8 +130,8 @@ const SETTINGS_SECTIONS = [
   },
   {
     id: 'settings-account',
-    label: 'Account',
-    icon: 'account_circle'
+    label: 'Account & sync',
+    icon: 'cloud'
   },
   {
     id: 'settings-files',
@@ -1060,6 +1060,8 @@ function SettingsRouteView({ model, onAction }) {
           <SettingsTabPanel activeSection={activeSection} id="settings-account">
             <CloudAccountPanel
               cloud={data.cloud}
+              localSave={data.localSave}
+              recovery={data.recovery}
               feedback={feedbackFor('settings-account')}
               onAction={onAction}
               workbook={workbook}

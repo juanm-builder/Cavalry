@@ -145,6 +145,9 @@ export function createTauriBridge() {
     cloud: {
       getState: () => invoke('cavalry-cloud:get-state'),
       setConnection: (payload) => invoke('cavalry-cloud:set-connection', payload),
+      selectAccount: (payload) => invoke('cavalry-cloud:select-account', payload),
+      signOut: () => invoke('cavalry-cloud:sign-out'),
+      cancelAccountSignIn: () => invoke('cavalry-cloud:cancel-account-sign-in'),
       listWorkbooks: () => invoke('cavalry-cloud:list-workbooks'),
       uploadWorkbook: (payload) => invoke('cavalry-cloud:upload-workbook', payload),
       downloadWorkbook: (payload) => invoke('cavalry-cloud:download-workbook', payload),

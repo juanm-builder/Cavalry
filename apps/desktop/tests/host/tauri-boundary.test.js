@@ -71,18 +71,23 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(cloudKitStore).toContain('standardFormatter.date(from: normalized)');
   });
 
-  it('preserves CloudKit state when the same iCloud account signs in again', () => {
+  it('wires executable account and durability checks to the production CloudKit store', () => {
     const cloudKitStore = readFileSync(
       resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
       'utf8'
     );
-    expect(cloudKitStore).toContain('let accountChanged = previous != current');
-    expect(cloudKitStore).toContain('preservePending: previous == nil && current != nil');
-    expect(cloudKitStore).toContain('diskState.subscriptionIdentifier = cavalrySyncStateVersion');
-    expect(cloudKitStore).not.toContain('configuration.subscriptionID =');
-    expect(cloudKitStore).toMatch(
-      /if accountChanged \{[\s\S]*?resetForAccountChange\([\s\S]*?\n\s*\}/
+    // Queue-reset and filesystem behavior are exercised by the compiled Swift
+    // harnesses. This cross-platform test verifies the shipped test wiring.
+    expect(readJson('package.json').scripts['test:cloudkit:native']).toBe(
+      'node scripts/verify-cloudkit-durability.mjs && node scripts/verify-cloudkit-account-events.mjs'
     );
+    for (const script of ['verify-cloudkit-durability.mjs', 'verify-cloudkit-account-events.mjs']) {
+      const runner = readFileSync(resolve(desktopRoot, 'scripts', script), 'utf8');
+      expect(runner).toContain('src-tauri/src/cloudkit/CavalryCloudKitStore.swift');
+      expect(runner).toContain('swiftc');
+    }
+    expect(cloudKitStore).toContain('subscriptionIdentifier = cavalrySyncStateVersion');
+    expect(cloudKitStore).not.toContain('configuration.subscriptionID =');
   });
 
   it('fails closed when CloudKit cannot resolve the private account identity', () => {

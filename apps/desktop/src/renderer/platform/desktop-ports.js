@@ -250,6 +250,9 @@ function createCompanionPort(bridge) {
 }
 
 const CLOUD_BRIDGE_METHODS = Object.freeze({
+  selectAccount: 'selectAccount',
+  signOut: 'signOut',
+  cancelAccountSignIn: 'cancelAccountSignIn',
   getState: 'getState',
   setConnection: 'setConnection',
   listWorkbooks: 'listWorkbooks',
@@ -289,6 +292,7 @@ function createCloudPort(bridge) {
             schemaVersion: workbook.version,
             sourceUpdatedAt: workbook.updatedAt,
             expectedRevision: payload.expectedRevision,
+            expectedUserId: payload.expectedUserId,
             ...(payload.conflictResolution === 'keep_local'
               ? { conflictResolution: 'keep_local' }
               : {}),

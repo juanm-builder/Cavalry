@@ -91,6 +91,7 @@ export function useCloudWorkbookAutomaticSync({
         entry.expectedRevision = syncState.known ? syncState.revision : null;
       }
       const result = await invoke('uploadWorkbook', {
+        expectedUserId: currentUserId,
         workbook: entry.workbook,
         expectedRevision: entry.expectedRevision
       });

@@ -67,6 +67,11 @@ export function buildSettingsRouteModel(workbook, viewState = {}, runtime = {}) 
   return cloneSerializable({
     ...model,
     cloud: asObject(facts.cloud || state.cloud),
+    localSave: {
+      status: asString(asObject(facts.fileAutosave || state.fileAutosave).status),
+      lastSavedAt: asString(facts.lastSavedAt || state.lastSavedAt)
+    },
+    recovery: asObject(facts.recovery || state.recovery),
     activeSection: asString(facts.activeSection || state.activeSection),
     activeSectionKey: asString(facts.activeSectionKey || state.activeSectionKey),
     feedback: {

@@ -81,7 +81,7 @@ describe('Settings and Bills interactions', () => {
     expect(screen.getByText(/This development build uses a separate test library/)).toBeTruthy();
   });
 
-  it('identifies the iCloud account and dispatches confirmed disconnect and reconnect', async () => {
+  it('identifies the iCloud account and separates pausing, resuming and signing out', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
     const view = render(
@@ -108,10 +108,12 @@ describe('Settings and Bills interactions', () => {
     expect(screen.getByText('Couldn’t copy. Select the reference to copy it.')).toBeTruthy();
     clipboard.mockRestore();
 
-    await user.click(screen.getByRole('button', { name: 'Disconnect iCloud' }));
-    expect(onAction).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Confirm Disconnect' }));
-    expect(onAction).toHaveBeenLastCalledWith({ type: 'disconnect-icloud', payload: {} });
+    await user.click(screen.getByRole('button', { name: 'Pause syncing' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'pause-icloud-sync', payload: {} });
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Confirm sign out' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'sign-out-icloud', payload: {} });
     view.rerender(
       <SettingsRoute
         model={makeSettingsModel({
@@ -121,8 +123,8 @@ describe('Settings and Bills interactions', () => {
         onAction={onAction}
       />
     );
-    await user.click(screen.getByRole('button', { name: 'Connect iCloud' }));
-    expect(onAction).toHaveBeenLastCalledWith({ type: 'connect-icloud', payload: {} });
+    await user.click(screen.getByRole('button', { name: 'Resume syncing' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'resume-icloud-sync', payload: {} });
   });
   it('opens account settings when the browser blocks access to local storage', () => {
     const storage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
@@ -147,7 +149,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'icloud-owner', name: 'iCloud' },
+            user: { id: 'icloud-owner', name: 'iCloud library' },
             pendingCount: 0,
             current: {
               workbookId: 'workbook-plan',
@@ -220,7 +222,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'icloud-owner', name: 'iCloud' },
+            user: { id: 'icloud-owner', name: 'iCloud library' },
             pendingCount: 0,
             current: {
               workbookId: 'workbook-plan',
@@ -286,7 +288,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'icloud-owner', name: 'iCloud' },
+            user: { id: 'icloud-owner', name: 'iCloud library' },
             pendingCount: 0,
             current: {
               workbookId: 'workbook-plan',
@@ -347,7 +349,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'icloud-owner', name: 'iCloud' },
+            user: { id: 'icloud-owner', name: 'iCloud library' },
             pendingCount: 0,
             current: {
               workbookId: 'workbook-plan',
@@ -688,11 +690,11 @@ describe('Settings and Bills interactions', () => {
       />
     );
 
-    const iCloudCard = screen.getByRole('heading', { name: 'iCloud' }).closest('section');
+    const iCloudCard = screen.getByRole('heading', { name: 'iCloud library' }).closest('section');
     expect(within(iCloudCard).getAllByText('Connected').length).toBeGreaterThan(0);
     expect(within(iCloudCard).getByText('Private iCloud library')).not.toBeNull();
     expect(within(iCloudCard).queryByText(/CKSyncEngine/)).toBeNull();
-    expect(within(iCloudCard).getByRole('button', { name: 'Check Now' })).not.toBeNull();
+    expect(within(iCloudCard).getByRole('button', { name: 'Change account…' })).not.toBeNull();
     expect(within(iCloudCard).getByRole('region', { name: 'Current workbook' })).not.toBeNull();
     expect(within(iCloudCard).getByRole('heading', { name: 'Other workbooks' })).not.toBeNull();
     expect(within(iCloudCard).getAllByText('The Plan')).toHaveLength(1);
@@ -754,7 +756,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: {
               workbookId: 'workbook-plan',
               linked: true,
@@ -781,7 +783,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: { workbookId: 'workbook-plan', linked: true, status: 'attention' },
             workbooks: [{ id: 'workbook-plan', name: 'The Plan', revision: 2 }],
             error: 'Cavalry could not save its local iCloud sync state.',
@@ -813,7 +815,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: {
               workbookId: 'workbook-plan',
               linked: false,
@@ -861,7 +863,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: { workbookId: 'workbook-plan', linked: true, status: 'synced' },
             workbooks: [
               { id: 'workbook-plan', name: 'Main Plan', revision: 2 },
@@ -902,7 +904,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: { workbookId: 'workbook-plan', linked: true, status: 'synced' },
             workbooks: [
               { id: 'workbook-plan', name: 'Main Plan', revision: 2 },
@@ -940,7 +942,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: { workbookId: 'workbook-plan', linked: false, status: 'local_only' },
             workbooks: [],
             error: 'iCloud needs attention.',
@@ -968,7 +970,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: {
               workbookId: 'workbook-plan',
               linked: false,
@@ -1000,7 +1002,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: {
               workbookId: 'workbook-plan',
               linked: false,
@@ -1040,7 +1042,7 @@ describe('Settings and Bills interactions', () => {
           cloud: {
             configured: true,
             status: 'signed_in',
-            user: { id: 'user-1', name: 'iCloud' },
+            user: { id: 'user-1', name: 'iCloud library' },
             current: {
               workbookId: 'workbook-plan',
               linked: true,

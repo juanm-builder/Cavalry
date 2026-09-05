@@ -9,6 +9,11 @@ const nodeBuiltins = new Set([...builtinModules, ...builtinModules.map((name) =>
 
 export default defineConfig(() => {
   return {
+    define: {
+      'process.env.CAVALRY_CLOUDKIT_WEB_API_TOKEN': JSON.stringify(
+        process.env.CAVALRY_CLOUDKIT_WEB_API_TOKEN || ''
+      )
+    },
     build: {
       emptyOutDir: true,
       lib: {

@@ -225,6 +225,7 @@ describe('durable cloud workbook controller integration', () => {
       listCallsBeforeRetry
     );
     expect(host.invoke).toHaveBeenCalledWith('saveSyncState', {
+      expectedUserId: 'user-1',
       workbookId: WORKBOOK_ID,
       syncState: null,
       autoSyncEnabled: true
@@ -260,6 +261,7 @@ describe('durable cloud workbook controller integration', () => {
 
     await waitFor(() =>
       expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+        expectedUserId: 'user-1',
         workbookId: WORKBOOK_ID
       })
     );
@@ -275,6 +277,7 @@ describe('durable cloud workbook controller integration', () => {
       timers.runLatest();
       await waitFor(() =>
         expect(host.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+          expectedUserId: 'user-1',
           workbook: localWorkbook,
           expectedRevision: null
         })
@@ -313,7 +316,10 @@ describe('durable cloud workbook controller integration', () => {
     );
 
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
     expect(host.invoke).not.toHaveBeenCalledWith('downloadWorkbook', expect.anything());
 
@@ -326,7 +332,10 @@ describe('durable cloud workbook controller integration', () => {
       await pendingLoad.promise;
     });
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('downloadWorkbook', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('downloadWorkbook', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
     await waitFor(() => expect(saveWorkbook).toHaveBeenCalledWith(remoteWorkbook));
     expect(setWorkbook).toHaveBeenCalledWith(remoteWorkbook, {
@@ -388,7 +397,10 @@ describe('durable cloud workbook controller integration', () => {
       })
     );
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
 
     let syncResult;
@@ -398,6 +410,7 @@ describe('durable cloud workbook controller integration', () => {
 
     expect(syncResult).toMatchObject({ ok: true });
     expect(host.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: localWorkbook,
       expectedRevision: 2
     });
@@ -447,7 +460,10 @@ describe('durable cloud workbook controller integration', () => {
       { initialProps: { currentWorkbook: baseWorkbook, localSaveSequence: 0 } }
     );
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
 
     const firstEdit = { ...baseWorkbook, name: 'First saved edit' };
@@ -498,7 +514,10 @@ describe('durable cloud workbook controller integration', () => {
         { initialProps: { currentWorkbook: localWorkbook, localSaveSequence: 0 } }
       );
       await waitFor(() =>
-        expect(host.invoke).toHaveBeenCalledWith('loadSyncState', { workbookId: WORKBOOK_ID })
+        expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+          expectedUserId: 'user-1',
+          workbookId: WORKBOOK_ID
+        })
       );
 
       act(() => {
@@ -561,7 +580,10 @@ describe('durable cloud workbook controller integration', () => {
     );
 
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('downloadWorkbook', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('downloadWorkbook', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
     await waitFor(() =>
       expect(host.stored()).toMatchObject({
@@ -678,7 +700,10 @@ describe('durable cloud workbook controller integration', () => {
       })
     );
     await waitFor(() =>
-      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', { workbookId: WORKBOOK_ID })
+      expect(host.invoke).toHaveBeenCalledWith('loadSyncState', {
+        expectedUserId: 'user-1',
+        workbookId: WORKBOOK_ID
+      })
     );
     await act(async () => {
       await first.result.current.execute('delete', { workbookId: WORKBOOK_ID });

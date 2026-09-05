@@ -201,6 +201,40 @@ function createCloudSyncStateStorage(options = {}) {
     return next;
   }
 
+  async function hasOtherOwner(target) {
+    let files;
+    try {
+      files = await fs.readdir(target.directory);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    }
+    for (const name of files) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+      const filePath = path.join(target.directory, name);
+      const file = await fs.stat(filePath);
+      if (!file.isFile() || file.size > maximumBytes) {
+        throw Object.assign(new Error('Cavalry could not verify the saved iCloud account scope.'), {
+          code: 'cloud_sync_state_corrupt'
+        });
+      }
+      let envelope;
+      try {
+        envelope = normalizeDurableEnvelope(JSON.parse(await fs.readFile(filePath, 'utf8')));
+      } catch (_error) {
+        envelope = null;
+      }
+      if (!envelope) {
+        throw Object.assign(new Error('Cavalry could not verify the saved iCloud account scope.'), {
+          code: 'cloud_sync_state_corrupt'
+        });
+      }
+      if (envelope.workbookId === target.workbookId && envelope.accountId !== target.accountId)
+        return true;
+    }
+    return false;
+  }
+
   async function load(value) {
     await writeQueue.catch(() => undefined);
     const target = location(value);
@@ -213,6 +247,12 @@ function createCloudSyncStateStorage(options = {}) {
       serialized = await fs.readFile(target.filePath, 'utf8');
     } catch (error) {
       if (error && error.code === 'ENOENT') {
+        if (await hasOtherOwner(target)) {
+          // A newly encountered account must not inherit another account's
+          // local workbook. Persist the opt-out before exposing a ready scope.
+          const seeded = await save({ ...target, syncState: null, autoSyncEnabled: false });
+          return { ...seeded, status: 'loaded' };
+        }
         return { ok: true, status: 'missing', envelope: null };
       }
       throw error;
@@ -278,8 +318,20 @@ function createCloudSyncStateStorage(options = {}) {
           flag: 'wx'
         });
         if (typeof fs.chmod === 'function') await fs.chmod(tempPath, 0o600);
+        const fileHandle = await fs.open(tempPath, 'r');
+        try {
+          await fileHandle.sync();
+        } finally {
+          await fileHandle.close();
+        }
         await fs.rename(tempPath, target.filePath);
         if (typeof fs.chmod === 'function') await fs.chmod(target.filePath, 0o600);
+        const directoryHandle = await fs.open(target.directory, 'r');
+        try {
+          await directoryHandle.sync();
+        } finally {
+          await directoryHandle.close();
+        }
       } catch (error) {
         try {
           if (typeof fs.rm === 'function') await fs.rm(tempPath, { force: true });
