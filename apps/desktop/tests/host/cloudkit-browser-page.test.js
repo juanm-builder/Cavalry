@@ -96,7 +96,7 @@ describe('iCloud loopback page protocol', () => {
     const page = createPage();
     page.start();
     expect(page.window.open).toHaveBeenCalledWith(
-      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/#${NONCE}`,
+      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=2#${NONCE}`,
       `cavalry-icloud-${NONCE}`,
       'popup,width=620,height=740'
     );
@@ -292,7 +292,7 @@ describe('iCloud loopback page protocol', () => {
     const page = createPage({ diagnostics: true });
     await page.ready();
     expect(page.window.open.mock.calls[0][0]).toBe(
-      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?diagnostics=1#${NONCE}`
+      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=2&diagnostics=1#${NONCE}`
     );
     expect(page.elements.get('diagnostics').hidden).toBe(false);
     expect(page.elements.get('diagnostics').textContent).toContain('No callback messages received');

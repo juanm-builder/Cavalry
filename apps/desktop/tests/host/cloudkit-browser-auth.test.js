@@ -107,7 +107,7 @@ describe('iCloud browser authentication loopback', () => {
     expect(url).not.toContain('diagnostics');
     const html = await (await fetch(url)).text();
     expect(html).toContain(
-      'https://juanm-builder.github.io/Cavalry/icloud-sign-in/?diagnostics=1#'
+      'https://juanm-builder.github.io/Cavalry/icloud-sign-in/?v=2&diagnostics=1#'
     );
     expect(html).toContain('const diagnosticsEnabled = true;');
     expect((await submit(url)).status).toBe(200);
