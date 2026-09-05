@@ -46,7 +46,10 @@ describe('CloudKit web session requests', () => {
 
   it('rejects untrusted sign-in URLs and oversized JSON before buffering it', async () => {
     expect(appleAuthenticationUrl('https://idmsa.apple.com.evil.example/login')).toBe('');
-    expect(appleAuthenticationUrl('https://user:pass@idmsa.apple.com/login')).toBe('');
+    const credentialedUrl = new URL('https://idmsa.apple.com/login');
+    credentialedUrl.username = 'test-user';
+    credentialedUrl.password = 'test-password';
+    expect(appleAuthenticationUrl(credentialedUrl.href)).toBe('');
     const persistSession = vi.fn();
     const api = createCloudKitWebApi({
       apiToken: 'public',

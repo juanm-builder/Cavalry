@@ -447,7 +447,10 @@ describe('CloudKit asset transfer boundary', () => {
     'http://p1.icloud.com/a',
     'https://icloud.com.evil.test/a',
     'https://127.0.0.1/a',
-    'https://user:password@icloud.com/a',
+    Object.assign(new URL('https://icloud.com/a'), {
+      username: 'test-user',
+      password: 'test-password'
+    }).href,
     'https://p1.icloud.com:999/a'
   ])('rejects untrusted asset URL %s before fetching', async (downloadURL) => {
     const fetch = vi.fn();

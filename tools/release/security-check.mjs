@@ -48,6 +48,16 @@ const allowedEmbeddedImages = new Map([
 ]);
 
 const allowedFindingFingerprints = new Map([
+  // Historical negative URL tests used synthetic user/pass placeholders. Keep
+  // their exact file/content fingerprints; history scanning includes old tests.
+  [
+    'apps/desktop/tests/host/cloudkit-web-api.test.js',
+    new Set(['credential-bearing URL:sha256:d982d6437e0badda'])
+  ],
+  [
+    'apps/desktop/tests/host/cloudkit-web-library.test.js',
+    new Set(['credential-bearing URL:sha256:1010b1c24b1f7b22'])
+  ],
   [
     'apps/mac/tests/electron/in-app-advisor-ipc.test.js',
     new Set(['OpenAI secret key:sha256:d0037c92ccd6857f'])
