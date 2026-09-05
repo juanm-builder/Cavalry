@@ -21,10 +21,15 @@ npm run release:validate -- v2.1.0
 
 Tags are immutable. Never replace public files under an existing version; publish a higher fix-forward release.
 
-## Signing inputs
+## Release configuration and signing inputs
 
 Production builds require:
 
+- the validated public CloudKit API token in the GitHub Actions repository variable
+  `CAVALRY_CLOUDKIT_WEB_API_TOKEN`. The release workflow requires its 64-character hexadecimal
+  shape before building either host sidecar, then embeds it in both architectures. Configure
+  this client token using the [browser account setup](../development/icloud-browser-account-setup.md)
+  after live callback validation. It is not an Apple password or a private signing key;
 - Tauri updater public key in `CAVALRY_UPDATER_PUBLIC_KEY`;
 - updater private key in `TAURI_SIGNING_PRIVATE_KEY` and optional password;
 - Apple Developer ID certificate in `MAC_CSC_LINK` and its password in `MAC_CSC_KEY_PASSWORD`;
@@ -57,7 +62,10 @@ The production release workflow publishes only the Apple Silicon and Intel Mac a
    dedicated JIT-only entitlements to `cavalry-host`; verify that the helper has no CloudKit or push
    entitlement.
 9. Verify app and DMG OS signatures, notarization/timestamp status, and architectures, then execute
-   the signed packaged sidecar on its matching native host.
+   the signed packaged sidecar on its matching native host. The release smoke requires
+   `browserSignInAvailable: true` from the packaged host using a fresh temporary data directory
+   and an empty runtime API-token environment variable, so local configuration cannot mask a
+   missing embedded token. This checks packaged configuration; it does not log in to Apple.
 10. Upload both architectures serially to one draft release. The pinned Tauri action updates
     `latest.json` with a read/delete/re-upload sequence, so the release matrix permits only one
     updater-manifest writer at a time.

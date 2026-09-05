@@ -35,6 +35,15 @@ Use [CloudKit Console](https://icloud.developer.apple.com/) with the developer t
    fully quit/relaunch the feature build. A release host build can embed the token
    using `CAVALRY_CLOUDKIT_WEB_API_TOKEN`; a nonempty embedded token takes precedence
    over local configuration.
+7. Set the same validated public token as the GitHub Actions **repository variable**
+   `CAVALRY_CLOUDKIT_WEB_API_TOKEN` before creating a release tag. The release
+   workflow passes it to the host and sidecar builds for both Mac architectures
+   and fails before those builds if it is missing or not 64 hexadecimal characters.
+   Keep the actual value out of tracked source. This shape check does not validate
+   Apple's configuration or replace the live acceptance checks below. The signed
+   sidecar smoke also requires browser sign-in to be available with empty runtime
+   configuration and a fresh temporary data directory, verifying the token was
+   embedded in the packaged host without authenticating to Apple.
 
 ### Why the HTTPS page is required
 
