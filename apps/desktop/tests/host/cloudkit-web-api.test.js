@@ -17,7 +17,8 @@ describe('CloudKit web session requests', () => {
         await Promise.resolve();
         order.push(`persist:${value.token}`);
       },
-      fetch: async (url) => {
+      fetch: async (url, options) => {
+        expect(options.headers.Origin).toBe('https://juanm-builder.github.io');
         const token = new URL(url).searchParams.get('ckWebAuthToken');
         order.push(`fetch:${token}`);
         return new Response('{}', {

@@ -5,29 +5,46 @@ tests do not establish that Apple authentication or two-device syncing works in 
 signed release. Do not publish this feature until the live acceptance checks below
 pass. It preserves the existing Production container and workbook schema.
 
-## One Apple configuration step
+## HTTPS sign-in hosting and Apple configuration
 
-The accessible signing credentials cannot create or retrieve CloudKit web API
-tokens. An owner of the Apple developer team must configure the web token in
-[CloudKit Console](https://icloud.developer.apple.com/).
+The browser flow uses the static page in `apps/desktop/cloudkit-sign-in/`, served
+at `https://juanm-builder.github.io/Cavalry/icloud-sign-in/`. Publish the page
+before enabling the token. The entire `https://juanm-builder.github.io` origin
+is trusted: other project pages and root service workers on that origin share
+this boundary. A dedicated auth domain should be used if that origin hosts
+untrusted applications. The page has no analytics, cookies, network requests,
+server-side credential handling, or persistent token storage.
+
+Use [CloudKit Console](https://icloud.developer.apple.com/) with the developer team:
 
 1. Select `iCloud.com.juanmbuilder.cavalry` and **Production**.
-2. Open **Tokens & Keys**, then create or inspect an **API Token** for browser
-   access. This is the public token distributed with a client app, not an Apple
-   password, signing key, server-to-server private key, or App Store API key.
-3. The desktop sign-in page uses the loopback origin
-   `http://127.0.0.1:47639`. Configure this exact allowed origin if the Console
-   supports it. Keep the custom sign-in callback unset: the integration uses
-   Apple's default popup-to-opener response. Do not configure a Supabase callback.
-4. If Apple's Console rejects the loopback origin, stop this configuration attempt.
-   A supported hosted callback/ephemeral native authentication design must be
-   validated instead; do not weaken the app's origin checks or enable all origins
-   merely to make the test pass.
-5. For a local build, save the public token as `apiToken` in
-   `~/Library/Application Support/Cavalry for Mac/CloudKit Web/config.json`.
-   The JSON shape is `{"apiToken":"THE_PRODUCTION_CLOUDKIT_API_TOKEN"}`.
-   A release build can embed the same public token using
-   `CAVALRY_CLOUDKIT_WEB_API_TOKEN` during its host build.
+2. Open **Tokens & Keys**, then create an **API Token** for browser access. This is
+   a public client token, not an Apple password, signing key, server-to-server
+   private key, or App Store API key.
+3. Keep **Sign in Callback → Post Message** selected. Do not configure a custom
+   redirect or Supabase callback.
+4. Set **Allowed Origins → Only the following domain(s)**. The Console adds the
+   `https://` prefix; enter `juanm-builder.github.io` in its domain field. Do not
+   enable **Any Domain**. Keep discoverability off.
+5. Verify a `Production/private/users/current` request with this token and
+   `Origin: https://juanm-builder.github.io` returns `AUTHENTICATION_REQUIRED`
+   and an approved Apple sign-in URL. This unauthenticated request accesses no
+   workbook records. Token presence alone does not establish successful login.
+6. After live callback validation, save `{"apiToken":"PUBLIC_API_TOKEN"}` to
+   `~/Library/Application Support/Cavalry for Mac/CloudKit Web/config.json` and
+   fully quit/relaunch the feature build. A release host build can embed the token
+   using `CAVALRY_CLOUDKIT_WEB_API_TOKEN`; a nonempty embedded token takes precedence
+   over local configuration.
+
+### Why the HTTPS page is required
+
+A live Console/API check on 2026-09-05 confirmed that a newly created restricted
+Production token accepted `https://127.0.0.1:47639`, returning Apple's sign-in URL,
+but rejected `http://127.0.0.1:47639` with `AUTHENTICATION_FAILED`. The old local
+HTTP page therefore cannot be Apple's direct popup receiver. The HTTPS page
+receives that callback and relays it only to its exact loopback opener. The
+loopback server still accepts completion only through its own origin and random
+single-use path; it does not accept a cross-origin HTTP POST from the hosted page.
 
 The browser option remains disabled when no validly shaped token is configured.
 Its presence enables an authentication attempt, not a claim of successful live
@@ -42,11 +59,19 @@ Apple's response headers and saved using the existing Keychain-backed encryption
 before another request can use them. Tokens never pass through the workbook
 renderer, callback query strings, or app logs.
 
-The browser receives Apple's sign-in in a separate window. The local page accepts
-messages only from that exact popup and known Apple origins, then posts the token
-to a single-use loopback path. Cancellation and timeouts keep the previous
-connection. Live testing must confirm Apple's default callback works with this
-origin and permits choosing a different Apple Account even with existing cookies.
+The local page opens the fixed HTTPS bridge with a random nonce in its fragment.
+The bridge removes that fragment immediately and uses a nonce-bound handshake
+with the exact local opener before enabling its Apple sign-in button. It accepts
+Apple's result only from the exact Apple popup and approved Apple HTTPS origins.
+It relays the token in memory through `postMessage`; the local page checks the
+HTTPS origin, popup source, nonce and protocol state, then uses a same-origin
+POST. Cancellation, expiry and duplicate callbacks cannot complete another
+attempt. The hosted page must leave COOP unset/default so its cross-origin opener
+survives; it rejects framed/no-opener contexts before enabling sign-in. Its meta
+CSP is not a substitute for a `frame-ancestors` response header.
+
+Live testing must verify both popup relationships in Firefox and confirm users
+can choose a different Apple Account despite existing browser cookies.
 
 All workbook requests bind to the full verified CloudKit owner, container and
 environment. Pausing retains that connection; signing out clears its active

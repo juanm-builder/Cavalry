@@ -56,7 +56,8 @@ describe('iCloud browser authentication loopback', () => {
     expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
     const html = await page.text();
     expect(html).toContain('event.source !== popup');
-    expect(html).toContain('event.data.ckSession');
+    expect(html).toContain('https://juanm-builder.github.io/Cavalry/icloud-sign-in/');
+    expect(html).toContain('cavalry-icloud-complete');
     expect(html).not.toContain('example-apple-session');
     const accepted = await submit(url);
     expect(accepted.status).toBe(200);

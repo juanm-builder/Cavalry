@@ -2,7 +2,9 @@
 
 const CONTAINER = 'iCloud.com.juanmbuilder.cavalry';
 const ENVIRONMENT = 'Production';
-const ORIGIN = 'http://127.0.0.1:47639';
+const LOOPBACK_ORIGIN = 'http://127.0.0.1:47639';
+const CLOUDKIT_WEB_ORIGIN = 'https://juanm-builder.github.io';
+const CLOUDKIT_SIGN_IN_URL = `${CLOUDKIT_WEB_ORIGIN}/Cavalry/icloud-sign-in/`;
 const BASE = `https://api.apple-cloudkit.com/database/1/${CONTAINER}/production/private/`;
 const AUTH_ERRORS = new Set([
   'AUTHENTICATION_REQUIRED',
@@ -62,7 +64,7 @@ function createCloudKitWebApi({
     try {
       response = await fetchImpl(url.href, {
         method: body === undefined ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
+        headers: { 'Content-Type': 'application/json', Origin: CLOUDKIT_WEB_ORIGIN },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         redirect: 'error',
         signal: AbortSignal.timeout(60000)
@@ -126,7 +128,9 @@ function createCloudKitWebApi({
 module.exports = {
   CONTAINER,
   ENVIRONMENT,
-  ORIGIN,
+  LOOPBACK_ORIGIN,
+  CLOUDKIT_WEB_ORIGIN,
+  CLOUDKIT_SIGN_IN_URL,
   AUTH_ERRORS,
   appleAuthenticationUrl,
   validSessionToken,
