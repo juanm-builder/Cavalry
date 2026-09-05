@@ -61,3 +61,7 @@ npm run licenses:runtime:check
 ```
 
 A newly resolved Rust dependency graph should produce and commit `apps/desktop/src-tauri/Cargo.lock` from a network-enabled development machine before a production release.
+
+## Design references
+
+The [iCloud account concepts](design/icloud-account-concept-prompts-2026-09-05.md) document the reviewed visual direction. Their example identities are fictional; see the [implementation review](icloud-account-review-2026-09-05.md) for the implemented account information and platform limitations.

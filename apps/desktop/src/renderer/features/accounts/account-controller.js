@@ -24,6 +24,8 @@ import {
   commandOk
 } from '@cavalry/finance-core/application/types/command-result.js';
 
+import { formatCurrencyAmount } from '../../shared/currency-format.js';
+
 export const ACCOUNT_ACTIONS = Object.freeze({
   CREATE: 'account/create',
   UPDATE: 'account/update',
@@ -189,12 +191,7 @@ export function formatAccountMoney(value, currency = 'PHP') {
   const amount = roundMoney(value);
   const code = asText(currency).toUpperCase() || 'PHP';
   try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
+    return formatCurrencyAmount(amount, code);
   } catch (_error) {
     return `${code} ${amount.toFixed(2)}`;
   }
@@ -353,6 +350,12 @@ function getAccountHistoryRows(
       if (!change) return rows;
       const beforeBalance = runningBalance;
       runningBalance = roundMoney(runningBalance + change);
+      rows.push({ transaction, change, beforeBalance, runningBalance });
+      return rows;
+    }, [])
+    .slice(-8)
+    .reverse()
+    .map(({ transaction, change, beforeBalance, runningBalance }) => {
       const template = asText(transaction?.template);
       const category = categoryById.get(asText(transaction?.categoryId));
       const relatedAccounts = Array.from(
@@ -371,7 +374,7 @@ function getAccountHistoryRows(
       );
       const changeTone = accountValueTone(account?.group, change);
       const balanceTone = accountValueTone(account?.group, runningBalance);
-      return rows.concat({
+      return {
         transactionId: asText(transaction?.id),
         date: asText(transaction?.date),
         description: asText(transaction?.description) || 'Transaction',
@@ -408,10 +411,8 @@ function getAccountHistoryRows(
         ]
           .filter(Boolean)
           .join(' - ')
-      });
-    }, [])
-    .slice(-8)
-    .reverse();
+      };
+    });
 }
 
 export function buildAccountsFeatureModel(workbook, options = {}) {

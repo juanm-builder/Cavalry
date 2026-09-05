@@ -123,6 +123,7 @@ private struct CloudKitBridgeRequest: Codable {
   let conflictBasePortableHtml: String?
   let conflictNoticeId: String?
   let refresh: Bool?
+  let enabled: Bool?
 }
 
 private struct CloudKitAccount: Codable, Sendable {
@@ -216,6 +217,8 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private let payloadsURL: URL
   private let stateURL: URL
   private var diskState: CloudKitDiskState
+  private var syncEnabled = true
+  private var changingConnection = false
   private var engine: CKSyncEngine?
   private var syncTask: Task<Void, Error>?
   private var sendTask: Task<Void, Error>?
@@ -245,6 +248,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     }
     payloadsURL = rootURL.appendingPathComponent("payloads", isDirectory: true)
     stateURL = rootURL.appendingPathComponent("sync-state.json", isDirectory: false)
+    syncEnabled = !FileManager.default.fileExists(
+      atPath: rootURL.appendingPathComponent("disconnected").path
+    )
 
     do {
       try FileManager.default.createDirectory(
@@ -302,6 +308,18 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func perform(_ request: CloudKitBridgeRequest) async -> CloudKitBridgeResponse {
+    if request.operation == "set_connection" {
+      guard let enabled = request.enabled else {
+        return .failure("invalid_cloudkit_request", "Choose whether to connect iCloud.")
+      }
+      return await setConnection(enabled: enabled)
+    }
+    if !syncEnabled {
+      if request.operation == "status" || request.operation == "sync" {
+        return await statusResponse()
+      }
+      return .failure("icloud_disconnected", "Connect iCloud to sync this workbook.")
+    }
     startIfNeeded()
     switch request.operation {
     case "status":
@@ -397,8 +415,45 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     }
   }
 
+  // This preference is separate from owner-scoped sync state so an Apple
+  // Account change or cache reset cannot silently reconnect Cavalry.
+  private func setConnection(enabled: Bool) async -> CloudKitBridgeResponse {
+    guard !changingConnection else {
+      return .failure("cloud_operation_in_progress", "The iCloud connection is changing.")
+    }
+    changingConnection = true
+    defer { changingConnection = false }
+    let marker = rootURL.appendingPathComponent("disconnected")
+    do {
+      if enabled {
+        // Verify the owner before re-seeding pending changes from disk.
+        _ = await accountState()
+        if FileManager.default.fileExists(atPath: marker.path) {
+          try FileManager.default.removeItem(at: marker)
+        }
+        syncEnabled = true
+        startIfNeeded()
+      } else {
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: marker, options: .atomic)
+        syncEnabled = false
+        syncTask?.cancel()
+        sendTask?.cancel()
+        let stoppingEngine = engine
+        await stoppingEngine?.cancelOperations()
+        engine = nil
+        // Keep local snapshots and pending changes for this verified owner.
+        // Requests already accepted by CloudKit cannot be recalled.
+      }
+      emit(reason: "account_changed")
+      return await statusResponse()
+    } catch {
+      return .failure("cloud_connection_failed", "Cavalry could not save the iCloud connection setting. Try again.")
+    }
+  }
+
   private func startIfNeeded() {
-    guard engine == nil else { return }
+    guard syncEnabled, engine == nil else { return }
     var configuration = CKSyncEngine.Configuration(
       database: container.privateCloudDatabase,
       stateSerialization: diskState.syncState,
@@ -430,7 +485,16 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func statusResponse() async -> CloudKitBridgeResponse {
+    guard syncEnabled else {
+      var response = CloudKitBridgeResponse.success()
+      response.cloudEnvironment = cloudEnvironment
+      response.account = CloudKitAccount(status: "disconnected", userId: nil)
+      response.pendingCount = 0
+      return response
+    }
     let account = await accountState()
+    // A disconnect can arrive while CloudKit is resolving the account.
+    guard syncEnabled else { return await statusResponse() }
     var response = CloudKitBridgeResponse.success()
     response.containerIdentifier = cavalryContainerIdentifier
     response.cloudEnvironment = cloudEnvironment
@@ -491,11 +555,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     guard let engine else { throw CloudStoreError.engineUnavailable }
     let task = Task {
       try await engine.fetchChanges()
+      try Task.checkCancellation()
       try await engine.sendChanges()
     }
     syncTask = task
     defer { syncTask = nil }
     try await task.value
+    try Task.checkCancellation()
+    guard syncEnabled, self.engine === engine else { throw CancellationError() }
     diskState.lastSyncAt = isoDate(Date())
     // A successful fetch/send cycle can contain an item-level terminal failure
     // delivered through the delegate. Keep that diagnosis until a record save
@@ -1004,6 +1071,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+    guard engine === syncEngine else { return }
     switch event {
     case .stateUpdate(let event):
       diskState.syncState = event.stateSerialization
@@ -1162,17 +1230,19 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     _ context: CKSyncEngine.SendChangesContext,
     syncEngine: CKSyncEngine
   ) async -> CKSyncEngine.RecordZoneChangeBatch? {
+    guard syncEnabled, engine === syncEngine else { return nil }
     let changes = syncEngine.state.pendingRecordZoneChanges.filter {
       context.options.scope.contains($0)
     }
     return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: changes) {
       [weak self] recordID in
       guard let self else { return nil }
-      return await self.recordToSave(recordID)
+      return await self.recordToSave(recordID, syncEngine: syncEngine)
     }
   }
 
-  private func recordToSave(_ recordID: CKRecord.ID) -> CKRecord? {
+  private func recordToSave(_ recordID: CKRecord.ID, syncEngine: CKSyncEngine) -> CKRecord? {
+    guard syncEnabled, engine === syncEngine else { return nil }
     let recordName = recordID.recordName
     let pendingWorkbook = diskState.pending[recordName]
     let pendingNotice = diskState.pendingConflictNotices?[recordName]

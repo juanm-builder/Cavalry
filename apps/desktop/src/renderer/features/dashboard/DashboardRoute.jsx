@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
+import { formatCurrencyAmount } from '../../shared/currency-format.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 
@@ -27,12 +28,7 @@ function normalizeCurrency(value) {
 function formatMoneyWithCurrency(value, currency = 'PHP') {
   const nextCurrency = normalizeCurrency(currency);
   try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: nextCurrency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
+    return formatCurrencyAmount(Number(value) || 0, nextCurrency);
   } catch (_error) {
     return `${(Number(value) || 0).toFixed(2)} ${nextCurrency}`;
   }

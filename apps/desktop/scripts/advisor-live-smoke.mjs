@@ -43,10 +43,6 @@ function env(...names) {
   return '';
 }
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
 function nowIso() {
   return new Date().toISOString();
 }

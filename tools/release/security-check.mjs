@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const reviewedDevelopmentAdvisories = new Map([
   [
     1124334,
@@ -346,15 +345,6 @@ function readJson(relativePath) {
   return JSON.parse(readFileSync(resolve(workspaceRoot, relativePath), 'utf8'));
 }
 
-function compareVersions(left, right) {
-  const leftParts = left.split('.').map(Number);
-  const rightParts = right.split('.').map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
-  }
-  return 0;
-}
-
 function checkDesktopRuntime() {
   const manifest = readJson('apps/desktop/package.json');
   const lockfile = readJson('package-lock.json');
@@ -481,24 +471,48 @@ function revisionList() {
   return [...new Set(result.stdout.split(/\s+/).filter(Boolean))];
 }
 
-function candidateHistoryFiles(revisions) {
+export function candidateHistoryFiles(revisions, runGit = run) {
   const candidates = new Map();
   const chunkSize = 64;
   for (let index = 0; index < revisions.length; index += chunkSize) {
     const chunk = revisions.slice(index, index + chunkSize);
-    const result = run('git', ['grep', '-I', '-l', '-E', historyCandidatePattern, ...chunk, '--']);
+    const result = runGit('git', [
+      'grep',
+      '-I',
+      '-l',
+      '-z',
+      '-E',
+      historyCandidatePattern,
+      ...chunk,
+      '--'
+    ]);
     if (![0, 1].includes(result.status)) {
       fail(`Git history candidate scan failed: ${result.stderr.trim()}`);
     }
-    for (const line of result.stdout.split('\n').filter(Boolean)) {
-      const match = /^([0-9a-f]{40}):(.*)$/.exec(line);
-      if (!match) continue;
-      const [, commit, path] = match;
-      const objectResult = run('git', ['rev-parse', `${commit}:${path}`]);
-      if (objectResult.status !== 0) continue;
-      const objectId = objectResult.stdout.trim();
-      if (!candidates.has(objectId))
-        candidates.set(objectId, { commit, path: normalizePath(path) });
+    const references = result.stdout.split('\0').filter(Boolean);
+    for (let offset = 0; offset < references.length; offset += chunkSize) {
+      const batch = references.slice(offset, offset + chunkSize);
+      // Resolve multiple immutable commit:path references in one Git process.
+      const objectResult = runGit('git', ['rev-parse', ...batch]);
+      const objectIds = objectResult.stdout.trim().split(/\r?\n/);
+      if (
+        objectResult.status !== 0 ||
+        objectIds.length !== batch.length ||
+        objectIds.some((objectId) => !/^[0-9a-f]{40}$/.test(objectId))
+      ) {
+        fail('could not resolve Git history candidate objects.');
+      }
+      batch.forEach((reference, position) => {
+        const match = /^([0-9a-f]{40}):([\s\S]+)$/.exec(reference);
+        if (!match) fail('Git returned an invalid history candidate reference.');
+        const [, commit, path] = match;
+        const objectId = objectIds[position];
+        if (!candidates.has(objectId)) candidates.set(objectId, new Map());
+        const paths = candidates.get(objectId);
+        const normalizedPath = normalizePath(path);
+        // Allowances are path-specific, even when identical blobs are reused.
+        if (!paths.has(normalizedPath)) paths.set(normalizedPath, commit);
+      });
     }
   }
   return candidates;
@@ -529,16 +543,19 @@ export function checkGitHistory() {
     line: 0
   }));
   const revisions = revisionList();
-  for (const [objectId, { commit, path }] of candidateHistoryFiles(revisions)) {
+  for (const [objectId, paths] of candidateHistoryFiles(revisions)) {
     const blob = run('git', ['cat-file', 'blob', objectId], { encoding: null });
-    if (blob.status !== 0 || blob.stdout.subarray(0, 8192).includes(0)) continue;
+    if (blob.status !== 0) fail('could not read a Git history candidate object.');
+    if (blob.stdout.subarray(0, 8192).includes(0)) continue;
     const contents = blob.stdout.toString('utf8');
-    findings.push(
-      ...scanText(path, contents).map((finding) => ({
-        ...finding,
-        path: `${finding.path}@${commit.slice(0, 12)}`
-      }))
-    );
+    for (const [path, commit] of paths) {
+      findings.push(
+        ...scanText(path, contents).map((finding) => ({
+          ...finding,
+          path: `${finding.path}@${commit.slice(0, 12)}`
+        }))
+      );
+    }
   }
 
   const messages = run('git', ['log', '--all', '--format=%B%x00']);

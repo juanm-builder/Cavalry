@@ -60,10 +60,20 @@ function isRetryableTransportError(error) {
   return Boolean(error.cause);
 }
 
+async function cancelBody(body) {
+  if (!body || typeof body.cancel !== 'function') return;
+  try {
+    await body.cancel();
+  } catch (_error) {
+    // Cleanup must not mask the provider response or the original stream failure.
+  }
+}
+
 async function* readEventStream(response) {
   const body = response && response.body;
   if (!body || typeof body.getReader !== 'function') return;
   const reader = body.getReader();
+  let exhausted = false;
   const decoder = new TextDecoder();
   const parser = { buffer: '', eventLines: [] };
   const consumeText = (text, final = false) => {
@@ -126,19 +136,25 @@ async function* readEventStream(response) {
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        exhausted = true;
+        break;
+      }
       const decoded =
         typeof value === 'string'
           ? `${decoder.decode()}${value}`
           : decoder.decode(value, { stream: true });
       for (const parsed of parsedFrames(consumeText(decoded))) {
         yield parsed;
+        if (parsed === EVENT_STREAM_DONE) return;
       }
     }
     for (const parsed of parsedFrames(consumeText(decoder.decode(), true))) {
       yield parsed;
+      if (parsed === EVENT_STREAM_DONE) return;
     }
   } finally {
+    if (!exhausted) await cancelBody(reader);
     if (typeof reader.releaseLock === 'function') reader.releaseLock();
   }
 }
@@ -215,7 +231,6 @@ async function readChatCompletionStream(response, onDelta) {
 // Consumes a Responses API SSE stream and returns the final response object.
 async function readResponsesStream(response, onDelta) {
   let finalResponse = null;
-  let text = '';
   let published = false;
   const clearPublishedText = () => {
     if (published && typeof onDelta === 'function') {
@@ -227,7 +242,6 @@ async function readResponsesStream(response, onDelta) {
     for await (const chunk of readEventStream(response)) {
       const type = String(chunk.type || '');
       if (type === 'response.output_text.delta' && typeof chunk.delta === 'string' && chunk.delta) {
-        text += chunk.delta;
         if (typeof onDelta === 'function') {
           onDelta(chunk.delta, { final: false, reset: !published });
           published = true;
@@ -236,7 +250,7 @@ async function readResponsesStream(response, onDelta) {
       }
       if (type === 'response.completed') {
         finalResponse = chunk.response || finalResponse;
-        continue;
+        break;
       }
       if (type === 'response.incomplete') {
         const reason = String(chunk.response?.incomplete_details?.reason || '').trim();
@@ -255,9 +269,6 @@ async function readResponsesStream(response, onDelta) {
         throw new Error(
           boundedProviderErrorMessage(message) || 'The model provider stream failed.'
         );
-      }
-      if (chunk.response && !finalResponse && type === 'response.created') {
-        finalResponse = null;
       }
     }
   } catch (error) {
@@ -404,6 +415,7 @@ function createRetryingPost({ delay, retryDelaysMs }) {
           !(response && response.ok) &&
           isRetryableStatus(response && response.status)
         ) {
+          await cancelBody(response.body);
           await delay(retryDelaysMs[attempt]);
           continue;
         }
@@ -458,6 +470,7 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     }
     const response = streamed.response;
     if (!response.ok || !isEventStream(response)) {
+      await cancelBody(response.body);
       streamed.release();
       return { handled: false };
     }
@@ -503,6 +516,7 @@ function createAdvisorStreamRunners({ fetchStreamedWithTimeout, sendStatus, time
     }
     const response = streamed.response;
     if (!response.ok || !isEventStream(response)) {
+      await cancelBody(response.body);
       streamed.release();
       return { handled: false };
     }

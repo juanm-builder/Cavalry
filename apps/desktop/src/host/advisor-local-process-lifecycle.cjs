@@ -29,7 +29,7 @@ function createAdvisorLocalProcessLifecycle({
 } = {}) {
   const exitedChildren = new WeakSet();
   const stoppingChildren = new WeakSet();
-  let forceKillTimer = null;
+  const forceKillTimers = new WeakMap();
 
   function normalizeStopTimeout(timeoutMs) {
     return Math.max(25, Number(timeoutMs) || 2500);
@@ -57,9 +57,10 @@ function createAdvisorLocalProcessLifecycle({
 
   function markChildExited(child) {
     if (child) exitedChildren.add(child);
+    const forceKillTimer = child && forceKillTimers.get(child);
     if (forceKillTimer) {
       cancelTimeout(forceKillTimer);
-      forceKillTimer = null;
+      forceKillTimers.delete(child);
     }
   }
 
@@ -172,11 +173,13 @@ function createAdvisorLocalProcessLifecycle({
     stoppingChildren.add(child);
     signalChild(child, 'SIGTERM');
     if (!options.wait) {
-      if (forceKillTimer) cancelTimeout(forceKillTimer);
-      forceKillTimer = scheduleTimeout(() => {
-        forceKillTimer = null;
+      const previousTimer = forceKillTimers.get(child);
+      if (previousTimer) cancelTimeout(previousTimer);
+      const forceKillTimer = scheduleTimeout(() => {
+        forceKillTimers.delete(child);
         if (isChildRunning(child)) signalChild(child, 'SIGKILL');
       }, normalizeStopTimeout(options.forceAfterMs));
+      forceKillTimers.set(child, forceKillTimer);
       if (typeof forceKillTimer.unref === 'function') forceKillTimer.unref();
       return true;
     }

@@ -1,8 +1,5 @@
 import { roundMoney } from '../../domain/money.js';
-import {
-  buildTransactionCalculationReceipt,
-  getTransactionContributions
-} from '../../domain/ledger/transaction-contributions.js';
+import { buildTransactionCalculationReceipt } from '../../domain/ledger/transaction-contributions.js';
 import { getPeriodActivitySummary } from '../../domain/ledger/summaries.js';
 import { getBudgetRemaining, getBudgetStatus, getSheetPlanSources } from './budget-service.js';
 

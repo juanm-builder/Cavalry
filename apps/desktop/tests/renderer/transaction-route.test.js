@@ -68,6 +68,54 @@ describe('TransactionRoute', () => {
     expect(html).toContain('<label>Total Expenses</label><b>−₱1,850.00</b>');
   });
 
+  it('keeps summary totals independent of the current page in the All view', () => {
+    const firstPage = makeTransactionModel({ type: 'all', page: 1 });
+    const secondPage = makeTransactionModel({ type: 'all', page: 2 });
+
+    expect(secondPage.stats).toEqual(firstPage.stats);
+    expect(secondPage.rows).not.toEqual(firstPage.rows);
+  });
+
+  it('derives filter ranges from the complete ledger without reordering transactions', () => {
+    const workbook = makeTransactionTableWorkbook();
+    workbook.transactions = [
+      { ...workbook.transactions[0], id: 'middle', date: '2026-06-15', amount: 120.25 },
+      { ...workbook.transactions[0], id: 'latest', date: '2026-12-31', amount: -875.75 },
+      { ...workbook.transactions[0], id: 'earliest', date: '2026-01-01', amount: 0 }
+    ];
+    const before = structuredClone(workbook);
+    const model = buildTransactionFeatureModel(workbook, {
+      view: { search: 'no matching transaction' }
+    });
+
+    expect(model.rows).toEqual([]);
+    expect(model.filterOptions.dateRange).toEqual({ min: '2026-01-01', max: '2026-12-31' });
+    expect(model.filterOptions.amountRange).toMatchObject({ min: 0, max: 876, step: 5 });
+    expect(workbook).toEqual(before);
+    expect(buildTransactionFeatureModel({}).filterOptions).toMatchObject({
+      dateRange: { min: '', max: '' },
+      amountRange: { min: 0, max: 1, step: 1 }
+    });
+  });
+
+  it('builds filter ranges for a ledger larger than the JavaScript argument limit', () => {
+    const workbook = makeTransactionTableWorkbook();
+    workbook.transactions = Array.from({ length: 150_000 }, (_, index) => ({
+      id: `transaction-${index}`,
+      date: index % 2 ? '2026-01-01' : '2026-12-31',
+      amount: index + 1,
+      lines: []
+    }));
+
+    const model = buildTransactionFeatureModel(workbook, {
+      view: { search: 'no matching transaction' }
+    });
+
+    expect(model.rows).toEqual([]);
+    expect(model.filterOptions.amountRange.max).toBe(150_000);
+    expect(model.filterOptions.dateRange).toEqual({ min: '2026-01-01', max: '2026-12-31' });
+  });
+
   it('uses canonical refund semantics and presents refund-dominant expense as favorable', () => {
     const workbook = makeTransactionTableWorkbook();
     workbook.transactions = [

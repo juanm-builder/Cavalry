@@ -2,8 +2,6 @@ const INSTITUTION_TYPES = Object.freeze(['bank', 'digital_bank', 'e_wallet']);
 
 function entry(definition) {
   return Object.freeze({
-    aliases: [],
-    formerNames: [],
     type: 'bank',
     active: true,
     ...definition,

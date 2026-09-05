@@ -11,6 +11,8 @@ const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const KEYCHAIN_SERVICE = 'com.juanmbuilder.cavalry.mac.credentials';
+// `security` reports errSecItemNotFound (-25300) through an 8-bit process exit status.
+const KEYCHAIN_ITEM_NOT_FOUND_STATUS = 44;
 
 function safeMkdir(directory) {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -27,29 +29,26 @@ function normalizeKey(value) {
   return key;
 }
 
-function loadMacKey() {
+function loadMacKey(runCommand) {
   const account = os.userInfo().username || 'cavalry';
-  const read = spawnSync(
+  const read = runCommand(
     'security',
     ['find-generic-password', '-a', account, '-s', KEYCHAIN_SERVICE, '-w'],
     { encoding: 'utf8', timeout: 10_000 }
   );
-  if (read.status === 0 && String(read.stdout || '').trim()) {
+  if (read.error || read.signal) {
+    throw new Error('Unable to read the Cavalry key from Keychain.');
+  }
+  if (read.status === 0) {
     return normalizeKey(read.stdout);
   }
+  if (read.status !== KEYCHAIN_ITEM_NOT_FOUND_STATUS) {
+    throw new Error(String(read.stderr || 'Unable to read the Cavalry key from Keychain.').trim());
+  }
   const key = crypto.randomBytes(KEY_BYTES);
-  const write = spawnSync(
+  const write = runCommand(
     'security',
-    [
-      'add-generic-password',
-      '-U',
-      '-a',
-      account,
-      '-s',
-      KEYCHAIN_SERVICE,
-      '-w',
-      key.toString('base64')
-    ],
+    ['add-generic-password', '-a', account, '-s', KEYCHAIN_SERVICE, '-w', key.toString('base64')],
     { encoding: 'utf8', timeout: 10_000 }
   );
   if (write.status !== 0) {
@@ -75,7 +74,12 @@ function loadDevelopmentKey(userDataDir) {
   return normalizeKey(fs.readFileSync(keyPath, 'utf8'));
 }
 
-function createSafeStorage({ userDataDir, isPackaged = false, platform = process.platform } = {}) {
+function createSafeStorage({
+  userDataDir,
+  isPackaged = false,
+  platform = process.platform,
+  spawnSync: runCommand = spawnSync
+} = {}) {
   let key = null;
   let backend = 'unavailable';
   let loadError = null;
@@ -86,7 +90,7 @@ function createSafeStorage({ userDataDir, isPackaged = false, platform = process
     try {
       if (platform === 'darwin') {
         backend = 'keychain';
-        key = loadMacKey();
+        key = loadMacKey(runCommand);
       } else if (!isPackaged || process.env.CAVALRY_ALLOW_INSECURE_DEV_STORAGE === '1') {
         backend = 'development-file';
         key = loadDevelopmentKey(userDataDir);

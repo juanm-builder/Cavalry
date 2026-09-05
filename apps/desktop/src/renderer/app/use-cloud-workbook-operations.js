@@ -51,10 +51,9 @@ export function useCloudWorkbookOperations({
   return useCallback(
     async (operation, payload = {}) => {
       const operationName = asString(operation);
-      const operationWorkbookId =
-        operationName === 'refresh'
-          ? ''
-          : asString(payload.workbookId || payload.id || workbookRef.current?.id);
+      const operationWorkbookId = ['refresh', 'connect', 'disconnect'].includes(operationName)
+        ? ''
+        : asString(payload.workbookId || payload.id || workbookRef.current?.id);
       const operationWorkbookName =
         asString(
           stateRef.current.workbooks.find((item) => item.id === operationWorkbookId)?.name
@@ -192,6 +191,9 @@ export function useCloudWorkbookOperations({
       try {
         if (operationName === 'refresh') {
           result = await invoke('listWorkbooks');
+        } else if (operationName === 'connect' || operationName === 'disconnect') {
+          autoSyncSchedulerRef.current?.cancelPending();
+          result = await invoke('setConnection', { enabled: operationName === 'connect' });
         } else if (operationName === 'retry-sync-state') {
           const userId = asString(stateRef.current.user?.id);
           const workbookId = asString(workbookRef.current?.id);

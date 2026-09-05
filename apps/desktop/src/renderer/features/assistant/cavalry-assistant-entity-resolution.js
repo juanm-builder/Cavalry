@@ -460,7 +460,3 @@ export function cavalryAssistantAccountResolutionError(result, field, label = 'A
   }
   return null;
 }
-
-export function cavalryAssistantAccountAliases(account) {
-  return accountAliases(account);
-}

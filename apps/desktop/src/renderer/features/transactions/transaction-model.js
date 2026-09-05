@@ -800,13 +800,6 @@ function transactionBalanceTone(account, value) {
   return amount > 0 ? 'good' : 'bad';
 }
 
-function transactionChangeTone(account, value) {
-  const amount = Number(value) || 0;
-  if (!amount) return 'neutral';
-  if (account?.group === 'liability') return amount > 0 ? 'bad' : 'good';
-  return amount > 0 ? 'good' : 'bad';
-}
-
 function buildTransactionDetailContext(transaction, account) {
   const template = asString(transaction && transaction.template);
   const accountName = asString(account && account.name) || 'Account';
@@ -963,7 +956,7 @@ function buildTransactionModalModel(workbook, state) {
     afterTone: balanceAtTransaction
       ? transactionBalanceTone(account, balanceAtTransaction.balance)
       : 'info',
-    changeTone: transactionChangeTone(account, accountChange),
+    changeTone: transactionBalanceTone(account, accountChange),
     runningBalance: balanceAtTransaction
       ? formatTransactionMoney(balanceAtTransaction.balance, workbook && workbook.currency)
       : '',
@@ -977,22 +970,28 @@ export function buildTransactionFeatureModel(workbook, state = {}) {
   const route = buildTransactionRouteViewModel(workbook || {}, viewState);
   const table = route.tableView;
   const periodLabel = buildPeriodLabel(table.state);
-  const summaryRoute = buildTransactionRouteViewModel(workbook || {}, {
-    ...viewState,
-    type: 'all',
-    page: 1
-  });
+  const summaryRoute =
+    viewState.type === 'all'
+      ? route
+      : buildTransactionRouteViewModel(workbook || {}, {
+          ...viewState,
+          type: 'all',
+          page: 1
+        });
   const totals = summaryRoute.ledgerTotals;
   const transactions = asArray(workbook && workbook.transactions);
-  const dates = transactions
-    .map((item) => asString(item && item.date))
-    .filter(Boolean)
-    .sort();
-  const amounts = transactions.map((item) => Math.abs(Number(item && item.amount) || 0));
-  const amountMax = Math.max(1, ...amounts);
+  let minimumDate = '';
+  let maximumDate = '';
+  let amountMax = 1;
+  for (const transaction of transactions) {
+    const date = asString(transaction && transaction.date);
+    if (date && (!minimumDate || date < minimumDate)) minimumDate = date;
+    if (date > maximumDate) maximumDate = date;
+    amountMax = Math.max(amountMax, Math.abs(Number(transaction && transaction.amount) || 0));
+  }
   const options = {
     ...buildFilterOptions(workbook),
-    dateRange: { min: dates[0] || '', max: dates[dates.length - 1] || '' },
+    dateRange: { min: minimumDate, max: maximumDate },
     amountRange: {
       min: 0,
       max: Math.ceil(amountMax),

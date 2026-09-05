@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildTransactionCalculationReceipt } from '@cavalry/finance-core/domain/ledger/transaction-contributions.js';
 
 import {
   getMonthlyFlowBreakdown,
@@ -66,6 +67,99 @@ function findTransaction(workbook, transactionId) {
 }
 
 describe('ledger summaries', () => {
+  it.each(['__proto__', 'constructor', 'toString'])(
+    'keeps category totals for opaque ID %s',
+    (id) => {
+      const workbook = {
+        currency: 'PHP',
+        accounts: [],
+        categories: [{ id, type: 'expense', name: 'Imported category' }],
+        transactions: [{ id: 'purchase', date: '2026-06-01', categoryId: id, amount: 100 }]
+      };
+      const summary = getPeriodActivitySummary(workbook);
+      expect(summary.expense).toBe(100);
+      expect(summary.categoryTotals).toEqual({ [id]: 100 });
+      expect(Object.getPrototypeOf(summary.categoryTotals)).toBe(Object.prototype);
+      expect(getMonthlyFlowBreakdown(workbook, '2026-06', 'expense')).toMatchObject({
+        total: 100,
+        rows: [{ id, type: 'expense', name: 'Imported category', total: 100 }]
+      });
+    }
+  );
+
+  it('preserves duplicate-reference precedence, refunds, FX warnings, and subsequent edits', () => {
+    const workbook = {
+      currency: 'PHP',
+      accounts: [
+        { id: 'cash', group: 'liability' },
+        { id: 'cash', group: 'asset' }
+      ],
+      categories: [
+        { id: 'food', name: 'Food', type: 'expense' },
+        { id: 'food', name: 'Duplicate', type: 'income' }
+      ],
+      transactions: [
+        {
+          id: 'purchase',
+          date: '2026-06-01',
+          categoryId: 'food',
+          amount: 100.25,
+          lines: [{ accountId: 'cash', direction: 'credit' }]
+        },
+        {
+          id: 'refund',
+          date: '2026-06-02',
+          categoryId: 'food',
+          template: 'merchant_refund',
+          amount: 20.125,
+          lines: [{ accountId: 'cash', direction: 'debit' }]
+        },
+        {
+          id: 'unresolved',
+          date: '2026-06-03',
+          categoryId: 'food',
+          currency: 'USD',
+          amount: 10,
+          lines: [{ accountId: 'cash', direction: 'credit' }]
+        },
+        { id: 'opaque-id', date: '2026-06-04', categoryId: ' food ', amount: 500, lines: [] }
+      ]
+    };
+    const before = structuredClone(workbook);
+    const range = { start: '2026-06-01', end: '2026-06-30' };
+    expect(getPeriodActivitySummary(workbook, range)).toMatchObject({
+      income: 0,
+      expense: 80.12,
+      net: -80.12,
+      categoryTotals: { food: 80.12 }
+    });
+    expect(getMonthlyFlowBreakdown(workbook, '2026-06', 'expense')).toMatchObject({
+      total: 80.12,
+      rows: [{ id: 'food', name: 'Food', total: 80.12 }]
+    });
+    const receipt = buildTransactionCalculationReceipt(workbook, workbook.transactions, {
+      metric: 'cashFlow'
+    });
+    expect(receipt).toMatchObject({ value: -80.12, includedCount: 2, unresolvedCount: 1 });
+    expect(receipt.unresolved[0]).toMatchObject({
+      transactionId: 'unresolved',
+      warnings: [{ code: 'transaction_missing_fx_rate' }]
+    });
+    expect(workbook).toEqual(before);
+
+    // A new calculation must observe edits made in place by legacy callers.
+    workbook.categories[0].type = 'income';
+    workbook.accounts[1].group = 'liability';
+    expect(getPeriodActivitySummary(workbook, range)).toMatchObject({
+      income: 100.25,
+      expense: -20.13
+    });
+    expect(
+      buildTransactionCalculationReceipt(workbook, workbook.transactions, { metric: 'cashFlow' })
+        .value
+    ).toBe(0);
+  });
+
   it('classifies transaction flow kinds with established workbook semantics', () => {
     const workbook = addSummarySpecificTransactions(makeIncomeAndExpenseWorkbook());
     const transferWorkbook = makeTransferWorkbook();

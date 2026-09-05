@@ -1,0 +1,27 @@
+# iCloud account display concepts — 5 September 2026
+
+Generated with the built-in image-generation tool using the supplied Mac and iPhone screenshots as visual references. These are design concepts with fictional example identity details, not implemented screens or a claim that CloudKit currently supplies an Apple ID email. Any implementation must reliably obtain and associate identity details with the actual CloudKit account; a separately entered email or a different Apple sign-in must not be presented as verified iCloud identity.
+
+## Mac prompt
+
+Use case: ui-mockup.
+Create ONE polished, high-fidelity raster design concept for Cavalry for Mac's iCloud settings panel. The attached screenshot is a STYLE AND EXISTING-LAYOUT REFERENCE, not an account to identify. Preserve its dark charcoal background, slightly lighter slate card, thin slate outline, restrained corner radius, monospaced uppercase labels and buttons, sans-serif supporting text, muted blue cloud icon and green connected badge. This is a targeted account-information improvement, not a redesign of the product.
+Output a wide, crisp desktop panel, roughly 2.4:1 aspect ratio, straight-on flat UI with generous outside margins, no laptop hardware, no perspective or extra screens.
+Design hierarchy: existing top section header cloud icon + "ICLOUD" left, small green "CONNECTED" badge right, fine divider. Below, one broad account card. At the left of the card, a restrained circular initials avatar "AR" and an adjacent identity block. A small muted label "APPLE ACCOUNT", then large prominent "Alex Rivera", then highly readable "alex.rivera@example.com" directly below. The name and email are the first information noticed. Use this exact placeholder email, not any personal information from the reference.
+Below identity, add a fine divider and a compact metadata row with "Account reference", bold monospaced "3A71D9B28F04", small copy icon, followed by the subtle helper "Match this reference on your iPhone." Under it a small muted line "Last checked today at 12:00 PM". On the right, aligned with the identity, retain outlined actions "CHECK NOW" with a refresh icon and "DISCONNECT ICLOUD". Avoid the excessive blank space in the reference, but keep comfortable desktop spacing.
+Place a tiny, unobtrusive caption OUTSIDE the app panel in the bottom margin: "DESIGN CONCEPT · EXAMPLE ACCOUNT". This is an aspirational connected-state mockup; do not claim these are fetched real account details. No explanatory Apple API limitations inside the product UI. Do not include Settings redirection, profile editing, unrelated workbook content, settings sidebar, marketing copy, gradients, glass effects, or large ornamental artwork. Render every specified text accurately and legibly.
+
+## iPhone prompt
+
+Use case: ui-mockup.
+Create ONE polished, high-fidelity raster design concept for Cavalry for iPhone's iCloud account screen. The attached image is the STYLE REFERENCE for the existing mobile app. The request is a CONNECTED-STATE CONCEPT with the Apple Account name and email already visible inside the app. It does not represent the actual current account state in the supplied screenshot.
+Preserve Cavalry's warm off-white canvas, clean white panel, thin dark border with restrained rounded corners, bold IBM Plex Mono-like typography, cobalt-blue cloud and primary button, simple outlined icons. Do not redesign the visual identity.
+Output a single straight-on portrait app screen, approximately 9:19 aspect ratio, not a phone product photograph and no mockup hardware frame. Include a realistic iPhone status bar showing 12:00, a black Dynamic Island and the bottom home indicator, with correct safe areas.
+Main panel has about 18 logical pixels of screen margin. Make the header compact: blue cloud icon next to the title "iCloud"; a small "Done" action at the upper right; "Privacy" with a tiny external-link icon on a small second row right. No giant empty header.
+Below a divider, show a small muted label "APPLE ACCOUNT" and a small green "Connected" status badge. Then a restrained circular avatar with initials "AR", prominent "Alex Rivera", and readable "alex.rivera@example.com". Keep the email fully visible on one line at normal iPhone width, sized appropriately. These are intentionally fictional example details; never reuse or invent real identity information from the reference.
+Below identity, a subtle tinted inset row: "Account reference" then bold monospaced "3A71D9B28F04" plus small copy icon. Beneath it, supporting text "Match this reference on your Mac."
+Then a compact divider with status "Up to date" and small supporting line "Last synced today at 12:00 PM".
+At the bottom of the card: a full-width cobalt blue button with refresh icon and label "Check now"; below it a restrained outlined button "Disconnect iCloud"; then one short muted explanation "Your local workbooks stay on this iPhone."
+All account details and both actions should fit comfortably above the home indicator, with clear spacing and no cut-off text. Remove the previous unavailable-account message and remove "View Apple Account": identity is visible here in this concept.
+Outside the app panel at the bottom, a tiny understated caption: "DESIGN CONCEPT · EXAMPLE ACCOUNT".
+No Apple API caveats in the UI, no fake verification badges, no settings redirect, no unrelated workbook sections or marketing copy. Match the supplied screenshot's recognizable aesthetic with cleaner hierarchy and compact spacing. Render specified text accurately.

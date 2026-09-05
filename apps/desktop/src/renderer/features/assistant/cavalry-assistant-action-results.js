@@ -568,5 +568,3 @@ export function cavalryAssistantActionReceiptMessage(receiptValue) {
   const verb = asText(receipt.actionVerb) || 'Completed';
   return `${verb}${label ? ` ${label}` : ''}${details ? ` — ${details}` : ''}.`;
 }
-
-export const CAVALRY_ASSISTANT_ACTION_LIFECYCLES = Object.freeze([...ACTION_LIFECYCLES]);

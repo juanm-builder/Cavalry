@@ -218,6 +218,7 @@ export function CavalryAssistant({
   } = useCavalryAssistantPanelResize(conversationStorage);
   const composerRef = useRef(null);
   const imageInputRef = useRef(null);
+  const imagePreparationVersionRef = useRef(0);
   const assistantWasOpenRef = useRef(isOpen);
   const messageListRef = useRef(null);
   const requestIdRef = useRef('');
@@ -290,6 +291,9 @@ export function CavalryAssistant({
       });
     }
     conversationScopeRef.current = conversationScopeKey;
+    imagePreparationVersionRef.current += 1;
+    setProcessingImages(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
     requestAbortRef.current?.abort();
     requestVersionRef.current += 1;
     loadedConversationScopeRef.current = isOpen ? conversationScopeKey : '';
@@ -378,6 +382,7 @@ export function CavalryAssistant({
   useEffect(
     () => () => {
       requestAbortRef.current?.abort();
+      imagePreparationVersionRef.current += 1;
       if (loadedConversationScopeRef.current === conversationStateRef.current.scopeKey) {
         saveCavalryAssistantConversationState(conversationStateRef.current, {
           storage: conversationStorage
@@ -404,6 +409,7 @@ export function CavalryAssistant({
 
   async function addImageFiles(files) {
     if (processingImages || pending || !files?.length) return;
+    const version = ++imagePreparationVersionRef.current;
     setProcessingImages(true);
     setAttachmentNotice('Preparing images…');
     setError('');
@@ -412,6 +418,7 @@ export function CavalryAssistant({
         createId: makeId,
         existingAttachments: attachments
       });
+      if (version !== imagePreparationVersionRef.current) return;
       if (result.attachments.length) {
         setAttachments((current) =>
           current.concat(result.attachments).slice(0, COMPANION_IMAGE_ATTACHMENT_MAX_COUNT)
@@ -427,11 +434,14 @@ export function CavalryAssistant({
           : ''
       );
     } catch (imageError) {
+      if (version !== imagePreparationVersionRef.current) return;
       setError(asText(imageError?.message) || 'The selected images could not be prepared.');
       setAttachmentNotice('');
     } finally {
-      setProcessingImages(false);
-      if (imageInputRef.current) imageInputRef.current.value = '';
+      if (version === imagePreparationVersionRef.current) {
+        setProcessingImages(false);
+        if (imageInputRef.current) imageInputRef.current.value = '';
+      }
     }
   }
 
@@ -800,6 +810,9 @@ export function CavalryAssistant({
 
   function clearConversationDraft() {
     void voice.cancel();
+    imagePreparationVersionRef.current += 1;
+    setProcessingImages(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
     setComposer('');
     setAttachments([]);
     setAttachmentNotice('');

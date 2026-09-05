@@ -60,11 +60,6 @@ export function cloudLibraryCounts(workbooks) {
   };
 }
 
-export function cloudLibraryCountLabel(counts) {
-  const confirmed = `${counts.confirmed} in iCloud`;
-  return counts.queued ? `${confirmed} · ${counts.queued} waiting` : confirmed;
-}
-
 function CloudWorkbookRow({
   confirmingRemoval,
   onCancelRemoval,

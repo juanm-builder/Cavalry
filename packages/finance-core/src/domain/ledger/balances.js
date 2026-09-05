@@ -10,9 +10,19 @@ export function getAccountById(workbook, accountId) {
     : null;
 }
 
+function indexAccounts(workbook) {
+  const accounts = new Map();
+  (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
+    // Preserve getAccountById's first-match behavior for legacy duplicate IDs.
+    if (!accounts.has(account.id)) accounts.set(account.id, account);
+  });
+  return accounts;
+}
+
 export function getLedgerBalancesByField(workbook, asOfDate = '', amountField = 'baseAmount') {
   const cutoff = normalizeDateKey(asOfDate);
-  const balances = {};
+  const accounts = indexAccounts(workbook);
+  const balances = Object.create(null);
   (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
     balances[account.id] = 0;
   });
@@ -22,7 +32,7 @@ export function getLedgerBalancesByField(workbook, asOfDate = '', amountField = 
       return;
     }
     (transaction.lines || []).forEach((line) => {
-      const account = getAccountById(workbook, line.accountId);
+      const account = accounts.get(line.accountId);
       if (!account) {
         return;
       }
@@ -38,7 +48,7 @@ export function getLedgerBalancesByField(workbook, asOfDate = '', amountField = 
       );
     });
   });
-  return balances;
+  return { ...balances };
 }
 
 export function getLedgerHistoricalBalancesAsOf(workbook, asOfDate = '') {
@@ -139,7 +149,8 @@ export function convertLedgerLineToBase(workbook, line, account = null) {
 
 export function getLedgerValuationBalancesAsOf(workbook, asOfDate = '') {
   const cutoff = normalizeDateKey(asOfDate);
-  const balances = {};
+  const accounts = indexAccounts(workbook);
+  const balances = Object.create(null);
   (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
     balances[account.id] = 0;
   });
@@ -149,7 +160,7 @@ export function getLedgerValuationBalancesAsOf(workbook, asOfDate = '') {
       return;
     }
     (transaction.lines || []).forEach((line) => {
-      const account = getAccountById(workbook, line.accountId);
+      const account = accounts.get(line.accountId);
       if (!account) {
         return;
       }
@@ -159,7 +170,7 @@ export function getLedgerValuationBalancesAsOf(workbook, asOfDate = '') {
       );
     });
   });
-  return balances;
+  return { ...balances };
 }
 
 export function getLedgerValuationBalances(workbook) {
@@ -168,7 +179,8 @@ export function getLedgerValuationBalances(workbook) {
 
 export function getLedgerNativeBalancesByCurrencyAsOf(workbook, asOfDate = '') {
   const cutoff = normalizeDateKey(asOfDate);
-  const balances = {};
+  const accounts = indexAccounts(workbook);
+  const balances = Object.create(null);
   (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
     balances[account.id] = {};
   });
@@ -178,7 +190,7 @@ export function getLedgerNativeBalancesByCurrencyAsOf(workbook, asOfDate = '') {
       return;
     }
     (transaction.lines || []).forEach((line) => {
-      const account = getAccountById(workbook, line.accountId);
+      const account = accounts.get(line.accountId);
       if (!account) {
         return;
       }
@@ -189,7 +201,7 @@ export function getLedgerNativeBalancesByCurrencyAsOf(workbook, asOfDate = '') {
       );
     });
   });
-  return balances;
+  return { ...balances };
 }
 
 export function getLedgerNativeBalancesByCurrency(workbook) {
@@ -219,7 +231,11 @@ function getLedgerTrustedBaseBalanceSnapshotAsOf(workbook, asOfDate = '') {
   const historical = getLedgerHistoricalBalancesAsOf(workbook, asOfDate);
   const valuation = getLedgerValuationBalancesAsOf(workbook, asOfDate);
   const nativeByCurrency = getLedgerNativeBalancesByCurrencyAsOf(workbook, asOfDate);
-  const balances = {};
+  return getTrustedBaseBalanceSnapshot(workbook, historical, valuation, nativeByCurrency);
+}
+
+function getTrustedBaseBalanceSnapshot(workbook, historical, valuation, nativeByCurrency) {
+  const balances = Object.create(null);
   const currencyIntegrityAccountIds = [];
   (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
     const integrity = getCurrencyIntegrityFromBuckets(
@@ -240,7 +256,7 @@ function getLedgerTrustedBaseBalanceSnapshotAsOf(workbook, asOfDate = '') {
     );
   });
   return {
-    balances,
+    balances: { ...balances },
     currencyIntegrityAccountIds,
     historical,
     valuation,
@@ -257,12 +273,16 @@ export function getLedgerTrustedBaseBalances(workbook) {
 }
 
 export function getLedgerDisplayBalancesAsOf(workbook, asOfDate = '') {
-  const baseCurrency = getWorkbookBaseCurrency(workbook);
   const nativeByCurrency = getLedgerNativeBalancesByCurrencyAsOf(workbook, asOfDate);
   const valuation = getLedgerValuationBalancesAsOf(workbook, asOfDate);
   const historical = getLedgerHistoricalBalancesAsOf(workbook, asOfDate);
-  const balances = {};
-  const currencies = {};
+  return getDisplayBalances(workbook, historical, valuation, nativeByCurrency);
+}
+
+function getDisplayBalances(workbook, historical, valuation, nativeByCurrency) {
+  const baseCurrency = getWorkbookBaseCurrency(workbook);
+  const balances = Object.create(null);
+  const currencies = Object.create(null);
   const mixedCurrencyAccountIds = [];
   const currencyIntegrityAccountIds = [];
   (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
@@ -295,8 +315,8 @@ export function getLedgerDisplayBalancesAsOf(workbook, asOfDate = '') {
     balances[account.id] = 0;
   });
   return {
-    balances,
-    currencies,
+    balances: { ...balances },
+    currencies: { ...currencies },
     nativeByCurrency,
     mixedCurrencyAccountIds,
     currencyIntegrityAccountIds
@@ -304,8 +324,13 @@ export function getLedgerDisplayBalancesAsOf(workbook, asOfDate = '') {
 }
 
 export function getAccountBalanceSnapshotAsOf(workbook, asOfDate = '') {
-  const display = getLedgerDisplayBalancesAsOf(workbook, asOfDate);
   const trustedBase = getLedgerTrustedBaseBalanceSnapshotAsOf(workbook, asOfDate);
+  const display = getDisplayBalances(
+    workbook,
+    trustedBase.historical,
+    trustedBase.valuation,
+    trustedBase.nativeByCurrency
+  );
   return {
     historical: trustedBase.historical,
     native: getLedgerNativeBalancesAsOf(workbook, asOfDate),
@@ -326,12 +351,13 @@ export function getAccountBaseBalanceAsOf(workbook, accountId, asOfDate = '') {
 export function getAssetLiabilityTotalsAsOf(workbook, asOfDate = '') {
   const balances = getLedgerTrustedBaseBalancesAsOf(workbook, asOfDate);
   const accounts = workbook && workbook.accounts ? workbook.accounts : [];
+  // Overdrawn assets and credit balances on liabilities still affect net position.
   const assets = accounts
     .filter((account) => account.group === 'asset')
-    .reduce((sum, account) => roundMoney(sum + Math.max(0, balances[account.id] || 0)), 0);
+    .reduce((sum, account) => roundMoney(sum + (balances[account.id] || 0)), 0);
   const liabilities = accounts
     .filter((account) => account.group === 'liability')
-    .reduce((sum, account) => roundMoney(sum + Math.max(0, balances[account.id] || 0)), 0);
+    .reduce((sum, account) => roundMoney(sum + (balances[account.id] || 0)), 0);
   return {
     assets,
     liabilities,

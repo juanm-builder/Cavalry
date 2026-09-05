@@ -1,7 +1,10 @@
 // Reporting preserves the established posted-flow classification used by schema-v2 workbooks.
 
 import { roundMoney } from '../money.js';
-import { getTransactionContributions } from './transaction-contributions.js';
+import {
+  createTransactionContributionReader,
+  getTransactionContributions
+} from './transaction-contributions.js';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -64,16 +67,8 @@ function getCategoryById(workbook, categoryId) {
     : null;
 }
 
-function getTransactionBaseAmount(transaction) {
-  return roundMoney(
-    Number(transaction && transaction.baseAmount ? transaction.baseAmount : 0) || 0
-  );
-}
-
-function isTransactionWithinDateRange(transaction, startDate, endDate) {
+function isTransactionWithinDateRange(transaction, start, end) {
   const date = normalizeDateKey(transaction && transaction.date);
-  const start = normalizeDateKey(startDate);
-  const end = normalizeDateKey(endDate);
   if (!date) {
     return false;
   }
@@ -87,8 +82,10 @@ function isTransactionWithinDateRange(transaction, startDate, endDate) {
 }
 
 function getTransactionsForDateRange(transactions, startDate, endDate) {
+  const start = normalizeDateKey(startDate);
+  const end = normalizeDateKey(endDate);
   return asArray(transactions).filter((transaction) => {
-    return isTransactionWithinDateRange(transaction, startDate, endDate);
+    return isTransactionWithinDateRange(transaction, start, end);
   });
 }
 
@@ -137,17 +134,20 @@ export function getFlowTransactions(workbook, rangeOrMonthKey, type, options = {
     typeof rangeOrMonthKey === 'string'
       ? getMonthRangeFromKey(rangeOrMonthKey)
       : rangeOrMonthKey || fallbackRange;
+  const readContribution = createTransactionContributionReader(workbook);
   return getTransactionsForDateRange(
     workbook && workbook.transactions ? workbook.transactions : [],
     range && range.start,
     range && range.end
-  ).filter((transaction) => flowKindMatches(getTransactionFlowKind(transaction, workbook), type));
+  ).filter((transaction) => flowKindMatches(readContribution(transaction).flowKind, type));
 }
 
 export function getFlowBreakdown(workbook, transactions) {
-  const categoryTotals = {};
+  // Imported identifiers may also be Object prototype names.
+  const categoryTotals = Object.create(null);
+  const readContribution = createTransactionContributionReader(workbook);
   asArray(transactions).forEach((transaction) => {
-    const contribution = getTransactionContributions(workbook, transaction);
+    const contribution = readContribution(transaction);
     const categoryId = contribution.categoryId;
     categoryTotals[categoryId] = roundMoney(
       (categoryTotals[categoryId] || 0) + contribution.signedBaseAmount
@@ -169,12 +169,13 @@ export function getFlowBreakdown(workbook, transactions) {
 
 export function getMonthlyFlowBreakdown(workbook, monthKey, type, options = {}) {
   const transactions = getFlowTransactions(workbook, monthKey, type, options);
+  const readContribution = createTransactionContributionReader(workbook);
   return {
     transactions,
     rows: getFlowBreakdown(workbook, transactions),
     total: roundMoney(
       transactions.reduce((sum, transaction) => {
-        return sum + getTransactionContributions(workbook, transaction).signedBaseAmount;
+        return sum + readContribution(transaction).signedBaseAmount;
       }, 0)
     )
   };
@@ -193,11 +194,12 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
     debt: 0,
     outflow: 0,
     net: 0,
-    categoryTotals: {},
+    categoryTotals: Object.create(null),
     transactions
   };
+  const readContribution = createTransactionContributionReader(workbook);
   transactions.forEach((transaction) => {
-    const contribution = getTransactionContributions(workbook, transaction);
+    const contribution = readContribution(transaction);
     const kind = contribution.flowKind;
     const amount = contribution.signedBaseAmount;
     if (kind === 'inflow') {
@@ -218,5 +220,6 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
   });
   summary.outflow = roundMoney(summary.expense + summary.savings + summary.debt);
   summary.net = roundMoney(summary.income - summary.outflow);
+  summary.categoryTotals = { ...summary.categoryTotals };
   return summary;
 }

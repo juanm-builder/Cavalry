@@ -29,7 +29,12 @@ function transact(database, mode, operation) {
     try {
       const transaction = database.transaction(STORE_NAME, mode);
       const request = operation(transaction.objectStore(STORE_NAME));
-      request.onsuccess = () => resolve(request.result);
+      // A successful request can still be rolled back if its transaction aborts.
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = () =>
+        reject(transaction.error || new Error('Browser cache transaction was aborted.'));
+      transaction.onerror = () =>
+        reject(transaction.error || new Error('Browser cache transaction failed.'));
       request.onerror = () => reject(request.error || new Error('Browser cache request failed.'));
     } catch (error) {
       reject(error);
@@ -40,7 +45,15 @@ function transact(database, mode, operation) {
 export function createIndexedDbWorkbookCache(indexedDB) {
   let databasePromise = null;
   const getDatabase = () => {
-    databasePromise ||= openDatabase(indexedDB);
+    databasePromise ||= openDatabase(indexedDB)
+      .then((database) => {
+        if (!database) databasePromise = null;
+        return database;
+      })
+      .catch((error) => {
+        databasePromise = null;
+        throw error;
+      });
     return databasePromise;
   };
   return {
@@ -53,7 +66,9 @@ export function createIndexedDbWorkbookCache(indexedDB) {
         : { status: 'empty', source: 'cache' };
     },
     async save(workbook) {
-      await transact(await getDatabase(), 'readwrite', (store) =>
+      const database = await getDatabase();
+      if (!database) return { ok: false, unavailable: true };
+      await transact(database, 'readwrite', (store) =>
         store.put({
           key: ACTIVE_WORKBOOK_KEY,
           value: workbook
@@ -62,9 +77,9 @@ export function createIndexedDbWorkbookCache(indexedDB) {
       return { ok: true };
     },
     async clear() {
-      await transact(await getDatabase(), 'readwrite', (store) =>
-        store.delete(ACTIVE_WORKBOOK_KEY)
-      );
+      const database = await getDatabase();
+      if (!database) return { ok: false, unavailable: true };
+      await transact(database, 'readwrite', (store) => store.delete(ACTIVE_WORKBOOK_KEY));
       return { ok: true };
     }
   };

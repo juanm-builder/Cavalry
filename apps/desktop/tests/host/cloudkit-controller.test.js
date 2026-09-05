@@ -60,6 +60,90 @@ function conflictNoticeFixture() {
 }
 
 describe('native CloudKit workbook boundary', () => {
+  it('disconnects and reconnects through trusted native IPC without deleting data', async () => {
+    const handlers = new Map();
+    let enabled = true;
+    const assertTrustedSender = vi.fn();
+    const request = vi.fn(async (payload) => {
+      if (payload.operation === 'set_connection') enabled = payload.enabled;
+      if (payload.operation === 'list') return { ok: true, workbooks: [], pendingCount: 0 };
+      return {
+        ok: true,
+        account: {
+          status: enabled ? 'available' : 'disconnected',
+          userId: enabled ? 'owner-a' : null
+        },
+        pendingCount: 0
+      };
+    });
+    const controller = createCloudController({
+      assertTrustedSender,
+      cloudKit: { request },
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) }
+    });
+    controller.registerHandlers();
+    await controller.initialize();
+    const generation = controller.getState().sessionGeneration;
+    const setConnection = handlers.get(CLOUD_IPC_CHANNELS.setConnection);
+    const event = { sender: {} };
+    await expect(setConnection(event, { enabled: false })).resolves.toMatchObject({
+      ok: true,
+      state: { status: 'disconnected', user: null, workbooks: [], error: '' }
+    });
+    expect(assertTrustedSender).toHaveBeenCalledWith(event);
+    expect(controller.getState().sessionGeneration).toBeGreaterThan(generation);
+    await controller.restoreExistingSession();
+    expect(controller.getState().status).toBe('disconnected');
+    await expect(setConnection(event, { enabled: true })).resolves.toMatchObject({
+      ok: true,
+      state: { status: 'signed_in', user: { id: 'owner-a' } }
+    });
+    expect(
+      request.mock.calls.every(([payload]) =>
+        ['status', 'list', 'set_connection'].includes(payload.operation)
+      )
+    ).toBe(true);
+    const count = request.mock.calls.length;
+    await expect(setConnection(event, { enabled: 'false' })).resolves.toMatchObject({ ok: false });
+    expect(request).toHaveBeenCalledTimes(count);
+    controller.dispose();
+  });
+
+  it('ignores a stale account check that finishes after disconnect', async () => {
+    const handlers = new Map();
+    let finishStatus;
+    const request = vi.fn(({ operation }) =>
+      operation === 'status'
+        ? new Promise((resolve) => {
+            finishStatus = resolve;
+          })
+        : Promise.resolve({
+            ok: true,
+            account: { status: 'disconnected', userId: null },
+            pendingCount: 0
+          })
+    );
+    const controller = createCloudController({
+      assertTrustedSender: () => {},
+      cloudKit: { request },
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) }
+    });
+    controller.registerHandlers();
+    const initializing = controller.initialize();
+    await handlers.get(CLOUD_IPC_CHANNELS.setConnection)({}, { enabled: false });
+    finishStatus({
+      ok: true,
+      account: { status: 'available', userId: 'old-owner' },
+      pendingCount: 0
+    });
+    await initializing;
+    expect(controller.getState()).toMatchObject({
+      status: 'disconnected',
+      user: null,
+      workbooks: []
+    });
+    controller.dispose();
+  });
   it('validates a portable workbook and marks an explicit keep-local resolution', async () => {
     const requests = [];
     const cloudKit = {
@@ -423,7 +507,7 @@ describe('desktop iCloud state controller', () => {
     controller.dispose();
   });
 
-  it('maps the system iCloud account to eight narrow renderer commands', async () => {
+  it('maps the system iCloud account to narrow renderer commands', async () => {
     const handlers = new Map();
     const sent = [];
     const assertTrustedSender = vi.fn();
@@ -482,6 +566,7 @@ describe('desktop iCloud state controller', () => {
     expect([...handlers.keys()].sort()).toEqual(
       [
         CLOUD_IPC_CHANNELS.deleteWorkbook,
+        CLOUD_IPC_CHANNELS.setConnection,
         CLOUD_IPC_CHANNELS.downloadConflictPackage,
         CLOUD_IPC_CHANNELS.downloadWorkbook,
         CLOUD_IPC_CHANNELS.getState,

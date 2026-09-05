@@ -4,7 +4,11 @@ import globals from 'globals';
 const commonRules = {
   'no-eval': 'error',
   'no-implied-eval': 'error',
-  'no-new-func': 'error'
+  'no-new-func': 'error',
+  'no-unreachable': 'error',
+  'no-constant-condition': ['error', { checkLoops: false }],
+  'no-dupe-keys': 'error',
+  'no-unsafe-optional-chaining': 'error'
 };
 
 export default [

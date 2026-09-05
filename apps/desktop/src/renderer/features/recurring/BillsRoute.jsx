@@ -36,10 +36,6 @@ function renderInBody(content) {
   return typeof document === 'undefined' ? content : createPortal(content, document.body);
 }
 
-function asText(value) {
-  return String(value == null ? '' : value).trim();
-}
-
 function emit(onAction, type, payload = {}) {
   return typeof onAction === 'function' ? onAction({ type, payload }) : undefined;
 }

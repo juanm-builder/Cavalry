@@ -251,6 +251,7 @@ function createCompanionPort(bridge) {
 
 const CLOUD_BRIDGE_METHODS = Object.freeze({
   getState: 'getState',
+  setConnection: 'setConnection',
   listWorkbooks: 'listWorkbooks',
   uploadWorkbook: 'uploadWorkbook',
   downloadWorkbook: 'downloadWorkbook',

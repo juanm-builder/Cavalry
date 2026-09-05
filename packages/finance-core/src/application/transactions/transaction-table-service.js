@@ -3,7 +3,10 @@ import {
   buildManualLedgerTransaction,
   normalizeLedgerTransactionTemplate
 } from '../../domain/ledger/transactions.js';
-import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
+import {
+  createTransactionContributionReader,
+  getTransactionContributions
+} from '../../domain/ledger/transaction-contributions.js';
 
 const DEFAULT_PAGE_SIZE = 12;
 const EDITABLE_INLINE_FIELDS = Object.freeze([
@@ -138,8 +141,9 @@ export function buildTransactionRows(workbook, options = {}) {
   const accountById = byId(workbook && workbook.accounts);
   const categoryById = byId(workbook && workbook.categories);
   const counterpartyById = byId(workbook && workbook.counterparties);
+  const readContribution = createTransactionContributionReader(workbook || {});
   return asArray(workbook && workbook.transactions).map((transaction, index) => {
-    const contribution = getTransactionContributions(workbook || {}, transaction || {});
+    const contribution = readContribution(transaction || {});
     const contributions = {
       ...contribution,
       metrics: { ...contribution.metrics },

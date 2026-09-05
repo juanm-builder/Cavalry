@@ -306,6 +306,8 @@ export function createSettingsController(dependencies = {}) {
         }
 
         const cloudOperations = {
+          'connect-icloud': 'connect',
+          'disconnect-icloud': 'disconnect',
           'refresh-cloud-workbooks': 'refresh',
           'retry-cloud-sync-state': 'retry-sync-state',
           'set-cloud-autosave': 'set-auto-sync',

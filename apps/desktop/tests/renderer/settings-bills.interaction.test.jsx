@@ -61,6 +61,62 @@ async function fillRecurringForm(user, values = {}) {
 }
 
 describe('Settings and Bills interactions', () => {
+  it('identifies the iCloud account and dispatches confirmed disconnect and reconnect', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    const view = render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            configured: true,
+            status: 'signed_in',
+            user: { id: '_1234567890abcdef1234567890abcdef' },
+            workbooks: []
+          }
+        })}
+        onAction={onAction}
+      />
+    );
+    expect(screen.getByText('567890ABCDEF')).toBeTruthy();
+    const clipboard = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy account reference' }));
+    expect(clipboard).toHaveBeenCalledWith('567890ABCDEF');
+    expect(screen.getByText('Account reference copied.')).toBeTruthy();
+    clipboard.mockRejectedValueOnce(new Error('Clipboard blocked'));
+    await user.click(screen.getByRole('button', { name: 'Copy account reference' }));
+    expect(screen.getByText('Couldn’t copy. Select the reference to copy it.')).toBeTruthy();
+    clipboard.mockRestore();
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect iCloud' }));
+    expect(onAction).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Confirm Disconnect' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'disconnect-icloud', payload: {} });
+    view.rerender(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: { configured: true, status: 'disconnected', user: null, workbooks: [] }
+        })}
+        onAction={onAction}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Connect iCloud' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'connect-icloud', payload: {} });
+  });
+  it('opens account settings when the browser blocks access to local storage', () => {
+    const storage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('Storage access denied.');
+    });
+    try {
+      render(<SettingsRoute model={makeSettingsModel({ activeSection: 'settings-account' })} />);
+      expect(screen.getByRole('heading', { name: 'Local profile' })).toBeTruthy();
+      expect(screen.getByRole('textbox', { name: 'Name' }).value).toBe('');
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
   it('lets the Mac resolve changes reported by an iPhone', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn(async () => ({ ok: true }));

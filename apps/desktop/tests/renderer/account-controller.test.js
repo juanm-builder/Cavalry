@@ -241,7 +241,11 @@ describe('account controller', () => {
       balanceCopy: '-₱50.00',
       balanceTone: 'good'
     });
-    expect(creditModel.summary).toMatchObject({ assetTone: 'neutral', creditTone: 'neutral' });
+    expect(creditModel.summary).toMatchObject({
+      assetTone: 'bad',
+      creditTone: 'good',
+      netWorthCopy: '-₱50.00'
+    });
     expect(creditModel.selectedAccount.historyRows).toEqual([
       expect.objectContaining({
         transactionId: 'txn-card-refund',
@@ -271,6 +275,43 @@ describe('account controller', () => {
     expect(zeroModel.selectedAccount.balanceTone).toBe('neutral');
     expect(zeroModel.selectedAccount.historyRows[0].balanceTone).toBe('neutral');
     expect(zeroModel.summary.creditTone).toBe('neutral');
+  });
+
+  it('keeps only the latest eight history rows with balances including older postings', () => {
+    const workbook = makeWorkbook();
+    const template = workbook.transactions[0];
+    workbook.transactions = Array.from({ length: 12 }, (_, index) => ({
+      ...template,
+      id: `txn-${index + 1}`,
+      date: `2026-06-${String(index + 1).padStart(2, '0')}`
+    })).reverse();
+    const before = structuredClone(workbook);
+
+    const model = buildAccountsFeatureModel(workbook, {
+      selectedAccountId: 'bank',
+      asOfDate: '2026-06-10'
+    });
+
+    expect(model.selectedAccount.historyRows.map((row) => row.transactionId)).toEqual([
+      'txn-10',
+      'txn-9',
+      'txn-8',
+      'txn-7',
+      'txn-6',
+      'txn-5',
+      'txn-4',
+      'txn-3'
+    ]);
+    expect(model.selectedAccount.historyRows[0]).toMatchObject({
+      beforeBalance: -900,
+      runningBalance: -1000,
+      balanceCopy: '-₱1,000.00'
+    });
+    expect(model.selectedAccount.historyRows.at(-1)).toMatchObject({
+      beforeBalance: -200,
+      runningBalance: -300
+    });
+    expect(workbook).toEqual(before);
   });
 
   it('keeps transfer details in the selected account perspective', () => {
@@ -422,8 +463,9 @@ describe('account controller', () => {
     });
     expect(accountModel.selectedAccount.balanceCopy).toBe('$252.15');
     expect(accountModel.selectedAccount.historyRows).toHaveLength(1);
-    expect(accountModel.summary.netWorthCopy).toBe('₱15,682.26');
-    expect(dashboardModel.money.netWorth).toBe(15682.26);
+    // Include the bank account's existing -100 book balance in both summaries.
+    expect(accountModel.summary.netWorthCopy).toBe('₱15,582.26');
+    expect(dashboardModel.money.netWorth).toBe(15582.26);
     expect(
       dashboardModel.money.balanceAccounts.find((account) => account.id === 'cash')
     ).toMatchObject({

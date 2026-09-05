@@ -124,10 +124,11 @@ describe('account view model service', () => {
     expect(model.balances.native.paypal).toBe(252.15);
     expect(model.balances.historical.paypal).toBe(252.15);
     expect(model.balances.valuation.paypal).toBe(15570.26);
+    expect(model.balances.trustedBase.cash).toBe(-250);
     expect(model.summary).toEqual({
-      totalAssets: 65070.26,
+      totalAssets: 64820.26,
       totalLiabilities: 700,
-      netWorth: 64370.26
+      netWorth: 64120.26
     });
   });
 
