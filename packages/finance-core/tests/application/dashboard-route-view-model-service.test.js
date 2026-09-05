@@ -122,9 +122,10 @@ describe('dashboard route view-model service', () => {
       net: 47971
     });
     expect(stats.money).toEqual({
-      totalAssets: 49501,
+      // Include the fixture's overdrawn cash account (-330).
+      totalAssets: 49171,
       totalLiabilities: 1200,
-      netWorth: 48301
+      netWorth: 47971
     });
     expect(stats.cards.map((card) => card.label)).toEqual([
       'Net Worth',

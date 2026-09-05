@@ -1,7 +1,7 @@
 export const ACCOUNT_STORAGE_KEY = 'cavalry.account.v1';
 
-// This local profile is the unconfigured/offline fallback. Hosted identity is
-// projected from Google by the main-process cloud controller when available.
+// This profile is stored only on this Mac. It is not the Apple Account used
+// by native CloudKit, which does not expose the account email to Cavalry.
 export const DEFAULT_ACCOUNT_PROFILE = Object.freeze({
   name: '',
   email: ''

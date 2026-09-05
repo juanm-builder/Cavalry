@@ -530,6 +530,7 @@ function createCloudWorkbookController(dependencies = {}) {
 
   return {
     clearConflictNotice: (payload) => updateConflictNotice(payload, true),
+    setConnection: (enabled) => request({ operation: 'set_connection', enabled }),
     deleteWorkbook,
     downloadConflictPackage,
     downloadWorkbook,

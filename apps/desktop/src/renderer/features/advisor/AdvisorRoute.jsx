@@ -12,10 +12,6 @@ function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
 }
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function advisorActionLabel(action) {
   const label = String(action?.label || action?.summary || action?.type || '').trim();
   if (!label) return 'Review draft';

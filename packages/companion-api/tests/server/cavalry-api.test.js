@@ -1,9 +1,11 @@
 // Tests for the Companion API HTTP adapter.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createCavalryApiController } from '@cavalry/companion-api/application/api/cavalry-api-controller.js';
 import { createCavalryApiServer } from '@cavalry/companion-api/server/cavalry-api/server.js';
+import { createCavalryApiRequestHandler } from '@cavalry/companion-api/server/cavalry-api/routes.js';
 
 let server;
 
@@ -55,6 +57,43 @@ afterEach(async () => {
 });
 
 describe('Cavalry API HTTP adapter', () => {
+  it.each([false, true])(
+    'preserves split UTF-8 JSON and enforces the actual byte limit (oversize: %s)',
+    async (oversize) => {
+      const body = { description: 'Café ₱100 🍵' };
+      const bytes = Buffer.from(JSON.stringify(body), 'utf8');
+      const controller = {
+        makeRequestId: () => 'req_unicode',
+        createDraftGroupFromActionPlan: vi.fn(({ body }) => ({ received: body }))
+      };
+      const request = Object.assign(new EventEmitter(), {
+        method: 'POST',
+        url: '/v1/workbooks/wb_1/draft-groups/from-action-plan',
+        headers: { authorization: 'Bearer dev-token' },
+        socket: { remoteAddress: '127.0.0.1' }
+      });
+      const response = { writeHead: vi.fn(), end: vi.fn() };
+      const handler = createCavalryApiRequestHandler({
+        controller,
+        authOptions: { devAuthEnabled: true, devToken: 'dev-token' },
+        routeOptions: { maxBodyBytes: bytes.length - (oversize ? 1 : 0) }
+      });
+      const handled = handler(request, response);
+      for (let offset = 0; offset < bytes.length; offset += 1) {
+        request.emit('data', bytes.subarray(offset, offset + 1));
+      }
+      request.emit('end');
+      await handled;
+
+      expect(response.writeHead.mock.calls[0][0]).toBe(oversize ? 413 : 200);
+      if (oversize) {
+        expect(controller.createDraftGroupFromActionPlan).not.toHaveBeenCalled();
+      } else {
+        expect(JSON.parse(response.end.mock.calls[0][0])).toEqual({ received: body });
+      }
+    }
+  );
+
   it('serves draft-first endpoints with dev auth enabled', async () => {
     const workbook = makeWorkbook();
     const controller = createCavalryApiController({

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const {
+  createAdvisorStreamRunners,
+  createRetryingPost,
   isEventStream,
   isRetryableStatus,
   isRetryableTransportError,
@@ -33,6 +35,93 @@ function dataFrame(payload) {
 }
 
 describe('advisor stream transport', () => {
+  it.each(['chat', 'responses'])(
+    'finishes a %s stream at its terminal event without waiting for EOF',
+    async (kind) => {
+      const frame =
+        kind === 'chat'
+          ? `${dataFrame({ choices: [{ delta: { content: 'Complete' } }] })}data: [DONE]\n\n`
+          : dataFrame({ type: 'response.completed', response: { id: 'completed', output: [] } });
+      const reader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode(frame) }),
+        cancel: vi.fn(async () => undefined),
+        releaseLock: vi.fn()
+      };
+      const response = { body: { getReader: () => reader } };
+
+      const result =
+        kind === 'chat'
+          ? await readChatCompletionStream(response)
+          : await readResponsesStream(response);
+
+      expect(result).toMatchObject(kind === 'chat' ? { content: 'Complete' } : { id: 'completed' });
+      expect(reader.read).toHaveBeenCalledTimes(1);
+      expect(reader.cancel).toHaveBeenCalledOnce();
+      expect(reader.releaseLock).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('cancels a failed stream and preserves its failure when cleanup also fails', async () => {
+    const reader = {
+      read: vi.fn().mockResolvedValueOnce({
+        done: false,
+        value: new TextEncoder().encode(
+          dataFrame({ type: 'response.failed', response: { error: { message: 'model failed' } } })
+        )
+      }),
+      cancel: vi.fn(async () => {
+        throw new Error('already closed');
+      }),
+      releaseLock: vi.fn()
+    };
+
+    await expect(readResponsesStream({ body: { getReader: () => reader } })).rejects.toThrow(
+      'model failed'
+    );
+    expect(reader.cancel).toHaveBeenCalledOnce();
+    expect(reader.releaseLock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['streamChatCompletion', 'streamAgentTurn'])(
+    'cancels the declined body before %s falls back',
+    async (method) => {
+      const cancel = vi.fn(async () => undefined);
+      const release = vi.fn();
+      const runners = createAdvisorStreamRunners({
+        fetchStreamedWithTimeout: async () => ({
+          response: { ok: true, body: { cancel }, headers: { get: () => 'application/json' } },
+          release
+        }),
+        sendStatus: vi.fn(),
+        timeoutMs: 100
+      });
+
+      await expect(runners[method]({ requestInit: () => ({}) })).resolves.toEqual({
+        handled: false
+      });
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(release).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('releases retryable response bodies before the next request', async () => {
+    const cancel = vi.fn(async () => undefined);
+    const response = { ok: true };
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel } })
+      .mockImplementationOnce(async () => {
+        expect(cancel).toHaveBeenCalledOnce();
+        return response;
+      });
+    const post = createRetryingPost({ delay: async () => undefined, retryDelaysMs: [1] });
+
+    await expect(post(send)).resolves.toBe(response);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it('detects event-stream responses', () => {
     expect(isEventStream(sseResponse([]))).toBe(true);
     expect(isEventStream(sseResponse([], { contentType: 'application/json' }))).toBe(false);

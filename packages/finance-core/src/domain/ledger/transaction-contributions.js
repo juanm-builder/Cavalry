@@ -140,8 +140,8 @@ function resolveBaseAmount(workbook, transaction) {
   return { amount: 0, resolved: false, warnings };
 }
 
-function cashFlowFor(workbook, transaction, eventKind, amount) {
-  const accounts = accountMap(workbook);
+function cashFlowFor(workbook, transaction, eventKind, amount, lookups) {
+  const accounts = lookups ? lookups.accounts : accountMap(workbook);
   const hasAssetDebit = asArray(transaction && transaction.lines).some(
     (line) =>
       line &&
@@ -178,6 +178,10 @@ export function normalizeTransactionEventKind(value) {
 }
 
 export function inferTransactionEventKind(workbook, transaction) {
+  return inferEventKind(workbook, transaction);
+}
+
+function inferEventKind(workbook, transaction, lookups) {
   const explicit = normalizeTransactionEventKind(transaction && transaction.eventKind);
   if (explicit) return explicit;
 
@@ -192,7 +196,9 @@ export function inferTransactionEventKind(workbook, transaction) {
     return fromTemplate;
   }
 
-  const category = getCategory(workbook, transaction && transaction.categoryId);
+  const category = lookups
+    ? lookups.categories.get(asIdentifier(transaction && transaction.categoryId))
+    : getCategory(workbook, transaction && transaction.categoryId);
   const categoryType = normalizedToken(category && category.type);
   if (categoryType === 'income') return 'income_received';
   if (categoryType === 'expense') return 'purchase';
@@ -202,7 +208,7 @@ export function inferTransactionEventKind(workbook, transaction) {
   return fromTemplate || 'adjustment';
 }
 
-function metricsFor(workbook, transaction, eventKind, amount) {
+function metricsFor(workbook, transaction, eventKind, amount, lookups) {
   const zero = {
     income: 0,
     expense: 0,
@@ -213,7 +219,7 @@ function metricsFor(workbook, transaction, eventKind, amount) {
     debtPrincipal: 0,
     cashFlow: 0
   };
-  const cashFlow = cashFlowFor(workbook, transaction, eventKind, amount);
+  const cashFlow = cashFlowFor(workbook, transaction, eventKind, amount, lookups);
 
   if (eventKind === 'purchase' || eventKind === 'debt_interest_or_fee') {
     return {
@@ -271,11 +277,32 @@ function flowKindFor(eventKind) {
 }
 
 export function getTransactionContributions(workbook, transaction) {
-  const eventKind = inferTransactionEventKind(workbook, transaction);
+  return evaluateTransactionContributions(workbook, transaction);
+}
+
+// Reuse reference indexes within a synchronous report/table calculation. Create
+// a new reader for each pass so edits to a workbook never reuse stale indexes.
+export function createTransactionContributionReader(workbook) {
+  const categories = new Map();
+  asArray(workbook && workbook.categories).forEach((category) => {
+    const id = asIdentifier(category && category.id);
+    // Category lookup uses the first match; account lookup uses the last.
+    if (!categories.has(id)) categories.set(id, category);
+  });
+  const lookups = { accounts: accountMap(workbook), categories };
+  return (transaction) => evaluateTransactionContributions(workbook, transaction, lookups);
+}
+
+function evaluateTransactionContributions(workbook, transaction, lookups) {
+  const eventKind = inferEventKind(workbook, transaction, lookups);
   const resolution = resolveBaseAmount(workbook, transaction);
-  const metrics = resolution.resolved
-    ? metricsFor(workbook, transaction, eventKind, resolution.amount)
-    : metricsFor(workbook, transaction, eventKind, 0);
+  const metrics = metricsFor(
+    workbook,
+    transaction,
+    eventKind,
+    resolution.resolved ? resolution.amount : 0,
+    lookups
+  );
   const flowKind = flowKindFor(eventKind);
   const warnings = [...resolution.warnings];
 
@@ -370,6 +397,7 @@ export function buildTransactionCalculationReceipt(
   const selectedCategoryId = asIdentifier(categoryId);
   const start = asString(range && (range.start || range.startDate));
   const end = asString(range && (range.end || range.endDate));
+  const readContribution = createTransactionContributionReader(workbook);
   const evaluated = asArray(transactions)
     .filter((transaction) => {
       const date = asString(transaction && transaction.date);
@@ -378,7 +406,7 @@ export function buildTransactionCalculationReceipt(
     })
     .map((transaction) => ({
       transaction,
-      contribution: getTransactionContributions(workbook, transaction)
+      contribution: readContribution(transaction)
     }));
   const contributions = evaluated
     .filter(({ contribution }) => {

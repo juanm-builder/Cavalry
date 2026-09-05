@@ -22,6 +22,119 @@ import {
 import { cloneFixture } from '../fixtures/core-workbook-fixtures.js';
 
 describe('account balances', () => {
+  it('includes negative asset and liability balances in net position and honors date cutoffs', () => {
+    const workbook = {
+      currency: 'PHP',
+      accounts: [
+        { id: 'cash', group: 'asset', currency: 'PHP' },
+        { id: 'card', group: 'liability', currency: 'PHP' },
+        { id: 'expenses', group: 'expense', currency: 'PHP' }
+      ],
+      transactions: [
+        {
+          date: '2026-09-01',
+          lines: [
+            { accountId: 'expenses', direction: 'debit', amount: 275, baseAmount: 275 },
+            { accountId: 'cash', direction: 'credit', amount: 275, baseAmount: 275 }
+          ]
+        },
+        {
+          date: '2026-09-02',
+          lines: [
+            { accountId: 'expenses', direction: 'credit', amount: 100, baseAmount: 100 },
+            { accountId: 'card', direction: 'debit', amount: 100, baseAmount: 100 }
+          ]
+        }
+      ]
+    };
+    expect(getAssetLiabilityTotalsAsOf(workbook, '2026-08-31')).toEqual({
+      assets: 0,
+      liabilities: 0,
+      netWorth: 0
+    });
+    expect(getAssetLiabilityTotalsAsOf(workbook, '2026-09-01')).toEqual({
+      assets: -275,
+      liabilities: 0,
+      netWorth: -275
+    });
+    expect(getAssetLiabilityTotalsAsOf(workbook)).toEqual({
+      assets: -275,
+      liabilities: -100,
+      netWorth: -175
+    });
+  });
+
+  it.each(['__proto__', 'constructor', 'toString'])(
+    'keeps balances for opaque account ID %s',
+    (id) => {
+      const workbook = {
+        currency: 'PHP',
+        accounts: [{ id, group: 'asset', currency: 'PHP' }],
+        transactions: [
+          {
+            date: '2026-06-01',
+            lines: [{ accountId: id, direction: 'debit', amount: 100, baseAmount: 100 }]
+          }
+        ]
+      };
+      const snapshot = getAccountBalanceSnapshotAsOf(workbook);
+      for (const field of ['historical', 'native', 'valuation', 'trustedBase', 'display']) {
+        expect(snapshot[field]).toEqual({ [id]: 100 });
+        expect(Object.getPrototypeOf(snapshot[field])).toBe(Object.prototype);
+      }
+      expect(snapshot.displayCurrency).toEqual({ [id]: 'PHP' });
+      expect(snapshot.nativeByCurrency).toEqual({ [id]: { PHP: 100 } });
+      expect(getAssetLiabilityTotalsAsOf(workbook)).toEqual({
+        assets: 100,
+        liabilities: 0,
+        netWorth: 100
+      });
+      expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+    }
+  );
+
+  it('preserves first-match account lookup, posting order, and rounding in balance snapshots', () => {
+    const workbook = {
+      currency: 'PHP',
+      accounts: [
+        { id: 'cash', group: 'asset', currency: 'PHP' },
+        { id: 'cash', group: 'liability', currency: 'PHP' }
+      ],
+      transactions: [
+        {
+          date: '2026-07-01',
+          lines: [
+            { accountId: 'cash', direction: 'debit', amount: 1.004, baseAmount: 1.004 },
+            { accountId: 'cash', direction: 'debit', amount: 1.004, baseAmount: 1.004 },
+            { accountId: 'cash', direction: 'credit', amount: 0.004, baseAmount: 0.004 },
+            { accountId: 'missing', direction: 'debit', amount: 500, baseAmount: 500 }
+          ]
+        },
+        {
+          date: '2026-07-02',
+          lines: [{ accountId: 'cash', direction: 'debit', amount: 10, baseAmount: 10 }]
+        }
+      ]
+    };
+    const before = structuredClone(workbook);
+
+    expect(getAccountBalanceSnapshotAsOf(workbook, '2026-07-01')).toEqual({
+      historical: { cash: 2 },
+      native: { cash: 2 },
+      valuation: { cash: 2 },
+      trustedBase: { cash: 2 },
+      display: { cash: 2 },
+      displayCurrency: { cash: 'PHP' },
+      nativeByCurrency: { cash: { PHP: 2 } },
+      mixedCurrencyAccountIds: [],
+      currencyIntegrityAccountIds: []
+    });
+    expect(workbook).toEqual(before);
+
+    workbook.accounts[0].group = 'liability';
+    expect(getAccountBalanceSnapshotAsOf(workbook, '2026-07-01').historical).toEqual({ cash: -2 });
+  });
+
   it('expenses reduce cash or wallet balances and income increases bank balance', () => {
     const workbook = makeNormalAccountWorkbook();
     const balances = getLedgerHistoricalBalances(workbook);

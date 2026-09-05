@@ -3,6 +3,7 @@ const CLOUD_STATUSES = new Set([
   'initializing',
   'unavailable',
   'signed_out',
+  'disconnected',
   'signing_in',
   'signed_in',
   'error'

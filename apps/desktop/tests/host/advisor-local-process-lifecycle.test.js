@@ -8,6 +8,46 @@ const {
 } = require('../../src/host/advisor-local-process-lifecycle.cjs');
 
 describe('Advisor local process lifecycle', () => {
+  it('keeps force-stop deadlines independent when multiple model children are stopping', async () => {
+    vi.useFakeTimers();
+    try {
+      const lifecycle = createAdvisorLocalProcessLifecycle({ process: { kill: vi.fn() } });
+      const child = () => ({ exitCode: null, signalCode: null, kill: vi.fn(() => true) });
+      const previous = child();
+      const current = child();
+
+      await lifecycle.stopChild(previous, { forceAfterMs: 25 });
+      await lifecycle.stopChild(current, { forceAfterMs: 50 });
+      await vi.advanceTimersByTimeAsync(25);
+      expect(previous.kill).toHaveBeenLastCalledWith('SIGKILL');
+      expect(current.kill).toHaveBeenCalledTimes(1);
+
+      lifecycle.markChildExited(previous);
+      await vi.advanceTimersByTimeAsync(25);
+      expect(current.kill).toHaveBeenLastCalledWith('SIGKILL');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels only the exited child’s force-stop deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const lifecycle = createAdvisorLocalProcessLifecycle({ process: { kill: vi.fn() } });
+      const previous = { exitCode: null, signalCode: null, kill: vi.fn(() => true) };
+      const current = { exitCode: null, signalCode: null, kill: vi.fn(() => true) };
+      await lifecycle.stopChild(previous, { forceAfterMs: 25 });
+      await lifecycle.stopChild(current, { forceAfterMs: 25 });
+
+      lifecycle.markChildExited(previous);
+      await vi.advanceTimersByTimeAsync(25);
+      expect(previous.kill).toHaveBeenCalledTimes(1);
+      expect(current.kill).toHaveBeenLastCalledWith('SIGKILL');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fails Stop when a live adopted process cannot be signalled', async () => {
     const process = {
       kill: vi.fn((_pid, signal) => {

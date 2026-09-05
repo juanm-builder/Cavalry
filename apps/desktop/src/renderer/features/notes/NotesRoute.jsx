@@ -293,8 +293,8 @@ function ReviewEntry({
 }
 
 function initialText(workbookId) {
-  if (typeof window === 'undefined' || !window.localStorage) return '';
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return '';
     return window.localStorage.getItem(`cavalry.notes.${workbookId || 'workbook'}`) || '';
   } catch (_error) {
     return '';
@@ -302,9 +302,9 @@ function initialText(workbookId) {
 }
 
 function persistText(workbookId, value) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
   const key = `cavalry.notes.${workbookId || 'workbook'}`;
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     if (value) window.localStorage.setItem(key, value);
     else window.localStorage.removeItem(key);
   } catch (_error) {
@@ -383,8 +383,8 @@ function reconcileEntries(workbook, entries) {
 }
 
 function initialEntries(workbook) {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
     const parsed = JSON.parse(window.localStorage.getItem(entriesStorageKey(workbook.id)) || '[]');
     return reconcileEntries(workbook, parsed);
   } catch (_error) {
@@ -393,9 +393,9 @@ function initialEntries(workbook) {
 }
 
 function persistEntries(workbookId, entries) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
   const key = entriesStorageKey(workbookId);
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const listedEntries = asArray(entries);
     if (listedEntries.length) window.localStorage.setItem(key, JSON.stringify(listedEntries));
     else window.localStorage.removeItem(key);

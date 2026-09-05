@@ -7,6 +7,8 @@ import {
   reconcileRecurringOccurrences
 } from '@cavalry/finance-core';
 
+import { formatCurrencyAmount } from '../../shared/currency-format.js';
+
 const MONTH_NAMES = [
   'January',
   'February',
@@ -185,12 +187,7 @@ function getNextCandidateDueDate(lastSeenDate, frequency, today) {
 function formatMoney(value, currency) {
   const code = asString(currency).toUpperCase() || 'PHP';
   try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
+    return formatCurrencyAmount(Number(value) || 0, code);
   } catch (_error) {
     return `${code} ${(Number(value) || 0).toFixed(2)}`;
   }

@@ -438,14 +438,6 @@ export function recurringReconciliationKey(recurringItemId, occurrenceDate, tran
   ].join('::');
 }
 
-function occurrenceRecordKey(occurrence, transactionId) {
-  return recurringReconciliationKey(
-    occurrence && occurrence.recurringItemId,
-    occurrence && occurrence.dueDate,
-    transactionId
-  );
-}
-
 function getRecords(workbook, options) {
   return asArray(
     options && Array.isArray(options.reconciliationRecords)

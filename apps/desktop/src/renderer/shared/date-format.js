@@ -9,7 +9,8 @@ export function formatUiDateTime(value, options = {}) {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
-      ...(isDateOnly ? {} : { hour: 'numeric', minute: '2-digit' }),
+      // ISO calendar dates are parsed at UTC midnight, not a local instant.
+      ...(isDateOnly ? { timeZone: 'UTC' } : { hour: 'numeric', minute: '2-digit' }),
       ...options.format
     }).format(new Date(timestamp));
   } catch (_error) {

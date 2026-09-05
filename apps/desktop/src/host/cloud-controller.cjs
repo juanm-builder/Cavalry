@@ -5,6 +5,7 @@ const { createCloudWorkbookController } = require('./cloud-workbook-controller.c
 
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
+  setConnection: 'cavalry-cloud:set-connection',
   listWorkbooks: 'cavalry-cloud:list-workbooks',
   uploadWorkbook: 'cavalry-cloud:upload-workbook',
   downloadWorkbook: 'cavalry-cloud:download-workbook',
@@ -59,6 +60,8 @@ function createCloudController(dependencies = {}) {
   let nativeRefreshPromise = null;
   let nativeRefreshQueued = false;
   let queuedNativeEvents = [];
+  let connectionGeneration = 0;
+  let connectionChangeInProgress = false;
 
   function userForAccount() {
     if (account.status !== 'available' || !account.userId) return null;
@@ -76,6 +79,7 @@ function createCloudController(dependencies = {}) {
     if (!statusChecked) return 'initializing';
     if (account.status === 'available') return 'signed_in';
     if (account.status === 'no_account') return 'signed_out';
+    if (account.status === 'disconnected') return 'disconnected';
     return 'unavailable';
   }
 
@@ -206,15 +210,37 @@ function createCloudController(dependencies = {}) {
   }
 
   async function refreshStatus() {
+    const generation = connectionGeneration;
     const result = await workbookController.status();
-    applyStatus(result);
+    if (generation === connectionGeneration) applyStatus(result);
     return result;
   }
 
   async function refreshLibrary({ refresh = true } = {}) {
+    const generation = sessionGeneration;
     const result = await workbookController.listWorkbooks({ refresh });
-    applyLibrary(result);
+    if (generation === sessionGeneration && account.status === 'available') applyLibrary(result);
     return result;
+  }
+
+  async function setConnection(payload) {
+    if (typeof payload.enabled !== 'boolean') {
+      return { ok: false, error: 'Choose whether to connect iCloud.' };
+    }
+    if (connectionChangeInProgress) {
+      return { ok: false, error: 'The iCloud connection is changing.' };
+    }
+    connectionChangeInProgress = true;
+    connectionGeneration += 1;
+    try {
+      const result = await workbookController.setConnection(payload.enabled);
+      applyStatus(result);
+      if (result.ok && account.status === 'available') await refreshLibrary({ refresh: true });
+      return { ...result, state: broadcastState() };
+    } finally {
+      connectionChangeInProgress = false;
+      if (nativeRefreshQueued) drainNativeRefreshes();
+    }
   }
 
   async function initialize() {
@@ -408,7 +434,14 @@ function createCloudController(dependencies = {}) {
   }
 
   function drainNativeRefreshes() {
-    if (disposed || nativeRefreshPromise || initializationPromise || !statusChecked) return;
+    if (
+      disposed ||
+      connectionChangeInProgress ||
+      nativeRefreshPromise ||
+      initializationPromise ||
+      !statusChecked
+    )
+      return;
     const events = queuedNativeEvents.length ? queuedNativeEvents : [{}];
     queuedNativeEvents = [];
     nativeRefreshQueued = false;
@@ -469,6 +502,7 @@ function createCloudController(dependencies = {}) {
       trusted(async () => ({ ok: true, state: await initializedState() }))
     );
     ipcMain.handle(CLOUD_IPC_CHANNELS.listWorkbooks, trusted(listWorkbooks));
+    ipcMain.handle(CLOUD_IPC_CHANNELS.setConnection, trusted(setConnection));
     ipcMain.handle(
       CLOUD_IPC_CHANNELS.uploadWorkbook,
       trusted((payload) => mutateWorkbook('uploadWorkbook', payload))

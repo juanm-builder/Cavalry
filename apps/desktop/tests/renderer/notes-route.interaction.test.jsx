@@ -127,6 +127,24 @@ function installMemoryStorage() {
 }
 
 describe('Notes route', () => {
+  it('keeps notes usable when the browser blocks access to local storage', async () => {
+    const user = userEvent.setup();
+    const storage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('Storage access denied.');
+    });
+    try {
+      render(<NotesRoute workbook={makeWorkbook()} services={makeServices()} />);
+      const input = screen.getByLabelText('Transaction notes');
+
+      await user.type(input, '180 coffee cash');
+      expect(input.value).toBe('180 coffee cash');
+      await user.click(screen.getByRole('button', { name: /Clear the Notes draft/ }));
+      expect(input.value).toBe('');
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
   it('uses Cavalry AI asynchronously, commits immediately, and keeps the added row listed', async () => {
     const user = userEvent.setup();
     const onCommandResult = vi.fn();

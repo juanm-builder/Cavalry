@@ -11,8 +11,6 @@ const advisorSettingsDomain = require('@cavalry/advisor/domain/advisor/settings.
 const {
   CAVALRY_LOCAL_ADVISOR_ENDPOINT,
   CAVALRY_LOCAL_ADVISOR_MODEL,
-  OPENAI_ADVISOR_CHAT_COMPLETIONS_ENDPOINT,
-  OPENAI_ADVISOR_RESPONSES_ENDPOINT,
   getAdvisorChatCompletionsEndpoint,
   getAdvisorEndpoint,
   getAdvisorResponsesEndpoint,
@@ -161,10 +159,6 @@ function createAdvisorRuntimeController(dependencies = {}) {
 
   function getAdvisorSettingsPath() {
     return path.join(app.getPath('userData'), 'cavalry-advisor-settings.json');
-  }
-
-  function normalizeCustomAdvisorEndpoint(endpoint) {
-    return advisorSettingsDomain.normalizeCustomAdvisorEndpoint(endpoint);
   }
 
   function normalizeAdvisorSettings(raw, existing) {

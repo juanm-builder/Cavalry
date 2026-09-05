@@ -96,7 +96,12 @@ function formatCloudTimestamp(value) {
 }
 
 function LocalProfile() {
-  const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  let storage = null;
+  try {
+    storage = typeof window !== 'undefined' ? window.localStorage : null;
+  } catch (_error) {
+    // A blocked storage getter must not prevent the account settings from opening.
+  }
   const [profile, setProfile] = useState(() => readAccountProfile(storage));
   const [profileNotice, setProfileNotice] = useState('');
 
@@ -111,13 +116,16 @@ function LocalProfile() {
     <SettingsCard
       headingId="settings-account-profile-heading"
       icon="account_circle"
-      title="Profile"
+      title="Local profile"
       trailing={
         <StatusPill icon="lock" tone="good">
           Stored on this Mac
         </StatusPill>
       }
     >
+      <p>
+        This profile is stored on this Mac. Your iCloud Apple Account is managed in System Settings.
+      </p>
       <form className="settings-account-form" id="account-profile-form" onSubmit={saveProfile}>
         <div className="field">
           <label htmlFor="settings-account-name">Name</label>
@@ -161,41 +169,125 @@ function LocalProfile() {
 
 function ICloudConnection({ cloud }) {
   const actions = useActionBindings();
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [copyNotice, setCopyNotice] = useState('');
   const signedIn = cloud.status === 'signed_in';
+  const disconnected = cloud.status === 'disconnected';
+  const accountReference = asString(asObject(cloud.user).id)
+    .replace(/^_/, '')
+    .slice(-12)
+    .toUpperCase();
   const checking = cloud.status === 'initializing';
   const pending = !!asString(cloud.pendingOperation);
-  const lastSyncAt = formatCloudTimestamp(cloud.lastSyncAt);
   const icon = checking ? 'progress_activity' : signedIn ? 'cloud_done' : 'cloud_off';
+  const copyReference = async () => {
+    try {
+      await navigator.clipboard.writeText(accountReference);
+      setCopyNotice('Account reference copied.');
+    } catch (_error) {
+      setCopyNotice('Couldn’t copy. Select the reference to copy it.');
+    }
+  };
 
   return (
-    <div className="settings-cloud-overview">
-      <span className="settings-cloud-welcome-icon" aria-hidden="true">
-        <Icon name={icon} />
-      </span>
-      <div className="settings-cloud-welcome-copy">
-        <strong>
-          {checking ? 'Checking iCloud' : signedIn ? 'Connected' : 'iCloud unavailable'}
-        </strong>
-        <p>
-          {signedIn
-            ? lastSyncAt
-              ? `Last checked ${lastSyncAt}`
-              : 'Private iCloud library'
-            : 'Check iCloud in System Settings.'}
-        </p>
-      </div>
-      {signedIn ? (
-        <div className="settings-cloud-overview-actions">
-          <button
-            className="btn"
-            disabled={pending || checking}
-            type="button"
-            {...actions.action('refresh-cloud-workbooks')}
-          >
-            <Icon name="refresh" />
-            {asString(cloud.pendingOperation) === 'refresh' ? 'Checking…' : 'Check Now'}
-          </button>
+    <div className="settings-cloud-account">
+      <div className="settings-cloud-account-identity">
+        <span className="settings-cloud-account-avatar" aria-hidden="true">
+          <Icon name={icon} />
+        </span>
+        <div className="settings-cloud-account-copy">
+          <span className="settings-cloud-account-label">Apple Account</span>
+          <strong>
+            {checking
+              ? 'Checking iCloud'
+              : signedIn
+                ? 'iCloud account'
+                : disconnected
+                  ? 'iCloud disconnected'
+                  : 'iCloud unavailable'}
+          </strong>
+          <p>
+            {signedIn
+              ? 'Private iCloud library'
+              : disconnected
+                ? 'Local workbooks are available. Connect again to resume syncing.'
+                : 'Check iCloud in System Settings.'}
+          </p>
         </div>
+      </div>
+      <div className="settings-cloud-account-actions">
+        <button
+          className="btn"
+          disabled={pending || checking}
+          type="button"
+          {...actions.action(disconnected ? 'connect-icloud' : 'refresh-cloud-workbooks')}
+        >
+          <Icon name="refresh" />
+          {disconnected
+            ? 'Connect iCloud'
+            : asString(cloud.pendingOperation) === 'refresh'
+              ? 'Checking…'
+              : 'Check Now'}
+        </button>
+        {!disconnected ? (
+          confirmDisconnect ? (
+            <>
+              <button
+                className="btn"
+                disabled={pending || checking}
+                type="button"
+                {...actions.action('disconnect-icloud')}
+              >
+                Confirm Disconnect
+              </button>
+              <button
+                className="btn"
+                disabled={pending}
+                onClick={() => setConfirmDisconnect(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn"
+              disabled={pending || checking}
+              onClick={() => setConfirmDisconnect(true)}
+              type="button"
+            >
+              Disconnect iCloud
+            </button>
+          )
+        ) : null}
+      </div>
+      {signedIn && accountReference ? (
+        <div className="settings-cloud-account-reference">
+          <span>Account reference</span>
+          <div className="settings-cloud-account-reference-value">
+            <strong>{accountReference}</strong>
+            <button
+              aria-label="Copy account reference"
+              className="btn btn-icon"
+              onClick={copyReference}
+              type="button"
+            >
+              <Icon name="content_copy" />
+            </button>
+          </div>
+          {copyNotice ? (
+            <span className="settings-cloud-account-notice" role="status">
+              {copyNotice}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {confirmDisconnect && !disconnected ? (
+        <p className="settings-cloud-account-notice" role="status">
+          Disconnect iCloud on this Mac? Local workbooks and existing iCloud copies stay available.
+          An upload already received by iCloud may still finish. Your Mac stays signed into its
+          Apple Account.
+        </p>
       ) : null}
     </div>
   );
@@ -547,7 +639,9 @@ function ICloudWorkspace({ cloud, signedIn, workbook }) {
           : 'Connected'
         : cloud.status === 'unavailable'
           ? 'Unavailable'
-          : 'Sign in needed';
+          : cloud.status === 'disconnected'
+            ? 'Disconnected'
+            : 'Sign in needed';
 
   return (
     <SettingsCard
@@ -572,7 +666,10 @@ function ICloudWorkspace({ cloud, signedIn, workbook }) {
         </StatusPill>
       }
     >
-      <ICloudConnection cloud={cloud} />
+      <ICloudConnection
+        cloud={cloud}
+        key={`${cloud.status}-${asString(asObject(cloud.user).id)}`}
+      />
       <CloudSyncError cloud={cloud} scope="global" workbook={workbook} />
       {signedIn ? (
         <CloudLibrarySurface

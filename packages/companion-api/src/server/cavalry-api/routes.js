@@ -10,16 +10,20 @@ function asString(value) {
 function parseJsonBody(req, options = {}) {
   const maxBodyBytes = Number(options.maxBodyBytes || 1024 * 256);
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
+    let bodyBytes = 0;
     let tooLarge = false;
     req.on('data', (chunk) => {
       if (tooLarge) {
         return;
       }
-      body += chunk;
-      if (Buffer.byteLength(body) > maxBodyBytes) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bodyBytes += bytes.length;
+      if (bodyBytes > maxBodyBytes) {
         tooLarge = true;
-        body = '';
+        chunks.length = 0;
+      } else {
+        chunks.push(bytes);
       }
     });
     req.on('end', () => {
@@ -32,6 +36,8 @@ function parseJsonBody(req, options = {}) {
         );
         return;
       }
+      // Decode once so multibyte characters split between HTTP chunks stay intact.
+      const body = Buffer.concat(chunks, bodyBytes).toString('utf8');
       if (!body.trim()) {
         resolve({});
         return;

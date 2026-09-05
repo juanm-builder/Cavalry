@@ -1029,6 +1029,68 @@ describe('Cavalry assistant', () => {
     expect(imageParts[0].image_url).toContain('data:image/png;base64,');
   });
 
+  it.each(['conversation', 'workbook'])(
+    'discards images still being prepared when the %s changes',
+    async (scope) => {
+      const user = userEvent.setup();
+      let finishRead;
+      const reader = vi.spyOn(globalThis, 'FileReader').mockImplementation(function () {
+        return {
+          readAsDataURL() {
+            finishRead = () => {
+              this.result = 'data:image/png;base64,cmVjZWlwdA==';
+              this.onload();
+            };
+          }
+        };
+      });
+      try {
+        const props = {
+          activeRouteId: 'ledger',
+          advisor: {
+            subscribe: () => () => {},
+            invoke: vi.fn(async () => ({
+              ok: true,
+              response: { output_text: 'Ready for your receipt.', output: [] }
+            }))
+          },
+          conversationStorage: createMemoryStorage(),
+          executeTool: vi.fn(),
+          isOpen: true,
+          settings: { provider: 'openai', apiMode: 'responses', hasApiKey: true },
+          workbook: { id: 'first-workbook', name: 'First workbook' }
+        };
+        const view = render(<CavalryAssistant {...props} />);
+        await user.type(screen.getByRole('textbox', { name: 'Message Cavalry' }), 'Hello');
+        await user.click(screen.getByRole('button', { name: 'Send message' }));
+        await screen.findByText('Ready for your receipt.');
+        await user.upload(
+          screen.getByLabelText('Choose images'),
+          new File(['receipt'], 'receipt.png', { type: 'image/png' })
+        );
+        expect(finishRead, screen.queryByRole('alert')?.textContent).toBeTypeOf('function');
+        if (scope === 'workbook') {
+          view.rerender(
+            <CavalryAssistant
+              {...props}
+              workbook={{ id: 'second-workbook', name: 'Second workbook' }}
+            />
+          );
+        } else {
+          await user.click(screen.getByRole('button', { name: 'New conversation' }));
+        }
+
+        await act(async () => finishRead());
+
+        expect(screen.queryByLabelText('Images ready to send')).toBeNull();
+        expect(screen.queryByText(/image ready/)).toBeNull();
+        expect(screen.queryByText('Preparing images…')).toBeNull();
+      } finally {
+        reader.mockRestore();
+      }
+    }
+  );
+
   it('accepts a 40-image drag-and-drop batch', async () => {
     const user = userEvent.setup();
     render(

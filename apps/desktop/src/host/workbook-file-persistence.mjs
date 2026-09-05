@@ -7,6 +7,8 @@ import {
   WorkbookPersistenceError
 } from '@cavalry/finance-core/application/workbook/workbook-persistence-service.js';
 
+const pendingWritesByFileSystem = new WeakMap();
+
 async function fileExists(filePath, fileSystem) {
   try {
     await fileSystem.access(filePath);
@@ -87,6 +89,29 @@ export async function readWorkbookFileWithRecovery(filePath, options = {}) {
 }
 
 export async function safeWriteWorkbookFile(filePath, text, options = {}) {
+  const fileSystem = options.fs || fs;
+  const pathApi = options.path || path;
+  const key = pathApi.resolve(String(filePath || ''));
+  let pendingWrites = pendingWritesByFileSystem.get(fileSystem);
+  if (!pendingWrites) {
+    pendingWrites = new Map();
+    pendingWritesByFileSystem.set(fileSystem, pendingWrites);
+  }
+  // A workbook and its rolling backup share paths, so overlapping saves must finish
+  // in request order. Independent workbook files can still be written concurrently.
+  const previous = pendingWrites.get(key) || Promise.resolve();
+  const write = previous
+    .catch(() => undefined)
+    .then(() => writeWorkbookFile(filePath, text, options));
+  pendingWrites.set(key, write);
+  try {
+    return await write;
+  } finally {
+    if (pendingWrites.get(key) === write) pendingWrites.delete(key);
+  }
+}
+
+async function writeWorkbookFile(filePath, text, options) {
   const fileSystem = options.fs || fs;
   const pathApi = options.path || path;
   const targetPath = String(filePath || '');

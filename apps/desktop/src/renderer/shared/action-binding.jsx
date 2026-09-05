@@ -21,24 +21,6 @@ function normalizePayload(payload) {
   );
 }
 
-export function payloadFromActionAttributes(attributes) {
-  return Object.entries(attributes && typeof attributes === 'object' ? attributes : {}).reduce(
-    (payload, [key, value]) => {
-      if (!String(key).startsWith('data-') || value === null || typeof value === 'undefined') {
-        return payload;
-      }
-      const payloadKey = String(key)
-        .slice(5)
-        .replace(/-([a-z0-9])/g, (_match, character) => character.toUpperCase());
-      if (payloadKey && payloadKey !== 'action' && payloadKey !== 'route') {
-        payload[payloadKey] = value;
-      }
-      return payload;
-    },
-    {}
-  );
-}
-
 function createAction(type, payload) {
   return {
     type: String(type || ''),

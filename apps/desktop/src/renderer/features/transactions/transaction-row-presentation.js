@@ -1,3 +1,5 @@
+import { formatCurrencyAmount } from '../../shared/currency-format.js';
+
 function asObject(value) {
   return value && typeof value === 'object' ? value : {};
 }
@@ -17,12 +19,7 @@ function titleCase(value) {
 export function formatTransactionMoney(value, currency = 'PHP') {
   const code = asString(currency || 'PHP').toUpperCase() || 'PHP';
   try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
+    return formatCurrencyAmount(Number(value) || 0, code);
   } catch (_error) {
     return `${(Number(value) || 0).toFixed(2)} ${code}`;
   }

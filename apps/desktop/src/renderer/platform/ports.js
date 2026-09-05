@@ -96,28 +96,3 @@ export function createNullRendererPorts(overrides = {}) {
     fingerprint: Object.freeze({ ...defaults.fingerprint, ...(overrides.fingerprint || {}) })
   });
 }
-
-export function assertRendererPorts(ports) {
-  const required = [
-    ['workbookStorage', 'load'],
-    ['workbookStorage', 'open'],
-    ['workbookStorage', 'save'],
-    ['browserCache', 'load'],
-    ['browserCache', 'save'],
-    ['advisor', 'invoke'],
-    ['companion', 'publish'],
-    ['cloud', 'invoke'],
-    ['updates', 'invoke'],
-    ['downloads', 'save'],
-    ['filePicker', 'openText'],
-    ['clock', 'now'],
-    ['ids', 'create'],
-    ['fingerprint', 'create']
-  ];
-  required.forEach(([port, method]) => {
-    if (!ports || !ports[port] || typeof ports[port][method] !== 'function') {
-      throw new Error(`Renderer port ${port}.${method} is required.`);
-    }
-  });
-  return ports;
-}

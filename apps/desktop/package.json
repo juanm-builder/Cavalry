@@ -1,6 +1,6 @@
 {
   "name": "@cavalry/desktop",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "description": "Cavalry local-first desktop finance app powered by Tauri.",
   "author": "Cavalry",
   "license": "Apache-2.0",
