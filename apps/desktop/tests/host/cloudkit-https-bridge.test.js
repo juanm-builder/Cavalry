@@ -472,7 +472,7 @@ test('the static document permits only its own script and stylesheet with no fet
     assert.ok(html.includes(directive), directive);
   }
   assert.doesNotMatch(html, /unsafe-inline|<style\b|<iframe\b|<form\b/i);
-  assert.match(html, /<script src="\.\/bridge\.js" defer><\/script>/);
+  assert.match(html, /<script src="\.\/bridge\.js\?v=[a-f0-9]{12}" defer><\/script>/);
   assert.doesNotMatch(
     script,
     /\bfetch\s*\(|\blocalStorage\b|\bsessionStorage\b|\bdocument\.cookie\b/
