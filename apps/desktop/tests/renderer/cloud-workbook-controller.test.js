@@ -31,6 +31,10 @@ describe('cloud workbook controller model', () => {
     });
 
     expect(state).toEqual({
+      accountSource: 'system',
+      browserSignInAvailable: false,
+      browserSignInUnavailableReason: '',
+      syncPaused: false,
       configured: true,
       status: 'signed_in',
       cloudEnvironment: '',

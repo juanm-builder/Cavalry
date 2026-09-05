@@ -142,10 +142,10 @@ describe('SettingsRoute', () => {
 
     expect(html).toContain('id="account-profile-form"');
     expect(html).toContain('Stored on this Mac');
-    expect(html).toContain('>iCloud<');
+    expect(html).toContain('Account &amp; sync');
     expect(html).toContain('Unavailable');
-    expect(html).toContain('iCloud unavailable');
-    expect(html).toContain('Check iCloud in System Settings.');
+    expect(html).toContain('Choose an Apple Account');
+    expect(html).toContain('Cavalry uses the Apple Account in System Settings.');
     expect(html).not.toContain('Continue with Google');
   });
 

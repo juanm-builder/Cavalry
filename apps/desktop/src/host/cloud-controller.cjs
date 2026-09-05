@@ -6,6 +6,9 @@ const { createCloudWorkbookController } = require('./cloud-workbook-controller.c
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
   setConnection: 'cavalry-cloud:set-connection',
+  selectAccount: 'cavalry-cloud:select-account',
+  signOut: 'cavalry-cloud:sign-out',
+  cancelAccountSignIn: 'cavalry-cloud:cancel-account-sign-in',
   listWorkbooks: 'cavalry-cloud:list-workbooks',
   uploadWorkbook: 'cavalry-cloud:upload-workbook',
   downloadWorkbook: 'cavalry-cloud:download-workbook',
@@ -62,6 +65,74 @@ function createCloudController(dependencies = {}) {
   let queuedNativeEvents = [];
   let connectionGeneration = 0;
   let connectionChangeInProgress = false;
+  let browserRefreshTimer = null;
+
+  function scheduleBrowserRefresh() {
+    if (disposed || browserRefreshTimer) return;
+    browserRefreshTimer = setTimeout(async () => {
+      browserRefreshTimer = null;
+      const generation = connectionGeneration;
+      const connectionIsCurrent = () => {
+        const details = dependencies.cloudKit?.details?.();
+        return (
+          !disposed &&
+          generation === connectionGeneration &&
+          !connectionChangeInProgress &&
+          !workbookMutationInProgress &&
+          details?.accountSource === 'browser' &&
+          !details.syncPaused &&
+          !details.accountSignedOut
+        );
+      };
+      try {
+        if (connectionIsCurrent() && !initializationPromise) {
+          const previousSession = sessionGeneration;
+          const previous = new Map(workbooks.map((entry) => [entry.id, entry.revision]));
+          await refreshStatus();
+          if (!connectionIsCurrent()) return;
+          if (account.status === 'available') {
+            const owner = account.userId;
+            const session = sessionGeneration;
+            // Reauthentication may establish a fresh library during the status
+            // check. Never compare its workbooks with a previous owner's list.
+            if (session !== previousSession) previous.clear();
+            const result = await refreshLibrary({ refresh: true });
+            if (!connectionIsCurrent() || session !== sessionGeneration || owner !== account.userId)
+              return;
+            if (result.ok) {
+              for (const entry of workbooks) {
+                if (previous.get(entry.id) !== entry.revision) {
+                  noteWorkbookChange({ workbookId: entry.id, reason: 'updated' });
+                  broadcastState();
+                }
+              }
+              // A missing list entry is not a deletion event. The renderer
+              // verifies an exact record before disabling that workbook's sync.
+            }
+          }
+          broadcastState();
+        }
+      } catch (_error) {
+        if (!disposed && generation === connectionGeneration && !connectionChangeInProgress) {
+          stateError = 'iCloud could not be refreshed. Your local workbooks are unchanged.';
+          stateErrorCode = 'cloud_state_refresh_failed';
+          stateErrorDetails = '';
+          stateErrorRetryable = true;
+          stateErrorOperation = 'refresh';
+          stateErrorWorkbookId = '';
+          try {
+            broadcastState();
+          } catch (_notificationError) {
+            // A window can close while a background refresh is notifying it.
+            // Keep the next refresh scheduled without an unhandled rejection.
+          }
+        }
+      } finally {
+        scheduleBrowserRefresh();
+      }
+    }, 30000);
+    browserRefreshTimer.unref?.();
+  }
 
   function userForAccount() {
     if (account.status !== 'available' || !account.userId) return null;
@@ -112,6 +183,7 @@ function createCloudController(dependencies = {}) {
       workbooks: workbooks.map((workbook) => ({ ...workbook })),
       pendingCount,
       lastSyncAt,
+      ...(dependencies.cloudKit?.details?.() || {}),
       error: accountMessage(),
       errorCode: stateErrorCode,
       errorDetails: stateErrorDetails,
@@ -212,14 +284,29 @@ function createCloudController(dependencies = {}) {
   async function refreshStatus() {
     const generation = connectionGeneration;
     const result = await workbookController.status();
-    if (generation === connectionGeneration) applyStatus(result);
+    if (!disposed && generation === connectionGeneration) applyStatus(result);
     return result;
   }
 
   async function refreshLibrary({ refresh = true } = {}) {
+    if (dependencies.cloudKit?.details?.().syncPaused) {
+      return {
+        ok: true,
+        workbooks: workbooks.map((entry) => ({ ...entry })),
+        pendingCount,
+        lastSyncAt
+      };
+    }
     const generation = sessionGeneration;
+    const connection = connectionGeneration;
     const result = await workbookController.listWorkbooks({ refresh });
-    if (generation === sessionGeneration && account.status === 'available') applyLibrary(result);
+    if (
+      !disposed &&
+      generation === sessionGeneration &&
+      connection === connectionGeneration &&
+      account.status === 'available'
+    )
+      applyLibrary(result);
     return result;
   }
 
@@ -243,7 +330,52 @@ function createCloudController(dependencies = {}) {
     }
   }
 
+  async function changeAccount(payload, signOut = false) {
+    if (connectionChangeInProgress || workbookMutationInProgress) {
+      return {
+        ok: false,
+        code: 'cloud_operation_in_progress',
+        error: 'Wait for the current iCloud operation to finish.'
+      };
+    }
+    const method = signOut ? 'signOut' : 'selectAccount';
+    if (typeof dependencies.cloudKit?.[method] !== 'function') {
+      return {
+        ok: false,
+        code: 'cloud_account_selection_unavailable',
+        error: 'Account selection is unavailable in this build.'
+      };
+    }
+    connectionChangeInProgress = true;
+    connectionGeneration += 1;
+    try {
+      const result = await dependencies.cloudKit[method](payload);
+      if (result.ok) {
+        applyStatus(result);
+        if (!signOut && account.status === 'available') await refreshLibrary({ refresh: true });
+      }
+      return { ...result, state: broadcastState() };
+    } finally {
+      connectionChangeInProgress = false;
+      if (nativeRefreshQueued) drainNativeRefreshes();
+    }
+  }
+
+  function ownerMismatch(payload = {}) {
+    return payload.expectedUserId && payload.expectedUserId !== account.userId;
+  }
+
+  function changedOwnerFailure() {
+    return {
+      ok: false,
+      code: 'icloud_account_changed',
+      error: 'The iCloud account changed. Choose the workbook again from its library.',
+      state: getState()
+    };
+  }
+
   async function initialize() {
+    scheduleBrowserRefresh();
     if (initializationPromise) return initializationPromise;
     const operation = (async () => {
       await refreshStatus();
@@ -294,6 +426,8 @@ function createCloudController(dependencies = {}) {
 
   async function currentSyncStateScope(payload = {}) {
     if (!statusChecked) await refreshStatus();
+    if (ownerMismatch(payload) || connectionChangeInProgress)
+      return { error: changedOwnerFailure() };
     const workbookId = String(payload.workbookId || payload.id || '').trim();
     if (workbookId.length > 128 || !/^[A-Za-z0-9._:-]{1,128}$/.test(workbookId)) {
       return {
@@ -385,7 +519,8 @@ function createCloudController(dependencies = {}) {
   }
 
   function mutateWorkbook(method, payload) {
-    if (workbookMutationInProgress) {
+    if (ownerMismatch(payload)) return changedOwnerFailure();
+    if (workbookMutationInProgress || connectionChangeInProgress) {
       return {
         ok: false,
         code: 'cloud_operation_in_progress',
@@ -396,7 +531,10 @@ function createCloudController(dependencies = {}) {
     workbookMutationInProgress = true;
     return (async () => {
       try {
-        const result = await workbookController[method](payload || {});
+        const result = await workbookController[method]({
+          ...(payload || {}),
+          expectedAccountId: account.userId
+        });
         await refreshLibrary({ refresh: false });
         return { ...result, state: broadcastState() };
       } finally {
@@ -406,7 +544,11 @@ function createCloudController(dependencies = {}) {
   }
 
   async function downloadWorkbook(payload) {
-    const result = await workbookController.downloadWorkbook(payload || {});
+    if (ownerMismatch(payload) || connectionChangeInProgress) return changedOwnerFailure();
+    const result = await workbookController.downloadWorkbook({
+      ...(payload || {}),
+      expectedAccountId: account.userId
+    });
     // An exact record download is stronger evidence than a cached renderer
     // listing. Refresh the native-cache projection before returning so a stale
     // lower revision can be repaired without the renderer pretending it is
@@ -416,7 +558,11 @@ function createCloudController(dependencies = {}) {
   }
 
   async function downloadConflictPackage(payload) {
-    const result = await workbookController.downloadConflictPackage(payload || {});
+    if (ownerMismatch(payload) || connectionChangeInProgress) return changedOwnerFailure();
+    const result = await workbookController.downloadConflictPackage({
+      ...(payload || {}),
+      expectedAccountId: account.userId
+    });
     return { ...result, state: getState() };
   }
 
@@ -472,6 +618,8 @@ function createCloudController(dependencies = {}) {
 
   function handleNativeEvent(source, payload) {
     if (disposed || source !== 'cloudkit') return false;
+    if (dependencies.cloudKit?.usesNativeEvents && !dependencies.cloudKit.usesNativeEvents())
+      return false;
     const event = payload && typeof payload === 'object' ? payload : {};
     const eventKey = `${text(event.reason, 32)}:${text(event.workbookId, 128)}`;
     if (
@@ -503,6 +651,15 @@ function createCloudController(dependencies = {}) {
     );
     ipcMain.handle(CLOUD_IPC_CHANNELS.listWorkbooks, trusted(listWorkbooks));
     ipcMain.handle(CLOUD_IPC_CHANNELS.setConnection, trusted(setConnection));
+    ipcMain.handle(CLOUD_IPC_CHANNELS.selectAccount, trusted(changeAccount));
+    ipcMain.handle(
+      CLOUD_IPC_CHANNELS.signOut,
+      trusted((payload) => changeAccount(payload, true))
+    );
+    ipcMain.handle(
+      CLOUD_IPC_CHANNELS.cancelAccountSignIn,
+      trusted(() => dependencies.cloudKit?.cancelAccountSignIn?.() || { ok: false })
+    );
     ipcMain.handle(
       CLOUD_IPC_CHANNELS.uploadWorkbook,
       trusted((payload) => mutateWorkbook('uploadWorkbook', payload))
@@ -528,6 +685,8 @@ function createCloudController(dependencies = {}) {
 
   function dispose() {
     disposed = true;
+    clearTimeout(browserRefreshTimer);
+    dependencies.cloudKit?.dispose?.();
     queuedNativeEvents = [];
     nativeRefreshQueued = false;
   }

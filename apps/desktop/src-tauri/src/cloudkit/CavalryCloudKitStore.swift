@@ -125,6 +125,7 @@ private struct CloudKitBridgeRequest: Codable {
   let conflictNoticeId: String?
   let refresh: Bool?
   let enabled: Bool?
+  let expectedAccountId: String?
 }
 
 private struct CloudKitAccount: Codable, Sendable {
@@ -147,6 +148,7 @@ private struct CloudKitBridgeResponse: Codable, Sendable {
   let ok: Bool
   var containerIdentifier: String?
   var cloudEnvironment: String?
+  var syncPaused: Bool?
   var code: String?
   var error: String?
   var errorDetails: String?
@@ -215,11 +217,19 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private let cloudEnvironment: String
   private let zoneID = CKRecordZone.ID(zoneName: cavalryZoneName)
   private let rootURL: URL
-  private let payloadsURL: URL
-  private let stateURL: URL
+  private var payloadsURL: URL
+  private var stateURL: URL
   private var diskState: CloudKitDiskState
   private var lastPersistedState: Data?
   private var stateReadFailed = false
+  private var legacyState: CloudKitDiskState?
+  private var legacyStateReadFailed = false
+  private var verifiedAccountId: String?
+  private var accountStorageError: String?
+  private var ownerEpoch = 0
+  private var accountCheckEpoch = 0
+  private var accountTask: Task<CloudKitAccount, Never>?
+  private var accountTaskId: UUID?
   private var retiredPayloadFiles: Set<String> = []
   private var syncEnabled = true
   private var changingConnection = false
@@ -289,26 +299,11 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       }
     }
 
-    if !stateReadFailed, configuredCloudEnvironment != "Invalid", diskState.subscriptionIdentifier != cavalrySyncStateVersion {
-      // Subscription identity is part of CKSyncEngine's opaque state. Reset
-      // only that state for this one-time migration; Cavalry's local pending
-      // workbooks and downloaded cache remain intact and are re-seeded below.
-      diskState.syncState = nil
-      diskState.subscriptionIdentifier = cavalrySyncStateVersion
-      diskState.zoneReady = false
-      do {
-        let data = try JSONEncoder().encode(diskState)
-        if let previous = lastPersistedState {
-          try previous.write(to: stateURL.appendingPathExtension("previous"), options: [.atomic])
-        }
-        try data.write(to: stateURL, options: [.atomic])
-        lastPersistedState = data
-      } catch {
-        stateReadFailed = true
-      }
-    }
+    legacyState = stateReadFailed ? nil : diskState
+    legacyStateReadFailed = stateReadFailed
+    stateReadFailed = false
 
-    Task { await self.startIfNeeded() }
+    Task { await self.prepareEngine() }
   }
 
   func setEventSink(_ sink: (@Sendable ([String: String]) -> Void)?) {
@@ -362,7 +357,16 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       }
       return .failure("icloud_disconnected", "Connect iCloud to sync this workbook.")
     }
+    let account = await accountState()
+    guard syncEnabled else { return accountChangedFailure() }
+    let workbookOperation = !["status", "sync"].contains(request.operation)
+    if workbookOperation {
+      guard account.status == "available", let ownerId = verifiedAccountId,
+        account.userId == ownerId, request.expectedAccountId == ownerId
+      else { return accountChangedFailure() }
+    }
     startIfNeeded()
+    let operationEpoch = ownerEpoch
     switch request.operation {
     case "status":
       return await statusResponse()
@@ -377,7 +381,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       if request.refresh == true {
         do {
           try await syncNow()
+          guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
         } catch {
+          guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
           if diskState.remote.isEmpty {
             return cloudFailure(error, fallbackCode: "cloud_list_failed")
           }
@@ -495,7 +501,8 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func startIfNeeded() {
-    guard !stateReadFailed, syncEnabled, cloudEnvironment != "Invalid", engine == nil else { return }
+    guard !stateReadFailed, syncEnabled, cloudEnvironment != "Invalid", engine == nil,
+      let verifiedAccountId, verifiedAccountId == diskState.accountRecordName else { return }
     var configuration = CKSyncEngine.Configuration(
       database: container.privateCloudDatabase,
       stateSerialization: diskState.syncState,
@@ -504,6 +511,12 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     configuration.automaticallySync = true
     let nextEngine = CKSyncEngine(configuration)
     engine = nextEngine
+    seedPendingChanges(into: nextEngine)
+  }
+
+  private func seedPendingChanges(into nextEngine: CKSyncEngine) {
+    guard syncEnabled, engine === nextEngine, let verifiedAccountId,
+      verifiedAccountId == diskState.accountRecordName else { return }
     if !diskState.zoneReady {
       nextEngine.state.add(
         pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))]
@@ -528,10 +541,17 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
 
   private func statusResponse() async -> CloudKitBridgeResponse {
     guard syncEnabled else {
+      let account = await accountState()
       var response = CloudKitBridgeResponse.success()
       response.cloudEnvironment = cloudEnvironment
-      response.account = CloudKitAccount(status: "disconnected", userId: nil)
-      response.pendingCount = 0
+      response.syncPaused = true
+      response.error = accountStorageError
+      let ownerId = account.status == "available" && account.userId == verifiedAccountId
+        ? account.userId : nil
+      response.account = CloudKitAccount(status: "disconnected", userId: ownerId)
+      response.pendingCount = ownerId != nil && ownerId == diskState.accountRecordName
+        ? diskState.pending.count + diskState.pendingDeletes.count + (diskState.pendingConflictNotices?.count ?? 0)
+        : 0
       return response
     }
     let account = await accountState()
@@ -541,6 +561,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     response.containerIdentifier = cavalryContainerIdentifier
     response.cloudEnvironment = cloudEnvironment
     response.account = account
+    guard account.status == "available", account.userId == verifiedAccountId else {
+      if account.status == "available" {
+        response.account = CloudKitAccount(status: "could_not_determine", userId: nil)
+      }
+      response.pendingCount = 0
+      response.error = accountStorageError
+      return response
+    }
     response.pendingCount =
       diskState.pending.count + diskState.pendingDeletes.count
       + (diskState.pendingConflictNotices?.count ?? 0)
@@ -554,29 +582,68 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     return response
   }
 
+  private func stopEngineForOwnerChange() {
+    ownerEpoch += 1
+    verifiedAccountId = nil
+    syncTask?.cancel()
+    sendTask?.cancel()
+    syncTask = nil
+    sendTask = nil
+    let previousEngine = engine
+    engine = nil
+    Task { await previousEngine?.cancelOperations() }
+  }
+
+  private func prepareEngine() async {
+    let account = await accountState()
+    guard account.status == "available", account.userId == verifiedAccountId else { return }
+    startIfNeeded()
+  }
+
   private func accountState() async -> CloudKitAccount {
+    if let accountTask { return await accountTask.value }
+    let generation = accountCheckEpoch
+    let taskId = UUID()
+    let task = Task { await self.resolveAccountState(generation: generation) }
+    accountTask = task
+    accountTaskId = taskId
+    let result = await task.value
+    if accountTaskId == taskId {
+      accountTask = nil
+      accountTaskId = nil
+    }
+    return result
+  }
+
+  private func resolveAccountState(generation: Int) async -> CloudKitAccount {
     do {
       let status = try await container.accountStatus()
+      guard generation == accountCheckEpoch else {
+        return CloudKitAccount(status: "could_not_determine", userId: nil)
+      }
       switch status {
       case .available:
-        do {
-          let userId = try await container.userRecordID().recordName
-          if let previous = diskState.accountRecordName, previous != userId {
-            resetForAccountChange(accountRecordName: userId)
-          } else if diskState.accountRecordName == nil {
-            diskState.accountRecordName = userId
-            try? persist()
-          }
-          return CloudKitAccount(status: "available", userId: userId)
-        } catch {
-          // A synthetic identity would make account-scoped merge bases and
-          // autosave preferences reusable by a different Apple Account.
-          // Fail closed until CloudKit can return the real private user ID.
+        let userId = try await container.userRecordID().recordName
+        guard generation == accountCheckEpoch, !userId.isEmpty else {
           return CloudKitAccount(status: "could_not_determine", userId: nil)
         }
+        if verifiedAccountId != userId {
+          stopEngineForOwnerChange()
+          do {
+            try selectOwnerStorage(userId)
+          } catch {
+            accountStorageError = "Cavalry could not safely open this account's saved iCloud state. Local workbooks and other account libraries are preserved. Restart Cavalry to retry."
+            return CloudKitAccount(status: "could_not_determine", userId: nil)
+          }
+          accountStorageError = nil
+          verifiedAccountId = userId
+        }
+        return CloudKitAccount(status: "available", userId: userId)
       case .noAccount:
+        stopEngineForOwnerChange()
         return CloudKitAccount(status: "no_account", userId: nil)
       case .restricted:
+        stopEngineForOwnerChange()
         return CloudKitAccount(status: "restricted", userId: nil)
       case .couldNotDetermine:
         return CloudKitAccount(status: "could_not_determine", userId: nil)
@@ -586,8 +653,80 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         return CloudKitAccount(status: "could_not_determine", userId: nil)
       }
     } catch {
+      // An unknown owner or unreadable account store cannot seed CloudKit.
       return CloudKitAccount(status: "could_not_determine", userId: nil)
     }
+  }
+
+  private func selectOwnerStorage(_ ownerId: String) throws {
+    let directory = CavalryCloudKitOwnerFiles.directory(root: rootURL, ownerId: ownerId)
+    let nextStateURL = directory.appendingPathComponent("sync-state.json")
+    let nextPayloadsURL = directory.appendingPathComponent("payloads", isDirectory: true)
+    if stateURL == nextStateURL, diskState.accountRecordName == ownerId { return }
+    var data = try CavalryCloudKitOwnerFiles.read(directory: directory, ownerId: ownerId) { data in
+      let state = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
+      try self.validatePayloads(in: state, at: nextPayloadsURL)
+    }
+    if data == nil {
+      guard !legacyStateReadFailed else { throw CloudStoreError.invalidPayload }
+      var initial: CloudKitDiskState
+      if let legacyState, legacyState.accountRecordName == ownerId {
+        initial = legacyState
+      } else {
+        // Never enroll unidentified or another owner's pending work here.
+        initial = CloudKitDiskState()
+        initial.accountRecordName = ownerId
+      }
+      if initial.subscriptionIdentifier != cavalrySyncStateVersion {
+        initial.syncState = nil
+        initial.zoneReady = false
+        initial.subscriptionIdentifier = cavalrySyncStateVersion
+      }
+      let encoded = try JSONEncoder().encode(initial)
+      let sourcePayloads = rootURL.appendingPathComponent("payloads", isDirectory: true)
+      try validatePayloads(in: initial, at: sourcePayloads)
+      try CavalryCloudKitOwnerFiles.create(
+        directory: directory, ownerId: ownerId, data: encoded,
+        payloadFiles: referencedPayloadFiles(in: initial), sourcePayloads: sourcePayloads
+      )
+      data = encoded
+    }
+    guard let data else { throw CloudStoreError.invalidPayload }
+    let nextState = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
+    try validatePayloads(in: nextState, at: nextPayloadsURL)
+    // No asynchronous work or old engine can mutate a newly selected owner.
+    diskState = nextState
+    stateURL = nextStateURL
+    payloadsURL = nextPayloadsURL
+    lastPersistedState = data
+    retiredPayloadFiles.removeAll()
+    stateReadFailed = false
+  }
+
+  private func validatePayloads(in state: CloudKitDiskState, at directory: URL) throws {
+    var expected: [(String, String)] = state.pending.values.map { ($0.payloadFile, $0.payloadHash) }
+    expected += state.remote.values.map { ($0.payloadFile, $0.payloadHash) }
+    let packages = state.remote.values.compactMap(\.conflictPackage)
+      + (state.pendingConflictNotices ?? [:]).values.compactMap(\.conflictPackage)
+    for package in packages {
+      expected.append((package.sourcePayloadFile, package.sourcePayloadHash))
+      if let file = package.basePayloadFile, let hash = package.basePayloadHash {
+        expected.append((file, hash))
+      }
+    }
+    for (name, hash) in expected {
+      guard name == URL(fileURLWithPath: name).lastPathComponent,
+        !name.isEmpty, name != ".", name != ".."
+      else { throw CloudStoreError.invalidPayload }
+      let payload = try Data(contentsOf: directory.appendingPathComponent(name))
+      guard payload.count <= maximumPayloadBytes, sha256(payload) == hash else {
+        throw CloudStoreError.invalidPayload
+      }
+    }
+  }
+
+  private func accountChangedFailure() -> CloudKitBridgeResponse {
+    .failure("icloud_account_changed", "The iCloud account changed. This operation stopped; saved workbooks remain attached to their original account.")
   }
 
   private func syncNow() async throws {
@@ -601,7 +740,8 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       try await engine.sendChanges()
     }
     syncTask = task
-    defer { syncTask = nil }
+    let operationEpoch = ownerEpoch
+    defer { if operationEpoch == ownerEpoch { syncTask = nil } }
     try await task.value
     try Task.checkCancellation()
     guard syncEnabled, self.engine === engine else { throw CancellationError() }
@@ -619,11 +759,14 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     guard let engine else { throw CloudStoreError.engineUnavailable }
     let task = Task { try await engine.sendChanges() }
     sendTask = task
-    defer { sendTask = nil }
+    let operationEpoch = ownerEpoch
+    defer { if operationEpoch == ownerEpoch { sendTask = nil } }
     try await task.value
+    guard operationEpoch == ownerEpoch else { throw CancellationError() }
   }
 
   private func save(_ request: CloudKitBridgeRequest) async -> CloudKitBridgeResponse {
+    let operationEpoch = ownerEpoch
     guard
       let workbookId = normalizedWorkbookId(request.workbookId),
       let portableHtml = request.portableHtml,
@@ -722,7 +865,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       emit(reason: "state_changed", workbookId: workbookId)
       do {
         try await sendNow()
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
       } catch {
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
         setLastError(
           error,
           fallbackCode: "cloud_upload_failed",
@@ -784,6 +929,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     _ request: CloudKitBridgeRequest,
     clearing: Bool
   ) async -> CloudKitBridgeResponse {
+    let operationEpoch = ownerEpoch
     guard let workbookId = normalizedWorkbookId(request.workbookId) else {
       return .failure("invalid_workbook_id", "Choose a valid iCloud workbook.")
     }
@@ -852,7 +998,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       emit(reason: "state_changed", workbookId: workbookId)
       do {
         try await sendNow()
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
       } catch {
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
         setLastError(
           error,
           fallbackCode: "cloud_conflict_notice_failed",
@@ -893,6 +1041,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func download(workbookId rawWorkbookId: String?) async -> CloudKitBridgeResponse {
+    let operationEpoch = ownerEpoch
     guard let workbookId = normalizedWorkbookId(rawWorkbookId) else {
       return .failure("invalid_workbook_id", "Choose a valid iCloud workbook.")
     }
@@ -921,7 +1070,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     if diskState.remote[recordName]?.metadata.id != workbookId {
       do {
         _ = try await recoverRemote(workbookId: workbookId, recordName: recordName)
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
       } catch {
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
         return cloudFailure(
           error,
           fallbackCode: "cloud_download_failed",
@@ -1023,6 +1174,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func delete(workbookId rawWorkbookId: String?) async -> CloudKitBridgeResponse {
+    let operationEpoch = ownerEpoch
     guard let workbookId = normalizedWorkbookId(rawWorkbookId) else {
       return .failure("invalid_workbook_id", "Choose a valid iCloud workbook.")
     }
@@ -1056,7 +1208,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       emit(reason: "state_changed", workbookId: workbookId)
       do {
         try await sendNow()
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
       } catch {
+        guard operationEpoch == ownerEpoch else { return accountChangedFailure() }
         setLastError(
           error,
           fallbackCode: "cloud_delete_failed",
@@ -1130,46 +1284,20 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       @unknown default:
         return
       }
-      let previous = diskState.accountRecordName
-      let accountChanged = previous != current
-      if accountChanged {
-        // Pending work created before the first iCloud sign-in belongs to no
-        // other account, so it is safe to carry into that first account. A
-        // sign-out or switch must clear account-scoped queued work instead.
-        resetForAccountChange(
-          accountRecordName: current,
-          preservePending: previous == nil && current != nil
-        )
-      } else if diskState.subscriptionIdentifier != cavalrySyncStateVersion {
-        diskState.subscriptionIdentifier = cavalrySyncStateVersion
-        try? persist()
-      }
-      // CKSyncEngine already resets its internal state for an account change.
-      // Recreating it here would deliver the same sign-in event to the new
-      // engine and loop forever. Re-seed the zone and any work that is still
-      // valid for this private database. CKSyncEngine de-duplicates changes
-      // that were already pending.
-      if current != nil {
-        if accountChanged || !diskState.zoneReady {
-          syncEngine.state.add(
-            pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))]
-          )
-        }
-        for recordName in diskState.pending.keys {
-          syncEngine.state.add(
-            pendingRecordZoneChanges: [.saveRecord(recordID(recordName))]
-          )
-        }
-        for recordName in (diskState.pendingConflictNotices ?? [:]).keys {
-          syncEngine.state.add(
-            pendingRecordZoneChanges: [.saveRecord(recordID(recordName))]
-          )
-        }
-        for recordName in diskState.pendingDeletes {
-          syncEngine.state.add(
-            pendingRecordZoneChanges: [.deleteRecord(recordID(recordName))]
-          )
-        }
+      if current != verifiedAccountId {
+        accountCheckEpoch += 1
+        accountTask?.cancel()
+        accountTask = nil
+        accountTaskId = nil
+        stopEngineForOwnerChange()
+        // Reverify the system account before selecting or seeding its store.
+        // Same-owner startup events do not recreate CKSyncEngine.
+        Task { await self.prepareEngine() }
+      } else if current != nil {
+        // CKSyncEngine clears its pending changes for every account event,
+        // including the initial sign-in for this already-verified owner.
+        // Re-seed the durable outbox without recreating the engine.
+        seedPendingChanges(into: syncEngine)
       }
       emit(reason: "account_changed")
     case .fetchedDatabaseChanges(let event):
@@ -1272,7 +1400,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     _ context: CKSyncEngine.SendChangesContext,
     syncEngine: CKSyncEngine
   ) async -> CKSyncEngine.RecordZoneChangeBatch? {
-    guard syncEnabled, engine === syncEngine else { return nil }
+    let account = await accountState()
+    guard syncEnabled, engine === syncEngine, account.status == "available",
+      account.userId == verifiedAccountId else { return nil }
     let changes = syncEngine.state.pendingRecordZoneChanges.filter {
       context.options.scope.contains($0)
     }
@@ -1283,8 +1413,10 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     }
   }
 
-  private func recordToSave(_ recordID: CKRecord.ID, syncEngine: CKSyncEngine) -> CKRecord? {
-    guard syncEnabled, engine === syncEngine else { return nil }
+  private func recordToSave(_ recordID: CKRecord.ID, syncEngine: CKSyncEngine) async -> CKRecord? {
+    let account = await accountState()
+    guard syncEnabled, engine === syncEngine, account.status == "available",
+      account.userId == verifiedAccountId else { return nil }
     let recordName = recordID.recordName
     let pendingWorkbook = diskState.pending[recordName]
     let pendingNotice = diskState.pendingConflictNotices?[recordName]
@@ -1863,8 +1995,10 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     workbookId: String,
     recordName: String
   ) async throws -> RemoteWorkbook? {
+    let operationEpoch = ownerEpoch
     let targetRecordID = recordID(recordName)
     let results = try await container.privateCloudDatabase.records(for: [targetRecordID])
+    guard operationEpoch == ownerEpoch else { throw CancellationError() }
     guard let result = results[targetRecordID] else { return nil }
     switch result {
     case .success(let record):
@@ -2044,32 +2178,6 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       "This workbook changed on another device. Review the iCloud copy before replacing either version.",
       conflict: true
     )
-  }
-
-  private func resetForAccountChange(
-    accountRecordName: String?,
-    preservePending: Bool = false
-  ) {
-    let retainedPending = preservePending ? diskState.pending : [:]
-    let retainedPendingDeletes = preservePending ? diskState.pendingDeletes : []
-    let retainedPendingDeleteWorkbookIds =
-      preservePending ? diskState.pendingDeleteWorkbookIds : nil
-    clearRemoteCache()
-    if !preservePending {
-      for recordName in diskState.pending.keys {
-        removePendingPayload(recordName: recordName)
-      }
-    }
-    for recordName in (diskState.pendingConflictNotices ?? [:]).keys {
-      removePendingConflictPackage(recordName: recordName)
-    }
-    diskState = CloudKitDiskState()
-    diskState.subscriptionIdentifier = cavalrySyncStateVersion
-    diskState.accountRecordName = accountRecordName
-    diskState.pending = retainedPending
-    diskState.pendingDeletes = retainedPendingDeletes
-    diskState.pendingDeleteWorkbookIds = retainedPendingDeleteWorkbookIds
-    try? persist()
   }
 
   private func clearRemoteCache() {
@@ -2291,6 +2399,89 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     var payload = ["reason": reason]
     if let workbookId { payload["workbookId"] = workbookId }
     eventSink?(payload)
+  }
+}
+
+// Owner storage is independent from CloudKit so migration, isolation, and
+// failure boundaries can be tested without accessing a user's account.
+struct CavalryCloudKitOwnerFiles {
+  enum StorageError: Error { case invalidOwner, invalidManifest, invalidPayload, existingDestination }
+
+  static func directory(root: URL, ownerId: String) -> URL {
+    root.appendingPathComponent("accounts", isDirectory: true)
+      .appendingPathComponent(sha256(Data(ownerId.utf8)), isDirectory: true)
+  }
+
+  static func validateOwner(_ data: Data, ownerId: String) throws {
+    guard !ownerId.isEmpty,
+      let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      value["accountRecordName"] as? String == ownerId
+    else { throw StorageError.invalidOwner }
+  }
+
+  static func read(
+    directory: URL,
+    ownerId: String,
+    validate: (Data) throws -> Void
+  ) throws -> Data? {
+    let manifest = directory.appendingPathComponent("sync-state.json")
+    let previous = manifest.appendingPathExtension("previous")
+    guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
+    var primaryFailure: Error?
+    for candidate in [manifest, previous] {
+      guard FileManager.default.fileExists(atPath: candidate.path) else { continue }
+      do {
+        let data = try Data(contentsOf: candidate)
+        try validateOwner(data, ownerId: ownerId)
+        try validate(data)
+        if candidate == previous, FileManager.default.fileExists(atPath: manifest.path) {
+          // Keep the unreadable original before the next verified commit.
+          try FileManager.default.copyItem(
+            at: manifest, to: manifest.appendingPathExtension("unreadable-\(UUID().uuidString)")
+          )
+        }
+        return data
+      } catch { primaryFailure = primaryFailure ?? error }
+    }
+    // An existing incomplete directory must not become a blank account.
+    throw primaryFailure ?? StorageError.invalidManifest
+  }
+
+  static func create(
+    directory: URL,
+    ownerId: String,
+    data: Data,
+    payloadFiles: Set<String>,
+    sourcePayloads: URL,
+    writeData: (Data, URL) throws -> Void = { data, url in
+      try data.write(to: url, options: [.atomic])
+    }
+  ) throws {
+    try validateOwner(data, ownerId: ownerId)
+    let parent = directory.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    guard !FileManager.default.fileExists(atPath: directory.path) else {
+      throw StorageError.existingDestination
+    }
+    let staging = parent.appendingPathComponent(".migrating-\(UUID().uuidString)", isDirectory: true)
+    let targetPayloads = staging.appendingPathComponent("payloads", isDirectory: true)
+    try FileManager.default.createDirectory(at: targetPayloads, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: staging) }
+    for name in payloadFiles {
+      guard name == URL(fileURLWithPath: name).lastPathComponent,
+        name != ".", name != "..", !name.isEmpty
+      else { throw StorageError.invalidPayload }
+      let original = try Data(contentsOf: sourcePayloads.appendingPathComponent(name))
+      let target = targetPayloads.appendingPathComponent(name)
+      try writeData(original, target)
+      guard try Data(contentsOf: target) == original else { throw StorageError.invalidPayload }
+    }
+    let manifest = staging.appendingPathComponent("sync-state.json")
+    try writeData(data, manifest)
+    guard try Data(contentsOf: manifest) == data else { throw StorageError.invalidManifest }
+    // The directory becomes discoverable only after every copied payload and
+    // its manifest have been written and read back. Legacy files stay intact.
+    try FileManager.default.moveItem(at: staging, to: directory)
   }
 }
 

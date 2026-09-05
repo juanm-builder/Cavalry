@@ -1,4 +1,4 @@
-// Validates portable workbooks and delegates durable synchronization to native CKSyncEngine.
+// Validates portable workbooks before sending them through the selected iCloud connection.
 'use strict';
 
 const MAX_PORTABLE_WORKBOOK_BYTES = 25 * 1024 * 1024;
@@ -276,6 +276,7 @@ function createCloudWorkbookController(dependencies = {}) {
       const workbook = prepared.workbook;
       const result = await request({
         operation: 'save',
+        expectedAccountId: payload.expectedAccountId,
         workbookId: workbook.id,
         name: text(workbook.name, 160),
         year: Number.isInteger(Number(workbook.year)) ? Number(workbook.year) : null,
@@ -325,7 +326,11 @@ function createCloudWorkbookController(dependencies = {}) {
     if (!isSafeWorkbookId(workbookId)) {
       return publicFailure('invalid_workbook_id', 'Choose a valid iCloud workbook.');
     }
-    const result = await request({ operation: 'download', workbookId });
+    const result = await request({
+      operation: 'download',
+      workbookId,
+      expectedAccountId: payload.expectedAccountId
+    });
     if (!result.ok) {
       return nativeFailure(
         result,
@@ -371,7 +376,11 @@ function createCloudWorkbookController(dependencies = {}) {
     if (!isSafeWorkbookId(workbookId)) {
       return publicFailure('invalid_workbook_id', 'Choose a valid iCloud workbook.');
     }
-    const result = await request({ operation: 'delete', workbookId });
+    const result = await request({
+      operation: 'delete',
+      workbookId,
+      expectedAccountId: payload.expectedAccountId
+    });
     if (!result.ok) {
       return nativeFailure(
         result,
@@ -432,6 +441,7 @@ function createCloudWorkbookController(dependencies = {}) {
     }
     const result = await request({
       operation: clear ? 'clear_conflict' : 'publish_conflict',
+      expectedAccountId: payload.expectedAccountId,
       workbookId,
       ...(notice
         ? {
@@ -474,6 +484,7 @@ function createCloudWorkbookController(dependencies = {}) {
     }
     const result = await request({
       operation: 'download_conflict',
+      expectedAccountId: payload.expectedAccountId,
       workbookId,
       conflictNoticeId
     });

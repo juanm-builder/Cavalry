@@ -7,7 +7,6 @@ import readline from 'node:readline';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hostPath = resolve(appRoot, 'dist/host/index.cjs');
-const userDataDir = mkdtempSync(resolve(tmpdir(), 'cavalry-tauri-host-'));
 const prefix = 'CAVALRY_IPC_V1:';
 const infoRequestId = 'sidecar-smoke-info';
 const cloudRequestId = 'sidecar-smoke-cloud';
@@ -17,11 +16,14 @@ const binaryPath =
   binaryOptionIndex >= 0 && argumentsList[binaryOptionIndex + 1]
     ? resolve(argumentsList[binaryOptionIndex + 1])
     : '';
-const expectICloudEnabled = argumentsList.includes('--expect-icloud-enabled');
+const expectBrowserSignIn = argumentsList.includes('--expect-browser-sign-in');
+const expectICloudEnabled =
+  argumentsList.includes('--expect-icloud-enabled') || expectBrowserSignIn;
 const recognizedArguments = new Set([
   '--binary',
   ...(binaryPath ? [argumentsList[binaryOptionIndex + 1]] : []),
-  '--expect-icloud-enabled'
+  '--expect-icloud-enabled',
+  '--expect-browser-sign-in'
 ]);
 
 if (
@@ -29,9 +31,12 @@ if (
   (expectICloudEnabled && !binaryPath) ||
   argumentsList.some((argument) => !recognizedArguments.has(argument))
 ) {
-  throw new Error('Usage: sidecar-smoke.mjs [--binary <packaged-host>] [--expect-icloud-enabled]');
+  throw new Error(
+    'Usage: sidecar-smoke.mjs [--binary <packaged-host>] [--expect-icloud-enabled] [--expect-browser-sign-in]'
+  );
 }
 
+const userDataDir = mkdtempSync(resolve(tmpdir(), 'cavalry-tauri-host-'));
 const child = spawn(binaryPath || process.execPath, binaryPath ? [] : [hostPath], {
   cwd: appRoot,
   stdio: ['pipe', 'pipe', 'pipe'],
@@ -41,7 +46,10 @@ const child = spawn(binaryPath || process.execPath, binaryPath ? [] : [hostPath]
     CAVALRY_APP_VERSION: '1.0.26',
     CAVALRY_IS_PACKAGED: binaryPath ? '1' : '0',
     CAVALRY_USER_DATA_DIR: userDataDir,
-    CAVALRY_COMPANION_API_ENABLED: '0'
+    CAVALRY_COMPANION_API_ENABLED: '0',
+    // The release check must observe the embedded build value. An inherited
+    // token or a developer's local config must not mask a broken package.
+    ...(expectBrowserSignIn ? { CAVALRY_CLOUDKIT_WEB_API_TOKEN: '' } : {})
   }
 });
 
@@ -166,6 +174,10 @@ lines.on('line', (line) => {
       );
       return;
     }
+    if (expectBrowserSignIn && message.result.userDataDir !== userDataDir) {
+      finish(new Error('The browser sign-in smoke must use its isolated data directory.'));
+      return;
+    }
     if (expectICloudEnabled) {
       write({
         type: 'request',
@@ -181,6 +193,10 @@ lines.on('line', (line) => {
     const state = message && message.result && message.result.state;
     if (!message.ok || !state || state.configured !== true || state.status !== 'signed_in') {
       finish(new Error('The packaged desktop host did not complete its native iCloud handshake.'));
+      return;
+    }
+    if (expectBrowserSignIn && state.browserSignInAvailable !== true) {
+      finish(new Error('The packaged desktop host is missing its browser iCloud configuration.'));
       return;
     }
     finish();

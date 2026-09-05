@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -12,11 +13,25 @@ const RETAINED_COPIES = 30;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const missing = (error) => error?.code === 'ENOENT';
 
+export function nativeCloudKitRecoverySources(userDataDir, homeDir) {
+  const applicationSupport = path.join(homeDir, 'Library', 'Application Support');
+  // Test/development overrides must never discover the user's real libraries.
+  if (userDataDir !== path.join(applicationSupport, 'Cavalry for Mac'))
+    return { legacyPayloadDirs: [], ownerCacheRoots: [] };
+  const cloudKit = path.join(applicationSupport, 'com.juanmbuilder.cavalry.mac', 'CloudKit');
+  const production = path.join(cloudKit, 'environments', 'production');
+  return {
+    legacyPayloadDirs: [path.join(production, 'payloads'), path.join(cloudKit, 'payloads')],
+    ownerCacheRoots: [path.join(production, 'accounts')]
+  };
+}
+
 // Immutable, validated workbook copies live outside the WebView and app bundle.
 // The directory itself is the catalog: losing a pointer never loses the books.
 export function createWorkbookRecoveryStore({
   rootDir,
   legacyPayloadDirs = [],
+  ownerCacheRoots = [],
   fileSystem = fs
 } = {}) {
   if (!path.isAbsolute(rootDir || '')) throw new Error('A recovery directory is required.');
@@ -182,9 +197,11 @@ export function createWorkbookRecoveryStore({
       (entry) => entry.isDirectory() && KEY.test(entry.name)
     );
     const result = [];
+    const contentHashes = new Set();
     for (const entry of keys) {
       try {
         const workbook = await readLatest(entry.name);
+        contentHashes.add(hash(workbook.text));
         result.push({
           id: `recovery-${entry.name}`,
           fileName: workbook.fileName,
@@ -204,32 +221,76 @@ export function createWorkbookRecoveryStore({
         });
       }
     }
-    return result.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+    return {
+      workbooks: result.sort((a, b) => b.savedAt.localeCompare(a.savedAt)),
+      contentHashes
+    };
   }
 
-  async function legacyCatalog(current) {
-    const found = new Map();
-    const existingKeys = new Set(
-      current.filter((entry) => !entry.error).map((entry) => entry.id.slice('recovery-'.length))
-    );
+  async function isPlainDirectory(directory) {
+    try {
+      return path.isAbsolute(directory) && (await fileSystem.lstat(directory)).isDirectory();
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  async function cloudPayloadDirectories() {
+    const directories = new Set();
     for (const directory of legacyPayloadDirs) {
-      if (!path.isAbsolute(directory)) continue;
-      const files = await entries(directory);
+      if (await isPlainDirectory(directory)) directories.add(directory);
+    }
+    for (const root of ownerCacheRoots) {
+      if (!(await isPlainDirectory(root))) continue;
+      // Native stores have one fixed level of hashed owners. Never recurse
+      // into arbitrary directories or follow linked account/payload folders.
+      for (const owner of await entries(root).catch(() => [])) {
+        if (!owner.isDirectory() || !KEY.test(owner.name)) continue;
+        const directory = path.join(root, owner.name, 'payloads');
+        if (
+          (await isPlainDirectory(path.dirname(directory))) &&
+          (await isPlainDirectory(directory))
+        )
+          directories.add(directory);
+      }
+    }
+    return directories;
+  }
+
+  async function readCloudCandidate(filePath) {
+    const file = await fileSystem.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const stats = await file.stat();
+      if (!stats.isFile() || stats.size > MAX_BYTES)
+        throw new Error('This recovery copy is not a supported workbook file.');
+      const text = await file.readFile('utf8');
+      if (Buffer.byteLength(text, 'utf8') > MAX_BYTES)
+        throw new Error('This recovery copy is too large.');
+      return { text, savedAt: stats.mtime.toISOString() };
+    } finally {
+      await file.close();
+    }
+  }
+
+  async function legacyCatalog(existingContents) {
+    const found = new Map();
+    legacyCopies.clear();
+    for (const directory of await cloudPayloadDirectories()) {
+      const files = await entries(directory).catch(() => []);
       for (const entry of files) {
         if (!entry.isFile() || !entry.name.endsWith('.html')) continue;
         const filePath = path.join(directory, entry.name);
         try {
-          const stats = await fileSystem.stat(filePath);
-          if (stats.size > MAX_BYTES) continue;
-          const text = await fileSystem.readFile(filePath, 'utf8');
+          const { text, savedAt } = await readCloudCandidate(filePath);
           const decoded = deserializeWorkbookFromFile(text, { rejectInvalid: true });
-          const key = hash(decoded.workbook.id);
-          if (existingKeys.has(key)) continue;
-          const savedAt = stats.mtime.toISOString();
-          if (found.has(key) && found.get(key).savedAt >= savedAt) continue;
-          const id = `recovery-legacy-${hash(filePath)}`;
+          // Two owners can keep different edits under the same workbook ID.
+          // Only byte-identical contents are redundant with another candidate
+          // or the current local copy; timestamps cannot supersede an owner.
+          const contentHash = hash(text);
+          if (existingContents.has(contentHash) || found.has(contentHash)) continue;
+          const id = `recovery-legacy-${contentHash}`;
           legacyCopies.set(id, filePath);
-          found.set(key, {
+          found.set(contentHash, {
             id,
             fileName: `${decoded.workbook.name} (iCloud recovery)`,
             folderName: 'Saved iCloud copy on this Mac',
@@ -328,7 +389,7 @@ export function createWorkbookRecoveryStore({
       }
       if (active?.key === null) return { ok: false, empty: true, cleared: true };
       if (active?.key) return acceptRecovery(await readLatest(active.key));
-      const books = await catalog();
+      const { workbooks: books } = await catalog();
       if (!books.length) {
         if (pointerFailure)
           throw new Error(
@@ -350,19 +411,21 @@ export function createWorkbookRecoveryStore({
     load,
     list: () =>
       ordered(async () => {
-        const current = await catalog();
-        return [...current, ...(await legacyCatalog(current))];
+        const { workbooks, contentHashes } = await catalog();
+        return [...workbooks, ...(await legacyCatalog(contentHashes))];
       }),
     open: (id) =>
       ordered(async () => {
         if (String(id).startsWith('recovery-legacy-')) {
-          await legacyCatalog(await catalog());
+          const { contentHashes } = await catalog();
+          await legacyCatalog(contentHashes);
           const filePath = legacyCopies.get(id);
           if (!filePath)
             throw new Error('Choose an available iCloud recovery copy from the local library.');
-          const stats = await fileSystem.stat(filePath);
-          if (stats.size > MAX_BYTES) throw new Error('This recovery copy is too large.');
-          return recoveredCopy({ text: await fileSystem.readFile(filePath, 'utf8') });
+          const { text } = await readCloudCandidate(filePath);
+          if (id !== `recovery-legacy-${hash(text)}`)
+            throw new Error('This recovery copy changed. Choose it again from the local library.');
+          return recoveredCopy({ text });
         }
         const key = String(id || '').replace(/^recovery-/, '');
         const result = await readLatest(key);

@@ -4,6 +4,8 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { readAccountProfile, writeAccountProfile } from './account-preferences.js';
 import { CloudLibrarySurface, cloudLibraryCounts } from './CloudLibrarySurface.jsx';
+import { AppleAccountChooser } from './AppleAccountChooser.jsx';
+import { WorkbookRecoveryCard } from './WorkbookRecoveryCard.jsx';
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -124,7 +126,7 @@ function LocalProfile() {
       }
     >
       <p>
-        This profile is stored on this Mac. Your iCloud Apple Account is managed in System Settings.
+        This profile is stored on this Mac. It does not change the Apple Account used for syncing.
       </p>
       <form className="settings-account-form" id="account-profile-form" onSubmit={saveProfile}>
         <div className="field">
@@ -169,18 +171,20 @@ function LocalProfile() {
 
 function ICloudConnection({ cloud }) {
   const actions = useActionBindings();
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [copyNotice, setCopyNotice] = useState('');
   const signedIn = cloud.status === 'signed_in';
-  const disconnected = cloud.status === 'disconnected';
+  const paused = cloud.syncPaused === true || cloud.status === 'disconnected';
+  const accountSource = cloud.accountSource === 'browser' ? 'browser' : 'system';
   const testLibrary = cloud.cloudEnvironment === 'Development';
   const accountReference = asString(asObject(cloud.user).id)
     .replace(/^_/, '')
     .slice(-12)
     .toUpperCase();
-  const checking = cloud.status === 'initializing';
+  const checking = cloud.status === 'initializing' || cloud.status === 'signing_in';
   const pending = !!asString(cloud.pendingOperation);
-  const icon = checking ? 'progress_activity' : signedIn ? 'cloud_done' : 'cloud_off';
+  const hasAccount = !!accountReference;
   const copyReference = async () => {
     try {
       await navigator.clipboard.writeText(accountReference);
@@ -189,88 +193,44 @@ function ICloudConnection({ cloud }) {
       setCopyNotice('Couldn’t copy. Select the reference to copy it.');
     }
   };
+  const signOut = async () => {
+    const result = await actions.dispatch('sign-out-icloud');
+    if (result?.ok) setConfirmSignOut(false);
+  };
 
   return (
     <div className="settings-cloud-account">
       <div className="settings-cloud-account-identity">
         <span className="settings-cloud-account-avatar" aria-hidden="true">
-          <Icon name={icon} />
+          <Icon name={checking ? 'progress_activity' : 'cloud'} />
         </span>
         <div className="settings-cloud-account-copy">
-          <span className="settings-cloud-account-label">Apple Account</span>
           <strong>
             {checking
-              ? 'Checking iCloud'
-              : signedIn
-                ? 'iCloud account'
-                : disconnected
-                  ? 'iCloud disconnected'
-                  : 'iCloud unavailable'}
+              ? cloud.status === 'signing_in'
+                ? 'Waiting for browser sign-in'
+                : 'Checking iCloud'
+              : accountSource === 'browser'
+                ? 'Apple Account selected in browser'
+                : 'This Mac’s iCloud account'}
           </strong>
           <p>
-            {signedIn
-              ? testLibrary
-                ? 'Test iCloud library'
-                : 'Private iCloud library'
-              : disconnected
-                ? 'Local workbooks are available. Connect again to resume syncing.'
-                : 'Check iCloud in System Settings.'}
+            {accountSource === 'browser'
+              ? 'Cavalry uses the account you choose.'
+              : 'Cavalry uses the Apple Account in System Settings.'}
+          </p>
+          <p className="settings-cloud-account-library-kind">
+            {testLibrary ? 'Test iCloud library' : 'Private iCloud library'}
           </p>
         </div>
       </div>
-      {signedIn && testLibrary ? (
+      {testLibrary ? (
         <p className="settings-cloud-account-notice" role="status">
           This development build uses a separate test library. Use the released Mac app and
           TestFlight app to see the same workbooks and account reference.
         </p>
       ) : null}
-      <div className="settings-cloud-account-actions">
-        <button
-          className="btn"
-          disabled={pending || checking}
-          type="button"
-          {...actions.action(disconnected ? 'connect-icloud' : 'refresh-cloud-workbooks')}
-        >
-          <Icon name="refresh" />
-          {disconnected
-            ? 'Connect iCloud'
-            : asString(cloud.pendingOperation) === 'refresh'
-              ? 'Checking…'
-              : 'Check Now'}
-        </button>
-        {!disconnected ? (
-          confirmDisconnect ? (
-            <>
-              <button
-                className="btn"
-                disabled={pending || checking}
-                type="button"
-                {...actions.action('disconnect-icloud')}
-              >
-                Confirm Disconnect
-              </button>
-              <button
-                className="btn"
-                disabled={pending}
-                onClick={() => setConfirmDisconnect(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              className="btn"
-              disabled={pending || checking}
-              onClick={() => setConfirmDisconnect(true)}
-              type="button"
-            >
-              Disconnect iCloud
-            </button>
-          )
-        ) : null}
-      </div>
-      {signedIn && accountReference ? (
+      {hasAccount ? (
         <div className="settings-cloud-account-reference">
           <span>Account reference</span>
           <div className="settings-cloud-account-reference-value">
@@ -291,12 +251,81 @@ function ICloudConnection({ cloud }) {
           ) : null}
         </div>
       ) : null}
-      {confirmDisconnect && !disconnected ? (
+      <div className="settings-cloud-account-actions">
+        <button
+          className="btn btn-primary"
+          disabled={pending || checking}
+          onClick={() => setChooserOpen(true)}
+          type="button"
+        >
+          {hasAccount || paused ? 'Change account…' : 'Choose an Apple Account…'}
+        </button>
+        {signedIn || paused ? (
+          <button
+            className="btn"
+            disabled={pending || checking}
+            type="button"
+            {...actions.action(paused ? 'resume-icloud-sync' : 'pause-icloud-sync')}
+          >
+            <Icon name={paused ? 'play_arrow' : 'pause_circle'} />
+            {paused ? 'Resume syncing' : 'Pause syncing'}
+          </button>
+        ) : null}
+        {hasAccount ? (
+          <button
+            className="btn settings-cloud-sign-out"
+            disabled={pending || checking}
+            onClick={() => setConfirmSignOut(true)}
+            type="button"
+          >
+            Sign out
+          </button>
+        ) : null}
+      </div>
+      {paused ? (
         <p className="settings-cloud-account-notice" role="status">
-          Disconnect iCloud on this Mac? Local workbooks and existing iCloud copies stay available.
-          An upload already received by iCloud may still finish. Your Mac stays signed into its
-          Apple Account.
+          Syncing is paused. Resuming uses the same account. Choose Change account to use a
+          different one.
         </p>
+      ) : null}
+      {confirmSignOut ? (
+        <div
+          className="settings-cloud-confirmation"
+          role="group"
+          aria-label="Sign out of Cavalry iCloud"
+        >
+          <span>
+            Sign out of this iCloud connection in Cavalry? Saved copies on this Mac and in iCloud
+            will be kept. Your Mac’s Apple Account will stay signed in.
+          </span>
+          <button
+            className="btn"
+            disabled={pending || checking}
+            onClick={() => void signOut()}
+            type="button"
+          >
+            Confirm sign out
+          </button>
+          <button
+            className="btn"
+            disabled={pending}
+            onClick={() => setConfirmSignOut(false)}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {chooserOpen ? (
+        <AppleAccountChooser
+          accountSource={accountSource}
+          browserSignInAvailable={cloud.browserSignInAvailable === true}
+          browserSignInUnavailableReason={asString(cloud.browserSignInUnavailableReason)}
+          onChoose={(source) => actions.dispatch('select-icloud-account', { source })}
+          onCancelSignIn={() => actions.dispatch('cancel-icloud-sign-in')}
+          onClose={() => setChooserOpen(false)}
+          pending={pending}
+        />
       ) : null}
     </div>
   );
@@ -395,7 +424,7 @@ function CloudSyncError({ cloud, workbook, scope = 'global' }) {
   );
 }
 
-function CurrentWorkbookCard({ cloud, workbook }) {
+function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
   const actions = useActionBindings();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [confirmation, setConfirmation] = useState('');
@@ -416,7 +445,22 @@ function CurrentWorkbookCard({ cloud, workbook }) {
   const syncBlocked = current.syncBlocked === true || asString(current.status) === 'attention';
   const autoSyncEnabled = current.autoSyncEnabled !== false;
   const pendingOperation = asString(cloud.pendingOperation);
-  const pending = !!pendingOperation;
+  const connected = cloud.status === 'signed_in' && cloud.syncPaused !== true;
+  const pending = !!pendingOperation || !connected;
+  const localStatus = asString(localSave.status);
+  const locallySaved = localStatus === 'saved';
+  const locallyPending = ['saving', 'dirty'].includes(localStatus);
+  const localLabel = locallySaved
+    ? 'Saved on this Mac'
+    : localStatus === 'saving'
+      ? 'Saving on this Mac…'
+      : localStatus === 'dirty'
+        ? 'Changes waiting to save'
+        : localStatus === 'error'
+          ? 'Couldn’t save on this Mac'
+          : localStatus === 'cache'
+            ? 'Saved to browser cache'
+            : 'Local save not yet confirmed';
   const cloudUpdatedAt = formatCloudTimestamp(current.cloudUpdatedAt);
   const currentCloudItem = asArray(cloud.workbooks).find(
     (item) => asString(item?.id || item?.workbookId) === currentWorkbookId
@@ -425,19 +469,21 @@ function CurrentWorkbookCard({ cloud, workbook }) {
 
   const status = remoteDeleted
     ? { label: 'Removed from iCloud', tone: 'warn', icon: 'cloud_off' }
-    : legacyConflict || syncBlocked
-      ? { label: 'Needs attention', tone: 'warn', icon: 'sync_problem' }
-      : retrying
-        ? { label: 'Retrying', tone: 'info', icon: 'sync' }
-        : uploading
-          ? { label: 'Syncing', tone: 'info', icon: 'cloud_upload' }
-          : queued
-            ? { label: 'Waiting', tone: 'info', icon: 'cloud_upload' }
-            : linked && autoSyncEnabled
-              ? { label: 'Synced', tone: 'good', icon: 'cloud_done' }
-              : linked
-                ? { label: 'iCloud paused', tone: 'neutral', icon: 'pause_circle' }
-                : { label: 'On this Mac', tone: 'neutral', icon: 'computer' };
+    : !connected
+      ? { label: 'On this Mac', tone: 'neutral', icon: 'computer' }
+      : legacyConflict || syncBlocked
+        ? { label: 'Needs attention', tone: 'warn', icon: 'sync_problem' }
+        : retrying
+          ? { label: 'Retrying', tone: 'info', icon: 'sync' }
+          : uploading
+            ? { label: 'Syncing', tone: 'info', icon: 'cloud_upload' }
+            : queued
+              ? { label: 'Waiting', tone: 'info', icon: 'cloud_upload' }
+              : linked && autoSyncEnabled
+                ? { label: 'Synced', tone: 'good', icon: 'cloud_done' }
+                : linked
+                  ? { label: 'iCloud paused', tone: 'neutral', icon: 'pause_circle' }
+                  : { label: 'On this Mac', tone: 'neutral', icon: 'computer' };
   const detail = remoteDeleted
     ? 'Mac copy is safe'
     : legacyConflict
@@ -485,6 +531,58 @@ function CurrentWorkbookCard({ cloud, workbook }) {
           <StatusPill tone={status.tone}>{status.label}</StatusPill>
         </span>
         <small>{detail}</small>
+      </div>
+      <div aria-label="Workbook save status" className="settings-workbook-save-status">
+        <div className={locallySaved ? 'is-saved' : localStatus === 'error' ? 'has-error' : ''}>
+          <Icon name={locallySaved ? 'check_circle' : localStatus === 'error' ? 'error' : 'save'} />
+          <span>{localLabel}</span>
+          {localSave.lastSavedAt && !locallyPending && localStatus !== 'error' ? (
+            <time dateTime={localSave.lastSavedAt}>
+              {formatCloudTimestamp(localSave.lastSavedAt)}
+            </time>
+          ) : null}
+        </div>
+        <div
+          className={
+            linked &&
+            connected &&
+            locallySaved &&
+            !legacyConflict &&
+            !syncBlocked &&
+            !queued &&
+            !uploading &&
+            !retrying &&
+            !remoteDeleted
+              ? 'is-saved'
+              : ''
+          }
+        >
+          <Icon name="cloud" />
+          <span>
+            {!connected
+              ? cloud.syncPaused || cloud.status === 'disconnected'
+                ? 'iCloud syncing paused'
+                : 'iCloud not connected'
+              : remoteDeleted
+                ? 'Removed from iCloud'
+                : legacyConflict || syncBlocked
+                  ? 'iCloud needs attention'
+                  : uploading
+                    ? 'Saving to iCloud…'
+                    : retrying
+                      ? 'Retrying iCloud save'
+                      : queued
+                        ? 'Waiting to save to iCloud'
+                        : locallyPending
+                          ? 'Waiting for local save'
+                          : linked
+                            ? locallySaved
+                              ? 'Saved to iCloud'
+                              : 'iCloud copy available'
+                            : 'Not saved to iCloud'}
+          </span>
+          {cloudUpdatedAt ? <time dateTime={current.cloudUpdatedAt}>{cloudUpdatedAt}</time> : null}
+        </div>
       </div>
       <div className="settings-cloud-current-actions">
         <button
@@ -539,7 +637,9 @@ function CurrentWorkbookCard({ cloud, workbook }) {
               : syncBlocked
                 ? 'Sync needs attention'
                 : autoSyncEnabled
-                  ? 'Changes sync automatically'
+                  ? connected
+                    ? 'Changes sync automatically'
+                    : 'Resume this account’s connection to sync'
                   : 'Manual sync only'}
           </small>
         </div>
@@ -633,31 +733,34 @@ function CurrentWorkbookCard({ cloud, workbook }) {
   );
 }
 
-function ICloudWorkspace({ cloud, signedIn, workbook }) {
+function ICloudWorkspace({ cloud, signedIn, workbook, localSave }) {
   const counts = cloudLibraryCounts(cloud.workbooks);
   const checking = cloud.status === 'initializing';
   const connected = cloud.status === 'signed_in';
+  const paused = cloud.syncPaused === true || cloud.status === 'disconnected';
   const needsAttention = connected && !!asString(cloud.error);
   const headerLabel = checking
     ? 'Checking'
-    : needsAttention
-      ? 'Needs attention'
-      : connected
-        ? counts.queued
-          ? 'Syncing'
-          : 'Connected'
-        : cloud.status === 'unavailable'
-          ? 'Unavailable'
-          : cloud.status === 'disconnected'
-            ? 'Disconnected'
-            : 'Sign in needed';
+    : paused
+      ? 'Syncing paused'
+      : needsAttention
+        ? 'Needs attention'
+        : connected
+          ? counts.queued
+            ? 'Syncing'
+            : 'Connected'
+          : cloud.status === 'unavailable'
+            ? 'Unavailable'
+            : cloud.status === 'disconnected'
+              ? 'Disconnected'
+              : 'Sign in needed';
 
   return (
     <SettingsCard
       className="settings-cloud-workspace"
       headingId="settings-account-cloud-heading"
       icon="cloud_sync"
-      title="iCloud"
+      title="iCloud library"
       trailing={
         <StatusPill
           icon={
@@ -675,26 +778,33 @@ function ICloudWorkspace({ cloud, signedIn, workbook }) {
         </StatusPill>
       }
     >
-      <ICloudConnection
-        cloud={cloud}
-        key={`${cloud.status}-${asString(asObject(cloud.user).id)}`}
-      />
+      <ICloudConnection cloud={cloud} />
       <CloudSyncError cloud={cloud} scope="global" workbook={workbook} />
       {signedIn ? (
         <CloudLibrarySurface
           cloud={cloud}
-          currentWorkbookAction={<CurrentWorkbookCard cloud={cloud} workbook={workbook} />}
+          currentWorkbookAction={
+            <CurrentWorkbookCard cloud={cloud} localSave={localSave} workbook={workbook} />
+          }
           currentWorkbookError={
             <CloudSyncError cloud={cloud} scope="current" workbook={workbook} />
           }
           libraryError={<CloudSyncError cloud={cloud} scope="library" workbook={workbook} />}
         />
-      ) : null}
+      ) : (
+        <CurrentWorkbookCard cloud={cloud} localSave={localSave} workbook={workbook} />
+      )}
     </SettingsCard>
   );
 }
 
-export function CloudAccountPanel({ cloud: rawCloud, feedback, workbook = {} }) {
+export function CloudAccountPanel({
+  cloud: rawCloud,
+  feedback,
+  workbook = {},
+  localSave = {},
+  recovery = {}
+}) {
   const cloud = asObject(rawCloud);
   const signedIn = cloud.status === 'signed_in' && !!asString(asObject(cloud.user).id);
   const cloudFeedback = { notice: asString(cloud.notice) };
@@ -703,8 +813,18 @@ export function CloudAccountPanel({ cloud: rawCloud, feedback, workbook = {} }) 
     <div className="settings-content-stack">
       <SettingsFeedback feedback={feedback} />
       <SettingsFeedback feedback={cloudFeedback} />
+      <header className="settings-account-intro">
+        <h2>Account &amp; sync</h2>
+        <p>Choose where your workbooks sync.</p>
+      </header>
+      <ICloudWorkspace
+        cloud={cloud}
+        localSave={localSave}
+        signedIn={signedIn}
+        workbook={workbook}
+      />
+      <WorkbookRecoveryCard recovery={recovery} />
       <LocalProfile />
-      <ICloudWorkspace cloud={cloud} signedIn={signedIn} workbook={workbook} />
     </div>
   );
 }

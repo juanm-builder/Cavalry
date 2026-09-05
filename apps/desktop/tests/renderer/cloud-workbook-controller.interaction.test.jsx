@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   readCloudWorkbookSyncState,
+  readCloudWorkbookAutoSyncPreference,
   writeCloudWorkbookAutoSyncPreference,
   writeCloudWorkbookSyncState
 } from '../../src/renderer/app/cloud-workbook-sync-state.js';
@@ -94,6 +95,151 @@ function createAutoSyncTimers() {
 }
 
 describe('cloud workbook controller interactions', () => {
+  it('keeps the open workbook local when the verified account changes, including later saves and restart', async () => {
+    let state = { ...signedInState(), workbooks: [] };
+    let update;
+    const cloud = {
+      invoke: vi.fn(async (command) => ({ ok: true, state })),
+      subscribe(callback) {
+        update = callback;
+        return () => {};
+      }
+    };
+    const syncStorage = createSyncStorage();
+    const timers = createAutoSyncTimers();
+    const workbook = { id: 'private-plan', name: 'Private Plan' };
+    const hook = renderHook(
+      ({ sequence }) =>
+        useCloudWorkbookController({
+          cloud,
+          workbook,
+          syncStorage,
+          saveStatus: 'saved',
+          localSaveSequence: sequence,
+          autoSyncSchedulerOptions: timers.options
+        }),
+      { initialProps: { sequence: 1 } }
+    );
+    await waitFor(() => expect(hook.result.current.model.user?.id).toBe('user-1'));
+    await act(async () => {
+      state = { ...state, user: { id: 'user-2' }, sessionGeneration: 2 };
+      update(state);
+    });
+    await waitFor(() => expect(hook.result.current.model.current.autoSyncEnabled).toBe(false));
+    expect(readCloudWorkbookAutoSyncPreference(syncStorage, 'user-2', workbook.id)).toBe(false);
+    hook.rerender({ sequence: 2 });
+    expect(timers.hasPending()).toBe(false);
+    expect(cloud.invoke).not.toHaveBeenCalledWith('uploadWorkbook', expect.anything());
+    hook.unmount();
+    const restarted = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook,
+        syncStorage,
+        saveStatus: 'saved',
+        autoSyncSchedulerOptions: timers.options
+      })
+    );
+    await waitFor(() => expect(restarted.result.current.model.user?.id).toBe('user-2'));
+    expect(restarted.result.current.model.current.autoSyncEnabled).toBe(false);
+    expect(cloud.invoke).not.toHaveBeenCalledWith('uploadWorkbook', expect.anything());
+  });
+
+  it('can connect another account before opening a workbook without blocking that account’s library', async () => {
+    let state = signedInState();
+    let update;
+    const cloud = {
+      invoke: vi.fn(async () => ({ ok: true, state })),
+      subscribe(callback) {
+        update = callback;
+        return () => {};
+      }
+    };
+    const syncStorage = createSyncStorage();
+    const hook = renderHook(
+      ({ workbook }) => useCloudWorkbookController({ cloud, workbook, syncStorage }),
+      { initialProps: { workbook: null } }
+    );
+    await waitFor(() => expect(hook.result.current.model.user?.id).toBe('user-1'));
+    await act(async () => {
+      state = { ...state, user: { id: 'user-2' } };
+      update(state);
+    });
+    hook.rerender({ workbook: { id: 'new-account-plan', name: 'New Account Plan' } });
+    expect(hook.result.current.model.current.autoSyncEnabled).toBe(true);
+    expect(hook.result.current.model.error).toBe('');
+  });
+
+  it('blocks account selection and sign-out when the current workbook cannot be saved', async () => {
+    const cloud = makeCloud();
+    const hook = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'local', name: 'Local' },
+        syncStorage: createSyncStorage(),
+        saveWorkbook: async () => ({ ok: false, error: 'Disk full.' })
+      })
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+    for (const operation of ['select-account', 'sign-out']) {
+      let result;
+      await act(async () => {
+        result = await hook.result.current.execute(operation, { source: 'browser' });
+      });
+      expect(result).toMatchObject({ ok: false, error: 'Disk full.' });
+    }
+    expect(cloud.invoke).not.toHaveBeenCalledWith('selectAccount', expect.anything());
+    expect(cloud.invoke).not.toHaveBeenCalledWith('signOut', expect.anything());
+  });
+
+  it('saves before selecting the browser account and allows canceling an outstanding browser request', async () => {
+    const sequence = [];
+    let finish;
+    const cloud = {
+      invoke: vi.fn(async (command) => {
+        if (command === 'getState') return { ok: true, state: signedInState() };
+        if (command === 'selectAccount') {
+          sequence.push('select');
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        }
+        if (command === 'cancelAccountSignIn') {
+          finish({ ok: false, canceled: true });
+          return { ok: true };
+        }
+        return { ok: true };
+      }),
+      subscribe: () => () => {}
+    };
+    const hook = renderHook(() =>
+      useCloudWorkbookController({
+        cloud,
+        workbook: { id: 'local', name: 'Local' },
+        syncStorage: createSyncStorage(),
+        saveWorkbook: async () => {
+          sequence.push('save');
+          return { ok: true };
+        }
+      })
+    );
+    await waitFor(() => expect(hook.result.current.model.status).toBe('signed_in'));
+    let selection;
+    await act(async () => {
+      selection = hook.result.current.execute('select-account', { source: 'browser' });
+    });
+    await waitFor(() => expect(sequence).toEqual(['save', 'select']));
+    await act(async () => {
+      expect(await hook.result.current.execute('cancel-sign-in')).toMatchObject({ ok: true });
+      await selection;
+    });
+    expect(cloud.invoke).toHaveBeenCalledWith('selectAccount', {
+      source: 'browser',
+      expectedUserId: 'user-1'
+    });
+    expect(hook.result.current.model.user.id).toBe('user-1');
+  });
+
   it('does not retry a permanent CloudKit rejection automatically', () => {
     expect(
       isRetryableAutomaticSyncFailure({
@@ -264,6 +410,7 @@ describe('cloud workbook controller interactions', () => {
     });
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook: { id: 'cloud-workbook', name: 'Latest local plan' },
         expectedRevision: null
       })
@@ -291,6 +438,7 @@ describe('cloud workbook controller interactions', () => {
     });
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook: { id: 'cloud-workbook', name: 'Second saved plan' },
         expectedRevision: 1
       })
@@ -339,6 +487,7 @@ describe('cloud workbook controller interactions', () => {
 
     expect(hook.result.current.model.error).toBe('');
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook,
       expectedRevision: 2
     });
@@ -521,6 +670,7 @@ describe('cloud workbook controller interactions', () => {
     });
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook,
         expectedRevision: null
       })
@@ -601,6 +751,7 @@ describe('cloud workbook controller interactions', () => {
         await hook.result.current.execute('upload');
       });
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook: { ...workbook, name: 'Saved while paused' },
         expectedRevision: null
       });
@@ -656,6 +807,7 @@ describe('cloud workbook controller interactions', () => {
     });
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook,
         expectedRevision: null
       })
@@ -724,6 +876,7 @@ describe('cloud workbook controller interactions', () => {
       await hook.result.current.execute('upload');
     });
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: { ...workbook, name: 'Mac Plan edited locally' },
       expectedRevision: null,
       conflictResolution: 'keep_local'
@@ -809,6 +962,7 @@ describe('cloud workbook controller interactions', () => {
 
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook: expect.any(Object),
         expectedRevision: 6,
         conflictResolution: 'keep_local'
@@ -886,6 +1040,7 @@ describe('cloud workbook controller interactions', () => {
 
     await waitFor(() =>
       expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+        expectedUserId: 'user-1',
         workbook: expect.any(Object),
         expectedRevision: 7,
         conflictResolution: 'keep_local'
@@ -1239,11 +1394,13 @@ describe('cloud workbook controller interactions', () => {
     });
     expect(recreated).toMatchObject({ ok: true });
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: { id: 'cloud-workbook', name: 'Local Plan' },
       expectedRevision: null,
       conflictResolution: 'keep_local'
     });
     expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      expectedUserId: 'user-1',
       workbookId: 'cloud-workbook'
     });
     expect(result.current.model.current).toMatchObject({
@@ -1409,6 +1566,7 @@ describe('cloud workbook controller interactions', () => {
       ])
     );
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: savedWorkbook,
       expectedRevision: 3,
       conflictResolution: 'keep_local'
@@ -1621,11 +1779,13 @@ describe('cloud workbook controller interactions', () => {
       ])
     );
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: mergedWorkbook,
       expectedRevision: 3,
       conflictResolution: 'keep_local'
     });
     expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      expectedUserId: 'user-1',
       workbookId: 'cloud-workbook'
     });
   });
@@ -1748,10 +1908,12 @@ describe('cloud workbook controller interactions', () => {
       ])
     );
     expect(cloud.invoke).toHaveBeenCalledWith('downloadConflictPackage', {
+      expectedUserId: 'user-1',
       workbookId: 'cloud-workbook',
       conflictNoticeId: 'conflict-from-mac'
     });
     expect(cloud.invoke).toHaveBeenCalledWith('clearConflictNotice', {
+      expectedUserId: 'user-1',
       workbookId: 'cloud-workbook'
     });
   });
@@ -1826,6 +1988,7 @@ describe('cloud workbook controller interactions', () => {
       await first.result.current.execute('upload');
     });
     expect(cloud.invoke).toHaveBeenCalledWith('uploadWorkbook', {
+      expectedUserId: 'user-1',
       workbook: localWorkbook,
       expectedRevision: 7
     });

@@ -173,7 +173,7 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
       return failure;
     }
     const savedSequence = entry.changeSequence;
-    const result = await call('saveSyncState', payload);
+    const result = await call('saveSyncState', { ...payload, expectedUserId: entry.scope.userId });
     const envelope = result && result.ok ? normalizeEnvelope(result.envelope, entry.scope) : null;
     if (!(result && result.ok && envelope)) {
       const failure = durableFailure(result);
@@ -231,11 +231,14 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
       syncState,
       autoSyncEnabled
     };
-    const saved = await call('saveSyncState', payload);
+    const saved = await call('saveSyncState', { ...payload, expectedUserId: entry.scope.userId });
     const savedEnvelope = saved && saved.ok ? normalizeEnvelope(saved.envelope, entry.scope) : null;
     if (!(saved && saved.ok && savedEnvelope)) return durableFailure(saved);
 
-    const verified = await call('loadSyncState', { workbookId: entry.scope.workbookId });
+    const verified = await call('loadSyncState', {
+      workbookId: entry.scope.workbookId,
+      expectedUserId: entry.scope.userId
+    });
     const verifiedEnvelope =
       verified && verified.ok && verified.status === 'loaded'
         ? normalizeEnvelope(verified.envelope, entry.scope)
@@ -264,7 +267,10 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
       }
       entry.status = 'loading';
       entry.error = null;
-      const loaded = await call('loadSyncState', { workbookId: entry.scope.workbookId });
+      const loaded = await call('loadSyncState', {
+        workbookId: entry.scope.workbookId,
+        expectedUserId: entry.scope.userId
+      });
       if (loaded && loaded.ok && loaded.status === 'loaded') {
         const envelope = normalizeEnvelope(loaded.envelope, entry.scope);
         if (!envelope) {
@@ -377,7 +383,10 @@ export function createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage } 
     if (!entry) return durableFailure({ code: 'cloud_sync_state_scope_invalid' });
     entry.status = 'removing';
     if (entry.writePromise) await entry.writePromise.catch(() => undefined);
-    const result = await call('removeSyncState', { workbookId: entry.scope.workbookId });
+    const result = await call('removeSyncState', {
+      workbookId: entry.scope.workbookId,
+      expectedUserId: entry.scope.userId
+    });
     if (!(result && result.ok)) {
       const failure = durableFailure(result);
       entry.status = 'error';

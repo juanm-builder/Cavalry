@@ -2,6 +2,39 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.10 - 2026-09-06
+
+### Added
+
+- Mac users can choose the iCloud account for Cavalry in an Apple browser sign-in window,
+  independently of the Apple Account used by macOS. Account & sync shows the selected source and
+  actual account reference, with separate Change account, Pause/Resume, and Sign out controls.
+- Local recovery can discover retained copies across account-specific caches. Recovered workbooks
+  open as separate local copies with iCloud autosave off.
+
+### Fixed
+
+- Pending uploads, saved sessions, caches, and delayed sync responses remain tied to their verified
+  iCloud account. Changing accounts does not automatically upload existing workbooks to the newly
+  selected library, and signing out keeps local workbooks.
+- Apple browser sign-in correctly receives the CloudKit callback. Updated sign-in pages and scripts
+  use explicit versions so a browser cache cannot retain an older callback implementation.
+- Both Mac release architectures include the verified browser sign-in configuration. Packaged
+  startup checks reject builds where that configuration is missing.
+
+### Compatibility and draft release notes
+
+- This candidate retains the workbook format, Production CloudKit container, and durable local
+  recovery introduced in 2.2.9. It does not move data between Apple Accounts or retrieve workbooks
+  from the former Cavalry Cloud service.
+- Live browser authentication and the returned CloudKit account identity have been verified. The
+  signed local ARM64 candidate passed startup, embedded-configuration, and crash/relaunch recovery
+  checks. Signing, notarization, and validation evidence for the final two-architecture artifacts
+  belong to the immutable GitHub draft release record.
+- Keep this release in draft while real Mac–iPhone workbook sync, account-switch isolation, and
+  installer/update certification remain pending. The originally reported missing workbook has not
+  been recovered.
+
 ## 2.2.9 - 2026-09-05
 
 ### Added

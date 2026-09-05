@@ -28,7 +28,7 @@ export function useCloudWorkbookOperations({
   ensureDurableSyncState,
   flushDurableSyncState,
   initialEnrollmentRef,
-  invoke,
+  invoke: invokeRaw,
   localConflictNoticeRef,
   navigate,
   pendingOperationRef,
@@ -38,6 +38,7 @@ export function useCloudWorkbookOperations({
   refreshState,
   resolvedSyncStorage,
   saveStatusRef,
+  saveWorkbook,
   setAutoSyncPreferenceEpoch,
   setLocalConflictNotice,
   setUiState,
@@ -51,7 +52,16 @@ export function useCloudWorkbookOperations({
   return useCallback(
     async (operation, payload = {}) => {
       const operationName = asString(operation);
-      const operationWorkbookId = ['refresh', 'connect', 'disconnect'].includes(operationName)
+      const operationUserId = asString(stateRef.current.user?.id);
+      const invoke = (command, request = {}) =>
+        invokeRaw(command, { ...request, expectedUserId: operationUserId });
+      const operationWorkbookId = [
+        'refresh',
+        'connect',
+        'disconnect',
+        'select-account',
+        'sign-out'
+      ].includes(operationName)
         ? ''
         : asString(payload.workbookId || payload.id || workbookRef.current?.id);
       const operationWorkbookName =
@@ -61,6 +71,7 @@ export function useCloudWorkbookOperations({
         (operationWorkbookId === asString(workbookRef.current?.id)
           ? asString(workbookRef.current?.name)
           : '');
+      if (operationName === 'cancel-sign-in') return invoke('cancelAccountSignIn');
       if (pendingOperationRef.current) {
         return {
           ok: false,
@@ -189,7 +200,22 @@ export function useCloudWorkbookOperations({
       let openSyncContext = null;
       let deleteSyncContext = null;
       try {
-        if (operationName === 'refresh') {
+        if (['select-account', 'sign-out'].includes(operationName)) {
+          autoSyncSchedulerRef.current?.cancelPending();
+          const currentWorkbook = workbookRef.current;
+          if (currentWorkbook) {
+            const saved =
+              typeof saveWorkbook === 'function' ? await saveWorkbook(currentWorkbook) : null;
+            if (!saved?.ok)
+              throw new Error(
+                saved?.error || 'Save this workbook on your Mac before changing accounts.'
+              );
+          }
+          result =
+            operationName === 'select-account'
+              ? await invoke('selectAccount', { source: asString(payload.source) })
+              : await invoke('signOut');
+        } else if (operationName === 'refresh') {
           result = await invoke('listWorkbooks');
         } else if (operationName === 'connect' || operationName === 'disconnect') {
           autoSyncSchedulerRef.current?.cancelPending();
@@ -399,8 +425,10 @@ export function useCloudWorkbookOperations({
             payload,
             invoke,
             applyRemoteState,
-            persistMergedWorkbook,
-            publishConflictReport
+            persistMergedWorkbook: (expected, merged) =>
+              persistMergedWorkbook(expected, merged, operationUserId),
+            publishConflictReport: (report) =>
+              publishConflictReport({ ...report, expectedUserId: operationUserId })
           });
           result = reconciliation.result;
           uploadSyncContext = reconciliation.uploadSyncContext || null;
@@ -600,7 +628,7 @@ export function useCloudWorkbookOperations({
           }
           updateWorkbookConflict(currentWorkbookId, false);
           if (['keep-local', 'reconcile'].includes(operationName)) {
-            await clearSharedConflictNotice(currentWorkbookId);
+            await clearSharedConflictNotice(currentWorkbookId, operationUserId);
           }
         } else if (operationName === 'open' && result && result.ok) {
           const workbookId = asString(openSyncContext && openSyncContext.workbookId);
@@ -622,7 +650,7 @@ export function useCloudWorkbookOperations({
           }
           updateWorkbookConflict(workbookId, false);
           if (openSyncContext?.resolvingConflict) {
-            await clearSharedConflictNotice(workbookId);
+            await clearSharedConflictNotice(workbookId, operationUserId);
           }
         } else if (operationName === 'delete' && result && result.ok) {
           const workbookId = asString(deleteSyncContext && deleteSyncContext.workbookId);
@@ -696,6 +724,10 @@ export function useCloudWorkbookOperations({
 
         const notices = {
           refresh: 'iCloud workbooks refreshed.',
+          connect: 'iCloud syncing resumed.',
+          disconnect: 'iCloud syncing paused.',
+          'select-account': 'Account connected. Local copies have been kept.',
+          'sign-out': 'Signed out of Cavalry’s iCloud connection. Saved copies have been kept.',
           upload: result.pending
             ? 'Workbook saved locally and queued for iCloud.'
             : 'Workbook saved to iCloud.',
@@ -750,7 +782,7 @@ export function useCloudWorkbookOperations({
       ensureDurableSyncState,
       flushDurableSyncState,
       initialEnrollmentRef,
-      invoke,
+      invokeRaw,
       localConflictNoticeRef,
       navigate,
       pendingOperationRef,
@@ -760,6 +792,7 @@ export function useCloudWorkbookOperations({
       refreshState,
       resolvedSyncStorage,
       saveStatusRef,
+      saveWorkbook,
       setAutoSyncPreferenceEpoch,
       setLocalConflictNotice,
       setUiState,

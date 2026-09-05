@@ -87,7 +87,7 @@ export function useCloudWorkbookConflictEffects({
     conflictReviewInFlightRef.current = reviewKey;
     const localWorkbook = workbookRef.current;
     let active = true;
-    void invoke('downloadWorkbook', { workbookId: localWorkbookId })
+    void invoke('downloadWorkbook', { workbookId: localWorkbookId, expectedUserId: cloudUserId })
       .then(async (download) => {
         if (
           !active ||
@@ -110,7 +110,7 @@ export function useCloudWorkbookConflictEffects({
             localWorkbook,
             syncState
           });
-          if (result?.ok) await clearSharedConflictNotice(localWorkbookId);
+          if (result?.ok) await clearSharedConflictNotice(localWorkbookId, cloudUserId);
           return;
         }
         const review = describeWorkbookConflicts({
@@ -122,6 +122,7 @@ export function useCloudWorkbookConflictEffects({
           remoteLabel: 'iCloud copy'
         });
         await publishConflictReport({
+          expectedUserId: cloudUserId,
           workbookId: localWorkbookId,
           baseRevision: syncState.baseRevision,
           remoteRevision: asRevision(asObject(download.metadata).revision) || remote.revision,
@@ -189,7 +190,7 @@ export function useCloudWorkbookConflictEffects({
     resolvedConflictAdoptionRef.current = adoptionKey;
     const expectedWorkbook = workbookRef.current;
     let active = true;
-    void invoke('downloadWorkbook', { workbookId: localWorkbookId })
+    void invoke('downloadWorkbook', { workbookId: localWorkbookId, expectedUserId: cloudUserId })
       .then(async (download) => {
         const downloadState = stateFromResult(download);
         if (downloadState) applyRemoteState(downloadState);
@@ -203,7 +204,11 @@ export function useCloudWorkbookConflictEffects({
         ) {
           return;
         }
-        const persisted = await persistMergedWorkbook(expectedWorkbook, download.workbook);
+        const persisted = await persistMergedWorkbook(
+          expectedWorkbook,
+          download.workbook,
+          cloudUserId
+        );
         if (!(persisted && persisted.ok)) return;
         writeCloudWorkbookSyncState(resolvedSyncStorage, cloudUserId, localWorkbookId, {
           revision,

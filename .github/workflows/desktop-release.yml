@@ -99,7 +99,13 @@ jobs:
         working-directory: apps/desktop
         env:
           CAVALRY_UPDATER_PUBLIC_KEY: ${{ secrets.CAVALRY_UPDATER_PUBLIC_KEY }}
+          CAVALRY_CLOUDKIT_WEB_API_TOKEN: ${{ vars.CAVALRY_CLOUDKIT_WEB_API_TOKEN }}
         run: |
+          set -euo pipefail
+          if [[ ! "${CAVALRY_CLOUDKIT_WEB_API_TOKEN:-}" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+            echo "::error::Set the CAVALRY_CLOUDKIT_WEB_API_TOKEN repository variable to the validated 64-character hexadecimal CloudKit public API token before releasing."
+            exit 1
+          fi
           npm run licenses:runtime
           npm run build:host
           npm run "${{ matrix.sidecar }}"
@@ -231,7 +237,8 @@ jobs:
           fi
           node apps/desktop/scripts/sidecar-smoke.mjs \
             --binary "$sidecar" \
-            --expect-icloud-enabled
+            --expect-icloud-enabled \
+            --expect-browser-sign-in
           # Exercise the signed architecture's real bundled persistence and IPC
           # through forced process death, relaunch, and clearing only selection.
           node apps/desktop/scripts/workbook-recovery-smoke.mjs --binary "$sidecar"

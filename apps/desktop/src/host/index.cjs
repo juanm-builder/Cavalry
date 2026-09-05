@@ -10,6 +10,7 @@ const os = require('node:os');
 const readline = require('node:readline');
 const { createAdvisorRuntimeController } = require('./advisor-runtime-controller.cjs');
 const { createCloudController } = require('./cloud-controller.cjs');
+const { createCloudKitAccountRouter } = require('./cloudkit-account-router.cjs');
 const { createCloudSyncStateStorage } = require('./cloud-sync-state-storage.cjs');
 const { createCompanionApiController } = require('./companion-api-controller.cjs');
 const deepLink = require('./deep-link.cjs');
@@ -125,31 +126,14 @@ async function start() {
   const cloudSyncStateStorage = createCloudSyncStateStorage({
     rootDir: path.join(userDataDir, 'Cloud Sync')
   });
-  const { createWorkbookRecoveryStore } = await import('./workbook-recovery-store.mjs');
+  const { createWorkbookRecoveryStore, nativeCloudKitRecoverySources } =
+    await import('./workbook-recovery-store.mjs');
   const recoveryStore = createWorkbookRecoveryStore({
     rootDir: path.join(userDataDir, 'Workbook Recovery'),
     // The native CloudKit cache uses Tauri's bundle-ID directory, while the
     // document host preserves the older product-name directory across updates.
     // An isolated test/development data directory must never inspect real data.
-    legacyPayloadDirs:
-      userDataDir === path.join(os.homedir(), 'Library', 'Application Support', 'Cavalry for Mac')
-        ? [
-            path.join(
-              path.dirname(userDataDir),
-              'com.juanmbuilder.cavalry.mac',
-              'CloudKit',
-              'environments',
-              'production',
-              'payloads'
-            ),
-            path.join(
-              path.dirname(userDataDir),
-              'com.juanmbuilder.cavalry.mac',
-              'CloudKit',
-              'payloads'
-            )
-          ]
-        : []
+    ...nativeCloudKitRecoverySources(userDataDir, os.homedir())
   });
   const systemPreferences = {
     getMediaAccessStatus: () => 'unknown',
@@ -183,9 +167,12 @@ async function start() {
   cloudController = createCloudController({
     BrowserWindow: router.BrowserWindow,
     ipcMain: router.ipcMain,
-    cloudKit: {
-      request: (payload) => nativeBridge.request('cloudkit.request', payload)
-    },
+    cloudKit: createCloudKitAccountRouter({
+      native: { request: (payload) => nativeBridge.request('cloudkit.request', payload) },
+      userDataDir,
+      safeStorage,
+      openExternal: (url) => shell.openExternal(url)
+    }),
     syncStateStorage: cloudSyncStateStorage,
     assertTrustedSender
   });

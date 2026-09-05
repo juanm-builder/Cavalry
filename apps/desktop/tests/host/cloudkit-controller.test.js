@@ -480,6 +480,237 @@ describe('native CloudKit workbook boundary', () => {
   });
 });
 
+describe('browser iCloud background refresh', () => {
+  function deferred() {
+    let resolve;
+    const promise = new Promise((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  function pollingFixture() {
+    const handlers = new Map();
+    const sent = [];
+    let owner = 'owner-a';
+    let paused = false;
+    let signedOut = false;
+    let nextHold = null;
+    let library = [{ id: 'book-a', name: 'Personal', revision: 1, currency: 'PHP' }];
+    const status = () => ({
+      ok: true,
+      account: { status: signedOut ? 'no_account' : 'available', userId: signedOut ? null : owner },
+      cloudEnvironment: 'Production'
+    });
+    const cloudKit = {
+      details: vi.fn(() => ({
+        accountSource: 'browser',
+        syncPaused: paused,
+        accountSignedOut: signedOut
+      })),
+      request: vi.fn(async (payload) => {
+        if (nextHold?.operation === payload.operation) {
+          const hold = nextHold;
+          nextHold = null;
+          hold.started.resolve();
+          return hold.response.promise;
+        }
+        if (payload.operation === 'set_connection') {
+          paused = !payload.enabled;
+          return status();
+        }
+        if (payload.operation === 'status') return status();
+        if (payload.operation === 'list')
+          return { ok: true, workbooks: library.map((entry) => ({ ...entry })) };
+        throw new Error(`Unexpected operation ${payload.operation}`);
+      }),
+      selectAccount: vi.fn(async () => {
+        owner = 'owner-b';
+        library = [{ id: 'book-b', name: 'Other account', revision: 5, currency: 'PHP' }];
+        return status();
+      }),
+      signOut: vi.fn(async () => {
+        signedOut = true;
+        return status();
+      })
+    };
+    const controller = createCloudController({
+      assertTrustedSender() {},
+      cloudKit,
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      BrowserWindow: {
+        getAllWindows: () => [{ webContents: { send: (_channel, state) => sent.push(state) } }]
+      }
+    });
+    controller.registerHandlers();
+    return {
+      controller,
+      cloudKit,
+      sent,
+      setLibrary: (value) => {
+        library = value;
+      },
+      invoke: (channel, payload = {}) => handlers.get(channel)({ sender: {} }, payload),
+      hold(operation) {
+        const held = { operation, started: deferred(), response: deferred() };
+        nextHold = held;
+        return held;
+      }
+    };
+  }
+
+  it('refreshes incoming browser revisions without treating a missing list entry as deletion', async () => {
+    vi.useFakeTimers();
+    const h = pollingFixture();
+    try {
+      await h.controller.initialize();
+      h.sent.length = 0;
+      h.setLibrary([{ id: 'book-a', name: 'Personal', revision: 2, currency: 'PHP' }]);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(
+        h.sent.some(
+          (state) =>
+            state.workbookChange?.eventType === 'UPDATE' && state.workbookChange.revision === 2
+        )
+      ).toBe(true);
+      h.sent.length = 0;
+      h.setLibrary([]);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(h.controller.getState().workbooks).toEqual([]);
+      expect(h.sent.some((state) => state.workbookChange?.eventType === 'DELETE')).toBe(false);
+      expect(
+        h.cloudKit.request.mock.calls.some(([payload]) => payload.operation === 'delete')
+      ).toBe(false);
+    } finally {
+      h.controller.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['pause', 'sign-out', 'switch'])(
+    'discards a pending old library response after %s',
+    async (action) => {
+      vi.useFakeTimers();
+      const h = pollingFixture();
+      try {
+        await h.controller.initialize();
+        const held = h.hold('list');
+        const polling = vi.advanceTimersByTimeAsync(30000);
+        await held.started.promise;
+        if (action === 'pause')
+          await h.invoke(CLOUD_IPC_CHANNELS.setConnection, { enabled: false });
+        if (action === 'sign-out') await h.invoke(CLOUD_IPC_CHANNELS.signOut);
+        if (action === 'switch')
+          await h.invoke(CLOUD_IPC_CHANNELS.selectAccount, { source: 'browser' });
+        h.sent.length = 0;
+        held.response.resolve({
+          ok: true,
+          workbooks: [{ id: 'book-a', name: 'Stale response', revision: 99 }]
+        });
+        await polling;
+        expect(h.sent).toEqual([]);
+        const state = h.controller.getState();
+        if (action === 'pause')
+          expect(state).toMatchObject({
+            syncPaused: true,
+            user: { id: 'owner-a' },
+            workbooks: [{ id: 'book-a', revision: 1 }]
+          });
+        if (action === 'sign-out') expect(state).toMatchObject({ user: null, workbooks: [] });
+        if (action === 'switch')
+          expect(state).toMatchObject({
+            user: { id: 'owner-b' },
+            workbooks: [{ id: 'book-b', revision: 5 }]
+          });
+      } finally {
+        h.controller.dispose();
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('does not fetch or compare the old owner after an account switch during the status check', async () => {
+    vi.useFakeTimers();
+    const h = pollingFixture();
+    try {
+      await h.controller.initialize();
+      const held = h.hold('status');
+      const polling = vi.advanceTimersByTimeAsync(30000);
+      await held.started.promise;
+      await h.invoke(CLOUD_IPC_CHANNELS.selectAccount, { source: 'browser' });
+      const calls = h.cloudKit.request.mock.calls.length;
+      h.sent.length = 0;
+      held.response.resolve({
+        ok: true,
+        account: { status: 'available', userId: 'owner-a' },
+        cloudEnvironment: 'Production'
+      });
+      await polling;
+      expect(h.cloudKit.request.mock.calls).toHaveLength(calls);
+      expect(h.sent).toEqual([]);
+      expect(h.controller.getState()).toMatchObject({
+        user: { id: 'owner-b' },
+        workbooks: [{ id: 'book-b' }]
+      });
+    } finally {
+      h.controller.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('publishes authentication expiration immediately and continues polling after unexpected failures', async () => {
+    vi.useFakeTimers();
+    const h = pollingFixture();
+    try {
+      await h.controller.initialize();
+      h.cloudKit.request.mockResolvedValueOnce({
+        ok: true,
+        account: { status: 'no_account', userId: null },
+        cloudEnvironment: 'Production'
+      });
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(h.sent.at(-1).user).toBeNull();
+      h.cloudKit.details.mockImplementationOnce(() => {
+        throw new Error('Unexpected runtime failure');
+      });
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(h.controller.getState()).toMatchObject({
+        errorCode: 'cloud_state_refresh_failed',
+        errorRetryable: true
+      });
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(h.controller.getState()).toMatchObject({
+        user: { id: 'owner-a' },
+        workbooks: [{ id: 'book-a' }]
+      });
+    } finally {
+      h.controller.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not apply or broadcast a library result after disposal', async () => {
+    vi.useFakeTimers();
+    const h = pollingFixture();
+    try {
+      await h.controller.initialize();
+      const held = h.hold('list');
+      const polling = vi.advanceTimersByTimeAsync(30000);
+      await held.started.promise;
+      h.controller.dispose();
+      h.sent.length = 0;
+      held.response.resolve({ ok: true, workbooks: [] });
+      await polling;
+      expect(h.sent).toEqual([]);
+      expect(h.controller.getState().workbooks).toMatchObject([{ id: 'book-a', revision: 1 }]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      h.controller.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('desktop iCloud state controller', () => {
   it('waits for the renderer get-state handshake before making native requests', async () => {
     const handlers = new Map();
@@ -589,6 +820,9 @@ describe('desktop iCloud state controller', () => {
 
     expect([...handlers.keys()].sort()).toEqual(
       [
+        CLOUD_IPC_CHANNELS.selectAccount,
+        CLOUD_IPC_CHANNELS.signOut,
+        CLOUD_IPC_CHANNELS.cancelAccountSignIn,
         CLOUD_IPC_CHANNELS.deleteWorkbook,
         CLOUD_IPC_CHANNELS.setConnection,
         CLOUD_IPC_CHANNELS.downloadConflictPackage,
