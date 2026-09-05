@@ -70,7 +70,7 @@ describe('native workbook recovery across restart and update', () => {
     expect(book(result).name).toBe('Before damage (Recovered)');
     expect(book(result).id).toMatch(/^workbook-recovered-/);
     expect(result.warning).toContain('earlier verified copy');
-    expect(await fs.readdir(folder)).toHaveLength(2);
+    expect((await fs.readdir(folder)).filter((file) => file.endsWith('.html'))).toHaveLength(2);
   });
 
   it('fails visibly and retains an unreadable workbook in the library', async () => {
@@ -78,13 +78,13 @@ describe('native workbook recovery across restart and update', () => {
     await store.save(html());
     const [key] = (await fs.readdir(options.rootDir)).filter((entry) => entry !== 'active.json');
     const folder = path.join(options.rootDir, key);
-    const [file] = await fs.readdir(folder);
+    const [file] = (await fs.readdir(folder)).filter((entry) => entry.endsWith('.html'));
     await fs.writeFile(path.join(folder, file), 'corrupt', 'utf8');
     await expect(createWorkbookRecoveryStore(options).load()).rejects.toThrow(
       'Recovery copies have been kept'
     );
     expect(await store.list()).toMatchObject([{ fileName: 'Workbook needs recovery' }]);
-    expect(await fs.readdir(folder)).toEqual([file]);
+    expect((await fs.readdir(folder)).filter((entry) => entry.endsWith('.html'))).toEqual([file]);
   });
 
   it('preserves the previous acknowledged workbook after a disk failure and accepts a later retry', async () => {
@@ -133,7 +133,12 @@ describe('native workbook recovery across restart and update', () => {
     expect(book(await createWorkbookRecoveryStore(options).load()).name).toBe('Edit 34');
     const folders = (await fs.readdir(options.rootDir)).filter((entry) => entry !== 'active.json');
     const counts = await Promise.all(
-      folders.map(async (folder) => (await fs.readdir(path.join(options.rootDir, folder))).length)
+      folders.map(
+        async (folder) =>
+          (await fs.readdir(path.join(options.rootDir, folder))).filter((file) =>
+            file.endsWith('.html')
+          ).length
+      )
     );
     expect(counts.sort((a, b) => a - b)).toEqual([1, 30]);
   });

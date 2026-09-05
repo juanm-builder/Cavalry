@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, readdir, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -158,6 +159,68 @@ async function verifyLibrary(host) {
   return library.workbooks;
 }
 
+async function verifyClockRollbackRetention() {
+  const workbookId = 'recovery-smoke-clock-rollback';
+  const digest = (text) => createHash('sha256').update(text).digest('hex');
+  const workbookKey = digest(workbookId);
+  const folder = resolve(userDataDir, 'Workbook Recovery', workbookKey);
+  const snapshots = [];
+  const writer = launch();
+  for (let revision = 1; revision <= 30; revision += 1) {
+    const html = fixture(
+      workbookId,
+      `Clock rollback revision ${String(revision).padStart(2, '0')}`
+    );
+    const saved = await writer.request('cavalry-files:recovery-save', { html });
+    assert.equal(saved.ok, true);
+    assert.equal(saved.durable, true);
+    snapshots.push({ revision, html, fileName: `${digest(html)}.html` });
+  }
+  const snapshotFiles = (await readdir(folder)).filter((fileName) => fileName.endsWith('.html'));
+  assert.equal(snapshotFiles.length, 30, 'Prepare a full retained history before clock rollback.');
+  assert.deepEqual(snapshotFiles.sort(), snapshots.map((snapshot) => snapshot.fileName).sort());
+  const futureStart = Date.now() + 24 * 60 * 60 * 1000;
+  for (const snapshot of snapshots) {
+    // Change only synthetic snapshot mtimes, never the system clock or metadata.
+    // Preserve the old revisions' order one day in the future.
+    const future = new Date(futureStart + snapshot.revision * 1000);
+    await utimes(resolve(folder, snapshot.fileName), future, future);
+  }
+  const latestHtml = fixture(workbookId, 'Clock rollback revision 31');
+  const saved = await writer.request('cavalry-files:recovery-save', { html: latestHtml });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.durable, true, 'Newest snapshot must be acknowledged before forced exit.');
+  await writer.crash();
+
+  const restarted = launch();
+  verifyWorkbook(await restarted.request('cavalry-files:recovery-load'), latestHtml);
+  const retained = (await readdir(folder)).filter((fileName) => fileName.endsWith('.html'));
+  const expected = [
+    ...snapshots.slice(1),
+    { revision: 31, html: latestHtml, fileName: `${digest(latestHtml)}.html` }
+  ];
+  assert.equal(retained.length, 30, 'Clock rollback must not bypass bounded retention.');
+  assert.deepEqual(
+    retained.sort(),
+    expected.map((snapshot) => snapshot.fileName).sort(),
+    'Retain committed revisions 2 through 31; future mtimes cannot evict the newest save.'
+  );
+  for (const snapshot of expected) {
+    assert.equal(await readFile(resolve(folder, snapshot.fileName), 'utf8'), snapshot.html);
+  }
+  const library = await restarted.request('cavalry-files:list-recent');
+  assert.equal(library.ok, true);
+  assert.equal(library.workbooks.length, 3, 'Pruning one history must preserve other workbooks.');
+  const entry = library.workbooks.find((book) => book.id === `recovery-${workbookKey}`);
+  assert.equal(entry?.fileName, 'Clock rollback revision 31.html');
+  assert.equal(entry.error, undefined);
+  verifyWorkbook(
+    await restarted.request('cavalry-files:open-recent', { id: entry.id }),
+    latestHtml
+  );
+  await restarted.crash();
+}
+
 async function smoke() {
   const firstHtml = fixture('recovery-smoke-first', 'Crash recovery first');
   const latestHtml = fixture('recovery-smoke-latest', 'Crash recovery latest');
@@ -192,6 +255,7 @@ async function smoke() {
     verifyWorkbook(await afterClear.request('cavalry-files:open-recent', { id: entry.id }), html);
   }
   await afterClear.crash();
+  await verifyClockRollbackRetention();
 }
 
 try {
@@ -202,7 +266,9 @@ try {
       timeout = setTimeout(() => reject(new Error('Workbook recovery smoke timed out.')), 30_000);
     })
   ]);
-  process.stdout.write('Cavalry workbook recovery crash/relaunch smoke passed.\n');
+  process.stdout.write(
+    'Cavalry workbook recovery crash/relaunch and clock-rollback retention smoke passed.\n'
+  );
 } finally {
   clearTimeout(timeout);
   await Promise.all([...children].map((host) => host.crash()));

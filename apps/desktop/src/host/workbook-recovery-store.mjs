@@ -82,9 +82,65 @@ export function createWorkbookRecoveryStore({
     return result.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   }
 
+  function historyPath(key) {
+    if (!KEY.test(key)) throw new Error('Invalid workbook recovery reference.');
+    return path.join(rootDir, key, 'history.json');
+  }
+
+  async function readHistory(key) {
+    let text;
+    try {
+      const target = historyPath(key);
+      if ((await fileSystem.stat(target)).size > 64 * 1024)
+        throw new Error('Workbook recovery ordering is too large.');
+      text = await fileSystem.readFile(target, 'utf8');
+    } catch (error) {
+      if (missing(error)) return null;
+      throw error;
+    }
+    const history = JSON.parse(text);
+    if (
+      !history ||
+      history.version !== 1 ||
+      history.key !== key ||
+      !Array.isArray(history.revisions) ||
+      history.revisions.length === 0 ||
+      history.revisions.length > RETAINED_COPIES ||
+      !history.revisions.every((revision) => typeof revision === 'string' && KEY.test(revision)) ||
+      new Set(history.revisions).size !== history.revisions.length
+    )
+      throw new Error('Invalid workbook recovery ordering.');
+    return history.revisions;
+  }
+
   async function readLatest(key) {
-    const candidates = await copies(key);
+    const available = await copies(key);
     let failure = null;
+    let revisions;
+    try {
+      revisions = await readHistory(key);
+      if (!revisions) throw new Error('Workbook recovery ordering is missing.');
+    } catch (error) {
+      // An mtime cannot prove which save was acknowledged. Unordered copies
+      // remain recoverable, but must open separately with cloud autosave off.
+      failure = error;
+    }
+    const byRevision = new Map(
+      available.map((copy) => [path.basename(copy.filePath, '.html'), copy])
+    );
+    const candidates = revisions
+      ? [
+          ...revisions.map(
+            (revision) =>
+              byRevision.get(revision) || {
+                filePath: path.join(rootDir, key, `${revision}.html`),
+                size: 0,
+                savedAt: ''
+              }
+          ),
+          ...available.filter((copy) => !revisions.includes(path.basename(copy.filePath, '.html')))
+        ]
+      : available;
     for (const candidate of candidates) {
       try {
         if (candidate.size > MAX_BYTES) throw new Error('Workbook recovery copy is too large.');
@@ -195,15 +251,27 @@ export function createWorkbookRecoveryStore({
     const decoded = deserializeWorkbookFromFile(text, { rejectInvalid: true });
     const key = hash(decoded.workbook.id);
     const directory = path.join(rootDir, key);
-    const target = path.join(directory, `${hash(text)}.html`);
-    // Re-saving identical content refreshes its ordering without adding another revision.
+    const revision = hash(text);
+    const target = path.join(directory, `${revision}.html`);
+    // Ordering is a durable commit record, independent of filesystem timestamps.
+    // Missing ordering starts a new known history; pre-existing unindexed files
+    // are preserved. Damaged ordering is recovered through load/open, never
+    // silently replaced by an ordinary save.
+    const previous = (await readHistory(key)) || [];
+    const revisions = [revision, ...previous.filter((entry) => entry !== revision)].slice(
+      0,
+      RETAINED_COPIES
+    );
     await writeAtomic(target, text);
+    await writeAtomic(historyPath(key), JSON.stringify({ version: 1, key, revisions }));
     await writeAtomic(activePath, JSON.stringify({ version: 1, key }));
     const savedAt = (await fileSystem.stat(target)).mtime.toISOString();
-    // Prune only after both durable commits. Interrupted saves retain extra copies.
+    // Prune only previously indexed revisions after every durable commit.
+    // Current and unindexed (possibly interrupted-save) copies are never pruned.
     // If any copy is damaged, retain everything for recovery and diagnosis.
     const history = await copies(key);
-    if (history.length > RETAINED_COPIES) {
+    const retired = previous.filter((entry) => entry !== revision && !revisions.includes(entry));
+    if (retired.length) {
       let valid = true;
       for (const copy of history) {
         const data = await fileSystem.readFile(copy.filePath, 'utf8').catch(() => '');
@@ -214,7 +282,9 @@ export function createWorkbookRecoveryStore({
       }
       if (valid)
         await Promise.all(
-          history.slice(RETAINED_COPIES).map((copy) => fileSystem.rm(copy.filePath).catch(() => {}))
+          retired.map((entry) =>
+            fileSystem.rm(path.join(directory, `${entry}.html`)).catch(() => {})
+          )
         );
     }
     return { ok: true, durable: true, savedAt, fileName: `${decoded.workbook.name}.html` };
