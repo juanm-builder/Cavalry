@@ -480,7 +480,12 @@ test('the static document permits only its own script and stylesheet with no fet
 });
 
 test('callback diagnostics require a single explicit opt-in and remain hidden by default', () => {
-  for (const search of ['', '?diagnostics=0', '?diagnostics=true', '?diagnostics=1&diagnostics=0']) {
+  for (const search of [
+    '',
+    '?diagnostics=0',
+    '?diagnostics=true',
+    '?diagnostics=1&diagnostics=0'
+  ]) {
     const bridge = page({ search });
     bridge.init();
     bridge.click('continue');
@@ -499,7 +504,13 @@ test('opt-in diagnostics relay only bounded callback metadata to the original lo
   const secret = 'never-display-or-relay-this-session-value';
   const error = 'never-display-this-account-error';
   bridge.apple(
-    { ckSession: secret, ckWebAuthToken: '', errorMessage: error, errorCode: secret, extra: secret },
+    {
+      ckSession: secret,
+      ckWebAuthToken: '',
+      errorMessage: error,
+      errorCode: secret,
+      extra: secret
+    },
     'https://unapproved.example'
   );
   const diagnostic = {
@@ -525,7 +536,10 @@ test('opt-in diagnostics relay only bounded callback metadata to the original lo
     assert.ok(!text.includes('length'));
   }
   // Metadata does not turn an unapproved callback into authentication.
-  assert.equal(bridge.outgoing.some(({ data }) => data.type === 'cavalry-icloud-complete'), false);
+  assert.equal(
+    bridge.outgoing.some(({ data }) => data.type === 'cavalry-icloud-complete'),
+    false
+  );
 });
 
 test('diagnostics preserve opaque origins, primitive payload types and mismatched popup sources', () => {
@@ -542,7 +556,10 @@ test('diagnostics preserve opaque origins, primitive payload types and mismatche
     const diagnostic = bridge.outgoing.at(-1).data.diagnostic;
     assert.equal(diagnostic.expectedPopup, false);
     assert.equal(diagnostic.dataType, typeof data);
-    assert.equal(diagnostic.origin, origin.includes('/private') ? 'https://unapproved.example' : 'unavailable');
+    assert.equal(
+      diagnostic.origin,
+      origin.includes('/private') ? 'https://unapproved.example' : 'unavailable'
+    );
     assert.equal(diagnostic.ckSessionPresent, false);
     assert.equal(diagnostic.ckSessionValid, false);
     assert.equal(diagnostic.ckWebAuthTokenPresent, false);
@@ -558,7 +575,9 @@ test('diagnostics report only own field presence and string validity without rea
   bridge.click('continue');
   const data = Object.create({ ckSession: 'inherited-secret' });
   Object.defineProperty(data, 'ckWebAuthToken', {
-    get() { throw new Error('Diagnostics must not invoke getters'); }
+    get() {
+      throw new Error('Diagnostics must not invoke getters');
+    }
   });
   bridge.apple(data, 'https://unapproved.example');
   const diagnostic = bridge.outgoing.at(-1).data.diagnostic;
@@ -580,7 +599,10 @@ test('diagnostics keep twenty recent descriptions, deduplicate repeats and remai
     bridge.apple({ errorMessage: 'private-error' }, `https://a${index}.example`);
     bridge.apple({ errorMessage: 'different-private-error' }, `https://a${index}.example`);
   }
-  assert.equal(bridge.outgoing.filter(({ data }) => data.type === 'cavalry-icloud-diagnostic').length, 25);
+  assert.equal(
+    bridge.outgoing.filter(({ data }) => data.type === 'cavalry-icloud-diagnostic').length,
+    25
+  );
   assert.equal(bridge.elements.diagnostics.textContent.split('\n').length, 21);
   assert.ok(!bridge.elements.diagnostics.textContent.includes('https://a4.example'));
   assert.ok(bridge.elements.diagnostics.textContent.includes('https://a5.example'));

@@ -59,6 +59,11 @@ const allowedFindingFingerprints = new Map([
     new Set(['credential-bearing URL:sha256:1010b1c24b1f7b22'])
   ],
   [
+    // Historical callback rejection fixture containing synthetic credentials.
+    'apps/desktop/tests/host/cloudkit-browser-page.test.js',
+    new Set(['credential-bearing URL:sha256:21fb3e3e18b78c9d'])
+  ],
+  [
     'apps/mac/tests/electron/in-app-advisor-ipc.test.js',
     new Set(['OpenAI secret key:sha256:d0037c92ccd6857f'])
   ],

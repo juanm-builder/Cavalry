@@ -23,7 +23,10 @@ const DIAGNOSTIC = {
 function createPage({ fetch = vi.fn().mockResolvedValue({ ok: true }), diagnostics = false } = {}) {
   vi.useFakeTimers();
   const elements = new Map(
-    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [id, { disabled: false, hidden: id === 'diagnostics', textContent: '' }])
+    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [
+      id,
+      { disabled: false, hidden: id === 'diagnostics', textContent: '' }
+    ])
   );
   const listeners = new Map();
   const popup = { closed: false, close: vi.fn(), postMessage: vi.fn() };
@@ -288,7 +291,9 @@ describe('iCloud loopback page protocol', () => {
     }
     const page = createPage({ diagnostics: true });
     await page.ready();
-    expect(page.window.open.mock.calls[0][0]).toBe(`${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?diagnostics=1#${NONCE}`);
+    expect(page.window.open.mock.calls[0][0]).toBe(
+      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?diagnostics=1#${NONCE}`
+    );
     expect(page.elements.get('diagnostics').hidden).toBe(false);
     expect(page.elements.get('diagnostics').textContent).toContain('No callback messages received');
   });
@@ -322,6 +327,9 @@ describe('iCloud loopback page protocol', () => {
     const page = createPage({ diagnostics: true });
     await page.ready();
     const initial = page.elements.get('diagnostics').textContent;
+    const credentialsInOrigin = new URL('https://apple.example');
+    credentialsInOrigin.username = 'test-user';
+    credentialsInOrigin.password = 'test-password';
     for (const diagnostic of [
       null,
       'private-payload',
@@ -329,7 +337,7 @@ describe('iCloud loopback page protocol', () => {
       { ...DIAGNOSTIC, origin: null },
       { ...DIAGNOSTIC, origin: 'x'.repeat(257) },
       { ...DIAGNOSTIC, origin: 'https://apple.example/private?token=secret' },
-      { ...DIAGNOSTIC, origin: 'https://user:secret@apple.example' },
+      { ...DIAGNOSTIC, origin: credentialsInOrigin.href },
       { ...DIAGNOSTIC, origin: 'javascript:secret' },
       { ...DIAGNOSTIC, origin: 'null' },
       { ...DIAGNOSTIC, dataType: 'secret' },
@@ -343,7 +351,12 @@ describe('iCloud loopback page protocol', () => {
     }
     await page.message('cavalry-icloud-diagnostic', {
       data: {
-        diagnostic: { ...DIAGNOSTIC, token: TOKEN, errorMessage: 'private-error', account: 'private-account' }
+        diagnostic: {
+          ...DIAGNOSTIC,
+          token: TOKEN,
+          errorMessage: 'private-error',
+          account: 'private-account'
+        }
       }
     });
     const report = page.elements.get('diagnostics').textContent;

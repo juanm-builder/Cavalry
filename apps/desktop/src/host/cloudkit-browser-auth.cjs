@@ -14,7 +14,9 @@ function browserPage({ nonce, redirectURL, diagnostics = false }) {
   const redirect = JSON.stringify(redirectURL).replace(/</g, '\\u003c');
   const bridgeOrigin = JSON.stringify(CLOUDKIT_WEB_ORIGIN);
   const diagnosticsEnabled = diagnostics === true;
-  const bridgeURL = JSON.stringify(`${CLOUDKIT_SIGN_IN_URL}${diagnosticsEnabled ? '?diagnostics=1' : ''}#${nonce}`);
+  const bridgeURL = JSON.stringify(
+    `${CLOUDKIT_SIGN_IN_URL}${diagnosticsEnabled ? '?diagnostics=1' : ''}#${nonce}`
+  );
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Cavalry to iCloud</title>
 <style nonce="${nonce}">body{color:#f4f5f7;background:#0d0e10;font:16px system-ui;max-width:540px;margin:12vh auto;padding:32px}h1{font-size:28px}p{line-height:1.6;color:#b9bec7}button{background:#8da2c6;color:#0d0e10;border:0;border-radius:8px;padding:14px 22px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}a{color:#8da2c6}#diagnostics{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#b9bec7}</style>
 <h1>Choose your iCloud account</h1><p>Open Cavalry’s secure sign-in page to choose the account Cavalry should use. This does not change the Apple Account on your Mac.</p><button id="continue">Open secure sign-in</button><p id="status" role="status">Keep this page open until you return to Cavalry.</p><pre id="diagnostics" hidden></pre><button id="cancel">Cancel</button>
