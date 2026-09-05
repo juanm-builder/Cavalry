@@ -150,6 +150,10 @@ export function CloudLibrarySurface({
 
   return (
     <div className="settings-cloud-surfaces">
+      <p className="settings-cloud-account-notice">
+        iCloud workbooks open inside Cavalry. To keep a file in iCloud Drive, use Save As in Files
+        &amp; Data settings.
+      </p>
       {currentWorkbookError}
       {currentWorkbookAction}
       {libraryError}

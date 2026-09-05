@@ -71,6 +71,53 @@ function hostHarness(initialEnvelope = null) {
 }
 
 describe('durable cloud workbook sync repository', () => {
+  it('persists recovered-copy autosave as disabled through first hydration and a fresh session', async () => {
+    const recoveryScope = { ...scope(), workbookId: 'workbook-recovered-durable-branch' };
+    let stored = null;
+    const invoke = vi.fn(async (command, payload) => {
+      if (command === 'saveSyncState') {
+        stored = {
+          ...envelope(payload.syncState, payload.autoSyncEnabled),
+          workbookId: payload.workbookId
+        };
+        return { ok: true, status: 'saved', envelope: stored };
+      }
+      return stored
+        ? { ok: true, status: 'loaded', envelope: stored }
+        : { ok: true, status: 'missing' };
+    });
+    const first = createDurableCloudWorkbookSyncStorage({ invoke, legacyStorage: memoryStorage() });
+    await expect(first.hydrate(recoveryScope)).resolves.toMatchObject({ ok: true });
+    expect(stored.autoSyncEnabled).toBe(false);
+    expect(
+      readCloudWorkbookAutoSyncPreference(
+        first.storage,
+        recoveryScope.userId,
+        recoveryScope.workbookId
+      )
+    ).toBe(false);
+    const restarted = createDurableCloudWorkbookSyncStorage({
+      invoke,
+      legacyStorage: memoryStorage()
+    });
+    await expect(restarted.hydrate(recoveryScope)).resolves.toMatchObject({ ok: true });
+    expect(
+      readCloudWorkbookAutoSyncPreference(
+        restarted.storage,
+        recoveryScope.userId,
+        recoveryScope.workbookId
+      )
+    ).toBe(false);
+    writeCloudWorkbookAutoSyncPreference(
+      restarted.storage,
+      recoveryScope.userId,
+      recoveryScope.workbookId,
+      true
+    );
+    await restarted.flush(recoveryScope);
+    expect(stored.autoSyncEnabled).toBe(true);
+  });
+
   it('uses Application Support state as authoritative and clears stale localStorage', async () => {
     const syncKey = cloudWorkbookSyncStorageKey(scope().userId, scope().workbookId);
     const preferenceKey = cloudWorkbookAutoSyncStorageKey(scope().userId, scope().workbookId);

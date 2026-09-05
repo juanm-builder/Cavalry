@@ -50,6 +50,7 @@ function createWorkbookFileController({
   ipcMain,
   dialog,
   shell,
+  recoveryStore,
   fs = defaultFs,
   appTitle = 'Cavalry for Mac',
   now = () => new Date().toISOString(),
@@ -170,6 +171,7 @@ function createWorkbookFileController({
             ok: true,
             fileName: getFileName(filePath),
             text: recovered.text,
+            workbookId: recovered.decoded?.workbook?.id,
             savedAt: recovered.savedAt
           },
           recovered.recoveredFromBackup === true
@@ -204,6 +206,26 @@ function createWorkbookFileController({
       return { ok: false, empty: true, fileName: '' };
     }
     const result = await readWorkbookFile(activeWorkbookPath);
+    if (result.recoveredFromBackup && recoveryStore) {
+      // Startup reads this linked export before the recovery cache. Do not let
+      // an older .bak change recovery selection before the durable save is read.
+      const existing = await recoveryStore.load();
+      let recovered;
+      if (existing?.cleared || (existing?.ok && existing.text)) {
+        recovered = existing;
+      } else if (existing?.empty === true) {
+        recovered = await recoveryStore.recover(result.text);
+      } else {
+        throw new Error(
+          existing?.error ||
+            'The saved workbook could not be read safely. Recovery files have been kept.'
+        );
+      }
+      activeWorkbookPath = '';
+      activeWorkbookRecoveredFromBackup = false;
+      await saveFileState();
+      return recovered;
+    }
     activeWorkbookRecoveredFromBackup = result.recoveredFromBackup === true;
     return result;
   }
@@ -211,6 +233,14 @@ function createWorkbookFileController({
   async function openWorkbookPath(filePath) {
     const result = await readWorkbookFile(filePath);
     if (!result.ok) return result;
+    if (result.recoveredFromBackup && recoveryStore) {
+      const recovered = await recoveryStore.recover(result.text);
+      activeWorkbookPath = '';
+      activeWorkbookRecoveredFromBackup = false;
+      touchRecentWorkbook(filePath, { savedAt: result.savedAt });
+      await saveFileState();
+      return recovered;
+    }
     activeWorkbookPath = filePath;
     activeWorkbookRecoveredFromBackup = result.recoveredFromBackup === true;
     touchRecentWorkbook(filePath, { savedAt: result.savedAt });
@@ -249,11 +279,24 @@ function createWorkbookFileController({
 
     handle('cavalry-files:list-recent', async () => ({
       ok: true,
-      workbooks: getRecentWorkbooks()
+      workbooks: [...(recoveryStore ? await recoveryStore.list() : []), ...getRecentWorkbooks()]
     }));
+
+    if (recoveryStore) {
+      handle('cavalry-files:recovery-load', () => recoveryStore.load());
+      handle('cavalry-files:recovery-save', (_event, payload) => recoveryStore.save(payload?.html));
+      handle('cavalry-files:recovery-clear', () => recoveryStore.clear());
+    }
 
     handle('cavalry-files:open-recent', async (_event, payload) => {
       const id = String(payload && payload.id ? payload.id : '');
+      if (recoveryStore && id.startsWith('recovery-')) {
+        const result = await recoveryStore.open(id);
+        activeWorkbookPath = '';
+        activeWorkbookRecoveredFromBackup = false;
+        await saveFileState();
+        return result;
+      }
       const recent = recentWorkbooks.find((entry) => recentWorkbookId(entry.filePath) === id);
       if (!recent) {
         return {
@@ -316,15 +359,29 @@ function createWorkbookFileController({
       if (!activeWorkbookPath) {
         return { ok: false, needsFile: true, error: 'No workbook file selected.' };
       }
+      const targetPath = activeWorkbookPath;
       try {
-        const writeResult = await writeWorkbookFile(activeWorkbookPath, payload && payload.html);
-        touchRecentWorkbook(activeWorkbookPath, { savedAt: writeResult.savedAt });
+        const persistence = await loadWorkbookPersistenceService();
+        if (typeof persistence.getWorkbookIdentityFromText === 'function') {
+          const target = await readWorkbookFile(targetPath);
+          if (!target.ok) return target;
+          if (persistence.getWorkbookIdentityFromText(payload?.html) !== target.workbookId) {
+            return {
+              ok: false,
+              needsFile: true,
+              error:
+                'The linked file belongs to another workbook. Your local recovery copy has been kept; use Save As to choose a file.'
+            };
+          }
+        }
+        const writeResult = await writeWorkbookFile(targetPath, payload && payload.html);
+        touchRecentWorkbook(targetPath, { savedAt: writeResult.savedAt });
         await saveFileState();
         return { ...writeResult, recentWorkbooks: getRecentWorkbooks() };
       } catch (error) {
         return {
           ok: false,
-          fileName: getFileName(activeWorkbookPath),
+          fileName: getFileName(targetPath),
           error: error && error.message ? error.message : 'Unable to save the workbook file.'
         };
       }

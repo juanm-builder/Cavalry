@@ -206,13 +206,53 @@ export function workbookSessionReducer(state, action) {
 
 export async function hydrateWorkbookFromPorts(ports) {
   const nativeResult = await ports.workbookStorage.load();
-  if (nativeResult && nativeResult.status === 'loaded') return nativeResult;
-  if (nativeResult && nativeResult.status === 'error') return nativeResult;
-
   const cacheResult = await ports.browserCache.load();
+  if (cacheResult?.source === 'recovery') {
+    if (cacheResult.cleared) return cacheResult;
+    if (cacheResult.status === 'error') return cacheResult;
+    if (cacheResult.status === 'loaded') {
+      if (
+        nativeResult?.status !== 'loaded' ||
+        JSON.stringify(nativeResult.workbook) !== JSON.stringify(cacheResult.workbook)
+      ) {
+        // File mtimes change when a file is copied or restored. They cannot prove
+        // that an external export is newer than the app's acknowledged save.
+        const forgotten = await ports.workbookStorage.forget();
+        if (forgotten?.ok === false && !forgotten.unavailable)
+          return {
+            status: 'error',
+            source: 'recovery',
+            error: forgotten.error || 'The old file link could not be disconnected safely.'
+          };
+        return {
+          ...cacheResult,
+          warnings: [
+            ...(cacheResult.warnings || []),
+            ...(nativeResult?.status === 'loaded'
+              ? [
+                  {
+                    code: 'workbook.external_copy_preserved',
+                    message:
+                      'Your saved Mac workbook was opened. The linked file contains a different copy and has been kept unchanged. Use Open Workbook File to open that copy.'
+                  }
+                ]
+              : [])
+          ]
+        };
+      }
+      return cacheResult;
+    }
+  }
+  if (nativeResult && nativeResult.status === 'loaded') {
+    await ports.browserCache.save(nativeResult.workbook);
+    return nativeResult;
+  }
+  if (nativeResult && nativeResult.status === 'error') return nativeResult;
   if (cacheResult && cacheResult.status === 'loaded') {
+    const promoted = await ports.browserCache.save(cacheResult.workbook);
     return {
       ...cacheResult,
+      ...(promoted?.durable ? { source: 'recovery', file: { savedAt: promoted.savedAt } } : {}),
       warnings: [
         ...(Array.isArray(cacheResult.warnings) ? cacheResult.warnings : []),
         ...(nativeResult && nativeResult.status === 'missing' && nativeResult.error

@@ -61,6 +61,26 @@ async function fillRecurringForm(user, values = {}) {
 }
 
 describe('Settings and Bills interactions', () => {
+  it('identifies a development library so it cannot be confused with TestFlight', () => {
+    render(
+      <SettingsRoute
+        model={makeSettingsModel({
+          activeSection: 'settings-account',
+          cloud: {
+            status: 'signed_in',
+            cloudEnvironment: 'Development',
+            user: { id: '_1234567890abcdef1234567890abcdef' },
+            workbooks: []
+          }
+        })}
+        onAction={vi.fn()}
+      />
+    );
+    expect(screen.getByText('567890ABCDEF')).toBeTruthy();
+    expect(screen.getByText('Test iCloud library')).toBeTruthy();
+    expect(screen.getByText(/This development build uses a separate test library/)).toBeTruthy();
+  });
+
   it('identifies the iCloud account and dispatches confirmed disconnect and reconnect', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();

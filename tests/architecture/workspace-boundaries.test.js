@@ -46,6 +46,7 @@ describe('workspace architecture', () => {
     expect(report.tauriBridgeFiles.sort()).toEqual([
       'apps/desktop/src/renderer/platform/tauri-bridge.js',
       'apps/desktop/src/renderer/platform/tauri-host-broker.js',
+      'apps/desktop/src/renderer/platform/tauri-lifecycle.js',
       'apps/desktop/src/renderer/platform/tauri-updates.js'
     ]);
     expect(report.sidecarProtocolFiles.length).toBeGreaterThan(0);

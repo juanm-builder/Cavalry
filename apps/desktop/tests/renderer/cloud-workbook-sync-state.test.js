@@ -21,6 +21,33 @@ function createStorage() {
 }
 
 describe('cloud workbook sync state', () => {
+  it('keeps a recovered branch local after restart or lost preferences until explicitly enabled', () => {
+    const workbookId = 'workbook-recovered-local-branch';
+    const storage = createStorage();
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'owner', workbookId)).toBe(false);
+    expect(readCloudWorkbookAutoSyncPreference(null, 'owner', workbookId)).toBe(false);
+    expect(
+      readCloudWorkbookAutoSyncPreference(
+        {
+          getItem() {
+            throw new Error('Unavailable');
+          }
+        },
+        'owner',
+        workbookId
+      )
+    ).toBe(false);
+    const key = cloudWorkbookAutoSyncStorageKey('owner', workbookId);
+    for (const invalid of ['broken json', '{"version":1}', '{"version":1,"enabled":"true"}']) {
+      storage.setItem(key, invalid);
+      expect(readCloudWorkbookAutoSyncPreference(storage, 'owner', workbookId)).toBe(false);
+    }
+    writeCloudWorkbookAutoSyncPreference(storage, 'owner', workbookId, true);
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'owner', workbookId)).toBe(true);
+    expect(readCloudWorkbookAutoSyncPreference(storage, 'another-owner', workbookId)).toBe(false);
+    expect(readCloudWorkbookAutoSyncPreference(createStorage(), 'owner', workbookId)).toBe(false);
+  });
+
   it('persists an account-scoped per-workbook autosave preference and defaults to on', () => {
     const storage = createStorage();
 

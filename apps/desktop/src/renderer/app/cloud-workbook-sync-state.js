@@ -177,21 +177,33 @@ export function parseCloudWorkbookSyncStateValue(value, workbookId) {
   };
 }
 
-// Existing linked workbooks have always synced automatically. Missing or
-// unreadable preferences therefore preserve that behavior and fail open to ON.
+export function defaultCloudWorkbookAutoSyncPreference(workbookId) {
+  return !asId(workbookId).startsWith('workbook-recovered-');
+}
+
+// History recovery creates a distinct workbook-recovered-* identity. Keep that
+// branch local until the user explicitly enables its autosave; this survives a
+// lost WebView preference database and cannot reuse the original cloud anchor.
+// Existing ordinary workbooks retain their historical default of autosave ON.
 export function readCloudWorkbookAutoSyncPreference(storage, userId, workbookId) {
+  const defaultEnabled = defaultCloudWorkbookAutoSyncPreference(workbookId);
+  const recoveredCopy = !defaultEnabled;
+  const readPreference = (raw) =>
+    recoveredCopy
+      ? parseCloudWorkbookAutoSyncPreferenceValue(raw)?.enabled === true
+      : JSON.parse(raw)?.enabled !== false;
   const key = cloudWorkbookAutoSyncStorageKey(userId, workbookId);
-  if (!key || !(storage && typeof storage.getItem === 'function')) return true;
+  if (!key || !(storage && typeof storage.getItem === 'function')) return defaultEnabled;
   try {
     const raw = storage.getItem(key) || (fallbackKeys.has(key) ? memoryStorage.getItem(key) : null);
-    if (!raw) return true;
-    return JSON.parse(raw)?.enabled !== false;
+    if (!raw) return defaultEnabled;
+    return readPreference(raw);
   } catch (_error) {
     try {
       const fallback = memoryStorage.getItem(key);
-      return fallback ? JSON.parse(fallback)?.enabled !== false : true;
+      return fallback ? readPreference(fallback) : defaultEnabled;
     } catch (_fallbackError) {
-      return true;
+      return defaultEnabled;
     }
   }
 }

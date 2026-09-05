@@ -434,6 +434,10 @@ export function useCloudWorkbookOperations({
             if (currentWorkbook && workbookStorage && typeof workbookStorage.load === 'function') {
               backingFile = await workbookStorage.load();
             }
+            if (backingFile?.status !== 'loaded' && typeof browserCache?.load === 'function') {
+              const localCopy = await browserCache.load();
+              if (localCopy?.source === 'recovery') backingFile = localCopy;
+            }
             if (
               currentWorkbook &&
               !(
@@ -452,6 +456,7 @@ export function useCloudWorkbookOperations({
             }
           }
           if (result && result.ok && result.workbook) {
+            let openedSaveStatus = 'cache';
             if (asString(result.workbook.id) !== workbookId) {
               result = { ok: false, error: 'The downloaded workbook identity did not match.' };
             } else {
@@ -459,6 +464,7 @@ export function useCloudWorkbookOperations({
                 browserCache && typeof browserCache.save === 'function'
                   ? await browserCache.save(result.workbook)
                   : { ok: false, unavailable: true };
+              if (cacheResult?.ok && cacheResult.durable) openedSaveStatus = 'saved';
               if (cacheResult && cacheResult.ok === false && !cacheResult.unavailable) {
                 result = {
                   ok: false,
@@ -481,7 +487,7 @@ export function useCloudWorkbookOperations({
                   setWorkbook(result.workbook, {
                     source: 'cloud',
                     markDirty: false,
-                    saveStatus: 'cache'
+                    saveStatus: openedSaveStatus
                   });
                 }
                 if (typeof navigate === 'function') navigate('dashboard');

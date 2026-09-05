@@ -1,6 +1,7 @@
 import CloudKit
 import CryptoKit
 import Foundation
+import Security
 
 private let cavalryContainerIdentifier = "iCloud.com.juanmbuilder.cavalry"
 private let cavalryEnvironmentInfoPlistKey = "CavalryCloudKitEnvironment"
@@ -217,6 +218,9 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private let payloadsURL: URL
   private let stateURL: URL
   private var diskState: CloudKitDiskState
+  private var lastPersistedState: Data?
+  private var stateReadFailed = false
+  private var retiredPayloadFiles: Set<String> = []
   private var syncEnabled = true
   private var changingConnection = false
   private var engine: CKSyncEngine?
@@ -244,7 +248,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       rootURL =
         cloudKitURL
         .appendingPathComponent("environments", isDirectory: true)
-        .appendingPathComponent("production", isDirectory: true)
+        .appendingPathComponent(configuredCloudEnvironment == "Invalid" ? "invalid" : "production", isDirectory: true)
     }
     payloadsURL = rootURL.appendingPathComponent("payloads", isDirectory: true)
     stateURL = rootURL.appendingPathComponent("sync-state.json", isDirectory: false)
@@ -252,26 +256,55 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       atPath: rootURL.appendingPathComponent("disconnected").path
     )
 
-    do {
-      try FileManager.default.createDirectory(
-        at: payloadsURL,
-        withIntermediateDirectories: true
-      )
-      let data = try Data(contentsOf: stateURL)
-      diskState = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
-    } catch {
-      diskState = CloudKitDiskState()
+    diskState = CloudKitDiskState()
+    if configuredCloudEnvironment != "Invalid" {
+      do {
+        try FileManager.default.createDirectory(at: payloadsURL, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: stateURL.path) {
+          let data = try Data(contentsOf: stateURL)
+          diskState = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
+          lastPersistedState = data
+        } else if FileManager.default.fileExists(atPath: stateURL.appendingPathExtension("previous").path) {
+          let data = try Data(contentsOf: stateURL.appendingPathExtension("previous"))
+          diskState = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
+          lastPersistedState = data
+        }
+      } catch {
+        // Never turn a locked, unreadable, or incompatible manifest into an
+        // empty library. Retain it, and recover only from a verified prior commit.
+        do {
+          let data = try Data(contentsOf: stateURL.appendingPathExtension("previous"))
+          let recovered = try JSONDecoder().decode(CloudKitDiskState.self, from: data)
+          if FileManager.default.fileExists(atPath: stateURL.path) {
+            try FileManager.default.copyItem(
+              at: stateURL,
+              to: stateURL.appendingPathExtension("unreadable-\(UUID().uuidString)")
+            )
+          }
+          diskState = recovered
+          lastPersistedState = data
+        } catch {
+          stateReadFailed = true
+        }
+      }
     }
 
-    if diskState.subscriptionIdentifier != cavalrySyncStateVersion {
+    if !stateReadFailed, configuredCloudEnvironment != "Invalid", diskState.subscriptionIdentifier != cavalrySyncStateVersion {
       // Subscription identity is part of CKSyncEngine's opaque state. Reset
       // only that state for this one-time migration; Cavalry's local pending
       // workbooks and downloaded cache remain intact and are re-seeded below.
       diskState.syncState = nil
       diskState.subscriptionIdentifier = cavalrySyncStateVersion
       diskState.zoneReady = false
-      if let data = try? JSONEncoder().encode(diskState) {
-        try? data.write(to: stateURL, options: [.atomic])
+      do {
+        let data = try JSONEncoder().encode(diskState)
+        if let previous = lastPersistedState {
+          try previous.write(to: stateURL.appendingPathExtension("previous"), options: [.atomic])
+        }
+        try data.write(to: stateURL, options: [.atomic])
+        lastPersistedState = data
+      } catch {
+        stateReadFailed = true
       }
     }
 
@@ -308,6 +341,15 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func perform(_ request: CloudKitBridgeRequest) async -> CloudKitBridgeResponse {
+    guard cloudEnvironment != "Invalid" else {
+      return .failure(
+        "cloud_configuration_invalid",
+        "This Cavalry build is missing its iCloud configuration. Install the latest release to sync. Your local workbooks remain available."
+      )
+    }
+    guard !stateReadFailed else {
+      return .failure("cloud_storage_unavailable", "Cavalry could not read its saved iCloud state. Local workbooks are preserved. Restart the app to retry; no cloud data has been replaced.")
+    }
     if request.operation == "set_connection" {
       guard let enabled = request.enabled else {
         return .failure("invalid_cloudkit_request", "Choose whether to connect iCloud.")
@@ -453,7 +495,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 
   private func startIfNeeded() {
-    guard syncEnabled, engine == nil else { return }
+    guard !stateReadFailed, syncEnabled, cloudEnvironment != "Invalid", engine == nil else { return }
     var configuration = CKSyncEngine.Configuration(
       database: container.privateCloudDatabase,
       stateSerialization: diskState.syncState,
@@ -647,7 +689,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
       updatedAt: updatedAt
     )
     let payloadHash = sha256(payload)
-    let fileName = "pending-\(recordName)-\(revision).html"
+    let fileName = "pending-\(recordName)-\(revision)-\(UUID().uuidString.lowercased()).html"
     do {
       try payload.write(to: payloadURL(fileName), options: [.atomic])
       removePendingPayload(recordName: recordName)
@@ -1782,7 +1824,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         sha256(data) == payloadHash
       else { throw CloudStoreError.invalidPayload }
       let recordName = record.recordID.recordName
-      let fileName = "remote-\(recordName)-\(metadata.revision).html"
+      let fileName = "remote-\(recordName)-\(metadata.revision)-\(UUID().uuidString.lowercased()).html"
       try data.write(to: payloadURL(fileName), options: [.atomic])
       // A valid replacement for this exact workbook resolves a prior
       // snapshot/integrity diagnosis. Conflict assets are decoded afterward,
@@ -1936,7 +1978,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
         sha256(sourceData) == sourceHash
       else { throw CloudStoreError.invalidPayload }
       let noticeHash = String(sha256(Data(noticeId.utf8)).prefix(20))
-      let sourceFile = "remote-conflict-\(recordName)-\(noticeHash)-source.html"
+      let sourceFile = "remote-conflict-\(recordName)-\(noticeHash)-\(UUID().uuidString.lowercased())-source.html"
       try sourceData.write(to: payloadURL(sourceFile), options: [.atomic])
 
       var baseFile: String?
@@ -1947,7 +1989,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
           baseData.count <= maximumPayloadBytes,
           sha256(baseData) == baseHash
         else { throw CloudStoreError.invalidPayload }
-        let fileName = "remote-conflict-\(recordName)-\(noticeHash)-base.html"
+        let fileName = "remote-conflict-\(recordName)-\(noticeHash)-\(UUID().uuidString.lowercased())-base.html"
         try baseData.write(to: payloadURL(fileName), options: [.atomic])
         baseFile = fileName
       }
@@ -2041,7 +2083,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   private func replaceRemote(recordName: String, with remote: RemoteWorkbook) {
     if let previous = diskState.remote[recordName] {
       if previous.payloadFile != remote.payloadFile {
-        try? FileManager.default.removeItem(at: payloadURL(previous.payloadFile))
+        retiredPayloadFiles.insert(previous.payloadFile)
       }
       removeConflictPackageFiles(
         previous.conflictPackage,
@@ -2053,13 +2095,13 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
 
   private func removeRemotePayload(recordName: String) {
     guard let remote = diskState.remote[recordName] else { return }
-    try? FileManager.default.removeItem(at: payloadURL(remote.payloadFile))
+    retiredPayloadFiles.insert(remote.payloadFile)
     removeConflictPackageFiles(remote.conflictPackage)
   }
 
   private func removePendingPayload(recordName: String) {
     guard let file = diskState.pending[recordName]?.payloadFile else { return }
-    try? FileManager.default.removeItem(at: payloadURL(file))
+    retiredPayloadFiles.insert(file)
   }
 
   private func removePendingConflictPackage(recordName: String) {
@@ -2078,7 +2120,7 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     )
     for fileName in [package.sourcePayloadFile, package.basePayloadFile].compactMap({ $0 })
     where !retainedFiles.contains(fileName) {
-      try? FileManager.default.removeItem(at: payloadURL(fileName))
+      retiredPayloadFiles.insert(fileName)
     }
   }
 
@@ -2155,13 +2197,37 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
     CKRecord.ID(recordName: recordName, zoneID: zoneID)
   }
 
+  private func referencedPayloadFiles(in state: CloudKitDiskState) -> Set<String> {
+    var files = Set(state.pending.values.map(\.payloadFile))
+    files.formUnion(state.remote.values.map(\.payloadFile))
+    let packages = state.remote.values.compactMap(\.conflictPackage)
+      + (state.pendingConflictNotices ?? [:]).values.compactMap(\.conflictPackage)
+    for package in packages {
+      files.insert(package.sourcePayloadFile)
+      if let base = package.basePayloadFile { files.insert(base) }
+    }
+    return files
+  }
+
   private func persist() throws {
-    try FileManager.default.createDirectory(
-      at: payloadsURL,
-      withIntermediateDirectories: true
-    )
+    guard !stateReadFailed, cloudEnvironment != "Invalid" else {
+      throw CloudStoreError.invalidPayload
+    }
     let data = try JSONEncoder().encode(diskState)
-    try data.write(to: stateURL, options: [.atomic])
+    var retainedFiles = referencedPayloadFiles(in: diskState)
+    if let previous = lastPersistedState {
+      let previousState = try JSONDecoder().decode(CloudKitDiskState.self, from: previous)
+      retainedFiles.formUnion(referencedPayloadFiles(in: previousState))
+    }
+    try CavalryCloudKitStateFile.commit(
+      data: data,
+      previousData: lastPersistedState,
+      stateURL: stateURL,
+      payloadsURL: payloadsURL,
+      retainedFiles: retainedFiles,
+      retiredFiles: &retiredPayloadFiles
+    )
+    lastPersistedState = data
   }
 
   private func clearLastError(
@@ -2228,6 +2294,38 @@ actor CavalryCloudKitStore: CKSyncEngineDelegate {
   }
 }
 
+// File commit is separate from CloudKit/account state so its crash boundaries
+// can be exercised on temporary directories without contacting iCloud.
+struct CavalryCloudKitStateFile {
+  static func commit(
+    data: Data,
+    previousData: Data?,
+    stateURL: URL,
+    payloadsURL: URL,
+    retainedFiles: Set<String>,
+    retiredFiles: inout Set<String>,
+    writeData: (Data, URL) throws -> Void = { data, url in
+      try data.write(to: url, options: [.atomic])
+    }
+  ) throws {
+    try FileManager.default.createDirectory(at: payloadsURL, withIntermediateDirectories: true)
+    if let previousData {
+      try writeData(previousData, stateURL.appendingPathExtension("previous"))
+    }
+    try writeData(data, stateURL)
+    // No retirement can run before both manifests are committed. Protect all
+    // files referenced by either manifest so the previous commit can be opened.
+    for file in retiredFiles.subtracting(retainedFiles) {
+      do {
+        try FileManager.default.removeItem(at: payloadsURL.appendingPathComponent(file))
+        retiredFiles.remove(file)
+      } catch {
+        // A later commit can retry cleanup; failure cannot discard a workbook.
+      }
+    }
+  }
+}
+
 private enum CloudStoreError: Error {
   case engineUnavailable
   case invalidPayload
@@ -2273,11 +2371,26 @@ private func cloudMetadata(
 }
 
 private func cavalryConfiguredCloudKitEnvironment() -> String {
-  let configured =
-    Bundle.main.object(
-      forInfoDictionaryKey: cavalryEnvironmentInfoPlistKey
+  // CloudKit uses the signed entitlement, not our Info.plist. Resolve the same
+  // environment before choosing a cache directory or displaying an identity,
+  // including when an app was re-signed with a different environment.
+  if let task = SecTaskCreateFromSelf(nil),
+    let signed = SecTaskCopyValueForEntitlement(
+      task,
+      "com.apple.developer.icloud-container-environment" as CFString,
+      nil
     ) as? String
-  return configured == "Development" ? "Development" : "Production"
+  {
+    return signed == "Development" || signed == "Production" ? signed : "Invalid"
+  }
+  // Unsigned development/test tools can still use an explicit configuration;
+  // never guess Production when the setting is absent or malformed.
+  guard let configured = Bundle.main.object(
+    forInfoDictionaryKey: cavalryEnvironmentInfoPlistKey
+  ) as? String,
+    configured == "Development" || configured == "Production"
+  else { return "Invalid" }
+  return configured
 }
 
 private func normalizedWorkbookId(_ value: String?) -> String? {

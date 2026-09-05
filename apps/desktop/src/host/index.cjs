@@ -6,6 +6,7 @@
 'use strict';
 
 const path = require('node:path');
+const os = require('node:os');
 const readline = require('node:readline');
 const { createAdvisorRuntimeController } = require('./advisor-runtime-controller.cjs');
 const { createCloudController } = require('./cloud-controller.cjs');
@@ -124,6 +125,32 @@ async function start() {
   const cloudSyncStateStorage = createCloudSyncStateStorage({
     rootDir: path.join(userDataDir, 'Cloud Sync')
   });
+  const { createWorkbookRecoveryStore } = await import('./workbook-recovery-store.mjs');
+  const recoveryStore = createWorkbookRecoveryStore({
+    rootDir: path.join(userDataDir, 'Workbook Recovery'),
+    // The native CloudKit cache uses Tauri's bundle-ID directory, while the
+    // document host preserves the older product-name directory across updates.
+    // An isolated test/development data directory must never inspect real data.
+    legacyPayloadDirs:
+      userDataDir === path.join(os.homedir(), 'Library', 'Application Support', 'Cavalry for Mac')
+        ? [
+            path.join(
+              path.dirname(userDataDir),
+              'com.juanmbuilder.cavalry.mac',
+              'CloudKit',
+              'environments',
+              'production',
+              'payloads'
+            ),
+            path.join(
+              path.dirname(userDataDir),
+              'com.juanmbuilder.cavalry.mac',
+              'CloudKit',
+              'payloads'
+            )
+          ]
+        : []
+  });
   const systemPreferences = {
     getMediaAccessStatus: () => 'unknown',
     askForMediaAccess: async () => false
@@ -134,6 +161,7 @@ async function start() {
     ipcMain: router.ipcMain,
     dialog,
     shell,
+    recoveryStore,
     appTitle: appTitleForPlatform(),
     assertTrustedSender
   });

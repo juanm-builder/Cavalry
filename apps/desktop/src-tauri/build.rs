@@ -103,6 +103,7 @@ fn compile_cloudkit_bridge() {
     println!("cargo:rustc-link-lib=framework=CloudKit");
     println!("cargo:rustc-link-lib=framework=CryptoKit");
     println!("cargo:rustc-link-lib=framework=Foundation");
+    println!("cargo:rustc-link-lib=framework=Security");
 }
 
 fn main() {
