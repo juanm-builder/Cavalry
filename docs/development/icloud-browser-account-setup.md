@@ -73,6 +73,15 @@ CSP is not a substitute for a `frame-ancestors` response header.
 Live testing must verify both popup relationships in Firefox and confirm users
 can choose a different Apple Account despite existing browser cookies.
 
+For a failing live callback, the local validation harness can opt in with
+`authenticateInBrowser({ ..., diagnostics: true })`. This enables a metadata-only
+report on the local page that survives a cancelled attempt. It records callback
+origin, expected-popup match, payload type, and token/error field presence or
+validity; it never records credential values, error text or account identity.
+Diagnostics are off by default and do not change callback acceptance rules.
+Completing Apple's login form alone is insufficient: `users/current` must verify
+the returned session before marking browser authentication as working.
+
 All workbook requests bind to the full verified CloudKit owner, container and
 environment. Pausing retains that connection; signing out clears its active
 credentials. Neither operation deletes local workbooks. Pending writes remain

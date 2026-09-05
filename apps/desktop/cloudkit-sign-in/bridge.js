@@ -16,6 +16,11 @@
   const start = document.getElementById('continue');
   const cancel = document.getElementById('cancel');
   const status = document.getElementById('status');
+  const diagnosticReport = document.getElementById('diagnostics');
+  const diagnosticParameters = new URL(window.location.href).searchParams;
+  const diagnosticsEnabled = diagnosticParameters.getAll('diagnostics').length === 1 &&
+    diagnosticParameters.get('diagnostics') === '1';
+  const diagnosticRecords = [];
   const originalOpener = window.opener;
   let nonce = window.location.hash.slice(1);
   let redirectURL = '';
@@ -86,7 +91,56 @@
     }
   }
 
+  function recordDiagnostic(event) {
+    if (!diagnosticsEnabled || phase !== 'waiting-for-apple') return;
+    // Inspect only field presence and shape. Never copy a callback payload,
+    // credential, error text or account identity into this optional report.
+    try {
+      let origin = 'unavailable';
+      if (typeof event.origin === 'string' && event.origin.length <= 256) {
+        try {
+          const parsed = new URL(event.origin);
+          if ((parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+              parsed.origin.length <= 256) origin = parsed.origin;
+        } catch {
+          // Opaque or malformed origins are represented by a fixed label.
+        }
+      }
+      const data = event.data;
+      const descriptor = (field) => data && typeof data === 'object'
+        ? Object.getOwnPropertyDescriptor(data, field)
+        : undefined;
+      const valid = (field) => {
+        const value = descriptor(field)?.value;
+        return typeof value === 'string' && value.length > 0 && value.length <= 16384 &&
+          !/[\r\n\0]/.test(value);
+      };
+      const diagnostic = {
+        origin,
+        expectedPopup: Boolean(applePopup && event.source === applePopup),
+        dataType: typeof data,
+        ckSessionPresent: Boolean(descriptor('ckSession')),
+        ckSessionValid: valid('ckSession'),
+        ckWebAuthTokenPresent: Boolean(descriptor('ckWebAuthToken')),
+        ckWebAuthTokenValid: valid('ckWebAuthToken'),
+        errorMessagePresent: Boolean(descriptor('errorMessage')),
+        errorCodePresent: Boolean(descriptor('errorCode'))
+      };
+      const description = JSON.stringify(diagnostic);
+      if (diagnosticRecords.at(-1) === description) return;
+      diagnosticRecords.push(description);
+      if (diagnosticRecords.length > 20) diagnosticRecords.shift();
+      diagnosticReport.hidden = false;
+      diagnosticReport.textContent = 'Sign-in callback diagnostics (metadata only):\n' +
+        diagnosticRecords.join('\n');
+      post('cavalry-icloud-diagnostic', { diagnostic });
+    } catch {
+      // Optional diagnostics must never affect authentication or rejection.
+    }
+  }
+
   function receiveMessage(event) {
+    recordDiagnostic(event);
     const data = event.data;
     if (!data || typeof data !== 'object' || phase === 'finished') return;
 
@@ -165,6 +219,10 @@
 
   window.addEventListener('message', receiveMessage);
   window.addEventListener('pagehide', leavingPage);
+  if (diagnosticsEnabled) {
+    diagnosticReport.hidden = false;
+    diagnosticReport.textContent = 'Sign-in callback diagnostics (metadata only): No callback messages received.';
+  }
   timeout = setTimeout(
     () => {
       if (phase !== 'submitted') post('cavalry-icloud-cancel');

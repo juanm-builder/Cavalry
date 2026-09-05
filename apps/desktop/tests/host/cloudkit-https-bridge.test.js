@@ -19,10 +19,11 @@ function page(options = {}) {
   const timers = new Map();
   const intervals = new Map();
   const elements = Object.fromEntries(
-    ['continue', 'cancel', 'status'].map((id) => [
+    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [
       id,
       {
         disabled: true,
+        hidden: true,
         textContent: '',
         listeners: new Map(),
         addEventListener(type, handler) {
@@ -48,7 +49,7 @@ function page(options = {}) {
   const window = {
     opener: options.noOpener ? null : opener,
     location: new URL(
-      `https://juanm-builder.github.io/Cavalry/icloud-sign-in/#${options.nonce ?? NONCE}`
+      `https://juanm-builder.github.io/Cavalry/icloud-sign-in/${options.search ?? ''}#${options.nonce ?? NONCE}`
     ),
     history: {
       replaceState(_state, _title, url) {
@@ -476,4 +477,130 @@ test('the static document permits only its own script and stylesheet with no fet
     script,
     /\bfetch\s*\(|\blocalStorage\b|\bsessionStorage\b|\bdocument\.cookie\b/
   );
+});
+
+test('callback diagnostics require a single explicit opt-in and remain hidden by default', () => {
+  for (const search of ['', '?diagnostics=0', '?diagnostics=true', '?diagnostics=1&diagnostics=0']) {
+    const bridge = page({ search });
+    bridge.init();
+    bridge.click('continue');
+    bridge.apple({ ckSession: 'never-display-this' }, 'https://unapproved.example');
+    assert.equal(bridge.outgoing.length, 1);
+    assert.equal(bridge.elements.diagnostics.hidden, true);
+    assert.equal(bridge.elements.diagnostics.textContent, '');
+  }
+});
+
+test('opt-in diagnostics relay only bounded callback metadata to the original local opener', () => {
+  const bridge = page({ search: '?diagnostics=1' });
+  assert.match(bridge.elements.diagnostics.textContent, /No callback messages received/);
+  bridge.init();
+  bridge.click('continue');
+  const secret = 'never-display-or-relay-this-session-value';
+  const error = 'never-display-this-account-error';
+  bridge.apple(
+    { ckSession: secret, ckWebAuthToken: '', errorMessage: error, errorCode: secret, extra: secret },
+    'https://unapproved.example'
+  );
+  const diagnostic = {
+    origin: 'https://unapproved.example',
+    expectedPopup: true,
+    dataType: 'object',
+    ckSessionPresent: true,
+    ckSessionValid: true,
+    ckWebAuthTokenPresent: true,
+    ckWebAuthTokenValid: false,
+    errorMessagePresent: true,
+    errorCodePresent: true
+  };
+  assert.deepEqual(bridge.outgoing[1], {
+    data: { type: 'cavalry-icloud-diagnostic', nonce: NONCE, diagnostic },
+    origin: LOCAL_ORIGIN
+  });
+  assert.equal(bridge.elements.diagnostics.hidden, false);
+  assert.ok(bridge.elements.diagnostics.textContent.includes(JSON.stringify(diagnostic)));
+  for (const text of [bridge.elements.diagnostics.textContent, JSON.stringify(bridge.outgoing)]) {
+    assert.ok(!text.includes(secret));
+    assert.ok(!text.includes(error));
+    assert.ok(!text.includes('length'));
+  }
+  // Metadata does not turn an unapproved callback into authentication.
+  assert.equal(bridge.outgoing.some(({ data }) => data.type === 'cavalry-icloud-complete'), false);
+});
+
+test('diagnostics preserve opaque origins, primitive payload types and mismatched popup sources', () => {
+  const bridge = page({ search: '?diagnostics=1' });
+  bridge.init();
+  bridge.click('continue');
+  for (const [data, origin] of [
+    ['opaque-payload-must-not-appear', 'null'],
+    [null, ''],
+    [42, `https://${'a'.repeat(260)}.example`],
+    [false, 'https://unapproved.example/private?secret=never-display']
+  ]) {
+    bridge.message(data, origin, {});
+    const diagnostic = bridge.outgoing.at(-1).data.diagnostic;
+    assert.equal(diagnostic.expectedPopup, false);
+    assert.equal(diagnostic.dataType, typeof data);
+    assert.equal(diagnostic.origin, origin.includes('/private') ? 'https://unapproved.example' : 'unavailable');
+    assert.equal(diagnostic.ckSessionPresent, false);
+    assert.equal(diagnostic.ckSessionValid, false);
+    assert.equal(diagnostic.ckWebAuthTokenPresent, false);
+    assert.equal(diagnostic.ckWebAuthTokenValid, false);
+  }
+  assert.ok(!bridge.elements.diagnostics.textContent.includes('opaque-payload'));
+  assert.ok(!bridge.elements.diagnostics.textContent.includes('never-display'));
+});
+
+test('diagnostics report only own field presence and string validity without reading getters', () => {
+  const bridge = page({ search: '?diagnostics=1' });
+  bridge.init();
+  bridge.click('continue');
+  const data = Object.create({ ckSession: 'inherited-secret' });
+  Object.defineProperty(data, 'ckWebAuthToken', {
+    get() { throw new Error('Diagnostics must not invoke getters'); }
+  });
+  bridge.apple(data, 'https://unapproved.example');
+  const diagnostic = bridge.outgoing.at(-1).data.diagnostic;
+  assert.equal(diagnostic.ckSessionPresent, false);
+  assert.equal(diagnostic.ckSessionValid, false);
+  assert.equal(diagnostic.ckWebAuthTokenPresent, true);
+  assert.equal(diagnostic.ckWebAuthTokenValid, false);
+  for (const ckSession of ['', 'a\nb', 'a\rb', 'a\0b', 'x'.repeat(16385), null, {}, 42]) {
+    bridge.apple({ ckSession }, 'https://unapproved.example');
+    assert.equal(bridge.outgoing.at(-1).data.diagnostic.ckSessionValid, false);
+  }
+});
+
+test('diagnostics keep twenty recent descriptions, deduplicate repeats and remain after cancellation', () => {
+  const bridge = page({ search: '?diagnostics=1' });
+  bridge.init();
+  bridge.click('continue');
+  for (let index = 0; index < 25; index += 1) {
+    bridge.apple({ errorMessage: 'private-error' }, `https://a${index}.example`);
+    bridge.apple({ errorMessage: 'different-private-error' }, `https://a${index}.example`);
+  }
+  assert.equal(bridge.outgoing.filter(({ data }) => data.type === 'cavalry-icloud-diagnostic').length, 25);
+  assert.equal(bridge.elements.diagnostics.textContent.split('\n').length, 21);
+  assert.ok(!bridge.elements.diagnostics.textContent.includes('https://a4.example'));
+  assert.ok(bridge.elements.diagnostics.textContent.includes('https://a5.example'));
+  assert.ok(bridge.elements.diagnostics.textContent.includes('https://a24.example'));
+  const beforeCancellation = bridge.elements.diagnostics.textContent;
+  bridge.popup.closed = true;
+  [...bridge.intervals.values()][0].callback();
+  assert.equal(bridge.elements.diagnostics.textContent, beforeCancellation);
+  assert.equal(bridge.outgoing.at(-1).data.type, 'cavalry-icloud-cancel');
+});
+
+test('valid callbacks still authenticate in diagnostics mode with no metadata in the token relay', () => {
+  const bridge = page({ search: '?diagnostics=1' });
+  bridge.init();
+  bridge.click('continue');
+  bridge.apple();
+  assert.equal(bridge.outgoing[1].data.type, 'cavalry-icloud-diagnostic');
+  assert.deepEqual(bridge.outgoing[2], {
+    data: { type: 'cavalry-icloud-complete', nonce: NONCE, token: 'example-session' },
+    origin: LOCAL_ORIGIN
+  });
+  assert.ok(!bridge.elements.diagnostics.textContent.includes('example-session'));
 });

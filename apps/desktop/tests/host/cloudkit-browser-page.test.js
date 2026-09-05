@@ -8,11 +8,22 @@ const NONCE = 'a3'.repeat(32);
 const BRIDGE_ORIGIN = 'https://juanm-builder.github.io';
 const REDIRECT_URL = 'https://idmsa.apple.com/signin?test=1';
 const TOKEN = 'synthetic-apple-session';
+const DIAGNOSTIC = {
+  origin: 'https://api.apple-cloudkit.com',
+  expectedPopup: true,
+  dataType: 'object',
+  ckSessionPresent: true,
+  ckSessionValid: true,
+  ckWebAuthTokenPresent: false,
+  ckWebAuthTokenValid: false,
+  errorMessagePresent: false,
+  errorCodePresent: false
+};
 
-function createPage({ fetch = vi.fn().mockResolvedValue({ ok: true }) } = {}) {
+function createPage({ fetch = vi.fn().mockResolvedValue({ ok: true }), diagnostics = false } = {}) {
   vi.useFakeTimers();
   const elements = new Map(
-    ['continue', 'cancel', 'status'].map((id) => [id, { disabled: false, hidden: false }])
+    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [id, { disabled: false, hidden: id === 'diagnostics', textContent: '' }])
   );
   const listeners = new Map();
   const popup = { closed: false, close: vi.fn(), postMessage: vi.fn() };
@@ -26,12 +37,13 @@ function createPage({ fetch = vi.fn().mockResolvedValue({ ok: true }) } = {}) {
   };
   window.self = window;
   window.top = window;
-  const html = browserPage({ nonce: NONCE, redirectURL: REDIRECT_URL });
+  const html = browserPage({ nonce: NONCE, redirectURL: REDIRECT_URL, diagnostics });
   const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error('The browser page has no executable script.');
   runInNewContext(script, {
     window,
     document: { getElementById: (id) => elements.get(id) },
+    URL,
     fetch,
     setTimeout,
     clearTimeout,
@@ -262,5 +274,110 @@ describe('iCloud loopback page protocol', () => {
     expect(page.elements.get('cancel').hidden).toBe(false);
     expect(page.elements.get('cancel').disabled).toBe(true);
     expect(page.elements.get('status').textContent).toContain('may already have been received');
+  });
+
+  it('enables callback diagnostics only through an explicit boolean option', async () => {
+    for (const diagnostics of [false, undefined, 'true', 1]) {
+      const page = createPage({ diagnostics });
+      await page.ready();
+      await page.message('cavalry-icloud-diagnostic', { data: { diagnostic: DIAGNOSTIC } });
+      expect(page.window.open.mock.calls[0][0]).not.toContain('diagnostics=1');
+      expect(page.elements.get('diagnostics').hidden).toBe(true);
+      expect(page.elements.get('diagnostics').textContent).toBe('');
+      expect(page.fetch).not.toHaveBeenCalled();
+    }
+    const page = createPage({ diagnostics: true });
+    await page.ready();
+    expect(page.window.open.mock.calls[0][0]).toBe(`${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?diagnostics=1#${NONCE}`);
+    expect(page.elements.get('diagnostics').hidden).toBe(false);
+    expect(page.elements.get('diagnostics').textContent).toContain('No callback messages received');
+  });
+
+  it('accepts diagnostics only from the current HTTPS bridge and matching request', async () => {
+    const page = createPage({ diagnostics: true });
+    const initial = page.elements.get('diagnostics').textContent;
+    page.start();
+    await page.message('cavalry-icloud-diagnostic', { data: { diagnostic: DIAGNOSTIC } });
+    expect(page.elements.get('diagnostics').textContent).toBe(initial);
+    await page.message('cavalry-icloud-ready');
+    for (const overrides of [
+      { source: {} },
+      { source: null },
+      { origin: 'https://attacker.example' },
+      { origin: 'http://juanm-builder.github.io' },
+      { data: { nonce: 'b4'.repeat(32) } }
+    ]) {
+      await page.message('cavalry-icloud-diagnostic', {
+        ...overrides,
+        data: { diagnostic: DIAGNOSTIC, ...overrides.data }
+      });
+      expect(page.elements.get('diagnostics').textContent).toBe(initial);
+    }
+    await page.message('cavalry-icloud-diagnostic', { data: { diagnostic: DIAGNOSTIC } });
+    expect(page.elements.get('diagnostics').textContent).toContain(JSON.stringify(DIAGNOSTIC));
+    expect(page.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed metadata and reconstructs allowed fields without copying secrets', async () => {
+    const page = createPage({ diagnostics: true });
+    await page.ready();
+    const initial = page.elements.get('diagnostics').textContent;
+    for (const diagnostic of [
+      null,
+      'private-payload',
+      {},
+      { ...DIAGNOSTIC, origin: null },
+      { ...DIAGNOSTIC, origin: 'x'.repeat(257) },
+      { ...DIAGNOSTIC, origin: 'https://apple.example/private?token=secret' },
+      { ...DIAGNOSTIC, origin: 'https://user:secret@apple.example' },
+      { ...DIAGNOSTIC, origin: 'javascript:secret' },
+      { ...DIAGNOSTIC, origin: 'null' },
+      { ...DIAGNOSTIC, dataType: 'secret' },
+      { ...DIAGNOSTIC, expectedPopup: 'secret' },
+      { ...DIAGNOSTIC, errorCodePresent: undefined },
+      { ...DIAGNOSTIC, ckSessionPresent: false },
+      { ...DIAGNOSTIC, ckWebAuthTokenValid: true }
+    ]) {
+      await page.message('cavalry-icloud-diagnostic', { data: { diagnostic } });
+      expect(page.elements.get('diagnostics').textContent).toBe(initial);
+    }
+    await page.message('cavalry-icloud-diagnostic', {
+      data: {
+        diagnostic: { ...DIAGNOSTIC, token: TOKEN, errorMessage: 'private-error', account: 'private-account' }
+      }
+    });
+    const report = page.elements.get('diagnostics').textContent;
+    expect(report).toContain(JSON.stringify(DIAGNOSTIC));
+    expect(report).not.toContain(TOKEN);
+    expect(report).not.toContain('private-error');
+    expect(report).not.toContain('private-account');
+    expect(page.fetch).not.toHaveBeenCalled();
+    expect(page.popup.postMessage).toHaveBeenCalledTimes(1);
+    // A diagnostic describing a token is never itself a token submission.
+    await page.complete();
+    expect(page.fetch).toHaveBeenCalledTimes(1);
+    expect(page.acknowledgements()).toHaveLength(1);
+  });
+
+  it('retains a bounded metadata report after cancellation closes the hosted window', async () => {
+    const page = createPage({ diagnostics: true });
+    await page.ready();
+    for (let index = 0; index < 25; index += 1) {
+      const diagnostic = { ...DIAGNOSTIC, origin: `https://a${index}.example` };
+      await page.message('cavalry-icloud-diagnostic', { data: { diagnostic } });
+      await page.message('cavalry-icloud-diagnostic', { data: { diagnostic } });
+    }
+    const report = page.elements.get('diagnostics').textContent;
+    expect(report.split('\n')).toHaveLength(21);
+    expect(report).not.toContain('https://a4.example');
+    expect(report).toContain('https://a5.example');
+    expect(report).toContain('https://a24.example');
+    await page.message('cavalry-icloud-cancel');
+    expect(page.popup.close).toHaveBeenCalledTimes(1);
+    expect(page.elements.get('status').textContent).toContain('Cancelled');
+    expect(page.elements.get('diagnostics').textContent).toBe(report);
+    await page.message('cavalry-icloud-diagnostic', { data: { diagnostic: DIAGNOSTIC } });
+    expect(page.elements.get('diagnostics').textContent).toBe(report);
+    expect(page.fetch).toHaveBeenCalledExactlyOnceWith(`/cancel/${NONCE}`, { method: 'POST' });
   });
 });

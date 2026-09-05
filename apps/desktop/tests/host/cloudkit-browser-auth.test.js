@@ -101,6 +101,17 @@ describe('iCloud browser authentication loopback', () => {
     expect(await auth.result).toBe('example-apple-session');
   });
 
+  it('propagates opt-in callback diagnostics only into the fixed HTTPS bridge page', async () => {
+    const auth = startAuthentication({ diagnostics: true });
+    const url = await auth.opened;
+    expect(url).not.toContain('diagnostics');
+    const html = await (await fetch(url)).text();
+    expect(html).toContain('https://juanm-builder.github.io/Cavalry/icloud-sign-in/?diagnostics=1#');
+    expect(html).toContain('const diagnosticsEnabled = true;');
+    expect((await submit(url)).status).toBe(200);
+    expect(await auth.result).toBe('example-apple-session');
+  });
+
   it('rejects invalid token values while leaving the sign-in available for a valid response', async () => {
     const auth = startAuthentication();
     const url = await auth.opened;

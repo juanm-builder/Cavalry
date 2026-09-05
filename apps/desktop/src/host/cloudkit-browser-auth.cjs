@@ -10,18 +10,47 @@ const {
   validSessionToken
 } = require('./cloudkit-web-api.cjs');
 
-function browserPage({ nonce, redirectURL }) {
+function browserPage({ nonce, redirectURL, diagnostics = false }) {
   const redirect = JSON.stringify(redirectURL).replace(/</g, '\\u003c');
   const bridgeOrigin = JSON.stringify(CLOUDKIT_WEB_ORIGIN);
-  const bridgeURL = JSON.stringify(`${CLOUDKIT_SIGN_IN_URL}#${nonce}`);
+  const diagnosticsEnabled = diagnostics === true;
+  const bridgeURL = JSON.stringify(`${CLOUDKIT_SIGN_IN_URL}${diagnosticsEnabled ? '?diagnostics=1' : ''}#${nonce}`);
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Cavalry to iCloud</title>
-<style nonce="${nonce}">body{color:#f4f5f7;background:#0d0e10;font:16px system-ui;max-width:540px;margin:12vh auto;padding:32px}h1{font-size:28px}p{line-height:1.6;color:#b9bec7}button{background:#8da2c6;color:#0d0e10;border:0;border-radius:8px;padding:14px 22px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}a{color:#8da2c6}</style>
-<h1>Choose your iCloud account</h1><p>Open Cavalry’s secure sign-in page to choose the account Cavalry should use. This does not change the Apple Account on your Mac.</p><button id="continue">Open secure sign-in</button><p id="status" role="status">Keep this page open until you return to Cavalry.</p><button id="cancel">Cancel</button>
+<style nonce="${nonce}">body{color:#f4f5f7;background:#0d0e10;font:16px system-ui;max-width:540px;margin:12vh auto;padding:32px}h1{font-size:28px}p{line-height:1.6;color:#b9bec7}button{background:#8da2c6;color:#0d0e10;border:0;border-radius:8px;padding:14px 22px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}a{color:#8da2c6}#diagnostics{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#b9bec7}</style>
+<h1>Choose your iCloud account</h1><p>Open Cavalry’s secure sign-in page to choose the account Cavalry should use. This does not change the Apple Account on your Mac.</p><button id="continue">Open secure sign-in</button><p id="status" role="status">Keep this page open until you return to Cavalry.</p><pre id="diagnostics" hidden></pre><button id="cancel">Cancel</button>
 <script nonce="${nonce}">
 let popup = null, phase = 'idle';
 const nonce = '${nonce}', bridgeOrigin = ${bridgeOrigin};
 const start = document.getElementById('continue'), status = document.getElementById('status');
 const cancelButton = document.getElementById('cancel');
+const diagnosticsEnabled = ${diagnosticsEnabled};
+const diagnosticReport = document.getElementById('diagnostics'), diagnosticRecords = [];
+if(diagnosticsEnabled) {
+  diagnosticReport.hidden = false;
+  diagnosticReport.textContent = 'Sign-in callback diagnostics (metadata only): No callback messages received.';
+}
+function receiveDiagnostic(value) {
+  if(!diagnosticsEnabled || phase !== 'authenticating' || !value || typeof value !== 'object') return;
+  const booleanFields = ['expectedPopup','ckSessionPresent','ckSessionValid','ckWebAuthTokenPresent','ckWebAuthTokenValid','errorMessagePresent','errorCodePresent'];
+  if(typeof value.origin !== 'string' || value.origin.length > 256 ||
+     !['undefined','object','boolean','number','bigint','string','symbol','function'].includes(value.dataType) ||
+     booleanFields.some(field => typeof value[field] !== 'boolean') ||
+     (value.ckSessionValid && !value.ckSessionPresent) ||
+     (value.ckWebAuthTokenValid && !value.ckWebAuthTokenPresent)) return;
+  if(value.origin !== 'unavailable') {
+    try {
+      const origin = new URL(value.origin);
+      if(!['https:','http:'].includes(origin.protocol) || origin.origin !== value.origin) return;
+    } catch { return; }
+  }
+  const diagnostic = {origin:value.origin,expectedPopup:value.expectedPopup,dataType:value.dataType};
+  for(const field of booleanFields.slice(1)) diagnostic[field] = value[field];
+  const description = JSON.stringify(diagnostic);
+  if(diagnosticRecords[diagnosticRecords.length-1] === description) return;
+  diagnosticRecords.push(description);
+  if(diagnosticRecords.length > 20) diagnosticRecords.shift();
+  diagnosticReport.textContent = 'Sign-in callback diagnostics (metadata only):\\n' + diagnosticRecords.join('\\n');
+}
 function closePopup() { try { if(popup) popup.close(); } catch {} }
 function cancel(message) {
   if(phase === 'done' || phase === 'cancelled') return;
@@ -44,6 +73,9 @@ window.addEventListener('message', async event => {
   if(!popup || event.source !== popup || event.origin !== bridgeOrigin ||
      !event.data || event.data.nonce !== nonce) return;
   const data = event.data;
+  if(data.type === 'cavalry-icloud-diagnostic') {
+    receiveDiagnostic(data.diagnostic); return;
+  }
   if(data.type === 'cavalry-icloud-ready' && phase === 'waiting') {
     phase = 'authenticating';
     popup.postMessage({type:'cavalry-icloud-start',nonce,redirectURL:${redirect}}, bridgeOrigin);
@@ -90,6 +122,7 @@ async function authenticateInBrowser({
   openExternal,
   timeoutMs = 5 * 60 * 1000,
   port = 47639,
+  diagnostics = false,
   signal
 }) {
   const appleURL = appleAuthenticationUrl(redirectURL);
@@ -124,7 +157,7 @@ async function authenticateInBrowser({
     }
     if (request.method === 'GET' && request.url === `/start/${nonce}` && !finished) {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
-      response.end(browserPage({ nonce, redirectURL: appleURL }));
+      response.end(browserPage({ nonce, redirectURL: appleURL, diagnostics }));
       return;
     }
     if (request.method !== 'POST' || request.headers.origin !== LOOPBACK_ORIGIN || finished) {
