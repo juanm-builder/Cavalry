@@ -12,7 +12,7 @@ at `https://juanm-builder.github.io/Cavalry/icloud-sign-in/`. Publish the page
 before enabling the token. The entire `https://juanm-builder.github.io` origin
 is trusted: other project pages and root service workers on that origin share
 this boundary. A dedicated auth domain should be used if that origin hosts
-untrusted applications. The page has no analytics, cookies, network requests,
+untrusted applications. The page has no analytics, cookies, outbound API requests,
 server-side credential handling, or persistent token storage.
 
 Use [CloudKit Console](https://icloud.developer.apple.com/) with the developer team:
@@ -82,6 +82,33 @@ POST. Cancellation, expiry and duplicate callbacks cannot complete another
 attempt. The hosted page must leave COOP unset/default so its cross-origin opener
 survives; it rejects framed/no-opener contexts before enabling sign-in. Its meta
 CSP is not a substitute for a `frame-ancestors` response header.
+
+After that POST is acknowledged, the hosted page closes its Apple popup, sends
+`cavalry-icloud-finished` to the original nonce-bound opener, and closes itself.
+The launcher then closes only its own hosted window and attempts to close itself.
+The existing `cavalry-icloud-received` handshake remains compatible with older
+launchers; newer launchers also clean up an older hosted page after 1.5 seconds.
+This indicates credential handoff, not successful account verification or sync.
+Browsers can refuse to close a launcher opened by the native app. In that case,
+a completed screen replaces the sign-in controls and says the tab can be closed.
+No browser settings are changed and unrelated tabs are never addressed.
+
+Both pages use Cavalry's Cerulean palette, ledger typography, and the unchanged
+`src/renderer/assets/cavalry-mark.png` artwork. After changing the hosted CSS,
+bridge script, or original mark, run:
+
+```sh
+node apps/desktop/scripts/prepare-cloudkit-sign-in.mjs
+node --test apps/desktop/tests/host/cloudkit-https-bridge.test.js
+```
+
+The generator embeds the same presentation in the native single-file host,
+copies the original mark into the hosted assets, and refreshes CSS/script hashes
+in `index.html`. Tests enforce parity. Deploy the complete `cloudkit-sign-in/`
+directory, including the image; do not deploy the generator or embedded JSON.
+Native page revision `3` bypasses cached HTML from previous builds. The hosted
+CSP allows images only from its own origin; the native CSP permits the bundled
+image data without adding an external image or stylesheet request.
 
 Live testing must verify both popup relationships in Firefox and confirm users
 can choose a different Apple Account despite existing browser cookies.

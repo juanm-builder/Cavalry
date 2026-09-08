@@ -23,15 +23,26 @@ const DIAGNOSTIC = {
 function createPage({ fetch = vi.fn().mockResolvedValue({ ok: true }), diagnostics = false } = {}) {
   vi.useFakeTimers();
   const elements = new Map(
-    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [
+    [
+      'continue',
+      'cancel',
+      'status',
+      'diagnostics',
+      'sign-in',
+      'heading',
+      'description',
+      'account-note',
+      'footnote'
+    ].map((id) => [
       id,
-      { disabled: false, hidden: id === 'diagnostics', textContent: '' }
+      { disabled: false, hidden: id === 'diagnostics', textContent: '', dataset: {} }
     ])
   );
   const listeners = new Map();
   const popup = { closed: false, close: vi.fn(), postMessage: vi.fn() };
   const window = {
     open: vi.fn().mockReturnValue(popup),
+    close: vi.fn(),
     addEventListener(type, listener) {
       const registered = listeners.get(type) || [];
       registered.push(listener);
@@ -96,7 +107,7 @@ describe('iCloud loopback page protocol', () => {
     const page = createPage();
     page.start();
     expect(page.window.open).toHaveBeenCalledWith(
-      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=2#${NONCE}`,
+      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=3#${NONCE}`,
       `cavalry-icloud-${NONCE}`,
       'popup,width=620,height=740'
     );
@@ -219,9 +230,55 @@ describe('iCloud loopback page protocol', () => {
     await page.complete();
     expect(page.acknowledgements()).toHaveLength(0);
     expect(page.popup.close).toHaveBeenCalledTimes(1);
+    expect(page.window.close).not.toHaveBeenCalled();
     expect(page.elements.get('cancel').disabled).toBe(true);
     await page.complete('late-session');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes only its own windows after an acknowledged handoff and authenticated bridge cleanup', async () => {
+    const page = createPage();
+    await page.ready();
+    await page.message('cavalry-icloud-finished');
+    expect(page.window.close).not.toHaveBeenCalled();
+    await page.complete();
+    expect(page.window.close).not.toHaveBeenCalled();
+    expect(page.popup.close).not.toHaveBeenCalled();
+    for (const overrides of [
+      { source: {} },
+      { origin: 'https://attacker.example' },
+      { data: { nonce: 'b4'.repeat(32) } }
+    ])
+      await page.message('cavalry-icloud-finished', overrides);
+    expect(page.window.close).not.toHaveBeenCalled();
+    await page.message('cavalry-icloud-finished');
+    expect(page.popup.close).toHaveBeenCalledTimes(1);
+    expect(page.window.close).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    await page.message('cavalry-icloud-finished');
+    await page.dispatch('pagehide');
+    expect(page.window.close).toHaveBeenCalledTimes(1);
+    expect(page.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleans up old bridges and leaves a truthful completed fallback when launcher closure is blocked', async () => {
+    const page = createPage();
+    page.window.close.mockImplementation(() => {
+      throw new Error('Browser policy');
+    });
+    await page.ready();
+    await page.complete();
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(page.window.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page.popup.close).toHaveBeenCalledTimes(1);
+    expect(page.window.close).toHaveBeenCalledTimes(1);
+    expect(page.elements.get('sign-in').dataset.state).toBe('complete');
+    expect(page.elements.get('heading').textContent).toBe('Sign-in received');
+    expect(page.elements.get('description').textContent).toContain('check your account');
+    expect(page.elements.get('footnote').textContent).toContain('You can close this tab');
+    expect(page.elements.get('continue').hidden).toBe(true);
+    expect(page.elements.get('cancel').hidden).toBe(true);
   });
 
   it.each(['local button', 'bridge message', 'expiry', 'pagehide', 'closed popup'])(
@@ -292,7 +349,7 @@ describe('iCloud loopback page protocol', () => {
     const page = createPage({ diagnostics: true });
     await page.ready();
     expect(page.window.open.mock.calls[0][0]).toBe(
-      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=2&diagnostics=1#${NONCE}`
+      `${BRIDGE_ORIGIN}/Cavalry/icloud-sign-in/?v=3&diagnostics=1#${NONCE}`
     );
     expect(page.elements.get('diagnostics').hidden).toBe(false);
     expect(page.elements.get('diagnostics').textContent).toContain('No callback messages received');

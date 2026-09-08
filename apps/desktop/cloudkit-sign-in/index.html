@@ -6,31 +6,39 @@
     <meta name="referrer" content="no-referrer" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
     />
-    <title>Choose your iCloud account · Cavalry</title>
-    <link rel="stylesheet" href="./style.css?v=20175fc921c3" />
-    <script src="./bridge.js?v=e147313aeb29" defer></script>
+    <title>Choose your iCloud account · Cavalry for Mac</title>
+    <link rel="icon" href="./cavalry-mark.png" />
+    <link rel="stylesheet" href="./style.css?v=6802eb3dfce9" />
+    <script src="./bridge.js?v=212b75ce2c06" defer></script>
   </head>
   <body>
-    <main>
-      <div class="brand"><span class="mark" aria-hidden="true">C</span> Cavalry</div>
-      <p class="eyebrow">Account &amp; sync</p>
-      <h1>Choose your iCloud account</h1>
-      <p class="description">
-        Continue to Apple and choose the account for your Cavalry workbooks. This changes the
-        account Cavalry uses, while your Mac stays signed in to its current Apple Account.
-      </p>
-      <div class="actions">
-        <button id="continue" type="button" disabled>Continue to Apple</button>
-        <button id="cancel" type="button" class="secondary" disabled>Cancel</button>
-      </div>
-      <p id="status" role="status" aria-live="polite">Connecting to Cavalry…</p>
-      <pre id="diagnostics" hidden></pre>
-      <p class="footnote">Keep this page open until Cavalry receives your sign-in.</p>
-      <noscript
-        ><p>JavaScript is required. Return to Cavalry and try signing in again.</p></noscript
-      >
+    <main id="sign-in">
+      <header class="brand">
+        <img class="mark" src="./cavalry-mark.png" alt="" width="52" height="52" />
+        <div><strong>Cavalry</strong><small>For Mac</small></div>
+      </header>
+      <section class="content" aria-labelledby="heading">
+        <p class="eyebrow">Account &amp; sync</p>
+        <h1 id="heading">Choose your iCloud account</h1>
+        <p id="description" class="description">
+          Continue to Apple to choose the account for your Cavalry workbooks.
+        </p>
+        <p id="account-note" class="account-note">
+          Your Mac stays signed in to its current Apple Account.
+        </p>
+        <div class="actions">
+          <button id="continue" type="button" disabled>Continue to Apple</button>
+          <button id="cancel" type="button" class="secondary" disabled>Cancel</button>
+        </div>
+        <p id="status" role="status" aria-live="polite">Connecting to Cavalry…</p>
+        <pre id="diagnostics" hidden></pre>
+        <noscript
+          ><p>JavaScript is required. Return to Cavalry and try signing in again.</p></noscript
+        >
+      </section>
+      <p id="footnote" class="footnote">This window closes after your sign-in reaches Cavalry.</p>
     </main>
   </body>
 </html>

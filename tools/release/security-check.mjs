@@ -20,6 +20,11 @@ export const knownReceiptSha256 =
 
 const allowedEmbeddedImages = new Map([
   [
+    // Exact existing Cavalry mark, bundled for the native sign-in page.
+    'apps/desktop/src/host/cloudkit-sign-in-presentation.json',
+    new Set(['12ddb323cdd4ed0094c49dc5eb79e16dd64fa15d4e4f6f5be84b83e8b2a2e122'])
+  ],
+  [
     'apps/mac/src/renderer/assets/institution-logos/cimb.svg',
     new Set([
       'e7d21436a34f67320ca9d858feb15a4bb7338bb639b9ff7f2108e5432e4c4ad9',

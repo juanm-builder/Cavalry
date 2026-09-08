@@ -89,6 +89,22 @@ describe('release security content scanner', () => {
     );
   });
 
+  it('allows only the existing Cavalry mark at the generated sign-in presentation path', () => {
+    const path = 'apps/desktop/src/host/cloudkit-sign-in-presentation.json';
+    const contents = readFileSync(resolve(path), 'utf8');
+    const mark = JSON.parse(contents).mark;
+    const original = readFileSync(resolve('apps/desktop/src/renderer/assets/cavalry-mark.png'));
+    expect(Buffer.from(mark.split(',')[1], 'base64')).toEqual(original);
+    expect(scanEmbeddedImages(path, contents)).toEqual([]);
+    expect(scanEmbeddedImages('docs/unreviewed-image.html', mark)).toEqual([
+      expect.objectContaining({ rule: 'unreviewed embedded data image' })
+    ]);
+    const changed = Buffer.concat([original, Buffer.from('unreviewed')]);
+    expect(scanEmbeddedImages(path, `data:image/png;base64,${changed.toString('base64')}`)).toEqual(
+      [expect.objectContaining({ rule: 'unreviewed embedded data image' })]
+    );
+  });
+
   it.each([
     '.env',
     'credentials.json',

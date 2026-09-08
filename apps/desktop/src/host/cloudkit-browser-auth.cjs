@@ -2,6 +2,7 @@
 
 const http = require('node:http');
 const crypto = require('node:crypto');
+const presentation = require('./cloudkit-sign-in-presentation.json');
 const {
   LOOPBACK_ORIGIN,
   CLOUDKIT_WEB_ORIGIN,
@@ -12,7 +13,7 @@ const {
 
 // Bump when the hosted entrypoint or its assets change so a cached HTML page
 // cannot keep an older authentication bridge after an app update.
-const SIGN_IN_PAGE_REVISION = '2';
+const SIGN_IN_PAGE_REVISION = '3';
 
 function browserPage({ nonce, redirectURL, diagnostics = false }) {
   const redirect = JSON.stringify(redirectURL).replace(/</g, '\\u003c');
@@ -22,10 +23,12 @@ function browserPage({ nonce, redirectURL, diagnostics = false }) {
     `${CLOUDKIT_SIGN_IN_URL}?v=${SIGN_IN_PAGE_REVISION}${diagnosticsEnabled ? '&diagnostics=1' : ''}#${nonce}`
   );
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Cavalry to iCloud</title>
-<style nonce="${nonce}">body{color:#f4f5f7;background:#0d0e10;font:16px system-ui;max-width:540px;margin:12vh auto;padding:32px}h1{font-size:28px}p{line-height:1.6;color:#b9bec7}button{background:#8da2c6;color:#0d0e10;border:0;border-radius:8px;padding:14px 22px;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.6}a{color:#8da2c6}#diagnostics{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#b9bec7}</style>
-<h1>Choose your iCloud account</h1><p>Open Cavalry’s secure sign-in page to choose the account Cavalry should use. This does not change the Apple Account on your Mac.</p><button id="continue">Open secure sign-in</button><p id="status" role="status">Keep this page open until you return to Cavalry.</p><pre id="diagnostics" hidden></pre><button id="cancel">Cancel</button>
+<style nonce="${nonce}">${presentation.style}</style>
+<body><main id="sign-in"><header class="brand"><img class="mark" src="${presentation.mark}" alt="" width="52" height="52"><div><strong>Cavalry</strong><small>For Mac</small></div></header>
+<section class="content" aria-labelledby="heading"><p class="eyebrow">Account &amp; sync</p><h1 id="heading">Choose your iCloud account</h1><p id="description" class="description">Open Cavalry’s secure sign-in window to choose the account for your workbooks.</p><p id="account-note" class="account-note">Your Mac stays signed in to its current Apple Account.</p><div class="actions"><button id="continue" type="button">Open secure sign-in</button><button id="cancel" type="button" class="secondary">Cancel</button></div><p id="status" role="status" aria-live="polite">Ready to connect to Apple.</p><pre id="diagnostics" hidden></pre></section><p id="footnote" class="footnote">Keep this tab open while you sign in.</p></main>
 <script nonce="${nonce}">
 let popup = null, phase = 'idle';
+let completionTimer, windowsClosed = false;
 const nonce = '${nonce}', bridgeOrigin = ${bridgeOrigin};
 const start = document.getElementById('continue'), status = document.getElementById('status');
 const cancelButton = document.getElementById('cancel');
@@ -58,6 +61,22 @@ function receiveDiagnostic(value) {
   diagnosticReport.textContent = 'Sign-in callback diagnostics (metadata only):\\n' + diagnosticRecords.join('\\n');
 }
 function closePopup() { try { if(popup) popup.close(); } catch {} }
+function closeCompletedWindows() {
+  if(phase !== 'done' || windowsClosed) return;
+  windowsClosed = true; clearTimeout(completionTimer); closePopup();
+  // Only this flow's popup and launcher are addressed. Some browsers forbid
+  // scripts from closing a launcher opened by a native app; keep a finished UI.
+  try { window.close(); } catch {}
+}
+function showCompleted() {
+  document.getElementById('sign-in').dataset.state = 'complete';
+  document.getElementById('heading').textContent = 'Sign-in received';
+  document.getElementById('description').textContent = 'Continue in Cavalry to check your account and library.';
+  document.getElementById('account-note').hidden = true;
+  document.getElementById('footnote').textContent = 'You can close this tab if your browser keeps it open.';
+  start.hidden = true; cancelButton.hidden = true;
+  status.textContent = 'Your sign-in has been handed back to Cavalry.';
+}
 function cancel(message) {
   if(phase === 'done' || phase === 'cancelled') return;
   const mayHaveBeenReceived = phase === 'submitting';
@@ -79,6 +98,9 @@ window.addEventListener('message', async event => {
   if(!popup || event.source !== popup || event.origin !== bridgeOrigin ||
      !event.data || event.data.nonce !== nonce) return;
   const data = event.data;
+  if(data.type === 'cavalry-icloud-finished' && phase === 'done') {
+    closeCompletedWindows(); return;
+  }
   if(data.type === 'cavalry-icloud-diagnostic') {
     receiveDiagnostic(data.diagnostic); return;
   }
@@ -100,9 +122,12 @@ window.addEventListener('message', async event => {
     if(phase !== 'submitting') return;
     if(!response.ok) throw new Error();
     phase = 'done';
-    popup.postMessage({type:'cavalry-icloud-received',nonce}, bridgeOrigin);
-    status.textContent='Sign-in received. Return to Cavalry to finish checking your library.';
-    cancelButton.hidden = true;
+    showCompleted();
+    // Older hosted bridges do not send the finished acknowledgment. Leave time
+    // for them to close Apple's popup before cleaning up their own window.
+    completionTimer = setTimeout(closeCompletedWindows, 1500);
+    try { popup.postMessage({type:'cavalry-icloud-received',nonce}, bridgeOrigin); }
+    catch { closeCompletedWindows(); }
   } catch {
     if(phase !== 'submitting') return;
     phase = 'cancelled'; closePopup();
@@ -117,7 +142,7 @@ setInterval(() => {
     cancel('Sign-in closed. Return to Cavalry and try again.');
 }, 500);
 window.addEventListener('pagehide', () => cancel('Sign-in closed.'));
-</script></html>`;
+</script></body></html>`;
 }
 
 // The HTTPS bridge receives Apple's popup callback, then hands it to this exact
@@ -150,12 +175,15 @@ async function authenticateInBrowser({
   void answer.catch(() => undefined);
   const server = http.createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
+    // Each sign-in has a short-lived listener on the same port. Do not let a
+    // browser reuse a pooled socket from the previous, already closed attempt.
+    response.setHeader('Connection', 'close');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     response.setHeader(
       'Content-Security-Policy',
-      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
+      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
     );
     if (request.headers.host !== '127.0.0.1:47639') {
       response.writeHead(403).end();

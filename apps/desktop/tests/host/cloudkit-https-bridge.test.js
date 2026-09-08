@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 
 // Keep the same protocol tests available to the repository suite and the small
@@ -19,12 +20,23 @@ function page(options = {}) {
   const timers = new Map();
   const intervals = new Map();
   const elements = Object.fromEntries(
-    ['continue', 'cancel', 'status', 'diagnostics'].map((id) => [
+    [
+      'continue',
+      'cancel',
+      'status',
+      'diagnostics',
+      'sign-in',
+      'heading',
+      'description',
+      'account-note',
+      'footnote'
+    ].map((id) => [
       id,
       {
         disabled: true,
         hidden: true,
         textContent: '',
+        dataset: {},
         listeners: new Map(),
         addEventListener(type, handler) {
           this.listeners.set(type, handler);
@@ -47,6 +59,11 @@ function page(options = {}) {
     }
   };
   const window = {
+    closeCount: 0,
+    close() {
+      this.closeCount += 1;
+      if (options.blockClose) throw new Error('Browser policy');
+    },
     opener: options.noOpener ? null : opener,
     location: new URL(
       `https://juanm-builder.github.io/Cavalry/icloud-sign-in/${options.search ?? ''}#${options.nonce ?? NONCE}`
@@ -76,7 +93,12 @@ function page(options = {}) {
   let timerID = 0;
   vm.runInNewContext(script, {
     window,
-    document: { getElementById: (id) => elements[id] },
+    document: {
+      getElementById: (id) =>
+        options.legacyDocument && !['continue', 'cancel', 'status', 'diagnostics'].includes(id)
+          ? null
+          : elements[id]
+    },
     URL,
     setTimeout(callback, delay) {
       const id = ++timerID;
@@ -366,16 +388,22 @@ test('only a matching local acknowledgment completes a submitted sign-in', () =>
   bridge.message(ack, LOCAL_ORIGIN, {});
   bridge.message({ ...ack, nonce: 'cd'.repeat(32) });
   assert.equal(bridge.popup.closeCount, 0);
+  assert.equal(bridge.window.closeCount, 0);
   bridge.message(ack);
   assert.equal(bridge.popup.closeCount, 1);
   assert.match(bridge.elements.status.textContent, /Sign-in received/);
   assert.equal(bridge.timers.size, 0);
   assert.equal(bridge.intervals.size, 0);
   assert.equal(bridge.events.size, 0);
+  assert.equal(bridge.window.closeCount, 1);
+  assert.deepEqual(bridge.outgoing.at(-1), {
+    data: { type: 'cavalry-icloud-finished', nonce: NONCE },
+    origin: LOCAL_ORIGIN
+  });
   bridge.init();
   bridge.click('continue');
   bridge.apple();
-  assert.equal(bridge.outgoing.length, 2);
+  assert.equal(bridge.outgoing.length, 3);
   assert.equal(bridge.opened.length, 1);
 });
 
@@ -400,7 +428,62 @@ test('cancel is terminal before initialization and while waiting for Apple', () 
     assert.equal(bridge.popup.closeCount, withPopup ? 1 : 0);
     assert.equal(bridge.timers.size, 0);
     assert.equal(bridge.events.size, 0);
+    assert.equal(bridge.window.closeCount, 0);
   }
+});
+
+test('a browser that refuses closure retains a complete screen without stale sign-in controls', () => {
+  const bridge = page({ blockClose: true });
+  bridge.init();
+  bridge.click('continue');
+  bridge.apple();
+  assert.equal(bridge.window.closeCount, 0);
+  bridge.message({ type: 'cavalry-icloud-received', nonce: NONCE });
+  assert.equal(bridge.window.closeCount, 1);
+  assert.equal(bridge.elements['sign-in'].dataset.state, 'complete');
+  assert.equal(bridge.elements.heading.textContent, 'Sign-in received');
+  assert.equal(bridge.elements.continue.hidden, true);
+  assert.equal(bridge.elements.cancel.hidden, true);
+  assert.match(bridge.elements.footnote.textContent, /You can close this window/);
+  assert.equal(bridge.events.size, 0);
+});
+
+test('a cached older document still completes and closes with the current bridge script', () => {
+  const bridge = page({ legacyDocument: true });
+  bridge.init();
+  bridge.click('continue');
+  bridge.apple();
+  bridge.message({ type: 'cavalry-icloud-received', nonce: NONCE });
+  assert.equal(bridge.popup.closeCount, 1);
+  assert.equal(bridge.window.closeCount, 1);
+  assert.equal(bridge.outgoing.at(-1).data.type, 'cavalry-icloud-finished');
+});
+
+test('both pages embed the current Cavalry mark and identical styles with fresh hosted asset revisions', () => {
+  const presentation = JSON.parse(
+    readFileSync(new URL('../../src/host/cloudkit-sign-in-presentation.json', import.meta.url))
+  );
+  const style = readFileSync(new URL('../../cloudkit-sign-in/style.css', import.meta.url), 'utf8');
+  const mark = readFileSync(new URL('../../src/renderer/assets/cavalry-mark.png', import.meta.url));
+  const hostedMark = readFileSync(
+    new URL('../../cloudkit-sign-in/cavalry-mark.png', import.meta.url)
+  );
+  assert.equal(
+    presentation.style,
+    style,
+    'Run scripts/prepare-cloudkit-sign-in.mjs after editing the page assets.'
+  );
+  assert.equal(presentation.mark, `data:image/png;base64,${mark.toString('base64')}`);
+  assert.deepEqual(hostedMark, mark);
+  for (const [name, content] of [
+    ['style.css', style],
+    ['bridge.js', script]
+  ]) {
+    const revision = createHash('sha256').update(content).digest('hex').slice(0, 12);
+    assert.ok(html.includes(`${name}?v=${revision}`), `Refresh the ${name} asset revision.`);
+  }
+  assert.match(html, /<img class="mark" src="\.\/cavalry-mark\.png"/);
+  assert.ok(html.includes("img-src 'self'"));
 });
 
 test('only the original local opener can cancel, including a submitted sign-in', () => {
