@@ -161,9 +161,41 @@
         redirectURL = validatedURL;
         phase = 'ready';
         start.disabled = false;
-        status.textContent = 'Continue to Apple to choose the account for your Cavalry workbooks.';
+        status.textContent = 'Ready to connect to Apple.';
       } else if (data.type === 'cavalry-icloud-received' && phase === 'submitted') {
+        // Preserve the request identity only long enough to acknowledge cleanup.
+        // finish() closes our Apple popup and invalidates all token listeners.
+        const completedNonce = nonce;
         finish('Sign-in received. Return to Cavalry to finish checking your library.');
+        // A cached older document can still fetch the current bridge script.
+        // Its missing presentation elements must never interrupt handoff cleanup.
+        const surface = document.getElementById('sign-in');
+        if (surface) surface.dataset.state = 'complete';
+        for (const [id, text] of [
+          ['heading', 'Sign-in received'],
+          ['description', 'Continue in Cavalry to check your account and library.'],
+          ['footnote', 'You can close this window if your browser keeps it open.']
+        ]) {
+          const element = document.getElementById(id);
+          if (element) element.textContent = text;
+        }
+        const accountNote = document.getElementById('account-note');
+        if (accountNote) accountNote.hidden = true;
+        start.hidden = true;
+        cancel.hidden = true;
+        try {
+          originalOpener.postMessage(
+            { type: 'cavalry-icloud-finished', nonce: completedNonce },
+            LOCAL_ORIGIN
+          );
+        } catch {
+          // The launcher may already have closed after receiving the sign-in.
+        }
+        try {
+          window.close();
+        } catch {
+          // A completed state remains visible if browser policy blocks closure.
+        }
       }
       return;
     }

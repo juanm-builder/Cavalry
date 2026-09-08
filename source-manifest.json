@@ -1,10 +1,11 @@
 {
   "sourceRepository": "https://github.com/juanm-builder/Cavalry",
-  "sourceBranch": "codex/icloud-account-selection",
-  "sourceCommit": "5e1f0ee97ef2f9a6726280808e9289c36ed5c2fe",
+  "sourceBranch": "codex/icloud-sync-request-failure",
+  "sourceCommit": "8567dfbefa8594fe3730cdd87ed3da8b0ecc2f7f",
   "files": {
-    "index.html": "279ddabf60c93cab0dde3dea4cd1d92a6c80d0ef6155ab6029823494fc6e4463",
-    "bridge.js": "e147313aeb290e55c8e9ee8c1a5b58105ffc23a2d5e8d794f9289b2d49a9fb55",
-    "style.css": "20175fc921c3d8e61d25a991ab7fbbc0d41edcb767e304fa3a53cd2f4ba8a66e"
+    "index.html": "43e34315acbcfa8190e629d5cdc8556739cbc210a87992719b31de9f75af68f5",
+    "bridge.js": "212b75ce2c06f869bafb8b62264f1d054d0c668888d1766f366be933b78d824d",
+    "style.css": "6802eb3dfce96737acabb7914013a04c8d8dd42e22b2cb6d7d7d5400df2a7476",
+    "cavalry-mark.png": "12ddb323cdd4ed0094c49dc5eb79e16dd64fa15d4e4f6f5be84b83e8b2a2e122"
   }
 }
