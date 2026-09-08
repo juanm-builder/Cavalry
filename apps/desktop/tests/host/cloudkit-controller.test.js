@@ -283,8 +283,7 @@ describe('native CloudKit workbook boundary', () => {
     ).resolves.toEqual({
       ok: false,
       code: 'cloud_workbook_not_found',
-      error: 'That workbook is no longer in iCloud.',
-      retryable: false
+      error: 'That workbook is no longer in iCloud.'
     });
   });
 
@@ -303,8 +302,7 @@ describe('native CloudKit workbook boundary', () => {
       ok: false,
       code: 'workbook_revision_conflict',
       error: 'Changed on another device.',
-      conflict: true,
-      retryable: false
+      conflict: true
     });
     expect(request).toHaveBeenCalledOnce();
   });
@@ -338,6 +336,26 @@ describe('native CloudKit workbook boundary', () => {
       }
     );
   });
+
+  it.each([undefined, false, true])(
+    'preserves the native retry decision %s without inventing one',
+    async (retryable) => {
+      const controller = createCloudWorkbookController({
+        cloudKit: {
+          request: vi.fn(async () => ({
+            ok: false,
+            code: 'cloudkit_request_failed',
+            error: 'Saved locally; upload failed.',
+            ...(retryable === undefined ? {} : { retryable })
+          }))
+        }
+      });
+      const result = await controller.uploadWorkbook({ workbook: workbookFixture() });
+      expect(result).toMatchObject({ ok: false, code: 'cloudkit_request_failed' });
+      if (retryable === undefined) expect(result).not.toHaveProperty('retryable');
+      else expect(result.retryable).toBe(retryable);
+    }
+  );
 
   it('surfaces a same-revision native conflict in library metadata', async () => {
     const controller = createCloudWorkbookController({

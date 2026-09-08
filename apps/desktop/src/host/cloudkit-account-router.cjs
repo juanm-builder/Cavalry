@@ -12,10 +12,11 @@ const {
   validSessionToken
 } = require('./cloudkit-web-api.cjs');
 const { authenticateInBrowser } = require('./cloudkit-browser-auth.cjs');
-const { createCloudKitWebLibrary } = require('./cloudkit-web-library.cjs');
+const { createCloudKitWebLibrary, cloudKitFailure } = require('./cloudkit-web-library.cjs');
 
 const MUTATIONS = new Set(['save', 'delete', 'publish_conflict', 'clear_conflict']);
 const ACCOUNT_OPERATIONS = new Set(['status', 'sync', 'set_connection']);
+const MAX_SAVE_RECEIPTS = 256;
 const failure = (code, error, extra = {}) => ({ ok: false, code, error, ...extra });
 const validOwner = (value) =>
   typeof value === 'string' &&
@@ -23,6 +24,33 @@ const validOwner = (value) =>
   value.length <= 256 &&
   !/[\u0000-\u0020\u007f]/.test(value);
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const boundedText = (value, maximum) =>
+  typeof value === 'string' && value.length <= maximum && !/[\u0000-\u001f\u007f]/.test(value)
+    ? value
+    : '';
+
+function failureFields(result, payload) {
+  const scope = cloudKitFailure({ code: result.code }, payload || {});
+  const errorOperation =
+    scope.errorOperation ||
+    (['upload', 'delete', 'open', 'conflict', 'refresh'].includes(result.errorOperation)
+      ? result.errorOperation
+      : '');
+  const errorWorkbookId =
+    scope.errorWorkbookId ||
+    (typeof result.errorWorkbookId === 'string' &&
+    /^[A-Za-z0-9._:-]{1,128}$/.test(result.errorWorkbookId)
+      ? result.errorWorkbookId
+      : '');
+  return {
+    error: boundedText(result.error, 512) || scope.error,
+    code: boundedText(result.code, 96) || scope.code,
+    errorDetails: boundedText(result.errorDetails, 1024),
+    retryable: result.retryable === true,
+    ...(errorOperation ? { errorOperation } : {}),
+    ...(errorWorkbookId ? { errorWorkbookId } : {})
+  };
+}
 
 async function readCloudKitWebConfig(userDataDir) {
   // This is a public container API token, not an Apple password or server key.
@@ -63,6 +91,19 @@ function createCloudKitAccountRouter(options) {
   let initialization;
   let authenticationController;
   let authenticationCommitting = false;
+  const acknowledgedSaves = new Map();
+
+  function savedFor(owner) {
+    return [...acknowledgedSaves.values()].filter((entry) => entry.userId === owner);
+  }
+
+  function rememberSaved(receipt) {
+    const key = JSON.stringify([receipt.userId, receipt.workbookId]);
+    acknowledgedSaves.delete(key);
+    acknowledgedSaves.set(key, { ...receipt });
+    if (acknowledgedSaves.size > MAX_SAVE_RECEIPTS)
+      acknowledgedSaves.delete(acknowledgedSaves.keys().next().value);
+  }
 
   async function initialize() {
     if (!initialization)
@@ -159,7 +200,11 @@ function createCloudKitAccountRouter(options) {
     });
     const identity = await api('users/current');
     if (identity.userRecordName !== session.userId)
-      throw new Error('The iCloud account changed. Choose the account again before syncing.');
+      throw Object.assign(
+        new Error('The iCloud account changed. Choose the account again before syncing.'),
+        { code: 'icloud_account_changed' }
+      );
+    await restoreSaved(session.userId);
     const library = makeLibrary({ api, fetch: options.fetch, now: options.now });
     return { session, library };
   }
@@ -187,6 +232,112 @@ function createCloudKitAccountRouter(options) {
     )
       throw new Error('Unsent iCloud changes are unreadable. Existing copies were kept.');
     return state;
+  }
+
+  function receiptsKey(owner) {
+    return `save-receipts:${CONTAINER}:${ENVIRONMENT}:${owner}`;
+  }
+
+  function validReceipt(receipt, owner) {
+    return (
+      receipt &&
+      receipt.userId === owner &&
+      validOwner(owner) &&
+      typeof receipt.id === 'string' &&
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(receipt.id) &&
+      typeof receipt.workbookId === 'string' &&
+      /^[A-Za-z0-9._:-]{1,128}$/.test(receipt.workbookId) &&
+      Number.isSafeInteger(receipt.revision) &&
+      receipt.revision > 0
+    );
+  }
+
+  async function receiptsFor(owner) {
+    const stored = await storage.read(receiptsKey(owner));
+    if (stored == null) return [];
+    if (
+      stored.version !== 1 ||
+      stored.container !== CONTAINER ||
+      stored.environment !== ENVIRONMENT ||
+      stored.userId !== owner ||
+      !Array.isArray(stored.receipts) ||
+      stored.receipts.length > MAX_SAVE_RECEIPTS ||
+      stored.receipts.some((receipt) => !validReceipt(receipt, owner)) ||
+      new Set(stored.receipts.map((receipt) => receipt.workbookId)).size !==
+        stored.receipts.length ||
+      new Set(stored.receipts.map((receipt) => receipt.id)).size !== stored.receipts.length
+    )
+      throw new Error('Saved iCloud acknowledgments are unreadable. Existing copies were kept.');
+    // Reconstruct the metadata allowlist; no token or workbook payload belongs here.
+    return stored.receipts.map(({ id, userId, workbookId, revision }) => ({
+      id,
+      userId,
+      workbookId,
+      revision
+    }));
+  }
+
+  async function restoreSaved(owner) {
+    const receipts = await receiptsFor(owner);
+    const pending = new Map((await pendingFor(owner)).map((item) => [item.id, item]));
+    for (const receipt of receipts) {
+      const item = pending.get(receipt.id);
+      if (item && (item.operation !== 'save' || item.workbookId !== receipt.workbookId))
+        throw new Error(
+          'A saved iCloud acknowledgment does not match its pending workbook. Existing copies were kept.'
+        );
+    }
+    for (const [key, receipt] of acknowledgedSaves)
+      if (receipt.userId === owner) acknowledgedSaves.delete(key);
+    for (const receipt of receipts) if (!pending.has(receipt.id)) rememberSaved(receipt);
+  }
+
+  async function receiptHistoryForSave(owner, item) {
+    const receipts = (await receiptsFor(owner)).filter(
+      (receipt) => receipt.workbookId !== item.workbookId
+    );
+    const pendingIds = new Set((await pendingFor(owner)).map((entry) => entry.id));
+    while (receipts.length >= MAX_SAVE_RECEIPTS) {
+      // A persisted receipt may be the only proof of a completed remote save
+      // whose local pointer removal was interrupted. Never evict that proof.
+      const oldest = receipts.findIndex((receipt) => !pendingIds.has(receipt.id));
+      if (oldest < 0)
+        throw new Error('Finish pending iCloud acknowledgments before saving more workbooks.');
+      receipts.splice(oldest, 1);
+    }
+    return receipts;
+  }
+
+  async function commitMutation(owner, item, result, history) {
+    let receipt;
+    if (item.operation === 'save') {
+      receipt = {
+        id: item.id,
+        userId: owner,
+        workbookId: result.metadata?.id,
+        revision: result.metadata?.revision
+      };
+      if (
+        result.pending === true ||
+        !validReceipt(receipt, owner) ||
+        receipt.workbookId !== item.workbookId
+      )
+        throw new Error(
+          'The saved iCloud workbook could not be verified. Existing copies were kept.'
+        );
+      // The existing encrypted storage fsyncs this receipt before the outbox
+      // pointer is removed. A restart can finish that local acknowledgment
+      // without issuing the already committed remote save a second time.
+      await storage.write(receiptsKey(owner), {
+        version: 1,
+        container: CONTAINER,
+        environment: ENVIRONMENT,
+        userId: owner,
+        receipts: [...history, receipt]
+      });
+    }
+    await acknowledge(owner, item.id);
+    if (receipt) rememberSaved(receipt);
   }
 
   async function stage(owner, payload) {
@@ -237,13 +388,27 @@ function createCloudKitAccountRouter(options) {
         stored.payload?.operation !== item.operation
       )
         throw new Error('An unsent workbook could not be verified. Existing copies were kept.');
+      const receipt =
+        item.operation === 'save'
+          ? (await receiptsFor(owner)).find(
+              (entry) => entry.id === item.id && entry.workbookId === item.workbookId
+            )
+          : null;
+      if (receipt) {
+        await acknowledge(owner, item.id);
+        rememberSaved(receipt);
+        continue;
+      }
+      const history = item.operation === 'save' ? await receiptHistoryForSave(owner, item) : null;
       const result = await context.library.request(stored.payload);
       if (!result.ok) {
-        firstFailure ||= result;
+        firstFailure ||= { ...result, ...failureFields(result, stored.payload) };
         blockedWorkbooks.add(item.workbookId);
         if (['icloud_authentication_required', 'cloud_session_save_failed'].includes(result.code))
           break;
-      } else await acknowledge(owner, item.id);
+      } else {
+        await commitMutation(owner, item, result, history);
+      }
     }
     return firstFailure || { ok: true };
   }
@@ -257,6 +422,7 @@ function createCloudKitAccountRouter(options) {
         userId: selection.signedOut ? null : selection.userId
       },
       ...details(),
+      workbookSaveAcknowledgements: savedFor(selection.userId),
       ...extra
     };
   }
@@ -346,23 +512,33 @@ function createCloudKitAccountRouter(options) {
     try {
       context = await browserContext();
     } catch (error) {
-      const code = error.code || 'cloud_account_unavailable';
+      const failed = cloudKitFailure(error, payload);
       return {
         ...browserStatus(),
+        ...failed,
+        ...(staged?.operation === 'save' ? { saveOperationId: staged.id } : {}),
         ok: payload.operation === 'status',
         account: {
-          status: AUTH_ERRORS.has(code) ? 'no_account' : 'could_not_determine',
+          status:
+            failed.code === 'icloud_authentication_required' ? 'no_account' : 'could_not_determine',
           userId: null
         },
-        code,
-        error: error.message,
         pendingCount: (await pendingFor(selection.userId)).length
       };
     }
     if (MUTATIONS.has(payload.operation)) {
+      const history =
+        payload.operation === 'save' ? await receiptHistoryForSave(selection.userId, staged) : null;
       const result = await context.library.request(payload);
-      if (result.ok) await acknowledge(selection.userId, staged.id);
-      return { ...result, pendingCount: (await pendingFor(selection.userId)).length };
+      if (result.ok) {
+        await commitMutation(selection.userId, staged, result, history);
+      }
+      return {
+        ...result,
+        ...(!result.ok ? failureFields(result, payload) : {}),
+        ...(payload.operation === 'save' ? { saveOperationId: staged.id } : {}),
+        pendingCount: (await pendingFor(selection.userId)).length
+      };
     }
     if (['status', 'sync', 'list'].includes(payload.operation)) {
       const flushed = await flush(context);
@@ -370,15 +546,16 @@ function createCloudKitAccountRouter(options) {
       if (payload.operation === 'status')
         return browserStatus({
           pendingCount,
-          ...(!flushed.ok ? { error: flushed.error, code: flushed.code } : {})
+          ...(!flushed.ok ? failureFields(flushed) : {})
         });
       const result = await context.library.request(
         payload.operation === 'sync' ? { operation: 'list' } : payload
       );
       return {
         ...result,
+        workbookSaveAcknowledgements: savedFor(selection.userId),
         pendingCount,
-        ...(!flushed.ok ? { error: flushed.error, code: flushed.code } : {})
+        ...(result.ok && !flushed.ok ? failureFields(flushed) : {})
       };
     }
     return context.library.request(payload);

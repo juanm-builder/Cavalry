@@ -1,7 +1,10 @@
 // Owns renderer-safe iCloud state while native CKSyncEngine handles transport and retries.
 'use strict';
 
-const { createCloudWorkbookController } = require('./cloud-workbook-controller.cjs');
+const {
+  createCloudWorkbookController,
+  normalizeSaveAcknowledgements
+} = require('./cloud-workbook-controller.cjs');
 
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
@@ -49,6 +52,7 @@ function createCloudController(dependencies = {}) {
   let workbooks = [];
   let pendingCount = 0;
   let lastSyncAt = '';
+  let workbookSaveAcknowledgements = [];
   let stateError = '';
   let stateErrorCode = '';
   let stateErrorDetails = '';
@@ -183,6 +187,7 @@ function createCloudController(dependencies = {}) {
       workbooks: workbooks.map((workbook) => ({ ...workbook })),
       pendingCount,
       lastSyncAt,
+      ...(workbookSaveAcknowledgements.length ? { workbookSaveAcknowledgements } : {}),
       ...(dependencies.cloudKit?.details?.() || {}),
       error: accountMessage(),
       errorCode: stateErrorCode,
@@ -241,9 +246,13 @@ function createCloudController(dependencies = {}) {
       sessionGeneration += 1;
       workbooks = [];
       workbookChange = null;
+      workbookSaveAcknowledgements = [];
     }
     account = next;
     cloudEnvironment = nextCloudEnvironment;
+    workbookSaveAcknowledgements = normalizeSaveAcknowledgements(
+      result.workbookSaveAcknowledgements
+    ).filter((entry) => entry.userId === account.userId);
     pendingCount = Number.isSafeInteger(Number(result.pendingCount))
       ? Number(result.pendingCount)
       : pendingCount;
@@ -258,6 +267,11 @@ function createCloudController(dependencies = {}) {
   }
 
   function applyLibrary(result) {
+    if (Array.isArray(result?.workbookSaveAcknowledgements)) {
+      workbookSaveAcknowledgements = normalizeSaveAcknowledgements(
+        result.workbookSaveAcknowledgements
+      ).filter((entry) => entry.userId === account.userId);
+    }
     if (!(result && result.ok)) {
       stateError = text(result && result.error) || 'iCloud workbooks could not be loaded.';
       stateErrorCode = text(result && result.code, 96);

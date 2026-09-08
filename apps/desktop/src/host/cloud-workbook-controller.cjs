@@ -149,6 +149,25 @@ function isSafeWorkbookId(value) {
   );
 }
 
+function normalizeSaveAcknowledgements(value) {
+  return (Array.isArray(value) ? value : [])
+    .slice(-256)
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry.id === 'string' &&
+        /^[a-z0-9-]{36}$/.test(entry.id) &&
+        typeof entry.userId === 'string' &&
+        entry.userId.length > 0 &&
+        entry.userId.length <= 256 &&
+        !/[\u0000-\u0020\u007f]/.test(entry.userId) &&
+        isSafeWorkbookId(entry.workbookId) &&
+        Number.isSafeInteger(entry.revision) &&
+        entry.revision > 0
+    )
+    .map(({ id, userId, workbookId, revision }) => ({ id, userId, workbookId, revision }));
+}
+
 function normalizeExpectedRevision(value) {
   if (value == null || value === '') return null;
   const revision = Number(value);
@@ -169,7 +188,18 @@ function nativeFailure(result, fallbackCode, fallbackMessage) {
       ...(errorDetails ? { errorDetails } : {}),
       ...(errorOperation ? { errorOperation } : {}),
       ...(errorWorkbookId ? { errorWorkbookId } : {}),
-      retryable: source.retryable === true
+      ...(Array.isArray(source.workbookSaveAcknowledgements)
+        ? {
+            workbookSaveAcknowledgements: normalizeSaveAcknowledgements(
+              source.workbookSaveAcknowledgements
+            )
+          }
+        : {}),
+      ...(typeof source.saveOperationId === 'string' &&
+      /^[a-z0-9-]{36}$/.test(source.saveOperationId)
+        ? { saveOperationId: source.saveOperationId }
+        : {}),
+      ...(typeof source.retryable === 'boolean' ? { retryable: source.retryable } : {})
     }
   );
 }
@@ -232,6 +262,9 @@ function createCloudWorkbookController(dependencies = {}) {
         ? Number(result.pendingCount)
         : 0,
       lastSyncAt: text(result.lastSyncAt, 64),
+      workbookSaveAcknowledgements: normalizeSaveAcknowledgements(
+        result.workbookSaveAcknowledgements
+      ),
       error: text(result.error, 512),
       errorCode: text(result.code, 96),
       errorDetails: text(result.errorDetails, 1024),
@@ -559,5 +592,6 @@ module.exports = {
   createCloudWorkbookController,
   isSafeWorkbookId,
   normalizeConflictNotice,
-  normalizeCloudWorkbookMetadata
+  normalizeCloudWorkbookMetadata,
+  normalizeSaveAcknowledgements
 };
