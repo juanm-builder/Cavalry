@@ -1,7 +1,7 @@
 {
   "sourceRepository": "https://github.com/juanm-builder/Cavalry",
   "sourceBranch": "codex/icloud-sync-request-failure",
-  "sourceCommit": "8567dfbefa8594fe3730cdd87ed3da8b0ecc2f7f",
+  "sourceCommit": "006aead705afb991e3958257e04707aa0fc1968b",
   "files": {
     "index.html": "43e34315acbcfa8190e629d5cdc8556739cbc210a87992719b31de9f75af68f5",
     "bridge.js": "212b75ce2c06f869bafb8b62264f1d054d0c668888d1766f366be933b78d824d",
