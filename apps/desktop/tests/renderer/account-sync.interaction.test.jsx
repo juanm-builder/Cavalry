@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ActionBindingProvider } from '../../src/renderer/shared/action-binding.jsx';
 import { CloudAccountPanel } from '../../src/renderer/features/settings/CloudAccountPanel.jsx';
+import { buildCloudSettingsModel } from '../../src/renderer/app/cloud-workbook-model.js';
 
 const connected = {
   status: 'signed_in',
@@ -177,6 +178,54 @@ describe('Account and sync settings', () => {
     expect(screen.getByText(label)).toBeTruthy();
     if (localSave.status !== 'saved') expect(screen.queryByText('Saved on this Mac')).toBeNull();
     if (localSave.status !== 'saved') expect(screen.queryByText('Saved to iCloud')).toBeNull();
+    if (['saving', 'dirty'].includes(localSave.status)) {
+      expect(screen.queryByText('Synced')).toBeNull();
+      expect(
+        within(screen.getByRole('region', { name: 'Current workbook' })).getByText('Waiting')
+      ).toBeTruthy();
+    }
+  });
+
+  it('shows a failed save as needing attention while retaining the last confirmed cloud date', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    const cloudUpdatedAt = '2026-09-03T04:09:00Z';
+    show({
+      onAction,
+      cloud: buildCloudSettingsModel(
+        {
+          ...connected,
+          configured: true,
+          workbooks: [
+            { id: 'plan', name: 'Household 2026', revision: 3, updatedAt: cloudUpdatedAt }
+          ]
+        },
+        { id: 'plan' },
+        {
+          error: 'iCloud is temporarily unavailable. Your work is saved on this device.',
+          errorCode: 'cloudkit_request_failed',
+          errorOperation: 'upload',
+          errorWorkbookId: 'plan'
+        }
+      ),
+      localSave: { status: 'saved', lastSavedAt: '2026-09-06T03:26:00Z' }
+    });
+    const current = screen.getByRole('region', { name: 'Current workbook' });
+    expect(within(current).getByText('Needs attention')).toBeTruthy();
+    expect(within(current).getByText('iCloud needs attention')).toBeTruthy();
+    expect(within(current).getByText('Saved on this Mac')).toBeTruthy();
+    expect(within(current).queryByText('Synced')).toBeNull();
+    expect(within(current).queryByText('Saved to iCloud')).toBeNull();
+    expect(current.querySelector(`time[datetime="${cloudUpdatedAt}"]`)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Retry Sync' }));
+    expect(onAction).toHaveBeenCalledWith({ type: 'upload-current-workbook', payload: {} });
+  });
+
+  it('does not infer unsaved cloud edits solely from a newer local save timestamp', () => {
+    show({ localSave: { status: 'saved', lastSavedAt: '2026-09-06T03:26:00Z' } });
+    const current = screen.getByRole('region', { name: 'Current workbook' });
+    expect(within(current).getByText('Synced')).toBeTruthy();
+    expect(within(current).getByText('Saved to iCloud')).toBeTruthy();
   });
 
   it('offers real recovery entries and retains an actionable error when opening fails', async () => {

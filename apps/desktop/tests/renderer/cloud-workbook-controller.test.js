@@ -2,10 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCloudSettingsModel,
+  isRetryableAutomaticSyncFailure,
   normalizeCloudState
 } from '../../src/renderer/app/use-cloud-workbook-controller.js';
 
 describe('cloud workbook controller model', () => {
+  it.each([
+    [{ ok: false, code: 'cloudkit_request_rejected' }, false],
+    [{ ok: false, code: 'cloudkit_unknown_error' }, false],
+    [{ ok: false, code: 'future_permanent_error', retryable: false }, false],
+    [{ ok: false, code: 'cloud_upload_failed', retry: false }, false],
+    [{ ok: false, code: 'cloud_upload_failed' }, true],
+    [{ ok: false, code: 'cloudkit_request_failed', retryable: true }, true],
+    [{ ok: false, code: 'cloud_upload_failed', state: { errorRetryable: false } }, true],
+    [{ ok: false, code: 'workbook_revision_conflict', retryable: true }, false],
+    [{ ok: true, retryable: true }, false]
+  ])('preserves explicit retry policy and legacy transient fallback for %j', (result, expected) => {
+    expect(isRetryableAutomaticSyncFailure(result)).toBe(expected);
+  });
+
   it('normalizes only renderer-safe account and workbook metadata', () => {
     const state = normalizeCloudState({
       configured: true,
@@ -197,9 +212,78 @@ describe('cloud workbook controller model', () => {
       errorWorkbookId: 'workbook-1',
       failedOperation: 'upload',
       failedWorkbookId: 'workbook-1',
-      current: { linked: false, status: 'local_only' },
+      current: { linked: false, status: 'attention' },
       workbooks: []
     });
+  });
+
+  it.each(['ui', 'host'])(
+    'does not call an older listed copy synced after a %s workbook save failure',
+    (source) => {
+      const failure = {
+        error: 'iCloud is temporarily unavailable.',
+        errorCode: 'cloudkit_request_failed',
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-1'
+      };
+      const model = buildCloudSettingsModel(
+        {
+          configured: true,
+          status: 'signed_in',
+          workbooks: [
+            {
+              id: 'workbook-1',
+              name: 'Home',
+              revision: 2,
+              updatedAt: '2026-09-03T04:09:00Z'
+            }
+          ],
+          ...(source === 'host' ? failure : {})
+        },
+        { id: 'workbook-1', name: 'Home' },
+        source === 'ui' ? failure : {}
+      );
+      expect(model.current).toMatchObject({
+        linked: true,
+        status: 'attention',
+        revision: 2,
+        cloudUpdatedAt: '2026-09-03T04:09:00Z'
+      });
+    }
+  );
+
+  it('shows an active retry while retaining the previous current-workbook failure', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [{ id: 'workbook-1', revision: 2 }],
+        error: 'iCloud is temporarily unavailable.',
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-1'
+      },
+      { id: 'workbook-1' },
+      { autoSyncPhase: 'retrying' }
+    );
+    expect(model.current.status).toBe('retrying');
+  });
+
+  it('does not project a UI failure identified only by errorWorkbookId onto another workbook', () => {
+    const model = buildCloudSettingsModel(
+      {
+        configured: true,
+        status: 'signed_in',
+        workbooks: [{ id: 'workbook-2', name: 'Business', revision: 2 }]
+      },
+      { id: 'workbook-2', name: 'Business' },
+      {
+        error: 'Home failed to upload.',
+        errorOperation: 'upload',
+        errorWorkbookId: 'workbook-1'
+      }
+    );
+    expect(model.error).toBe('');
+    expect(model.current.status).toBe('synced');
   });
 
   it('does not project a workbook-scoped UI failure onto another workbook', () => {
@@ -267,7 +351,7 @@ describe('cloud workbook controller model', () => {
       errorCode: 'cloud_delete_failed',
       errorOperation: 'delete',
       errorWorkbookId: 'workbook-2',
-      current: { workbookId: 'workbook-1' }
+      current: { workbookId: 'workbook-1', status: 'synced' }
     });
   });
 

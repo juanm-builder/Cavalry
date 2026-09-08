@@ -450,6 +450,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
   const localStatus = asString(localSave.status);
   const locallySaved = localStatus === 'saved';
   const locallyPending = ['saving', 'dirty'].includes(localStatus);
+  const localChangesWaiting = linked && autoSyncEnabled && locallyPending;
   const localLabel = locallySaved
     ? 'Saved on this Mac'
     : localStatus === 'saving'
@@ -477,7 +478,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           ? { label: 'Retrying', tone: 'info', icon: 'sync' }
           : uploading
             ? { label: 'Syncing', tone: 'info', icon: 'cloud_upload' }
-            : queued
+            : queued || localChangesWaiting
               ? { label: 'Waiting', tone: 'info', icon: 'cloud_upload' }
               : linked && autoSyncEnabled
                 ? { label: 'Synced', tone: 'good', icon: 'cloud_done' }
@@ -494,13 +495,15 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           ? 'Waiting for iCloud'
           : uploading
             ? 'Saving to iCloud'
-            : queued
-              ? 'Waiting for iCloud'
-              : linked && cloudUpdatedAt
-                ? `Updated ${cloudUpdatedAt}`
-                : linked
-                  ? 'Available on your Apple devices'
-                  : 'Not in iCloud';
+            : localChangesWaiting
+              ? 'Waiting for local save'
+              : queued
+                ? 'Waiting for iCloud'
+                : linked && cloudUpdatedAt
+                  ? `Updated ${cloudUpdatedAt}`
+                  : linked
+                    ? 'Available on your Apple devices'
+                    : 'Not in iCloud';
 
   const runConfirmedAction = async () => {
     const result =

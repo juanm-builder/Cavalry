@@ -4,7 +4,9 @@ import {
   asObject,
   asString,
   errorDetailsFromResult,
-  errorMessageFromResult
+  errorMessageFromResult,
+  isCloudWorkbookSyncError,
+  isRetryableAutomaticSyncFailure
 } from './cloud-workbook-model.js';
 
 const EMPTY_AUTO_SYNC_STATUS = Object.freeze({
@@ -88,12 +90,13 @@ export function useCloudWorkbookAutoSyncStatus({
                 error: errorMessageFromResult(result) || 'iCloud autosave could not finish.',
                 errorCode: asString(result.code) || 'cloud_upload_failed',
                 errorDetails: errorDetailsFromResult(result),
-                errorRetryable: true,
+                errorRetryable: isRetryableAutomaticSyncFailure(result),
                 errorOperation: 'upload',
                 errorWorkbookId: status.workbookId,
                 failedOperation: 'upload',
                 failedWorkbookId: status.workbookId,
-                errorStateSyncAt: asString(stateRef.current.lastSyncAt)
+                errorStateSyncAt: asString(stateRef.current.lastSyncAt),
+                errorSaveOperationId: asString(result.saveOperationId)
               }
         );
         return;
@@ -101,8 +104,10 @@ export function useCloudWorkbookAutoSyncStatus({
 
       if (result.ok === true) {
         setUiState((current) =>
-          current.automaticSyncError === true &&
-          asString(current.errorWorkbookId || current.failedWorkbookId) === status.workbookId
+          isCloudWorkbookSyncError(current, status.workbookId) &&
+          ['upload', 'keep-local', 'reconcile'].includes(
+            asString(current.errorOperation || current.failedOperation)
+          )
             ? { ...emptyCloudUiState, pendingOperation: current.pendingOperation }
             : current
         );

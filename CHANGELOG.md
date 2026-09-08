@@ -2,6 +2,36 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.11 - 2026-09-08
+
+### Fixed
+
+- Browser-selected iCloud accounts can save workbook updates again. Mac requests now use the
+  correct asset identifier and explicit encrypted field types that Apple accepts; the previous
+  request format was rejected after the file upload had succeeded.
+- A failed workbook upload shows **Needs attention**, while unsaved local edits show **Waiting**.
+  Refreshing the library cannot mark a failed upload as synced. Confirmed dates remain visible,
+  and a successful retry or acknowledgment for that workbook clears its error.
+- Error details identify the failed request and safe Apple error code without exposing account
+  credentials or workbook contents. Permanent failures stop the current autosave retry schedule;
+  temporary network and transfer failures remain retryable. Pending work stays saved locally for
+  later sync attempts, including background library refreshes.
+- Both browser sign-in pages use Cavalry's Mac colors, typography, and original logo. After a
+  successful handoff, the sign-in popups close automatically. A browser that prevents the original
+  tab from closing shows a completed page with its sign-in actions removed.
+
+### Compatibility and draft release notes
+
+- The local workbook format, recovery history, CloudKit container, and account selection are
+  unchanged. Failed browser uploads are retried from the existing saved queue using the corrected
+  request format; users do not need to recreate or move their workbooks.
+- Controlled Production tests reproduced the original rejection and verified corrected create,
+  update, download, conflict-copy publish/download/clear, and deletion using disposable workbooks.
+  Downloaded workbook bytes matched their source. Existing customer workbooks were not opened.
+- This correction is specific to the Mac browser connection and its sign-in UI. No iPhone code
+  change or additional TestFlight build is required. The user reports matching accounts and files;
+  acceptance of this update on the affected devices remains to be confirmed.
+
 ## 2.2.10 - 2026-09-06
 
 ### Added

@@ -12,6 +12,12 @@ import { createDurableCloudWorkbookSyncStorage } from './durable-cloud-workbook-
 import { useCloudWorkbookAutomaticSync } from './use-cloud-workbook-automatic-sync.js';
 import { useCloudWorkbookAutoSyncStatus } from './use-cloud-workbook-auto-sync-status.js';
 import { useCloudWorkbookOperations } from './use-cloud-workbook-operations.js';
+import {
+  isCloudWorkbookSyncReady,
+  useCloudWorkbookSaveAcknowledgement
+} from './use-cloud-workbook-save-acknowledgement.js';
+import { useCloudWorkbookMergePersistence } from './use-cloud-workbook-merge-persistence.js';
+import { useCloudWorkbookRemoteState } from './use-cloud-workbook-remote-state.js';
 import { reconcileCloudWorkbookBranches } from './cloud-workbook-branch-reconciler.js';
 import { useCloudWorkbookConflictEffects } from './cloud-workbook-conflict-effects.js';
 import { useCloudWorkbookConflictState } from './use-cloud-workbook-conflict-state.js';
@@ -45,6 +51,7 @@ const EMPTY_CLOUD_UI_STATE = Object.freeze({
   errorWorkbookId: '',
   errorWorkbookName: '',
   errorStateSyncAt: '',
+  errorSaveOperationId: '',
   failedOperation: '',
   failedWorkbookId: '',
   automaticSyncError: false
@@ -211,41 +218,17 @@ export function useCloudWorkbookController({
     setConflictedWorkbookIds(nextConflicts);
   }, [cloudState.workbooks]);
 
-  const applyRemoteState = useCallback((value) => {
-    const normalized = normalizeCloudState(value);
-    const nextAccount = asString(normalized.user?.id);
-    const previousAccount = lastAccountRef.current;
-    if (nextAccount && previousAccount && nextAccount !== previousAccount) {
-      autoSyncSchedulerRef.current?.cancelPending();
-      const currentWorkbookId = asString(workbookRef.current?.id);
-      accountBoundaryRef.current = currentWorkbookId
-        ? {
-            userId: nextAccount,
-            workbookId: currentWorkbookId
-          }
-        : null;
-      setAccountBoundary(accountBoundaryRef.current);
-    }
-    if (nextAccount) lastAccountRef.current = nextAccount;
-    stateRef.current = normalized;
-    setCloudState(normalized);
-    if (!normalized.error && normalized.lastSyncAt) {
-      setUiState((current) => {
-        if (
-          !current.error ||
-          !current.errorRetryable ||
-          current.errorStateSyncAt === normalized.lastSyncAt
-        ) {
-          return current;
-        }
-        return {
-          ...EMPTY_CLOUD_UI_STATE,
-          pendingOperation: current.pendingOperation
-        };
-      });
-    }
-    return normalized;
-  }, []);
+  const applyRemoteState = useCloudWorkbookRemoteState({
+    stateRef,
+    lastAccountRef,
+    autoSyncSchedulerRef,
+    workbookRef,
+    accountBoundaryRef,
+    setAccountBoundary,
+    setCloudState,
+    setUiState,
+    emptyState: EMPTY_CLOUD_UI_STATE
+  });
 
   const invoke = useCallback(
     async (command, payload) => {
@@ -309,17 +292,15 @@ export function useCloudWorkbookController({
 
   const isDurableSyncStateReady = useCallback(
     (userId, workbookId) =>
-      !(
-        accountBoundaryRef.current?.userId === userId &&
-        accountBoundaryRef.current?.workbookId === workbookId
-      ) &&
-      (!durableSyncStorage ||
-        durableSyncStorage.status({
-          userId,
-          workbookId,
-          cloudEnvironment: asString(stateRef.current.cloudEnvironment)
-        }) === 'ready'),
-    [durableSyncStorage]
+      isCloudWorkbookSyncReady({
+        state: stateRef.current,
+        userId,
+        workbookId,
+        storage: resolvedSyncStorage,
+        durableStorage: durableSyncStorage,
+        accountBoundary: accountBoundaryRef.current
+      }),
+    [durableSyncStorage, resolvedSyncStorage]
   );
 
   const refreshState = useCallback(async () => {
@@ -510,57 +491,14 @@ export function useCloudWorkbookController({
     [flushDurableSyncState, resolvedSyncStorage, updateWorkbookConflict]
   );
 
-  const persistMergedWorkbook = useCallback(
-    async (
-      expectedWorkbook,
-      mergedWorkbook,
-      expectedUserId = asString(stateRef.current.user?.id)
-    ) => {
-      if (expectedUserId !== asString(stateRef.current.user?.id))
-        return { ok: false, code: 'cloud_sync_scope_changed' };
-      const workbookId = asString(expectedWorkbook && expectedWorkbook.id);
-      if (
-        !workbookId ||
-        workbookRef.current !== expectedWorkbook ||
-        asString(mergedWorkbook && mergedWorkbook.id) !== workbookId
-      ) {
-        return { ok: false, retry: true, code: 'local_workbook_changed' };
-      }
-
-      let appliedWorkbook = mergedWorkbook;
-      if (typeof setWorkbook === 'function') {
-        appliedWorkbook =
-          setWorkbook(mergedWorkbook, {
-            source: 'cloud-merge',
-            markDirty: true
-          }) || mergedWorkbook;
-      }
-      workbookRef.current = appliedWorkbook;
-      suppressNextAutoSyncRef.current = {
-        workbookId,
-        workbook: appliedWorkbook
-      };
-      const localSaveResult =
-        typeof saveWorkbook === 'function'
-          ? await saveWorkbook(appliedWorkbook)
-          : browserCache && typeof browserCache.save === 'function'
-            ? await browserCache.save(appliedWorkbook)
-            : { ok: false };
-      if (!(localSaveResult && localSaveResult.ok)) {
-        if (suppressNextAutoSyncRef.current?.workbook === appliedWorkbook) {
-          suppressNextAutoSyncRef.current = null;
-        }
-        return {
-          ok: false,
-          retry: false,
-          code: 'local_merge_save_failed',
-          error: 'Cavalry combined the changes but could not save the merged workbook locally.'
-        };
-      }
-      return { ok: true, workbook: appliedWorkbook };
-    },
-    [browserCache, saveWorkbook, setWorkbook]
-  );
+  const persistMergedWorkbook = useCloudWorkbookMergePersistence({
+    stateRef,
+    workbookRef,
+    suppressNextAutoSyncRef,
+    setWorkbook,
+    saveWorkbook,
+    browserCache
+  });
 
   const reconcileWorkbookBranches = useCallback(
     ({ userId, workbookId, localWorkbook, syncState }) =>
@@ -735,6 +673,25 @@ export function useCloudWorkbookController({
     ]
   );
 
+  const pendingSaveAcknowledgement = useCloudWorkbookSaveAcknowledgement({
+    cloudState,
+    workbook,
+    uiState,
+    stateRef,
+    workbookRef,
+    saveStatusRef,
+    resolvedSyncStorage,
+    syncAnchorHydrated,
+    accountChangePending,
+    pendingOperationRef,
+    autoSyncSchedulerRef,
+    invoke,
+    applyRemoteState,
+    flushDurableSyncState,
+    setUiState,
+    emptyState: EMPTY_CLOUD_UI_STATE
+  });
+
   const performAutomaticCloudSync = useCloudWorkbookAutomaticSync({
     applyRemoteState,
     conflictedWorkbookIdsRef,
@@ -777,6 +734,7 @@ export function useCloudWorkbookController({
     const enrollmentKey = userId && workbookId ? `${userId}:${workbookId}` : '';
     if (
       !syncAnchorHydrated ||
+      pendingSaveAcknowledgement ||
       !autoSyncEnabled ||
       stateRef.current.status !== 'signed_in' ||
       !enrollmentKey ||
@@ -809,6 +767,7 @@ export function useCloudWorkbookController({
     cloudState.workbooks,
     cloudUserId,
     localWorkbookId,
+    pendingSaveAcknowledgement,
     resolvedSyncStorage,
     saveStatus,
     syncAnchorHydrated,
@@ -837,6 +796,7 @@ export function useCloudWorkbookController({
       (accountBoundaryRef.current?.userId === userId &&
         accountBoundaryRef.current?.workbookId === workbookId) ||
       !syncAnchorHydrated ||
+      pendingSaveAcknowledgement ||
       !readCloudWorkbookAutoSyncPreference(resolvedSyncStorage, userId, workbookId) ||
       stateRef.current.status !== 'signed_in' ||
       !(userId && workbookId && currentWorkbook)
@@ -850,7 +810,13 @@ export function useCloudWorkbookController({
       workbookId,
       workbook: currentWorkbook
     });
-  }, [localSaveSequence, resolvedSyncStorage, syncAnchorHydrated, workbook]);
+  }, [
+    localSaveSequence,
+    pendingSaveAcknowledgement,
+    resolvedSyncStorage,
+    syncAnchorHydrated,
+    workbook
+  ]);
 
   const refreshCurrentWorkbookFromCloud = useCallback(
     async (userId, remote) => {
@@ -900,6 +866,7 @@ export function useCloudWorkbookController({
   useEffect(() => {
     if (
       !syncAnchorHydrated ||
+      pendingSaveAcknowledgement ||
       cloudState.status !== 'signed_in' ||
       !cloudUserId ||
       !localWorkbookId
@@ -947,6 +914,9 @@ export function useCloudWorkbookController({
       return;
     }
     if (!autoSyncEnabled) return;
+    // Account metadata can arrive before the upload result establishes its base,
+    // including the first successful upload of a new workbook.
+    if (pendingOperationRef.current || autoSyncSchedulerRef.current?.hasWork()) return;
     if (!syncState.known || !syncState.revision) {
       void Promise.resolve().then(() => {
         if (
@@ -994,6 +964,7 @@ export function useCloudWorkbookController({
     latchWorkbookConflict,
     localWorkbookId,
     markRemoteWorkbookDeleted,
+    pendingSaveAcknowledgement,
     refreshCurrentWorkbookFromCloud,
     resolvedSyncStorage,
     syncAnchorHydrated,

@@ -182,6 +182,22 @@ export function normalizeCloudState(value) {
   const source = asObject(value);
   const workbookChange = normalizeCloudWorkbookChange(source.workbookChange);
   const configured = source.configured === true;
+  const workbookSaveAcknowledgements = (
+    Array.isArray(source.workbookSaveAcknowledgements) ? source.workbookSaveAcknowledgements : []
+  )
+    .slice(-256)
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry.id === 'string' &&
+        /^[a-z0-9-]{36}$/.test(entry.id) &&
+        entry.userId === asString(source.user?.id) &&
+        typeof entry.workbookId === 'string' &&
+        /^[A-Za-z0-9._:-]{1,128}$/.test(entry.workbookId) &&
+        Number.isSafeInteger(entry.revision) &&
+        entry.revision > 0
+    )
+    .map(({ id, userId, workbookId, revision }) => ({ id, userId, workbookId, revision }));
   const status = CLOUD_STATUSES.has(source.status)
     ? source.status
     : configured
@@ -199,6 +215,7 @@ export function normalizeCloudState(value) {
     sessionGeneration: Math.max(0, Number(source.sessionGeneration) || 0),
     pendingCount: Math.max(0, Number(source.pendingCount) || 0),
     lastSyncAt: asString(source.lastSyncAt),
+    ...(workbookSaveAcknowledgements.length ? { workbookSaveAcknowledgements } : {}),
     workbooks: (Array.isArray(source.workbooks) ? source.workbooks : [])
       .map(normalizeCloudWorkbook)
       .filter(Boolean),
@@ -237,6 +254,9 @@ export function errorDetailsFromResult(result) {
 
 export function isRetryableAutomaticSyncFailure(result) {
   const source = asObject(result);
+  // Only an explicit operation result can stop retries. Normalized state
+  // defaults errorRetryable to false even when older hosts omit the flag.
+  if (source.retryable === false || source.retry === false) return false;
   if (source.conflict === true || source.code === 'workbook_revision_conflict') return false;
   const code = asString(source.code || asObject(source.error).code);
   if (
@@ -245,6 +265,8 @@ export function isRetryableAutomaticSyncFailure(result) {
       'cloud_change_rejected',
       'cloud_database_update_required',
       'cloud_record_invalid',
+      'cloudkit_request_rejected',
+      'cloudkit_unknown_error',
       'icloud_access_denied',
       'invalid_workbook_id',
       'invalid_revision',
@@ -255,6 +277,17 @@ export function isRetryableAutomaticSyncFailure(result) {
     return false;
   }
   return !source.ok;
+}
+
+export function isCloudWorkbookSyncError(value, workbookId) {
+  const source = asObject(value);
+  const operation = asString(source.errorOperation || source.failedOperation);
+  const errorWorkbookId = asString(source.errorWorkbookId || source.failedWorkbookId);
+  return (
+    !!asString(source.error) &&
+    ['upload', 'keep-local', 'reconcile', 'conflict', 'sync-state'].includes(operation) &&
+    (!errorWorkbookId || errorWorkbookId === asString(workbookId))
+  );
 }
 
 export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
@@ -278,16 +311,19 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
   const conflictNotice =
     normalizeConflictNotice(uiState.conflictNotice, workbookId) || remote?.conflictNotice || null;
   const failedWorkbookId = asString(uiState.failedWorkbookId);
+  const uiErrorWorkbookId = asString(uiState.errorWorkbookId || failedWorkbookId);
   const uiErrorOperation = asString(uiState.errorOperation || uiState.failedOperation);
   const uiErrorIsLibraryScoped = ['delete', 'open'].includes(uiErrorOperation);
   const uiErrorApplies =
     !!asString(uiState.error) &&
-    (uiErrorIsLibraryScoped || !failedWorkbookId || failedWorkbookId === workbookId);
+    (uiErrorIsLibraryScoped || !uiErrorWorkbookId || uiErrorWorkbookId === workbookId);
   const stateErrorWorkbookId = asString(state.errorWorkbookId);
   const stateErrorIsLibraryScoped = ['delete', 'open'].includes(state.errorOperation);
   const stateErrorApplies =
     !!state.error &&
     (stateErrorIsLibraryScoped || !stateErrorWorkbookId || stateErrorWorkbookId === workbookId);
+  const currentSyncError =
+    isCloudWorkbookSyncError(uiState, workbookId) || isCloudWorkbookSyncError(state, workbookId);
   return {
     ...state,
     workbooks,
@@ -348,11 +384,13 @@ export function buildCloudSettingsModel(cloudState, workbook, uiState = {}) {
                   ? 'retrying'
                   : autoSyncPhase === 'waiting'
                     ? 'waiting'
-                    : remote?.pending === true
-                      ? 'pending'
-                      : remote
-                        ? 'synced'
-                        : 'local_only',
+                    : currentSyncError
+                      ? 'attention'
+                      : remote?.pending === true
+                        ? 'pending'
+                        : remote
+                          ? 'synced'
+                          : 'local_only',
       cloudUpdatedAt: remote ? remote.updatedAt : ''
     }
   };

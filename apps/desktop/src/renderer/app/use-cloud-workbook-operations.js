@@ -12,6 +12,7 @@ import {
   asString,
   errorDetailsFromResult,
   errorMessageFromResult,
+  isCloudWorkbookSyncError,
   normalizeCloudState,
   normalizeConflictNotice,
   stateFromResult
@@ -71,6 +72,12 @@ export function useCloudWorkbookOperations({
         (operationWorkbookId === asString(workbookRef.current?.id)
           ? asString(workbookRef.current?.name)
           : '');
+      const setOperationUiState = (next) =>
+        setUiState((current) =>
+          operationName === 'refresh' && isCloudWorkbookSyncError(current, workbookRef.current?.id)
+            ? { ...current, pendingOperation: next.pendingOperation, notice: next.notice }
+            : next
+        );
       if (operationName === 'cancel-sign-in') return invoke('cancelAccountSignIn');
       if (pendingOperationRef.current) {
         return {
@@ -188,7 +195,7 @@ export function useCloudWorkbookOperations({
         }
       }
       pendingOperationRef.current = operationName || 'unknown';
-      setUiState({
+      setOperationUiState({
         ...EMPTY_CLOUD_UI_STATE,
         pendingOperation: operationName,
         errorOperation: operationName,
@@ -705,7 +712,7 @@ export function useCloudWorkbookOperations({
           const error = errorMessageFromResult(result) || 'The cloud request failed.';
           const failedOperation =
             operationName === 'retry-sync-state' ? 'sync-state' : operationName;
-          setUiState({
+          setOperationUiState({
             ...EMPTY_CLOUD_UI_STATE,
             pendingOperation: '',
             error,
@@ -716,6 +723,7 @@ export function useCloudWorkbookOperations({
             errorWorkbookId: asString(result && result.errorWorkbookId) || operationWorkbookId,
             errorWorkbookName: operationWorkbookName,
             errorStateSyncAt: asString(stateRef.current.lastSyncAt),
+            errorSaveOperationId: asString(result?.saveOperationId),
             failedOperation,
             failedWorkbookId: operationWorkbookId
           });
@@ -743,7 +751,7 @@ export function useCloudWorkbookOperations({
             ? 'Workbook removal queued for iCloud.'
             : 'Workbook removed from iCloud.'
         };
-        setUiState({
+        setOperationUiState({
           ...EMPTY_CLOUD_UI_STATE,
           pendingOperation: '',
           notice: notices[operationName] || '',
@@ -753,7 +761,7 @@ export function useCloudWorkbookOperations({
         return result;
       } catch (error) {
         const message = error && error.message ? error.message : 'The iCloud request failed.';
-        setUiState({
+        setOperationUiState({
           ...EMPTY_CLOUD_UI_STATE,
           pendingOperation: '',
           error: message,
