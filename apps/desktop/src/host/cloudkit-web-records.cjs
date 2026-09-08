@@ -68,8 +68,10 @@ function field(record, name) {
   return record?.fields?.[name]?.value;
 }
 
-function encrypted(value) {
-  return { value: value ?? null, isEncrypted: true };
+// Encrypted fields need their logical type: omission makes Apple interpret
+// their stored encrypted bytes instead of the supplied string/integer value.
+function encrypted(value, type = 'STRING') {
+  return { value: value ?? null, type, isEncrypted: true };
 }
 
 function payloadBytes(value) {
@@ -147,15 +149,16 @@ function metadata(record) {
 
 function workbookFields(request, revision, asset) {
   const fields = {
-    schemaVersion: { value: 1 },
+    schemaVersion: { value: 1, type: 'INT64' },
     workbookId: encrypted(workbookId(request.workbookId)),
     name: encrypted(text(request.name, 160)),
-    year: encrypted(request.year),
+    year: encrypted(request.year, 'INT64'),
     currency: encrypted(text(request.currency, 12).toUpperCase()),
-    revision: encrypted(positiveInteger(revision)),
+    revision: encrypted(positiveInteger(revision), 'INT64'),
     sourceUpdatedAt: encrypted(date(request.updatedAt)),
     payloadHash: encrypted(sha256(payloadBytes(request.portableHtml))),
-    payloadAsset: { value: asset, type: 'ASSET' }
+    // ASSETID is the Web Services wire tag; ASSET is rejected before saving.
+    payloadAsset: { value: asset, type: 'ASSETID' }
   };
   // Validate the exact metadata that a native client will read before uploading.
   metadata({ recordName: recordName(request.workbookId), recordType: RECORD_TYPE, fields });
@@ -167,22 +170,24 @@ function conflictFields(notice, source, base) {
     return Object.fromEntries(
       CONFLICT_FIELDS.map((name) => [
         name,
-        name.endsWith('Asset') ? { value: null } : encrypted(null)
+        name.endsWith('Asset')
+          ? { value: null, type: 'ASSETID' }
+          : encrypted(null, name.endsWith('Revision') ? 'INT64' : 'STRING')
       ])
     );
   return {
     conflictId: encrypted(notice.id),
     conflictSourceDevice: encrypted(notice.sourceDevice),
     conflictDetectedAt: encrypted(notice.detectedAt),
-    conflictBaseRevision: encrypted(notice.baseRevision),
-    conflictRemoteRevision: encrypted(notice.remoteRevision),
+    conflictBaseRevision: encrypted(notice.baseRevision, 'INT64'),
+    conflictRemoteRevision: encrypted(notice.remoteRevision, 'INT64'),
     conflictSummary: encrypted(notice.summary),
     conflictReport: encrypted(notice.report),
     conflictPackageNoticeId: encrypted(notice.id),
     conflictPayloadHash: encrypted(source.hash),
-    conflictPayloadAsset: { value: source.asset, type: 'ASSET' },
+    conflictPayloadAsset: { value: source.asset, type: 'ASSETID' },
     conflictBasePayloadHash: encrypted(base?.hash),
-    conflictBasePayloadAsset: { value: base?.asset ?? null, type: 'ASSET' }
+    conflictBasePayloadAsset: { value: base?.asset ?? null, type: 'ASSETID' }
   };
 }
 

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 const require = createRequire(import.meta.url);
 const { createCloudKitWebLibrary } = require('../../src/host/cloudkit-web-library.cjs');
 const { createAssetTransport } = require('../../src/host/cloudkit-web-assets.cjs');
+const { createCloudKitWebApi } = require('../../src/host/cloudkit-web-api.cjs');
 const {
   MAX_PAYLOAD_BYTES,
   recordName,
@@ -33,7 +34,7 @@ const fixture = (overrides = {}) => ({
     revision: encrypted(7),
     sourceUpdatedAt: encrypted(TIME),
     payloadHash: encrypted(sha256(HTML)),
-    payloadAsset: { value: asset(), type: 'ASSET' },
+    payloadAsset: { value: asset(), type: 'ASSETID' },
     ...overrides
   }
 });
@@ -128,6 +129,18 @@ function harness(initial = fixture()) {
 }
 
 describe('browser CloudKit transport shares the native private record contract', () => {
+  it('returns a terminal failure for an absent or unsupported request', async () => {
+    const h = harness();
+    for (const payload of [null, undefined, { operation: 'toString' }]) {
+      expect(await h.library.request(payload)).toMatchObject({
+        ok: false,
+        code: 'unsupported_cloudkit_operation',
+        retryable: false
+      });
+    }
+    expect(h.api).not.toHaveBeenCalled();
+  });
+
   it('reads native encrypted fields and verifies the downloaded byte hash', async () => {
     const h = harness();
     const result = await h.library.request({ operation: 'download', workbookId: ID });
@@ -177,7 +190,7 @@ describe('browser CloudKit transport shares the native private record contract',
       expect(change.operations[0].record.fields[key].isEncrypted).toBe(true);
     }
     expect(change.operations[0].record.fields.payloadAsset.value.receipt).toBe('apple-receipt');
-    expect(change.operations[0].record.fields.schemaVersion).toEqual({ value: 1 });
+    expect(change.operations[0].record.fields.schemaVersion).toEqual({ value: 1, type: 'INT64' });
   });
 
   it('creates a missing custom zone only for an explicit new workbook save', async () => {
@@ -416,6 +429,80 @@ describe('browser CloudKit transport shares the native private record contract',
       retryable: false
     });
     expect(JSON.stringify(response)).not.toContain('secret');
+  });
+
+  it.each([
+    ['BAD_REQUEST', 'cloudkit_request_rejected', false],
+    ['ATOMIC_ERROR', 'cloudkit_request_rejected', false],
+    ['VALIDATING_REFERENCE_ERROR', 'cloudkit_request_rejected', false],
+    ['INVALID_FIELD_TYPE', 'cloud_database_update_required', false],
+    ['QUOTA_EXCEEDED', 'cloud_quota_exceeded', false],
+    ['AUTHENTICATION_REQUIRED', 'icloud_authentication_required', false],
+    ['THROTTLED', 'cloudkit_request_failed', true],
+    ['TRY_AGAIN_LATER', 'cloudkit_request_failed', true],
+    ['private-unknown-code', 'cloudkit_unknown_error', false]
+  ])(
+    'keeps %s distinct through API and per-record failures',
+    async (appleCode, code, retryable) => {
+      for (const perRecord of [false, true]) {
+        const h = harness();
+        const api = createCloudKitWebApi({
+          apiToken: 'public',
+          session: {},
+          persistSession: vi.fn(),
+          fetch: async (url, options) => {
+            const operation = new URL(url).pathname.split('/').slice(-2).join('/');
+            if (operation !== 'records/modify')
+              return new Response(JSON.stringify(await h.api(operation, JSON.parse(options.body))));
+            const error = {
+              serverErrorCode: appleCode,
+              reason: 'private-workbook-content-and-session',
+              recordName: 'private-record',
+              retryAfter: 30
+            };
+            return new Response(JSON.stringify(perRecord ? { records: [error] } : error), {
+              status: perRecord ? 200 : 400
+            });
+          }
+        });
+        const library = createCloudKitWebLibrary({ api, fetch: h.fetch });
+        const result = await library.request(save());
+        expect(result).toMatchObject({
+          ok: false,
+          code,
+          retryable,
+          errorOperation: 'upload',
+          errorWorkbookId: ID
+        });
+        expect(result.errorDetails).toContain('Request: records/modify.');
+        expect(result.errorDetails).toContain(`HTTP status: ${perRecord ? 200 : 400}.`);
+        expect(JSON.stringify(result)).not.toContain('private');
+        if (appleCode !== 'private-unknown-code')
+          expect(result.errorDetails).toContain(`Apple code: ${appleCode}.`);
+        expect(h.remote.recordChangeTag).toBe('native-tag-7');
+      }
+    }
+  );
+
+  it('identifies a network failure at the attempted API operation without leaking the URL', async () => {
+    const api = createCloudKitWebApi({
+      apiToken: 'public',
+      session: {},
+      persistSession: vi.fn(),
+      fetch: async () => {
+        throw new Error('private-request-url-and-token');
+      }
+    });
+    const result = await createCloudKitWebLibrary({ api }).request(save());
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'cloudkit_request_failed',
+      retryable: true,
+      errorOperation: 'upload',
+      errorWorkbookId: ID,
+      errorDetails: 'Request: records/lookup.'
+    });
+    expect(JSON.stringify(result)).not.toContain('private');
   });
 
   it('keeps secure-session persistence failures terminal instead of repeatedly retrying writes', async () => {

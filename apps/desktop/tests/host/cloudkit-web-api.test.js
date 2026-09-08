@@ -61,4 +61,58 @@ describe('CloudKit web session requests', () => {
     });
     await expect(api('users/current')).rejects.toMatchObject({ code: 'invalid_cloudkit_response' });
   });
+
+  it('preserves safe Apple diagnostics and rotated credentials on a rejected request', async () => {
+    const session = { token: 'private-original' };
+    const persistSession = vi.fn();
+    const api = createCloudKitWebApi({
+      apiToken: 'public',
+      session,
+      persistSession,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            serverErrorCode: 'BAD_REQUEST',
+            reason: 'private workbook https://example.com/?ckWebAuthToken=private-next',
+            uuid: 'private-correlation',
+            retryAfter: 99999999
+          }),
+          { status: 400, headers: { 'x-apple-cloudkit-session': 'private-next' } }
+        )
+    });
+    const error = await api('records/modify', { operations: [] }).catch((value) => value);
+    expect(error).toMatchObject({
+      code: 'BAD_REQUEST',
+      serverErrorCode: 'BAD_REQUEST',
+      cloudkitOperation: 'records/modify',
+      httpStatus: 400,
+      retryAfter: 86400
+    });
+    expect(JSON.stringify(error)).not.toMatch(/private|reason|uuid|http[s]?:\/\//);
+    expect(session.token).toBe('private-next');
+    expect(persistSession).toHaveBeenCalledWith(session);
+  });
+
+  it('does not echo an unrecognized server code or malformed response contents', async () => {
+    for (const body of [
+      JSON.stringify({
+        serverErrorCode: 'private-book-and-token',
+        retryAfter: 'private-delay'
+      }),
+      'null',
+      'private-body'
+    ]) {
+      const api = createCloudKitWebApi({
+        apiToken: 'public',
+        session: {},
+        persistSession: vi.fn(),
+        fetch: async () => new Response(body, { status: 500 })
+      });
+      const error = await api('records/lookup', {}).catch((value) => value);
+      expect(error).toMatchObject({ cloudkitOperation: 'records/lookup', httpStatus: 500 });
+      expect(['cloudkit_unknown_error', 'invalid_cloudkit_response']).toContain(error.code);
+      expect(JSON.stringify(error)).not.toContain('private');
+      expect(error).not.toHaveProperty('retryAfter');
+    }
+  });
 });

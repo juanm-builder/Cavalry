@@ -1,6 +1,7 @@
 'use strict';
 
 const { MAX_PAYLOAD_BYTES, fail, payloadBytes, sha256 } = require('./cloudkit-web-records.cjs');
+const { cloudKitErrorMetadata } = require('./cloudkit-web-api.cjs');
 const ASSET_DOMAINS = ['icloud-content.com', 'icloud.com', 'apple-cloudkit.com'];
 
 function assetUrl(raw) {
@@ -51,32 +52,51 @@ async function readBounded(response, maximum) {
 
 function createAssetTransport(fetchImpl) {
   async function transfer(rawUrl, options = {}, maximum = MAX_PAYLOAD_BYTES) {
-    let url = assetUrl(rawUrl);
-    const signal = AbortSignal.timeout(60_000);
-    for (let redirects = 0; redirects <= 3; redirects += 1) {
-      const response = await fetchImpl(url.href, {
-        ...options,
-        redirect: 'manual',
-        credentials: 'omit',
-        signal,
-        headers: options.method === 'POST' ? { 'content-type': 'application/octet-stream' } : {}
-      });
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        await response.body?.cancel();
-        if (options.method === 'POST' && ![307, 308].includes(response.status))
-          throw fail('cloud_asset_upload_failed');
-        const location = response.headers.get('location');
-        if (!location) throw fail('cloud_asset_url_invalid');
-        url = assetUrl(new URL(location, url).href);
-        continue;
+    const operation = options.method === 'POST' ? 'assets/upload' : 'assets/download';
+    let httpStatus;
+    try {
+      let url = assetUrl(rawUrl);
+      const signal = AbortSignal.timeout(60_000);
+      for (let redirects = 0; redirects <= 3; redirects += 1) {
+        httpStatus = undefined;
+        const response = await fetchImpl(url.href, {
+          ...options,
+          redirect: 'manual',
+          credentials: 'omit',
+          signal,
+          headers: options.method === 'POST' ? { 'content-type': 'application/octet-stream' } : {}
+        });
+        httpStatus = response.status;
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          await response.body?.cancel();
+          if (options.method === 'POST' && ![307, 308].includes(response.status))
+            throw fail('cloud_asset_upload_failed');
+          const location = response.headers.get('location');
+          if (!location) throw fail('cloud_asset_url_invalid');
+          url = assetUrl(new URL(location, url).href);
+          continue;
+        }
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw fail('cloud_asset_request_failed');
+        }
+        return await readBounded(response, maximum);
       }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw fail('cloud_asset_request_failed');
-      }
-      return readBounded(response, maximum);
+      throw fail('cloud_asset_url_invalid');
+    } catch (error) {
+      // Fetch/abort/stream failures can contain signed URLs. Preserve only
+      // Cavalry's known local failure codes and safe transport diagnostics.
+      const code = [
+        'cloud_asset_url_invalid',
+        'cloud_asset_upload_failed',
+        'cloud_asset_request_failed',
+        'cloud_snapshot_invalid',
+        'cloud_quota_exceeded'
+      ].includes(error?.code)
+        ? error.code
+        : 'cloud_asset_request_failed';
+      throw Object.assign(fail(code), cloudKitErrorMetadata(null, operation, httpStatus));
     }
-    throw fail('cloud_asset_url_invalid');
   }
 
   async function download(asset, hash) {

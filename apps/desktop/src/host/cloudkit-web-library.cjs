@@ -15,6 +15,7 @@ const {
   conflictFields
 } = require('./cloudkit-web-records.cjs');
 const { createAssetTransport } = require('./cloudkit-web-assets.cjs');
+const { cloudKitErrorMetadata, cloudKitServerError } = require('./cloudkit-web-api.cjs');
 
 const ERROR_MAP = {
   AUTHENTICATION_REQUIRED: 'icloud_authentication_required',
@@ -30,6 +31,25 @@ const ERROR_MAP = {
   TRY_AGAIN_LATER: 'cloudkit_request_failed',
   INTERNAL_ERROR: 'cloudkit_request_failed',
   THROTTLED: 'cloudkit_request_failed',
+  BAD_REQUEST: 'cloudkit_request_rejected',
+  ATOMIC_ERROR: 'cloudkit_request_rejected',
+  VALIDATING_REFERENCE_ERROR: 'cloudkit_request_rejected',
+  INVALID_ARGUMENTS: 'cloudkit_request_rejected',
+  INVALID_FIELD_VALUE: 'cloudkit_request_rejected',
+  SCHEMA_ERROR: 'cloud_database_update_required',
+  INVALID_FIELD_TYPE: 'cloud_database_update_required',
+  INVALID_RECORD_TYPE: 'cloud_database_update_required',
+  UNKNOWN_FIELD: 'cloud_database_update_required',
+  HTTP_400: 'cloudkit_request_rejected',
+  HTTP_401: 'icloud_authentication_required',
+  HTTP_403: 'icloud_access_denied',
+  HTTP_408: 'cloudkit_request_failed',
+  HTTP_413: 'cloud_quota_exceeded',
+  HTTP_429: 'cloudkit_request_failed',
+  HTTP_500: 'cloudkit_request_failed',
+  HTTP_502: 'cloudkit_request_failed',
+  HTTP_503: 'cloudkit_request_failed',
+  HTTP_504: 'cloudkit_request_failed',
   ZONE_NOT_FOUND: 'cloud_zone_unavailable',
   UNKNOWN_ITEM: 'cloud_workbook_not_found',
   NOT_FOUND: 'cloud_workbook_not_found'
@@ -58,6 +78,10 @@ const PUBLIC_ERRORS = {
   icloud_account_changed:
     'The selected iCloud account changed. Open its library before syncing again.',
   cloudkit_request_failed: 'iCloud is temporarily unavailable. Your work is saved on this device.',
+  cloudkit_request_rejected:
+    'iCloud could not accept this sync request. Your work is saved on this device. Update Cavalry before trying again.',
+  cloudkit_unknown_error:
+    'iCloud could not complete this request. Your work is saved on this device. View details for troubleshooting.',
   cloud_asset_url_invalid: 'iCloud returned an asset location that Cavalry could not verify.',
   cloud_asset_upload_failed: 'The iCloud upload did not complete. Your local copy is unchanged.',
   cloud_asset_request_failed: 'The iCloud file could not be transferred. Try syncing again.',
@@ -66,10 +90,54 @@ const PUBLIC_ERRORS = {
   unsupported_cloudkit_operation: 'This iCloud operation is not available.'
 };
 
-function responseError(value) {
-  if (value?.serverErrorCode) throw fail(value.serverErrorCode);
+function responseError(value, operation, httpStatus) {
+  if (value?.serverErrorCode) throw cloudKitServerError(value, operation, httpStatus);
   if (!value || typeof value !== 'object') throw fail('cloudkit_invalid_response');
   return value;
+}
+
+function cloudKitFailure(error, payload = {}) {
+  payload ||= {};
+  const diagnostic = cloudKitErrorMetadata(error);
+  const mapped = ERROR_MAP[error?.code] || error?.code;
+  const code = Object.hasOwn(PUBLIC_ERRORS, mapped) ? mapped : 'cloudkit_unknown_error';
+  const scopes = {
+    save: 'upload',
+    upload: 'upload',
+    delete: 'delete',
+    download: 'open',
+    download_conflict: 'conflict',
+    publish_conflict: 'conflict',
+    clear_conflict: 'conflict',
+    status: 'refresh',
+    list: 'refresh',
+    sync: 'refresh'
+  };
+  const scope = Object.hasOwn(scopes, payload.operation) ? scopes[payload.operation] : '';
+  const id =
+    typeof payload.workbookId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(payload.workbookId)
+      ? payload.workbookId
+      : '';
+  const parts = [
+    diagnostic.serverErrorCode ? `Apple code: ${diagnostic.serverErrorCode}.` : '',
+    diagnostic.cloudkitOperation ? `Request: ${diagnostic.cloudkitOperation}.` : '',
+    diagnostic.httpStatus ? `HTTP status: ${diagnostic.httpStatus}.` : '',
+    diagnostic.retryAfter != null ? `Retry after: ${diagnostic.retryAfter} seconds.` : ''
+  ].filter(Boolean);
+  return {
+    ok: false,
+    code,
+    error: PUBLIC_ERRORS[code],
+    retryable: [
+      'cloudkit_request_failed',
+      'cloud_asset_request_failed',
+      'cloud_asset_upload_failed'
+    ].includes(code),
+    ...(parts.length ? { errorDetails: parts.join(' ') } : {}),
+    ...(scope ? { errorOperation: scope } : {}),
+    ...(id ? { errorWorkbookId: id } : {}),
+    ...(code === 'workbook_revision_conflict' ? { conflict: true } : {})
+  };
 }
 
 function isMissing(error) {
@@ -84,7 +152,13 @@ function createCloudKitWebLibrary({
   const assets = createAssetTransport(fetchImpl);
 
   async function call(path, body) {
-    return responseError(await api(path, body));
+    try {
+      const result = await api(path, body);
+      return responseError(result, path, result?.cloudkitHttpStatus);
+    } catch (error) {
+      Object.assign(error, cloudKitErrorMetadata(error, path));
+      throw error;
+    }
   }
 
   async function lookup(id) {
@@ -95,7 +169,11 @@ function createCloudKitWebLibrary({
       });
       if (!Array.isArray(response.records) || response.records.length !== 1)
         throw fail('cloudkit_invalid_response');
-      const record = responseError(response.records[0]);
+      const record = responseError(
+        response.records[0],
+        'records/lookup',
+        response.cloudkitHttpStatus
+      );
       if (record.recordName !== recordName(id)) throw fail('cloud_workbook_identity_mismatch');
       if (record.deleted === true) return null;
       metadata(record);
@@ -125,7 +203,7 @@ function createCloudKitWebLibrary({
         });
         if (!Array.isArray(response.zones) || response.zones.length !== 1)
           throw fail('cloudkit_invalid_response');
-        const zone = responseError(response.zones[0]);
+        const zone = responseError(response.zones[0], 'changes/zone', response.cloudkitHttpStatus);
         if (
           zone.zoneID?.zoneName !== ZONE_ID.zoneName ||
           !Array.isArray(zone.records) ||
@@ -133,7 +211,7 @@ function createCloudKitWebLibrary({
         )
           throw fail('cloudkit_invalid_response');
         for (const record of zone.records) {
-          responseError(record);
+          responseError(record, 'changes/zone', response.cloudkitHttpStatus);
           if (record.deleted === true) {
             records.delete(record.recordName);
           } else if (record.recordType === RECORD_TYPE) {
@@ -171,7 +249,7 @@ function createCloudKitWebLibrary({
       tokens: [{ recordName: recordName(id), recordType: RECORD_TYPE, fieldName }]
     });
     const token = response.tokens?.[0];
-    responseError(token);
+    responseError(token, 'assets/upload', response.cloudkitHttpStatus);
     if (
       response.tokens?.length !== 1 ||
       token?.recordName !== recordName(id) ||
@@ -197,7 +275,7 @@ function createCloudKitWebLibrary({
     });
     if (!Array.isArray(response.records) || response.records.length !== 1)
       throw fail('cloudkit_invalid_response');
-    const saved = responseError(response.records[0]);
+    const saved = responseError(response.records[0], 'records/modify', response.cloudkitHttpStatus);
     if (saved.recordName !== record.recordName) throw fail('cloud_workbook_identity_mismatch');
     if (operationType === 'delete') {
       if (saved.deleted !== true) throw fail('cloudkit_invalid_response');
@@ -229,7 +307,8 @@ function createCloudKitWebLibrary({
       });
       if (
         zones.zones?.length !== 1 ||
-        responseError(zones.zones[0]).zoneID?.zoneName !== ZONE_ID.zoneName
+        responseError(zones.zones[0], 'zones/modify', zones.cloudkitHttpStatus).zoneID?.zoneName !==
+          ZONE_ID.zoneName
       )
         throw fail('cloudkit_invalid_response');
     }
@@ -349,22 +428,10 @@ function createCloudKitWebLibrary({
       try {
         return await perform(payload || {});
       } catch (error) {
-        const mapped = ERROR_MAP[error?.code] || error?.code;
-        const code = Object.hasOwn(PUBLIC_ERRORS, mapped) ? mapped : 'cloudkit_request_failed';
-        return {
-          ok: false,
-          code,
-          error: PUBLIC_ERRORS[code],
-          retryable: [
-            'cloudkit_request_failed',
-            'cloud_asset_request_failed',
-            'cloud_asset_upload_failed'
-          ].includes(code),
-          ...(code === 'workbook_revision_conflict' ? { conflict: true } : {})
-        };
+        return cloudKitFailure(error, payload);
       }
     }
   };
 }
 
-module.exports = { createCloudKitWebLibrary };
+module.exports = { createCloudKitWebLibrary, cloudKitFailure };

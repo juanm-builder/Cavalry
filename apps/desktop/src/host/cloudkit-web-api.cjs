@@ -11,6 +11,72 @@ const AUTH_ERRORS = new Set([
   'AUTHENTICATION_FAILED',
   'NOT_AUTHENTICATED'
 ]);
+const APPLE_ERRORS = new Set([
+  ...AUTH_ERRORS,
+  'ACCESS_DENIED',
+  'ATOMIC_ERROR',
+  'BAD_REQUEST',
+  'CONFLICT',
+  'EXISTS',
+  'INTERNAL_ERROR',
+  'NOT_FOUND',
+  'UNKNOWN_ITEM',
+  'QUOTA_EXCEEDED',
+  'THROTTLED',
+  'TRY_AGAIN_LATER',
+  'VALIDATING_REFERENCE_ERROR',
+  'ZONE_NOT_FOUND',
+  'SCHEMA_ERROR',
+  'INVALID_ARGUMENTS',
+  'INVALID_FIELD_TYPE',
+  'INVALID_FIELD_VALUE',
+  'INVALID_RECORD_TYPE',
+  'UNKNOWN_FIELD'
+]);
+const ERROR_OPERATIONS = new Set([
+  'users/current',
+  'records/lookup',
+  'records/modify',
+  'changes/zone',
+  'zones/modify',
+  'assets/upload',
+  'assets/download'
+]);
+
+// Deliberately exclude Apple's reason, record identifiers, URLs and response
+// bodies. They may contain workbook data or session credentials.
+function cloudKitErrorMetadata(error, operation, httpStatus) {
+  const code = error?.serverErrorCode || error?.code;
+  const stage = ERROR_OPERATIONS.has(operation) ? operation : error?.cloudkitOperation;
+  const status = httpStatus ?? error?.httpStatus;
+  const retryAfter = error?.retryAfter;
+  return {
+    ...(APPLE_ERRORS.has(code) ? { serverErrorCode: code } : {}),
+    ...(ERROR_OPERATIONS.has(stage) ? { cloudkitOperation: stage } : {}),
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 ? { httpStatus: status } : {}),
+    ...(typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter >= 0
+      ? { retryAfter: Math.min(Math.ceil(retryAfter), 86400) }
+      : {})
+  };
+}
+
+function cloudKitServerError(value, operation, httpStatus) {
+  const metadata = cloudKitErrorMetadata(value, operation, httpStatus);
+  const code =
+    metadata.serverErrorCode ||
+    (!value?.serverErrorCode && metadata.httpStatus >= 400
+      ? `HTTP_${metadata.httpStatus}`
+      : 'cloudkit_unknown_error');
+  const error = webError(
+    code,
+    AUTH_ERRORS.has(code)
+      ? 'Sign in again to resume iCloud syncing. Your local workbooks are saved.'
+      : 'iCloud could not complete this operation. Your local copy was kept.'
+  );
+  Object.assign(error, metadata);
+  if (AUTH_ERRORS.has(code)) error.redirectURL = appleAuthenticationUrl(value?.redirectURL);
+  return error;
+}
 
 function webError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -70,7 +136,10 @@ function createCloudKitWebApi({
         signal: AbortSignal.timeout(60000)
       });
     } catch (_error) {
-      throw webError('cloud_network_unavailable', 'Saved locally. iCloud could not be reached.');
+      throw Object.assign(
+        webError('cloud_network_unavailable', 'Saved locally. iCloud could not be reached.'),
+        cloudKitErrorMetadata(null, operation)
+      );
     }
     // Apple rotates tokens in response headers, including some error responses.
     // Persist the successor before another request can consume it.
@@ -102,24 +171,25 @@ function createCloudKitWebApi({
         chunks.push(Buffer.from(chunk));
       }
       result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('shape');
     } catch (_error) {
-      throw webError('invalid_cloudkit_response', 'iCloud returned an unreadable response.');
-    }
-    const code = String(result.serverErrorCode || (!response.ok ? `HTTP_${response.status}` : ''));
-    if (code) {
-      const error = webError(
-        code,
-        AUTH_ERRORS.has(code)
-          ? 'Sign in again to resume iCloud syncing. Your local workbooks are saved.'
-          : 'iCloud could not complete this operation. Your local copy was kept.'
+      throw Object.assign(
+        webError('invalid_cloudkit_response', 'iCloud returned an unreadable response.'),
+        cloudKitErrorMetadata(null, operation, response.status)
       );
-      if (AUTH_ERRORS.has(code)) error.redirectURL = appleAuthenticationUrl(result.redirectURL);
-      throw error;
     }
+    if (result.serverErrorCode || !response.ok)
+      throw cloudKitServerError(result, operation, response.status);
+    Object.defineProperty(result, 'cloudkitHttpStatus', { value: response.status });
     return result;
   }
   return function api(operation, body) {
-    const pending = serial.then(() => perform(operation, body));
+    const pending = serial
+      .then(() => perform(operation, body))
+      .catch((error) => {
+        Object.assign(error, cloudKitErrorMetadata(error, operation));
+        throw error;
+      });
     serial = pending.catch(() => undefined);
     return pending;
   };
@@ -132,6 +202,8 @@ module.exports = {
   CLOUDKIT_WEB_ORIGIN,
   CLOUDKIT_SIGN_IN_URL,
   AUTH_ERRORS,
+  cloudKitErrorMetadata,
+  cloudKitServerError,
   appleAuthenticationUrl,
   validSessionToken,
   createCloudKitWebApi
