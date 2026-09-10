@@ -16,7 +16,7 @@ import {
   RULE_OPERATOR_OPTIONS
 } from './category-options.js';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
-import { asArray, normalizeCurrency } from './category-route-utils.js';
+import { asArray, normalizeCurrency, formatMoney, formatPercent } from './category-route-utils.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { useCollectionViewPreference } from '../../shared/use-collection-view-preference.js';
 
@@ -33,24 +33,6 @@ function withClick(binding, callback) {
       callback?.(event);
     }
   };
-}
-
-function formatMoney(value, currency = 'PHP') {
-  try {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: normalizeCurrency(currency),
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
-  } catch (_error) {
-    return `${(Number(value) || 0).toFixed(2)} ${normalizeCurrency(currency)}`;
-  }
-}
-
-function formatPercent(value) {
-  const number = Number(value) || 0;
-  return `${Number.isInteger(number) ? number : number.toFixed(1)}%`;
 }
 
 function ActionMenu({ children }) {

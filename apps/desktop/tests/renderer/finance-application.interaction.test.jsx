@@ -205,7 +205,7 @@ describe('finance application composition', () => {
       <AppShell initialWorkbook={makeApplicationWorkbook()} ports={ports} routeId="budgets" />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Create budget' }));
+    await user.click(screen.getByRole('button', { name: 'Add spending plan' }));
     const editor = await screen.findByRole('dialog', { name: 'Budget editor' });
     await user.click(within(editor).getByRole('combobox', { name: 'Budget category' }));
     await user.click(screen.getByRole('option', { name: 'Food' }));
@@ -230,7 +230,7 @@ describe('finance application composition', () => {
     const { ports, save } = makePorts();
     render(<AppShell initialWorkbook={workbook} ports={ports} routeId="budgets" />);
 
-    await user.click(screen.getByRole('button', { name: 'Create budget' }));
+    await user.click(screen.getByRole('button', { name: 'Add spending plan' }));
     const editor = await screen.findByRole('dialog', { name: 'Budget editor' });
     await user.type(within(editor).getByLabelText('Planned amount'), '2400');
     await user.type(within(editor).getByLabelText('Budget notes'), 'Monthly trip contribution');
@@ -270,7 +270,7 @@ describe('finance application composition', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Next month' }));
-    await user.click(screen.getByRole('button', { name: 'Create budget' }));
+    await user.click(screen.getByRole('button', { name: 'Add spending plan' }));
     const editor = await screen.findByRole('dialog', { name: 'Budget editor' });
     expect(within(editor).getByText('August 2026')).not.toBeNull();
     await user.click(within(editor).getByRole('combobox', { name: 'Budget category' }));

@@ -6,6 +6,7 @@ import { CavalrySelect, UncontrolledCavalrySelect } from '../../shared/CavalrySe
 import { useAppearance } from '../../app/AppearanceProvider.jsx';
 import { CUSTOM_COLOR_FIELDS } from '../../app/appearance-preferences.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
+import { submitAction } from './settings-form-actions.js';
 import { CloudAccountPanel } from './CloudAccountPanel.jsx';
 
 const COUNTERPARTY_KIND_OPTIONS = Object.freeze([
@@ -22,27 +23,6 @@ const ADVISOR_PROVIDER_OPTIONS = Object.freeze([
   { value: 'openai', label: 'ChatGPT / OpenAI', icon: 'auto_awesome' },
   { value: 'custom', label: 'Local Model', icon: 'memory' }
 ]);
-
-function formPayload(form) {
-  const payload = {};
-  if (!(form && typeof FormData === 'function')) {
-    return payload;
-  }
-  new FormData(form).forEach((value, key) => {
-    if (!(key in payload) && typeof value === 'string') {
-      payload[key] = value;
-    }
-  });
-  return payload;
-}
-
-function submitAction(event, onAction, type) {
-  event.preventDefault();
-  if (typeof onAction === 'function') {
-    return onAction({ type, payload: formPayload(event.currentTarget) });
-  }
-  return undefined;
-}
 
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
