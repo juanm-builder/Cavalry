@@ -8,6 +8,8 @@
   --sidebar-width: 236px;
   --topbar-height: 70px;
   --page-gutter: clamp(20px, 2.4vw, 34px);
+  --workspace-section-gap: 24px;
+  --workspace-card-gap: 16px;
   --radius-xl: 8px;
   --radius-lg: 6px;
   --radius-md: 4px;
@@ -96,6 +98,25 @@ a,
 
 [data-react-route] {
   min-width: 0;
+}
+
+[data-react-route='dashboard'],
+[data-react-route='accounts'],
+[data-react-route='transactions'],
+[data-react-route='bills'],
+[data-react-route='ai-drafts'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.app-main > [data-react-route]:not([data-react-route='advisor']) {
+  row-gap: var(--workspace-section-gap);
+}
+
+[data-react-route] > :is(.page-header, .settings-page-header, .notes-page-header),
+[data-react-route] > :is(.summary-card-grid, .bills-simple-summary) {
+  margin-bottom: 0;
 }
 
 .nav-rail {
@@ -649,11 +670,11 @@ html[data-theme='cerulean'] .navigation-compact .nav-item.active {
 .bills-simple-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px !important;
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  background: var(--line-strong);
+  gap: var(--workspace-card-gap);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 [data-react-route='transactions'] > .summary-card-grid {
@@ -666,10 +687,10 @@ html[data-theme='cerulean'] .navigation-compact .nav-item.active {
 .bills-simple-summary > * {
   min-height: 104px;
   margin: 0;
-  border: 0 !important;
-  border-radius: 0 !important;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   background: var(--panel);
-  box-shadow: none !important;
+  box-shadow: none;
 }
 
 .finance-stat-card,
@@ -1263,20 +1284,20 @@ body > .modal-backdrop {
 
 .dashboard-flow-summary-grid {
   grid-template-columns: minmax(0, 1fr) minmax(105px, 0.65fr) minmax(0, 1fr);
-  gap: 1px;
+  gap: var(--workspace-card-gap);
   margin-top: 13px;
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--line-strong);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .dashboard-flow-summary-item,
 .dashboard-flow-connector {
   min-height: 86px;
   padding: 12px;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
@@ -1370,23 +1391,24 @@ body > .modal-backdrop {
 }
 
 .timeline-summary-strip {
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--line-strong);
+  gap: var(--workspace-card-gap);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .timeline-summary-strip > div {
   padding: 9px 10px;
-  border-left: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
 .timeline-summary-strip > div:first-child,
 .timeline-summary-strip > div:nth-child(2),
 .timeline-summary-strip > div:nth-child(3) {
-  border-left-color: transparent;
+  border-left-color: var(--line-strong);
 }
 
 .timeline-summary-strip span,
@@ -1594,8 +1616,9 @@ body > .modal-backdrop {
 
 .transaction-workspace,
 .accounts-register-layout,
-.accounts-page-grid {
-  gap: 16px;
+.accounts-page-grid,
+.accounts-layout-grid {
+  gap: var(--workspace-card-gap);
 }
 
 .transaction-register-card,
@@ -1659,7 +1682,7 @@ body > .modal-backdrop {
 
 .account-card-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--workspace-card-gap);
 }
 
 .account-list-card {
@@ -1861,8 +1884,11 @@ body > .modal-backdrop {
 
 .budget-status-card.budget-status-balance {
   --status-color: var(--text);
+  /* Extra Savings/Debt rows must not stretch the balance card. */
+  align-self: start;
+  align-content: start;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: auto auto auto;
   gap: 24px;
   min-height: 312px;
   padding: 24px;
@@ -2061,15 +2087,16 @@ body > .modal-backdrop {
 
 /* Bills */
 
-.bills-page-grid {
-  gap: 16px;
+.bills-page-grid,
+.bills-side-stack {
+  gap: var(--workspace-card-gap);
 }
 
 .bill-summary-pill {
   min-height: 96px;
   padding: 13px 14px;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   background: var(--panel);
 }
 
@@ -2148,7 +2175,7 @@ body > .modal-backdrop {
 
 .category-gallery {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--workspace-card-gap);
 }
 
 .category-card,
@@ -2431,7 +2458,7 @@ body > .modal-backdrop {
 }
 
 .settings-content-stack {
-  gap: 12px;
+  gap: var(--workspace-card-gap);
 }
 
 .settings-card {
@@ -2791,6 +2818,8 @@ body > .modal-backdrop {
   .dashboard-spending-card .donut-layout,
   .transaction-workspace,
   .accounts-register-layout,
+  .accounts-layout-grid,
+  .bills-page-grid,
   .settings-layout,
   .notes-workspace {
     grid-template-columns: 1fr;
@@ -2871,6 +2900,37 @@ body > .modal-backdrop {
 }
 
 @container ledger-workspace (max-width: 560px) {
+  [data-react-route] {
+    --workspace-section-gap: 20px;
+  }
+
+  [data-react-route] > .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-react-route] > .page-header .page-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dashboard-page-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bills-filter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary-card-grid,
+  .hero-grid,
+  .accounts-summary-grid,
+  .bills-simple-summary,
+  .timeline-summary-strip,
+  [data-react-route='transactions'] > .summary-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   [data-react-route='budgets'] {
     gap: 20px;
   }

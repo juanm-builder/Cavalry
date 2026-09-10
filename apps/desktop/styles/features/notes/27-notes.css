@@ -12,6 +12,63 @@
   gap: 18px;
 }
 
+.notes-header-actions,
+.notes-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notes-save-status {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-align: right;
+}
+
+.notes-writing-actions {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.notes-entry-review-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.notes-entry-review-meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notes-entry-review-meta button {
+  flex-shrink: 0;
+  color: var(--text-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.notes-source-text {
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent-line);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notes-stale-notice {
+  margin: 0 20px 14px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
 .notes-page-header h1 {
   font-size: clamp(27px, 2.2vw, 34px);
   line-height: 1.1;

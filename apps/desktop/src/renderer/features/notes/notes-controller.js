@@ -1,5 +1,6 @@
 import { submitManualTransactionCommand, validateLedgerInvariants } from '@cavalry/finance-core';
 
+import { withNotesDuplicateReview } from './notes-duplicate-review.js';
 import { notesEntryToTransactionInput, validateNotesEntry } from './notes-parser.js';
 
 function asArray(value) {
@@ -22,12 +23,16 @@ export function submitNotesBatchCommand(workbook, entries, services = {}) {
     return commandError(workbook, 'notes.empty_batch', 'Process at least one transaction first.');
   }
 
-  const invalidEntry = batch.find((entry) => validateNotesEntry(workbook, entry).length);
+  const invalidEntry = batch.find(
+    (entry) =>
+      validateNotesEntry(workbook, entry).length ||
+      withNotesDuplicateReview(workbook, entry).issues.length
+  );
   if (invalidEntry) {
     return commandError(
       workbook,
       'notes.unresolved_entry',
-      `Line ${invalidEntry.lineNumber || 1} is missing required transaction details.`,
+      `Line ${invalidEntry.lineNumber || 1} has details that still need review.`,
       { lineNumber: invalidEntry.lineNumber || 1 }
     );
   }

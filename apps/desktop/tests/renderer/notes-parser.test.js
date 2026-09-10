@@ -526,7 +526,7 @@ describe('notes parser', () => {
       today: '2026-07-29'
     });
 
-    expect(entry.amount).toBe(100);
+    expect(entry.amount).toBe(0);
     expect(entry.issues.map((item) => item.code)).toEqual(
       expect.arrayContaining(['amount_ambiguous', 'category_link_invalid'])
     );
@@ -562,13 +562,19 @@ describe('notes batch command', () => {
     ]);
   });
 
-  it('saves structurally valid entries even when inference guidance remains', () => {
+  it('requires explicit review before saving entries with inference guidance', () => {
     const workbook = makeNotesWorkbook();
     const services = makeServices();
     const entries = parseNotesText('₱180 coffee cash\n₱400 unknown cash', workbook, {
       today: services.today
     });
-    const result = submitNotesBatchCommand(workbook, entries, services);
+    const blocked = submitNotesBatchCommand(workbook, entries, services);
+    expect(blocked.ok).toBe(false);
+    expect(workbook.transactions).toEqual([]);
+    const reviewed = entries.map((entry) =>
+      resolveNotesEntry(workbook, entry, { manuallyReviewed: true })
+    );
+    const result = submitNotesBatchCommand(workbook, reviewed, services);
 
     expect(entries[1].issues.map((item) => item.code)).toContain('category_uncertain');
     expect(validateNotesEntry(workbook, entries[1])).toEqual([]);
@@ -639,5 +645,259 @@ describe('notes batch command', () => {
       source: 'notes'
     });
     expect(edited.events.filter((event) => event.type === 'schedule-save')).toHaveLength(1);
+  });
+});
+
+describe('messy financial notes corpus', () => {
+  const today = '2026-09-10';
+
+  it('keeps date headings and totals out of the ledger and retains source context', () => {
+    const text =
+      '# Spending\nSeptember 9, 2026\n- lunch 180 cash\nTotal: 180\nReminder: pay rent 12000\nJust trying to spend less.';
+    const [entry, ...extra] = parseNotesText(text, makeNotesWorkbook(), { today });
+    expect(extra).toEqual([]);
+    expect(entry).toMatchObject({
+      amount: 180,
+      date: '2026-09-09',
+      lineNumber: 3,
+      sourceText: '- lunch 180 cash',
+      sourceLineNumbers: [3],
+      sourceContext: { date: '2026-09-09', text: 'September 9, 2026', lineNumber: 2 }
+    });
+  });
+
+  it('groups multiline fields without losing original text or borrowing from the next purchase', () => {
+    const text = 'Lunch\n amount: 180\n paid with cash\n\nGroceries 500 debit';
+    const entries = parseNotesText(text, makeNotesWorkbook(), { today });
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      amount: 180,
+      sourceText: 'Lunch\n amount: 180\n paid with cash',
+      sourceLineNumbers: [1, 2, 3],
+      primaryAccountId: 'cash',
+      description: 'Lunch'
+    });
+    expect(entries[1]).toMatchObject({ amount: 500, lineNumber: 5, primaryAccountId: 'bank' });
+  });
+
+  it('supports a merchant line followed by an unlabeled amount and a payment line', () => {
+    const [entry] = parseNotesText('Groceries\n500\nGCash', makeSmartNotesWorkbook(), { today });
+    expect(entry).toMatchObject({
+      amount: 500,
+      sourceLineNumbers: [1, 2, 3],
+      primaryAccountId: 'gcash'
+    });
+  });
+
+  it('splits semicolon purchases and strips list numbers without treating them as amounts', () => {
+    const entries = parseNotesText(
+      '1. coffee 180 cash; groceries 250 debit\n2) transportation 100 cash',
+      makeNotesWorkbook(),
+      { today }
+    );
+    expect(entries.map((entry) => entry.amount)).toEqual([180, 250, 100]);
+    expect(new Set(entries.map((entry) => entry.id)).size).toBe(3);
+    expect(entries.map((entry) => entry.lineNumber)).toEqual([1, 1, 2]);
+  });
+
+  it.each([
+    ['2 coffees PHP 180 cash', 180],
+    ['coffee: ₱180.50, cash', 180.5],
+    ['groceries 1,234.56 cash', 1234.56],
+    ['groceries 1.234,56 cash', 1234.56],
+    ['coffee 180,50 cash', 180.5],
+    ['salary 25k cash', 25000],
+    ['coffee one hundred eighty cash', 180],
+    ['transportation one kay cash', 1000],
+    ['coffee PHP 180 ref #123456 cash', 180]
+  ])('reads the actual amount from %s', (text, amount) => {
+    expect(parseNotesLine(text, makeNotesWorkbook(), { today }).amount).toBe(amount);
+  });
+
+  it.each([
+    ['coffee 180 cash, actually 160', 'correction_review'],
+    ['coffee 100 + 20 cash', 'amount_ambiguous'],
+    ['coffee 100-200 cash', 'amount_ambiguous'],
+    ['coffee -180 cash', 'amount_format_review'],
+    ['coffee (180) cash', 'amount_format_review'],
+    ['coffee 1,23,4 cash', 'amount_format_review'],
+    ['coffee PHP 180 USD cash', 'amount_format_review'],
+    ['coffee 180.999 cash', 'amount_format_review']
+  ])('does not guess a ready amount for %s', (text, code) => {
+    const entry = parseNotesLine(text, makeNotesWorkbook(), { today });
+    expect(entry.amount).toBe(0);
+    expect(entry.issues.map((item) => item.code)).toContain(code);
+  });
+
+  it('keeps a correction attached to the original transaction and requires review', () => {
+    const [entry, ...others] = parseNotesText(
+      'coffee 180 cash\nactually 160',
+      makeNotesWorkbook(),
+      { today }
+    );
+    expect(others).toEqual([]);
+    expect(entry).toMatchObject({
+      amount: 0,
+      sourceLineNumbers: [1, 2],
+      sourceText: 'coffee 180 cash\nactually 160'
+    });
+    expect(entry.issues.map((item) => item.code)).toContain('correction_review');
+  });
+
+  it.each([
+    ['9 September 2026 coffee 180 cash', '2026-09-09'],
+    ['Sept. 9 coffee 180 cash', '2026-09-09'],
+    ['2026-9-9 coffee 180 cash', '2026-09-09'],
+    ['29/07/2026 coffee 180 cash', '2026-07-29'],
+    ['yesterday coffee 180 cash', '2026-09-09']
+  ])('separates dates from money in %s', (text, date) => {
+    expect(parseNotesLine(text, makeNotesWorkbook(), { today })).toMatchObject({
+      amount: 180,
+      date
+    });
+  });
+
+  it.each([
+    '09/10 coffee 180 cash',
+    '2026-09-09 yesterday today coffee 180 cash',
+    'last Friday coffee 180 cash'
+  ])('requires review of unresolved dates in %s', (text) => {
+    const entry = parseNotesLine(text, makeNotesWorkbook(), { today });
+    expect(entry.date).toBe('');
+    expect(entry.issues.map((item) => item.code)).toContain('date_ambiguous');
+  });
+
+  it('does not use a month heading as a precise date or amount', () => {
+    const [entry, ...others] = parseNotesText(
+      'September 2026\ncoffee 180 cash',
+      makeNotesWorkbook(),
+      { today }
+    );
+    expect(others).toEqual([]);
+    expect(entry).toMatchObject({ amount: 180, date: '' });
+    expect(entry.issues.map((item) => item.code)).toContain('date_ambiguous');
+  });
+
+  it.each([
+    ['transfer 500 cash to bank', 'transaction_kind_unsupported'],
+    ['paid credit card 500 cash', 'transaction_kind_unsupported'],
+    ['refund 180 coffee cash', 'transaction_kind_unsupported'],
+    ['lunch about 180 cash', 'amount_approximate'],
+    ['lunch unpaid 180 cash', 'transaction_intent_review'],
+    ['tomorrow coffee 180 cash', 'date_future_review'],
+    ['grocries 500 cash', 'category_typo_review']
+  ])('keeps uncertain financial intent visible for %s', (text, code) => {
+    const entry = parseNotesLine(text, makeNotesWorkbook(), { today });
+    expect(entry.issues.map((item) => item.code)).toContain(code);
+    expect(
+      resolveNotesEntry(makeNotesWorkbook(), entry, { keepInferenceIssues: true }).issues.map(
+        (item) => item.code
+      )
+    ).toContain(code);
+  });
+
+  it('returns no transactions for ordinary notes and summaries', () => {
+    expect(
+      parseNotesText(
+        'Spending\nRemember: buy groceries 500\nTotal 500\nI want to use cash more often.',
+        makeNotesWorkbook(),
+        { today }
+      )
+    ).toEqual([]);
+  });
+});
+
+describe('source formatting stays financially safe', () => {
+  it('does not turn a leading negative sign into a list marker', () => {
+    const [entry] = parseNotesText('-180 coffee cash', makeNotesWorkbook(), {
+      today: '2026-09-10'
+    });
+    expect(entry.amount).toBe(0);
+    expect(entry.issues.map((issue) => issue.code)).toContain('amount_format_review');
+  });
+
+  it('keeps unchecked checklist items under review', () => {
+    const [entry] = parseNotesText('- [ ] coffee 180 cash', makeNotesWorkbook(), {
+      today: '2026-09-10'
+    });
+    expect(entry.issues.map((issue) => issue.code)).toContain('transaction_intent_review');
+    expect(entry.sourceText).toBe('- [ ] coffee 180 cash');
+  });
+
+  it('never applies a USD exchange rate to a different currency', () => {
+    const entry = parseNotesLine(
+      'coffee EUR 180 cash',
+      makeNotesWorkbook({ settings: { usdToBaseRate: 58 } }),
+      { today: '2026-09-10' }
+    );
+    expect(entry).toMatchObject({ currency: 'EUR', amount: 180, fxRateToBase: 0 });
+    expect(entry.issues.map((issue) => issue.code)).toContain('fx_rate_missing');
+  });
+});
+
+describe('Notes review cannot change unsupported financial intent', () => {
+  it.each([
+    'moved 500 from Cash to GCash',
+    'refund 180 coffee cash',
+    'paid credit card 500 cash',
+    'coffee 180 cash every month'
+  ])('blocks %s even after manual review', (text) => {
+    const workbook = makeSmartNotesWorkbook();
+    const parsed = parseNotesLine(text, workbook, { today: '2026-07-29' });
+    const reviewed = resolveNotesEntry(
+      workbook,
+      {
+        ...parsed,
+        amount: 500,
+        date: '2026-07-29',
+        description: 'Edited description',
+        categoryId: 'shopping',
+        primaryAccountId: 'cash'
+      },
+      { manuallyReviewed: true }
+    );
+    expect(reviewed.issues.map((issue) => issue.code)).toContain('transaction_kind_unsupported');
+    const result = submitNotesBatchCommand(workbook, [reviewed], makeServices());
+    expect(result.ok).toBe(false);
+    expect(workbook.transactions).toEqual([]);
+  });
+
+  it('does not save uncertain parser inference through a direct batch command', () => {
+    const workbook = makeSmartNotesWorkbook();
+    const [entry] = parseNotesText('500 mystery cash', workbook, { today: '2026-07-29' });
+    expect(entry.issues.length).toBeGreaterThan(0);
+    const result = submitNotesBatchCommand(workbook, [entry], makeServices());
+    expect(result.ok).toBe(false);
+    expect(workbook.transactions).toEqual([]);
+  });
+});
+
+describe('Notes duplicate write boundary', () => {
+  it('rejects an existing ledger duplicate until explicitly reviewed', () => {
+    const workbook = makeNotesWorkbook();
+    const services = makeServices();
+    const [entry] = parseNotesText('180 coffee cash', workbook, { today: services.today });
+    const first = submitNotesBatchCommand(workbook, [entry], services);
+    expect(first.ok).toBe(true);
+    const repeated = submitNotesBatchCommand(first.workbook, [entry], services);
+    expect(repeated.ok).toBe(false);
+    expect(repeated.workbook.transactions).toHaveLength(1);
+    const reviewed = resolveNotesEntry(first.workbook, entry, { manuallyReviewed: true });
+    const confirmed = submitNotesBatchCommand(first.workbook, [reviewed], services);
+    expect(confirmed.ok).toBe(true);
+    expect(confirmed.workbook.transactions).toHaveLength(2);
+  });
+});
+
+describe('native Notes reminder regression', () => {
+  it('does not create a candidate from a reminder before a summary or another amount', () => {
+    const source =
+      '2026-09-10\ncoffee 180 GCash\nlunch 220 or 200 GCash?\nRemember to find the taxi receipt\nTotal 380\nMoved 500 from Cash to GCash';
+    const entries = parseNotesText(source, makeSmartNotesWorkbook(), { today: '2026-09-10' });
+    expect(entries).toHaveLength(3);
+    expect(entries.map((entry) => entry.lineNumber)).toEqual([2, 3, 6]);
+    expect(entries.map((entry) => entry.amount)).toEqual([180, 0, 500]);
+    expect(entries.every((entry) => !entry.sourceText.includes('Remember'))).toBe(true);
+    expect(entries[2].issues.map((issue) => issue.code)).toContain('transaction_kind_unsupported');
   });
 });

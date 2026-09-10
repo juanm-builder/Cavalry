@@ -1,3 +1,11 @@
+import { prepareNotesSources } from './notes-source.js';
+import {
+  notesIntentIssues,
+  parseNotesAmount,
+  parseNotesDate,
+  unsupportedNotesIntent
+} from './notes-value-parser.js';
+
 const PAYMENT_PATTERNS = Object.freeze([
   {
     kind: 'credit_card',
@@ -400,6 +408,22 @@ function findPreferredSemanticCategory(categories, description) {
   return null;
 }
 
+function oneLetterApart(left, right) {
+  if (left === right) return false;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if (left[index] === right[index]) continue;
+    return left.length === right.length
+      ? left.slice(index + 1) === right.slice(index + 1) ||
+          (left[index] === right[index + 1] &&
+            left[index + 1] === right[index] &&
+            left.slice(index + 2) === right.slice(index + 2))
+      : left.length > right.length
+        ? left.slice(index + 1) === right.slice(index)
+        : left.slice(index) === right.slice(index + 1);
+  }
+  return true;
+}
+
 function findCategory(workbook, description) {
   const categories = activeCategories(workbook);
   const direct = categories
@@ -490,6 +514,28 @@ function findCategory(workbook, description) {
       };
     }
   }
+
+  const typoMatches = categories.flatMap((category) => {
+    const phrases = [
+      normalize(category.name),
+      ...categoryAliasKeys(category.name).flatMap((key) => CATEGORY_ALIASES[key])
+    ];
+    return phrases
+      .filter((phrase) => phrase.length >= 5 && !phrase.includes(' '))
+      .flatMap((phrase) =>
+        description
+          .split(' ')
+          .filter(
+            (word) =>
+              word.length >= 5 &&
+              Math.abs(word.length - phrase.length) <= 1 &&
+              oneLetterApart(word, phrase)
+          )
+          .map((word) => ({ category, matchedPhrase: word }))
+      );
+  });
+  if (new Set(typoMatches.map((match) => match.category.id)).size === 1)
+    return { ...typoMatches[0], typo: true };
 
   const expectedType = impliedCategoryType(description);
   const compatible = categories.filter((category) => category.type === expectedType);
@@ -678,47 +724,6 @@ export function paymentLabel(account) {
   return account ? asString(account.name).trim() || 'Account' : 'Not selected';
 }
 
-function parseDate(source, today) {
-  const isoMatch = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(source);
-  if (isoMatch) return { date: isoMatch[1], matchedText: isoMatch[0] };
-  if (/\byesterday\b/i.test(source) && /^\d{4}-\d{2}-\d{2}$/.test(today)) {
-    const timestamp = Date.parse(`${today}T00:00:00Z`);
-    return {
-      date: new Date(timestamp - 86400000).toISOString().slice(0, 10),
-      matchedText: 'yesterday'
-    };
-  }
-  return {
-    date: /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : new Date().toISOString().slice(0, 10),
-    matchedText: /\btoday\b/i.test(source) ? 'today' : ''
-  };
-}
-
-function parseAmount(source, workbookCurrency) {
-  const matches = Array.from(
-    source.matchAll(
-      /(?:₱|PHP\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?|(?:US\$|\$|USD\s*)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?|(?:^|\s)([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)([km])?(?=\s|$)/gi
-    )
-  );
-  const match = matches[0];
-  if (!match) return { amount: 0, currency: workbookCurrency, matchedText: '' };
-  const rawNumber = match[1] || match[3] || match[5] || '';
-  const suffix = asString(match[2] || match[4] || match[6]).toLowerCase();
-  const multiplier = suffix === 'm' ? 1_000_000 : suffix === 'k' ? 1_000 : 1;
-  const amount = Number(rawNumber.replace(/,/g, '')) * multiplier;
-  const marker = match[0].toUpperCase();
-  return {
-    amount: Number.isFinite(amount) ? amount : 0,
-    currency: match[1]
-      ? 'PHP'
-      : match[3] || marker.includes('$') || marker.includes('USD')
-        ? 'USD'
-        : workbookCurrency,
-    matchedText: match[0].trim(),
-    ambiguous: matches.length > 1
-  };
-}
-
 function removePhrase(source, phrase) {
   if (!phrase) return source;
   return source.replace(new RegExp(escapeRegExp(phrase), 'i'), ' ');
@@ -730,7 +735,7 @@ function buildDescription(source, ...matchedPhrases) {
     description = removePhrase(description, phrase);
   });
   description = description
-    .replace(/\b(?:today|yesterday)\b/gi, ' ')
+    .replace(/\b(?:today|yesterday|paid with|paid via|paid using)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[,;:\-–—\s]+|[,;:\-–—\s]+$/g, '')
     .trim();
@@ -744,6 +749,18 @@ function issue(code, field, message) {
 
 export function validateNotesEntry(workbook, entry) {
   const issues = [];
+  const unsupportedIntent =
+    entry?.unsupportedIntent || unsupportedNotesIntent(asString(entry?.sourceText));
+  if (unsupportedIntent)
+    issues.push(
+      issue(
+        'transaction_kind_unsupported',
+        'review',
+        unsupportedIntent === 'recurring'
+          ? 'Use Bills to set up recurring payments.'
+          : 'Use Add Transaction for transfers, refunds or debt payments.'
+      )
+    );
   const categories = activeCategories(workbook);
   const accounts = balanceAccounts(workbook);
   const allAccounts = asArray(workbook && workbook.accounts);
@@ -763,7 +780,7 @@ export function validateNotesEntry(workbook, entry) {
     Number.isFinite(dateTimestamp) &&
     new Date(dateTimestamp).toISOString().slice(0, 10) === date;
 
-  if (!(amount > 0)) {
+  if (!(amount > 0) || !Number.isFinite(amount)) {
     issues.push(issue('amount_missing', 'amount', 'Enter an amount greater than zero.'));
   }
   if (!category) {
@@ -881,20 +898,25 @@ export function resolveNotesEntry(workbook, entry, options = {}) {
 }
 
 export function parseNotesLine(line, workbook, options = {}) {
-  const sourceText = asString(line).trim();
+  const sourceText = asString(options.sourceText || line).trim();
+  const parsingText = asString(line).trim();
   const workbookCurrency = asString(workbook && workbook.currency).toUpperCase() || 'PHP';
   const today =
     typeof options.today === 'function' ? asString(options.today()) : asString(options.today);
-  const dateResult = parseDate(sourceText, today);
-  const amountSource = removePhrase(sourceText, dateResult.matchedText);
-  const amountResult = parseAmount(amountSource, workbookCurrency);
-  const normalizedLine = normalize(sourceText);
-  const paymentPattern = PAYMENT_PATTERNS.find((candidate) => candidate.pattern.test(sourceText));
-  const paymentPhrase = paymentPattern?.pattern.exec(sourceText)?.[0] || '';
+  const explicitDate = parseNotesDate(parsingText, today);
+  const dateResult = explicitDate.explicit ? explicitDate : options.dateContext || explicitDate;
+  const amountSource = explicitDate.matchedTexts.reduce(
+    (value, phrase) => removePhrase(value, phrase),
+    parsingText
+  );
+  const amountResult = parseNotesAmount(amountSource, workbookCurrency);
+  const normalizedLine = normalize(parsingText);
+  const paymentPattern = PAYMENT_PATTERNS.find((candidate) => candidate.pattern.test(parsingText));
+  const paymentPhrase = paymentPattern?.pattern.exec(parsingText)?.[0] || '';
   const preliminaryDescription = buildDescription(
-    sourceText,
-    amountResult.matchedText,
-    dateResult.matchedText,
+    parsingText,
+    ...amountResult.matchedTexts,
+    ...explicitDate.matchedTexts,
     paymentPhrase
   );
   const normalizedDescription = normalize(preliminaryDescription);
@@ -907,24 +929,56 @@ export function parseNotesLine(line, workbook, options = {}) {
     normalizedDescription || normalizedLine
   );
   const description = buildDescription(
-    sourceText,
-    amountResult.matchedText,
-    dateResult.matchedText,
+    parsingText,
+    ...amountResult.matchedTexts,
+    ...explicitDate.matchedTexts,
     paymentPhrase || paymentResult.matchedPhrase
   );
-  const inferenceIssues = [];
+  const inferenceIssues = notesIntentIssues(parsingText);
   const suggestedFxRate =
-    amountResult.currency !== workbookCurrency
+    amountResult.currency === 'USD' && workbookCurrency !== 'USD'
       ? Number(asObject(workbook && workbook.settings).usdToBaseRate) || 0
       : 0;
 
-  if (!amountResult.amount) {
-    inferenceIssues.push(issue('amount_missing', 'amount', 'Cavalry could not find an amount.'));
-  } else if (amountResult.ambiguous) {
+  if (dateResult.ambiguous)
     inferenceIssues.push(
-      issue('amount_ambiguous', 'amount', 'More than one amount appears on this line.')
+      issue(
+        'date_ambiguous',
+        'date',
+        'Choose the date; this note has an ambiguous or conflicting date.'
+      )
     );
+  if (dateResult.future)
+    inferenceIssues.push(
+      issue(
+        'date_future_review',
+        'date',
+        'This date is in the future. Check whether this transaction has happened.'
+      )
+    );
+  if (amountResult.invalid || amountResult.signed)
+    inferenceIssues.push(
+      issue('amount_format_review', 'amount', 'Check the amount format or sign before recording.')
+    );
+  if (amountResult.approximate)
+    inferenceIssues.push(
+      issue('amount_approximate', 'amount', 'Check the exact amount before recording.')
+    );
+  if (amountResult.ambiguous) {
+    inferenceIssues.push(
+      issue('amount_ambiguous', 'amount', 'More than one amount appears in this note.')
+    );
+  } else if (!amountResult.amount) {
+    inferenceIssues.push(issue('amount_missing', 'amount', 'Cavalry could not find an amount.'));
   }
+  if (categoryResult.typo)
+    inferenceIssues.push(
+      issue(
+        'category_typo_review',
+        'categoryId',
+        `Check whether ${categoryResult.category.name} matches the spelling in your note.`
+      )
+    );
   if (categoryResult.ambiguous) {
     inferenceIssues.push(
       issue('category_ambiguous', 'categoryId', 'More than one category matched this line.')
@@ -976,7 +1030,16 @@ export function parseNotesLine(line, workbook, options = {}) {
   const parsed = {
     id: options.id || `notes-line-${Number(options.lineNumber) || 1}`,
     lineNumber: Number(options.lineNumber) || 1,
+    sourceLineNumbers: options.sourceLineNumbers || [Number(options.lineNumber) || 1],
+    sourceContext: options.dateContext
+      ? {
+          date: options.dateContext.date,
+          text: options.dateContext.text,
+          lineNumber: options.dateContext.lineNumber
+        }
+      : null,
     sourceText,
+    unsupportedIntent: unsupportedNotesIntent(parsingText),
     amount: amountResult.amount,
     currency: amountResult.currency,
     fxRateToBase: suggestedFxRate,
@@ -998,17 +1061,14 @@ export function parseNotesLine(line, workbook, options = {}) {
 }
 
 export function parseNotesText(text, workbook, options = {}) {
-  return asString(text)
-    .split(/\r?\n/)
-    .map((line, index) => ({ line, lineNumber: index + 1 }))
-    .filter(({ line }) => line.trim())
-    .map(({ line, lineNumber }) =>
-      parseNotesLine(line, workbook, {
-        ...options,
-        id: `notes-line-${lineNumber}`,
-        lineNumber
-      })
-    );
+  const today = typeof options.today === 'function' ? options.today() : options.today;
+  return prepareNotesSources(text, { today, currency: workbook?.currency || 'PHP' }).map((source) =>
+    parseNotesLine(source.parseText, workbook, {
+      ...options,
+      ...source,
+      id: `notes-line-${source.lineNumber}${source.segmentIndex ? `-${source.segmentIndex + 1}` : ''}`
+    })
+  );
 }
 
 export function notesEntryToTransactionInput(entry) {
@@ -1025,8 +1085,8 @@ export function notesEntryToTransactionInput(entry) {
     counterpartyId: asString(entry.counterpartyId),
     note: asString(entry.transactionNote) || 'Captured from Notes',
     sourceRoute: 'notes',
-    // Notes is intentionally one-step intake: duplicate-looking lines are saved and remain
-    // editable instead of introducing a second confirmation/approval gate.
+    // Existing ledger matches require Notes review; repeated lines in this reviewed batch
+    // remain separate transactions.
     allowDuplicate: entry.allowDuplicate !== false,
     allowCurrencyConversion: Number(entry.fxRateToBase) > 0,
     fxRateToBase: Number(entry.fxRateToBase) || 0

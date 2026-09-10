@@ -454,7 +454,9 @@ describe('finance application composition', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Add bill or subscription' })).toBeNull();
     expect(screen.queryAllByRole('alert').map((alert) => alert.textContent)).toEqual([]);
-    await waitFor(() => expect(save).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(save.mock.calls.at(-1)?.[0]?.recurringItems.at(-1)?.name).toBe('Internet')
+    );
     const savedWorkbook = save.mock.calls.at(-1)[0];
     const createdCategory = savedWorkbook.categories.find(
       (category) => category.name === 'Trip Fund'

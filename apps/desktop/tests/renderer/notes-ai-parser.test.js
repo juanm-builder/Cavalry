@@ -200,7 +200,7 @@ describe('notes AI parser', () => {
     ]);
   });
 
-  it('sends an exact-line Responses schema with enum IDs and recent examples', async () => {
+  it('sends a source-group Responses schema with enum IDs and recent examples', async () => {
     const candidates = [
       transaction(),
       transaction({
@@ -252,7 +252,7 @@ describe('notes AI parser', () => {
             required: ['transactions'],
             properties: {
               transactions: {
-                minItems: 2,
+                minItems: 0,
                 maxItems: 2,
                 items: {
                   additionalProperties: false,
@@ -623,5 +623,196 @@ describe('notes AI parser', () => {
     expect(duplicate.entries[0].issues.map((item) => item.code)).toContain('ai_line_unresolved');
     expect(duplicate.entries[1].description).toBe('AI Lunch');
     expect(duplicate.entries[1].issues).toEqual([]);
+  });
+});
+
+describe('messy AI note intake safeguards', () => {
+  it('sends multiline groups with heading context and does not force every line into a transaction', async () => {
+    const advisor = configuredAdvisor(
+      responsesResult([
+        transaction({
+          sourceId: 'notes-line-2',
+          lineNumber: 2,
+          amount: 180,
+          date: '2026-07-28',
+          description: 'Lunch',
+          categoryId: 'food',
+          primaryAccountId: 'cash',
+          evidence: {
+            amount: '180',
+            category: 'Lunch',
+            primaryAccount: 'cash',
+            date: 'July 28, 2026',
+            description: 'Lunch'
+          }
+        })
+      ])
+    );
+    const result = await parseNotesWithAi(
+      'July 28, 2026\nLunch\namount: 180\npaid with cash\nTotal: 180',
+      makeWorkbook(),
+      options(advisor)
+    );
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      amount: 180,
+      date: '2026-07-28',
+      sourceLineNumbers: [2, 3, 4],
+      issues: []
+    });
+    const packet = JSON.parse(advisor.invoke.mock.calls[1][1].input);
+    expect(packet.noteGroups).toHaveLength(1);
+    expect(packet.noteGroups[0]).toMatchObject({
+      sourceId: 'notes-line-2',
+      sourceLineNumbers: [2, 3, 4],
+      dateContext: { date: '2026-07-28' }
+    });
+    expect(
+      advisor.invoke.mock.calls[1][1].text.format.schema.properties.transactions
+    ).toMatchObject({ minItems: 0, maxItems: 1 });
+  });
+
+  it.each([
+    [{ amount: 1800 }, 'ai_amount_mismatch'],
+    [{ date: '2026-07-01' }, 'ai_date_mismatch'],
+    [{ currency: 'USD' }, 'ai_currency_mismatch'],
+    [{ primaryAccountId: 'card', primaryAccountName: 'Everyday Visa' }, 'ai_payment_mismatch']
+  ])(
+    'flags values inconsistent with the source even when evidence exists: %s',
+    async (changes, code) => {
+      const advisor = configuredAdvisor(
+        responsesResult([
+          transaction({
+            amount: 180,
+            description: 'Lunch',
+            categoryId: 'food',
+            primaryAccountId: 'cash',
+            evidence: {
+              amount: '180',
+              category: 'lunch',
+              primaryAccount: 'cash',
+              date: '',
+              description: 'lunch'
+            },
+            ...changes
+          })
+        ])
+      );
+      const result = await parseNotesWithAi('lunch 180 cash', makeWorkbook(), options(advisor));
+      expect(result.entries[0].issues.map((item) => item.code)).toContain(code);
+    }
+  );
+
+  it('does not let model confidence erase local correction and ambiguous-date safeguards', async () => {
+    const advisor = configuredAdvisor(
+      responsesResult([
+        transaction({
+          amount: 160,
+          description: 'Lunch',
+          categoryId: 'food',
+          primaryAccountId: 'cash',
+          evidence: {
+            amount: '160',
+            category: 'lunch',
+            primaryAccount: 'cash',
+            date: '07/08',
+            description: 'lunch'
+          }
+        })
+      ])
+    );
+    const result = await parseNotesWithAi(
+      '07/08 lunch 180 cash, actually 160',
+      makeWorkbook(),
+      options(advisor)
+    );
+    expect(result.entries[0].issues.map((item) => item.code)).toEqual(
+      expect.arrayContaining(['date_ambiguous', 'correction_review', 'amount_ambiguous'])
+    );
+  });
+
+  it('keeps two same-line purchases separate by source identity', async () => {
+    const candidate = {
+      amount: 180,
+      description: 'Food',
+      categoryId: 'food',
+      primaryAccountId: 'cash',
+      evidence: {
+        amount: '180',
+        category: 'food',
+        primaryAccount: 'cash',
+        date: '',
+        description: 'food'
+      }
+    };
+    const advisor = configuredAdvisor(
+      responsesResult([
+        transaction({ ...candidate, sourceId: 'notes-line-1' }),
+        transaction({
+          ...candidate,
+          sourceId: 'notes-line-1-2',
+          amount: 250,
+          evidence: { ...candidate.evidence, amount: '250' }
+        })
+      ])
+    );
+    const result = await parseNotesWithAi(
+      'food 180 cash; food 250 cash',
+      makeWorkbook(),
+      options(advisor)
+    );
+    expect(result.entries.map((entry) => entry.amount)).toEqual([180, 250]);
+    expect(result.entries.every((entry) => entry.issues.length === 0)).toBe(true);
+    expect(new Set(result.entries.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it('ignores fabricated header transactions and retains omitted supported notes for review', async () => {
+    const advisor = configuredAdvisor(
+      responsesResult([transaction({ lineNumber: 1, sourceId: 'invented', amount: 2026 })])
+    );
+    const result = await parseNotesWithAi(
+      'July 28, 2026\nfood 180 cash',
+      makeWorkbook(),
+      options(advisor)
+    );
+    expect(result.mode).toBe('hybrid');
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({ amount: 180, lineNumber: 2 });
+    expect(result.entries[0].issues.map((item) => item.code)).toContain('ai_line_unresolved');
+  });
+
+  it('does not call a provider for prose-only notes or summary totals', async () => {
+    const advisor = configuredAdvisor(responsesResult([transaction()]));
+    const result = await parseNotesWithAi(
+      'Notes\nTotal: 200\nReminder: pay rent 500\nI would like to save more.',
+      makeWorkbook(),
+      options(advisor)
+    );
+    expect(result).toMatchObject({ mode: 'none', entries: [] });
+    expect(advisor.invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('AI Notes admission limits', () => {
+  it('retains all candidates locally when more than100 source groups are supplied', async () => {
+    const text = Array.from({ length: 101 }, (_, index) => `food ${index + 1} cash`).join('\n');
+    const advisor = configuredAdvisor(responsesResult([transaction()]));
+    const result = await parseNotesWithAi(text, makeWorkbook(), options(advisor));
+    expect(result.mode).toBe('local');
+    expect(result.notice).toContain('Split this large note');
+    expect(result.entries).toHaveLength(101);
+    expect(result.entries.at(-1)).toMatchObject({ amount: 101, sourceText: 'food 101 cash' });
+    expect(advisor.invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps the complete source for an oversized note without sending it to a provider', async () => {
+    const source = `food 180 cash ${'receipt detail '.repeat(1500)}`;
+    const advisor = configuredAdvisor(responsesResult([transaction()]));
+    const result = await parseNotesWithAi(source, makeWorkbook(), options(advisor));
+    expect(result.mode).toBe('local');
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].sourceText).toBe(source.trim());
+    expect(result.notice).toContain('Local review is complete');
+    expect(advisor.invoke).not.toHaveBeenCalled();
   });
 });

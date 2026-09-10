@@ -1,461 +1,58 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
-import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
-
 import { submitNotesBatchCommand } from './notes-controller.js';
 import { parseNotesWithAi } from './notes-ai-parser.js';
+import { parseNotesText, resolveNotesEntry } from './notes-parser.js';
+import { withNotesDuplicateReview } from './notes-duplicate-review.js';
+import { ReviewEntry } from './NotesReviewEntry.jsx';
 import {
-  isCreditCardAccount,
-  paymentLabel,
-  resolveNotesEntry,
-  validateNotesEntry
-} from './notes-parser.js';
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function asString(value) {
-  return String(value == null ? '' : value);
-}
-
-function Icon({ name, className = '' }) {
-  return <CavalryIcon className={className} name={name} />;
-}
-
-function categoryIcon(entry) {
-  if (entry.categoryIcon) return entry.categoryIcon;
-  const descriptor = `${entry.categoryName} ${entry.description}`.toLowerCase();
-  if (/transport|commute|fare|taxi|grab/.test(descriptor)) return 'directions_car';
-  if (/coffee|cafe/.test(descriptor)) return 'local_cafe';
-  if (/grocery|groceries|market/.test(descriptor)) return 'shopping_cart';
-  if (/food|meal|dining|restaurant/.test(descriptor)) return 'restaurant';
-  if (/salary|income|paycheck/.test(descriptor)) return 'payments';
-  if (/utility|electric|water|internet/.test(descriptor)) return 'bolt';
-  if (/health|medical|doctor|medicine/.test(descriptor)) return 'medical_services';
-  if (/shopping|clothes/.test(descriptor)) return 'shopping_bag';
-  if (/subscription|membership/.test(descriptor)) return 'autorenew';
-  return entry.template === 'income_received' ? 'arrow_downward' : 'receipt_long';
-}
-
-function formatAmount(value, currency) {
-  const code = asString(currency || 'PHP').toUpperCase() || 'PHP';
-  try {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: Number(value) % 1 ? 2 : 0,
-      maximumFractionDigits: 2
-    }).format(Number(value) || 0);
-  } catch (_error) {
-    return `${code} ${(Number(value) || 0).toLocaleString('en-PH')}`;
-  }
-}
-
-function accountTypeLabel(account) {
-  if (!account) return '';
-  const method = paymentLabel(account);
-  return method === account.name ? account.name : `${account.name} · ${method}`;
-}
-
-function ReviewEditor({ entry, workbook, onCancel, onChange, onSave }) {
-  const categories = asArray(workbook && workbook.categories).filter(
-    (category) =>
-      category &&
-      category.isActive !== false &&
-      ['expense', 'income'].includes(asString(category.type).toLowerCase())
-  );
-  const accounts = asArray(workbook && workbook.accounts).filter(
-    (account) =>
-      account &&
-      account.isActive !== false &&
-      ['asset', 'liability'].includes(asString(account.group).toLowerCase())
-  );
-  const selectedCategory =
-    categories.find((category) => asString(category.id) === asString(entry.categoryId)) || null;
-  const eligibleAccounts = accounts.filter((account) =>
-    selectedCategory?.type === 'income'
-      ? account.group === 'asset'
-      : account.group === 'asset' || isCreditCardAccount(account)
-  );
-  const currencies = Array.from(
-    new Set([
-      asString(workbook && workbook.currency).toUpperCase() || 'PHP',
-      ...eligibleAccounts
-        .map((account) => asString(account.currency).toUpperCase())
-        .filter(Boolean),
-      'PHP',
-      'USD'
-    ])
-  );
-  const selectedAccount =
-    eligibleAccounts.find((account) => asString(account.id) === asString(entry.primaryAccountId)) ||
-    null;
-  const workbookCurrency = asString(workbook && workbook.currency).toUpperCase() || 'PHP';
-  const selectedAccountCurrency =
-    asString(selectedAccount && selectedAccount.currency).toUpperCase() || entry.currency;
-  const needsFxRate =
-    entry.currency !== workbookCurrency || selectedAccountCurrency !== entry.currency;
-  const fieldAccessibility = (field) => {
-    const describedBy = asArray(entry.issues)
-      .map((item, index) => (item.field === field ? `${entry.id}-issue-${index}` : ''))
-      .filter(Boolean)
-      .join(' ');
-    return describedBy
-      ? { 'aria-describedby': describedBy, 'aria-invalid': true }
-      : { 'aria-invalid': false };
-  };
-
-  return (
-    <div className="notes-review-editor">
-      <div className="notes-editor-grid">
-        <div className="field notes-editor-description">
-          <label htmlFor={`${entry.id}-description`}>Description</label>
-          <input
-            {...fieldAccessibility('description')}
-            id={`${entry.id}-description`}
-            onChange={(event) => onChange('description', event.target.value)}
-            type="text"
-            value={entry.description}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-amount`}>Amount</label>
-          <input
-            {...fieldAccessibility('amount')}
-            id={`${entry.id}-amount`}
-            inputMode="decimal"
-            min="0"
-            onChange={(event) => onChange('amount', event.target.value)}
-            type="number"
-            value={entry.amount}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-currency`}>Currency</label>
-          <CavalrySelect
-            {...fieldAccessibility('currency')}
-            aria-label="Currency"
-            id={`${entry.id}-currency`}
-            onChange={(event) => onChange('currency', event.target.value)}
-            options={currencies.map((currency) => ({ value: currency, label: currency }))}
-            showLeadingIcon={false}
-            value={entry.currency}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-category`}>Category</label>
-          <CavalrySelect
-            {...fieldAccessibility('categoryId')}
-            aria-label="Category"
-            id={`${entry.id}-category`}
-            leadingIcon="category"
-            onChange={(event) => onChange('categoryId', event.target.value)}
-            options={categories.map((category) => ({
-              value: category.id,
-              label: category.name,
-              icon: category.icon || 'category',
-              meta: category.type === 'income' ? 'Income' : ''
-            }))}
-            placeholder="Choose category"
-            value={entry.categoryId}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-account`}>Payment account</label>
-          <CavalrySelect
-            {...fieldAccessibility('primaryAccountId')}
-            aria-label="Payment account"
-            id={`${entry.id}-account`}
-            leadingIcon="account_balance_wallet"
-            onChange={(event) => onChange('primaryAccountId', event.target.value)}
-            options={eligibleAccounts.map((account) => ({
-              value: account.id,
-              label: accountTypeLabel(account),
-              icon: 'account_balance_wallet'
-            }))}
-            placeholder="Choose account"
-            value={entry.primaryAccountId}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-date`}>Date</label>
-          <input
-            {...fieldAccessibility('date')}
-            id={`${entry.id}-date`}
-            onChange={(event) => onChange('date', event.target.value)}
-            type="date"
-            value={entry.date}
-          />
-        </div>
-        {needsFxRate ? (
-          <div className="field">
-            <PrivateValue as="label" htmlFor={`${entry.id}-fx-rate`}>
-              {entry.currency} to {workbookCurrency} rate
-            </PrivateValue>
-            <input
-              {...fieldAccessibility('fxRateToBase')}
-              id={`${entry.id}-fx-rate`}
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => onChange('fxRateToBase', event.target.value)}
-              type="number"
-              value={entry.fxRateToBase || ''}
-            />
-          </div>
-        ) : null}
-      </div>
-
-      {entry.issues.length ? (
-        <PrivateValue
-          as="ul"
-          aria-label={`Line ${entry.lineNumber} issues`}
-          className="notes-editor-issues"
-        >
-          {entry.issues.map((item, index) => (
-            <PrivateValue
-              as="li"
-              id={`${entry.id}-issue-${index}`}
-              key={`${item.code}:${item.field}`}
-            >
-              {item.message}
-            </PrivateValue>
-          ))}
-        </PrivateValue>
-      ) : null}
-      <div className="notes-editor-actions">
-        <span />
-        <button className="btn" onClick={onCancel} type="button">
-          Cancel
-        </button>
-        <button className="btn btn-primary" onClick={onSave} type="button">
-          Save changes
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ReviewEntry({
-  entry,
-  position,
-  isEditing,
-  editingEntry,
-  workbook,
-  onEdit,
-  onEditChange,
-  onEditCancel,
-  onEditSave
-}) {
-  const amountTone = entry.template === 'income_received' ? 'good' : 'bad';
-  const amountDirection = amountTone === 'good' ? 'Income' : 'Expense';
-  const amountSign = amountTone === 'good' ? '+' : '−';
-  return (
-    <article
-      className={`notes-review-entry${entry.transactionId ? '' : ' needs-review'}${isEditing ? ' is-editing' : ''}`}
-    >
-      <div className="notes-review-summary">
-        <span
-          className="notes-category-icon"
-          style={
-            entry.categoryColor ? { '--notes-category-color': entry.categoryColor } : undefined
-          }
-        >
-          <Icon name={categoryIcon(entry)} />
-        </span>
-        <span className="notes-entry-copy">
-          <PrivateValue as="strong">{entry.categoryName}</PrivateValue>
-          <PrivateValue as="small">{entry.description}</PrivateValue>
-        </span>
-        <PrivateValue
-          as="strong"
-          aria-label={`${amountDirection} ${formatAmount(entry.amount, entry.currency)}`}
-          className={`notes-entry-amount ${amountTone}`}
-        >
-          {amountSign}
-          {formatAmount(Math.abs(Number(entry.amount) || 0), entry.currency)}
-        </PrivateValue>
-        <PrivateValue as="span" className="notes-payment-pill">
-          {entry.paymentLabel}
-        </PrivateValue>
-        <PrivateValue
-          as="button"
-          aria-expanded={isEditing}
-          aria-label={`Edit transaction ${position}: ${entry.description}`}
-          className="notes-edit-button"
-          id={`notes-edit-${entry.id}`}
-          onClick={() => onEdit(entry)}
-          type="button"
-        >
-          <Icon name={isEditing ? 'expand_less' : 'edit'} />
-        </PrivateValue>
-      </div>
-      {isEditing ? (
-        <ReviewEditor
-          entry={editingEntry}
-          onCancel={onEditCancel}
-          onChange={onEditChange}
-          onSave={onEditSave}
-          workbook={workbook}
-        />
-      ) : null}
-    </article>
-  );
-}
-
-function initialText(workbookId) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return '';
-    return window.localStorage.getItem(`cavalry.notes.${workbookId || 'workbook'}`) || '';
-  } catch (_error) {
-    return '';
-  }
-}
-
-function persistText(workbookId, value) {
-  const key = `cavalry.notes.${workbookId || 'workbook'}`;
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    if (value) window.localStorage.setItem(key, value);
-    else window.localStorage.removeItem(key);
-  } catch (_error) {
-    // Notes remain usable when browser storage is unavailable.
-  }
-}
-
-function entriesStorageKey(workbookId) {
-  return `cavalry.notes.entries.${workbookId || 'workbook'}`;
-}
-
-function transactionFingerprint(transaction) {
-  if (!transaction) return '';
-  return JSON.stringify(transaction);
-}
-
-function transactionPrimaryAccountId(workbook, transaction) {
-  const accountsById = new Map(
-    asArray(workbook && workbook.accounts).map((account) => [asString(account?.id), account])
-  );
-  const template = asString(transaction?.template);
-  const direction = template === 'income_received' ? 'debit' : 'credit';
-  const group = template === 'expense_charged' ? 'liability' : 'asset';
-  const line = asArray(transaction?.lines).find((candidate) => {
-    const account = accountsById.get(asString(candidate?.accountId));
-    return candidate?.direction === direction && account?.group === group;
-  });
-  return asString(line?.accountId);
-}
-
-function entryFromTransaction(workbook, transaction, priorEntry = {}) {
-  const entry = {
-    ...priorEntry,
-    id: asString(priorEntry.id) || `notes-transaction-${asString(transaction.id)}`,
-    lineNumber: Number(priorEntry.lineNumber) || 1,
-    sourceText: asString(priorEntry.sourceText) || asString(transaction.description),
-    amount: Number(transaction.amount) || 0,
-    currency:
-      asString(
-        transaction.originalCurrency || transaction.currency || workbook.currency
-      ).toUpperCase() || 'PHP',
-    fxRateToBase: Number(transaction.fxRateToBase) || 0,
-    date: asString(transaction.date),
-    description: asString(transaction.description),
-    categoryId: asString(transaction.categoryId),
-    primaryAccountId: transactionPrimaryAccountId(workbook, transaction),
-    template: asString(transaction.template),
-    counterpartyId: asString(transaction.counterpartyId),
-    transactionNote: asString(transaction.note),
-    transactionId: asString(transaction.id),
-    transactionFingerprint: transactionFingerprint(transaction),
-    issues: []
-  };
-  return { ...resolveNotesEntry(workbook, entry), issues: [] };
-}
-
-function reconcileEntries(workbook, entries) {
-  const transactionsById = new Map(
-    asArray(workbook && workbook.transactions).map((transaction) => [
-      asString(transaction?.id),
-      transaction
-    ])
-  );
-  return asArray(entries)
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object' || !asString(entry.id)) return null;
-      const transactionId = asString(entry.transactionId);
-      if (transactionId) {
-        const transaction = transactionsById.get(transactionId);
-        return transaction ? entryFromTransaction(workbook, transaction, entry) : null;
-      }
-      const resolved = resolveNotesEntry(workbook, entry);
-      return { ...resolved, transactionId: '', issues: validateNotesEntry(workbook, resolved) };
-    })
-    .filter(Boolean);
-}
-
-function initialEntries(workbook) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return [];
-    const parsed = JSON.parse(window.localStorage.getItem(entriesStorageKey(workbook.id)) || '[]');
-    return reconcileEntries(workbook, parsed);
-  } catch (_error) {
-    return [];
-  }
-}
-
-function persistEntries(workbookId, entries) {
-  const key = entriesStorageKey(workbookId);
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    const listedEntries = asArray(entries);
-    if (listedEntries.length) window.localStorage.setItem(key, JSON.stringify(listedEntries));
-    else window.localStorage.removeItem(key);
-  } catch (_error) {
-    // The current list remains available for this session when storage is unavailable.
-  }
-}
+  readNotesDraft,
+  writeNotesDraft,
+  reconcileNotesDraft,
+  sourceKeys,
+  transactionFingerprint
+} from './notes-draft-storage.js';
 
 export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, onCommandResult }) {
-  const workbookId = asString(workbook.id) || 'workbook';
-  const [text, setText] = useState(() => initialText(workbook.id));
-  const [entries, setEntries] = useState(() => initialEntries(workbook));
-  const [editingEntry, setEditingEntry] = useState(null);
+  const workbookId = String(workbook.id || 'workbook');
+  const [draft, setDraft] = useState(() => readNotesDraft(workbook));
+  const { text, entries, editingEntry, reviewedText } = draft;
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [storageFailed, setStorageFailed] = useState(false);
   const [canConfigureAi, setCanConfigureAi] = useState(false);
-  const [parseMode, setParseMode] = useState('local');
+  const [undoDraft, setUndoDraft] = useState(null);
   const processRequest = useRef(0);
   const entriesWorkbookId = useRef(workbookId);
-  const focusTransactionsAfterUpdate = useRef(false);
   const latestWorkbook = useRef(workbook);
   const mounted = useRef(true);
+  const commitLock = useRef(false);
   const latestTransactions = useRef(workbook.transactions);
   const transactionsHeadingRef = useRef(null);
   const lines = useMemo(() => text.split(/\r?\n/).filter((line) => line.trim()).length, [text]);
-  const unresolvedCount = entries.filter((entry) => !entry.transactionId).length;
+  const pending = entries.filter((entry) => !entry.transactionId);
+  const ready = pending.filter((entry) => !entry.issues.length);
+  const changedSinceReview = pending.length > 0 && text !== reviewedText;
 
   useLayoutEffect(() => {
     latestWorkbook.current = workbook;
   }, [workbook]);
-
   useEffect(() => {
     if (entriesWorkbookId.current !== workbookId) {
       processRequest.current += 1;
       entriesWorkbookId.current = workbookId;
-      setText(initialText(workbookId));
-      setEntries(initialEntries(workbook));
-      setEditingEntry(null);
+      latestTransactions.current = workbook.transactions;
+      setDraft(readNotesDraft(workbook));
       setNotice('');
       setError('');
+      setUndoDraft(null);
       setProcessing(false);
       return;
     }
-    persistEntries(workbookId, entries);
-  }, [entries, workbook, workbookId]);
-
+    setStorageFailed(draft.loadFailed || !writeNotesDraft(workbookId, draft));
+  }, [draft, workbook, workbookId]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -463,241 +60,253 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
       processRequest.current += 1;
     };
   }, []);
-
   useEffect(() => {
     if (latestTransactions.current === workbook.transactions) return;
     latestTransactions.current = workbook.transactions;
-    setEntries((current) => reconcileEntries(workbook, current));
+    setDraft((current) => reconcileNotesDraft(workbook, current));
   }, [workbook, workbook.transactions]);
 
-  useEffect(() => {
-    if (!focusTransactionsAfterUpdate.current || !entries.length) return;
-    focusTransactionsAfterUpdate.current = false;
-    transactionsHeadingRef.current?.focus();
-  }, [entries]);
-
   const focusEditButton = (entryId) => {
-    if (!entryId || typeof window === 'undefined') return;
-    const focus = () => document.getElementById(`notes-edit-${entryId}`)?.focus();
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(focus);
-    else window.setTimeout(focus, 0);
+    window.requestAnimationFrame(() => document.getElementById(`notes-edit-${entryId}`)?.focus());
   };
-
   const updateText = (value) => {
     processRequest.current += 1;
-    setText(value);
-    persistText(workbook.id, value);
+    setDraft((current) => ({ ...current, text: value, loadFailed: false }));
     setNotice('');
     setError('');
+    setUndoDraft(null);
     setCanConfigureAi(false);
-    setParseMode('local');
   };
-  const processTransactions = async () => {
+  const reviewNotes = async (useAi = false) => {
     if (!lines || processing) return;
+    if (editingEntry) return;
+    if (
+      text === reviewedText &&
+      pending.length &&
+      (!useAi || pending.some((entry) => entry.manuallyReviewed))
+    ) {
+      setNotice(
+        'Your review is ready below. Add or remove those drafts before preparing them again.'
+      );
+      return;
+    }
     const workbookAtStart = workbook;
-    const request = processRequest.current + 1;
-    processRequest.current = request;
+    const request = ++processRequest.current;
     setProcessing(true);
-    setEditingEntry(null);
     setNotice('');
     setError('');
     setCanConfigureAi(false);
     try {
-      const result = await parseNotesWithAi(text, workbook, {
+      const options = {
         advisor,
         createId: services.createId,
         today: services.today || services.defaultDate
-      });
-      if (
-        !mounted.current ||
-        processRequest.current !== request ||
-        latestWorkbook.current !== workbookAtStart
-      ) {
+      };
+      const result = useAi
+        ? await parseNotesWithAi(text, workbook, options)
+        : { entries: parseNotesText(text, workbook, options), mode: 'local' };
+      if (!mounted.current || processRequest.current !== request) return;
+      if (latestWorkbook.current !== workbookAtStart) {
+        setError('Your workbook changed while reviewing. Review the note again.');
         return;
       }
-      if (!result.entries.length) {
-        setError('Enter at least one transaction to add.');
-        return;
-      }
-
       const batchId =
         typeof services.createId === 'function'
           ? services.createId('notes_batch')
-          : `notes-batch-${Date.now().toString(36)}-${request}`;
-      const parsedEntries = result.entries.map((entry) => ({
-        ...entry,
-        id: `${batchId}-${entry.lineNumber}`,
-        issues: validateNotesEntry(workbook, entry),
+          : `notes-batch-${Date.now()}-${request}`;
+      const added = entries.filter((entry) => entry.transactionId);
+      const savedSources = new Set(added.map((entry) => entry.sourceKey).filter(Boolean));
+      const candidates = sourceKeys(result.entries).filter(
+        (entry) => !savedSources.has(entry.sourceKey)
+      );
+      const prepared = candidates.map((entry, index) => ({
+        ...withNotesDuplicateReview(
+          workbook,
+          resolveNotesEntry(workbook, entry, { keepInferenceIssues: true })
+        ),
+        id: `${batchId}-${index + 1}`,
         transactionId: ''
       }));
-      const savableEntries = parsedEntries.filter((entry) => !entry.issues.length);
-      let listedEntries = parsedEntries;
-      let savedCount = 0;
-
-      if (savableEntries.length) {
-        const commandResult = submitNotesBatchCommand(workbook, savableEntries, services);
-        if (commandResult.ok) {
-          const savedByEntryId = new Map(
-            savableEntries.map((entry, index) => [entry.id, commandResult.transactions[index]])
-          );
-          listedEntries = parsedEntries.map((entry) => {
-            const transaction = savedByEntryId.get(entry.id);
-            return transaction
-              ? {
-                  ...entry,
-                  transactionId: transaction.id,
-                  transactionFingerprint: transactionFingerprint(transaction),
-                  issues: []
-                }
-              : entry;
-          });
-          savedCount = commandResult.count || commandResult.transactions.length;
-          onCommandResult?.(commandResult);
-        } else {
-          const saveIssue = commandResult.errors?.[0];
-          listedEntries = parsedEntries.map((entry) =>
-            savableEntries.some((candidate) => candidate.id === entry.id)
-              ? {
-                  ...entry,
-                  issues: [
-                    {
-                      code: saveIssue?.code || 'notes.transaction_not_saved',
-                      field: 'transaction',
-                      message: saveIssue?.message || 'This transaction could not be added.'
-                    }
-                  ]
-                }
-              : entry
-          );
-          setError(saveIssue?.message || 'The transactions could not be added.');
-        }
-      }
-
-      const needsDetailsCount = listedEntries.length - savedCount;
-      const summary = [
-        savedCount ? `${savedCount} transaction${savedCount === 1 ? '' : 's'} added.` : '',
-        needsDetailsCount
-          ? `${needsDetailsCount} ${needsDetailsCount === 1 ? 'needs' : 'need'} details; use Edit to finish.`
-          : '',
-        result.notice || ''
-      ]
-        .filter(Boolean)
-        .join(' ');
-      focusTransactionsAfterUpdate.current = true;
-      setEntries((current) => [...current, ...listedEntries]);
-      setText('');
-      persistText(workbook.id, '');
-      setNotice(summary);
+      setDraft((current) => ({
+        ...current,
+        entries: [...added, ...prepared],
+        editingEntry: null,
+        reviewedText: text
+      }));
+      setNotice(
+        prepared.length
+          ? `${prepared.length} transaction${prepared.length === 1 ? '' : 's'} to review.${result.notice ? ` ${result.notice}` : ''}`
+          : savedSources.size && result.entries.length
+            ? 'These transactions are already added.'
+            : 'No transactions found. Your note is saved as written.'
+      );
       setCanConfigureAi(result.canConfigure === true);
-      setParseMode(result.mode || 'local');
-    } catch (_error) {
-      if (!mounted.current || processRequest.current !== request) return;
-      setError('Cavalry could not process these notes. Try again.');
+    } catch {
+      if (mounted.current && processRequest.current === request)
+        setError('Could not review this note. Your writing is still here.');
     } finally {
       if (mounted.current && processRequest.current === request) setProcessing(false);
     }
   };
-  const clearNotes = () => {
-    updateText('');
-    setEntries([]);
-    setEditingEntry(null);
-    setNotice('');
-    setError('');
-    setCanConfigureAi(false);
+  const commitEntries = (selected) => {
+    if (commitLock.current || !selected.length) return false;
+    if (typeof onCommandResult !== 'function') {
+      setError('The transaction connection is unavailable. Your draft is still here.');
+      return false;
+    }
+    commitLock.current = true;
+    try {
+      const result = submitNotesBatchCommand(workbook, selected, services);
+      if (!result.ok) {
+        setError(result.errors?.[0]?.message || 'Could not add these transactions.');
+        return false;
+      }
+      const committed = onCommandResult?.(result);
+      if (committed?.ok === false) {
+        setError(committed.errors?.[0]?.message || 'Could not save these transactions.');
+        return false;
+      }
+      const saved = new Map(
+        selected.map((entry, index) => {
+          const transaction = result.transactions[index];
+          return [
+            entry.id,
+            {
+              ...entry,
+              transactionId: transaction.id,
+              transactionFingerprint: transactionFingerprint(transaction),
+              issues: []
+            }
+          ];
+        })
+      );
+      setDraft((current) => ({
+        ...current,
+        entries: current.entries.map((entry) => saved.get(entry.id) || entry),
+        editingEntry: null
+      }));
+      setError('');
+      setNotice(
+        selected[0].transactionId
+          ? 'Transaction updated.'
+          : `${selected.length} transaction${selected.length === 1 ? '' : 's'} added.`
+      );
+      return true;
+    } catch {
+      setError('Could not save these transactions. Your draft is still here.');
+      return false;
+    } finally {
+      commitLock.current = false;
+    }
+  };
+  const addReady = () => {
+    if (changedSinceReview || editingEntry || processing) return;
+    const checked = ready.map((entry) =>
+      withNotesDuplicateReview(
+        workbook,
+        resolveNotesEntry(workbook, entry, { keepInferenceIssues: true })
+      )
+    );
+    if (checked.some((entry) => entry.issues.length)) {
+      setDraft((current) => reconcileNotesDraft(workbook, current));
+      setError('Some details changed. Check the highlighted rows.');
+      return;
+    }
+    commitEntries(checked);
   };
   const saveEdit = () => {
-    if (!editingEntry) return;
-    const existingTransaction = asArray(workbook.transactions).find(
-      (transaction) => asString(transaction?.id) === asString(editingEntry.transactionId)
+    if (!editingEntry || changedSinceReview) return;
+    const existing = (workbook.transactions || []).find(
+      (transaction) => transaction.id === editingEntry.transactionId
     );
-    if (editingEntry.transactionId && !existingTransaction) {
-      setNotice('');
-      setError('This transaction no longer exists. Its saved Notes row was removed.');
-      setEntries((current) => current.filter((entry) => entry.id !== editingEntry.id));
-      setEditingEntry(null);
+    if (editingEntry.transactionId && !existing) {
+      setError('This transaction no longer exists.');
+      setDraft((current) => ({
+        ...current,
+        entries: current.entries.filter((entry) => entry.id !== editingEntry.id),
+        editingEntry: null
+      }));
       return;
     }
     if (
-      existingTransaction &&
+      existing &&
       editingEntry.transactionFingerprint &&
-      transactionFingerprint(existingTransaction) !== editingEntry.transactionFingerprint
+      transactionFingerprint(existing) !== editingEntry.transactionFingerprint
     ) {
-      setNotice('');
       setError(
         'This transaction changed elsewhere. Cancel and reopen Edit to use its latest details.'
       );
-      setEntries((current) => reconcileEntries(workbook, current));
       return;
     }
     const resolved = resolveNotesEntry(workbook, editingEntry, { manuallyReviewed: true });
-    resolved.issues = validateNotesEntry(workbook, resolved);
     if (resolved.issues.length) {
-      setEditingEntry(resolved);
-      setNotice('');
-      setError('Fix the highlighted details before saving.');
+      setDraft((current) => ({ ...current, editingEntry: resolved }));
+      setError('Fix the highlighted details before continuing.');
       return;
     }
-    const result = submitNotesBatchCommand(workbook, [resolved], services);
-    if (!result.ok) {
-      const saveIssue = result.errors?.[0];
-      const failed = {
-        ...resolved,
-        issues: [
-          {
-            code: saveIssue?.code || 'notes.transaction_not_saved',
-            field: 'transaction',
-            message: saveIssue?.message || 'This transaction could not be saved.'
-          }
-        ]
-      };
-      setEditingEntry(failed);
-      setError(saveIssue?.message || 'The transaction could not be saved.');
+    if (resolved.transactionId) {
+      if (commitEntries([resolved])) focusEditButton(resolved.id);
       return;
     }
-    onCommandResult?.(result);
-    const transaction = result.transactions[0];
-    const saved = {
-      ...resolved,
-      transactionId: transaction?.id || resolved.transactionId,
-      transactionFingerprint: transactionFingerprint(transaction),
-      issues: []
-    };
-    setEntries((current) => current.map((entry) => (entry.id === saved.id ? saved : entry)));
-    setEditingEntry(null);
-    focusEditButton(saved.id);
+    setDraft((current) => ({
+      ...current,
+      entries: current.entries.map((entry) => (entry.id === resolved.id ? resolved : entry)),
+      editingEntry: null
+    }));
+    setNotice('Details confirmed. Ready to add.');
     setError('');
-    setCanConfigureAi(false);
-    setNotice(resolved.transactionId ? 'Transaction updated.' : 'Transaction added.');
+    focusEditButton(resolved.id);
+  };
+  const clearNotes = () => {
+    setUndoDraft(draft);
+    setDraft({ text: '', entries: [], editingEntry: null, reviewedText: '' });
+    setNotice('Note cleared. Saved transactions stay in the ledger.');
+    setError('');
   };
 
   return (
     <section className="notes-route" data-react-route="notes">
       <header className="notes-page-header">
-        <div>
-          <h1>Notes</h1>
+        <h1>Notes</h1>
+        <div className="notes-header-actions">
+          {undoDraft ? (
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setDraft(undoDraft);
+                setUndoDraft(null);
+                setNotice('');
+              }}
+            >
+              Undo clear
+            </button>
+          ) : null}
+          <button
+            aria-label="Clear the Notes draft and list; saved transactions stay in the ledger"
+            className="btn notes-clear-button"
+            disabled={processing || (!text && !entries.length)}
+            onClick={clearNotes}
+            type="button"
+          >
+            <CavalryIcon name="delete" />
+            Clear note
+          </button>
         </div>
-        <button
-          aria-label="Clear the Notes draft and list; saved transactions stay in the ledger"
-          className="btn notes-clear-button"
-          disabled={processing || (!text && !entries.length)}
-          onClick={clearNotes}
-          title="Clear the draft and this list. Saved transactions stay in the ledger."
-          type="button"
-        >
-          <Icon name="delete" />
-          Clear view
-        </button>
       </header>
-
+      {storageFailed ? (
+        <div className="notes-route-notice is-error" role="alert">
+          This note could not be saved on this device. Keep this page open and copy your writing
+          somewhere safe.
+        </div>
+      ) : null}
       {notice || error ? (
         <div
           aria-live={error ? undefined : 'polite'}
           className={`notes-route-notice${error ? ' is-error' : ''}`}
           role={error ? 'alert' : 'status'}
         >
-          <Icon
-            name={error ? 'error' : /\b(?:added|updated)\b/i.test(notice) ? 'check_circle' : 'info'}
-          />
+          <CavalryIcon name={error ? 'error' : 'info'} />
           <PrivateValue as="span">{error || notice}</PrivateValue>
           {!error && canConfigureAi ? (
             <button
@@ -706,9 +315,9 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
               }
               type="button"
             >
-              Open AI settings
+              AI settings
             </button>
-          ) : !error && /\b(?:added|updated)\b/i.test(notice) ? (
+          ) : !error && /\b(?:added|updated)\./i.test(notice) ? (
             <button
               onClick={() => onAction?.({ type: 'route/navigate', payload: { routeId: 'ledger' } })}
               type="button"
@@ -718,21 +327,16 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           ) : null}
         </div>
       ) : null}
-
       <div className="notes-workspace">
         <section className="notes-panel notes-entry-panel">
           <header>
             <div>
-              <h2>Quick entry</h2>
+              <h2>Your note</h2>
+              <p>Write freely. Review transactions when you’re ready.</p>
             </div>
-            <PrivateValue as="span" className="notes-ai-badge">
-              <Icon name="auto_awesome" />
-              {parseMode === 'ai'
-                ? 'AI enhanced'
-                : parseMode === 'hybrid'
-                  ? 'AI + local'
-                  : 'Smart entry'}
-            </PrivateValue>
+            <span className="notes-save-status">
+              {storageFailed ? 'Unsaved' : 'Saved on this device'}
+            </span>
           </header>
           <label className="notes-textarea-label" htmlFor="notes-quick-entry">
             Transaction notes
@@ -745,58 +349,63 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                 event.preventDefault();
-                void processTransactions();
+                void reviewNotes();
               }
             }}
             placeholder={
-              '₱1,000 transportation credit card\n₱180 coffee cash\n₱2,450 groceries debit'
+              'Sept 10\ncoffee 180 cash\ngroceries — 2,450 debit\n\nCheck the taxi receipt later…'
             }
             spellCheck="true"
             value={text}
           />
-          <footer className="notes-panel-footer">
-            <PrivateValue as="span">
-              {processing
-                ? 'Reading and adding your transactions…'
-                : lines
-                  ? `${lines} line${lines === 1 ? '' : 's'} ready to add`
-                  : 'Start with an amount and description; payment method is optional'}
-            </PrivateValue>
-            <PrivateValue
-              as="button"
-              className="btn btn-primary notes-process-button"
-              disabled={!lines || processing}
-              onClick={() => void processTransactions()}
-              type="button"
-            >
-              <Icon name="auto_awesome" />
-              {processing ? 'Adding…' : 'Add transactions'}
-            </PrivateValue>
+          <footer className="notes-panel-footer notes-writing-actions">
+            <span>{processing ? 'Reading your note…' : 'Nothing is added until you review.'}</span>
+            <div className="notes-button-group">
+              <button
+                className="btn"
+                disabled={!lines || processing || Boolean(editingEntry)}
+                onClick={() => void reviewNotes(true)}
+                type="button"
+              >
+                <CavalryIcon name="auto_awesome" />
+                Use AI
+              </button>
+              <button
+                className="btn btn-primary notes-process-button"
+                disabled={!lines || processing || Boolean(editingEntry)}
+                onClick={() => void reviewNotes()}
+                type="button"
+              >
+                {processing ? 'Reviewing…' : 'Review transactions'}
+              </button>
+            </div>
           </footer>
         </section>
-
         <section className="notes-panel notes-review-panel">
           <header>
             <div>
               <h2 ref={transactionsHeadingRef} tabIndex={-1}>
-                Transactions
+                Review
               </h2>
             </div>
             {entries.length ? (
               <PrivateValue
                 as="span"
                 className={
-                  unresolvedCount ? 'notes-review-count needs-review' : 'notes-review-count'
+                  pending.length ? 'notes-review-count needs-review' : 'notes-review-count'
                 }
               >
-                {unresolvedCount
-                  ? `${entries.length - unresolvedCount} added · ${unresolvedCount} need${
-                      unresolvedCount === 1 ? 's' : ''
-                    } details`
+                {pending.length
+                  ? `${ready.length} ready · ${pending.length - ready.length} to check`
                   : `${entries.length} added`}
               </PrivateValue>
             ) : null}
           </header>
+          {changedSinceReview ? (
+            <p className="notes-stale-notice" role="status">
+              Your note changed. Review it again before adding.
+            </p>
+          ) : null}
           <div className="notes-review-list">
             {entries.length ? (
               entries.map((entry, index) => (
@@ -806,19 +415,34 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                   entry={entry}
                   isEditing={editingEntry?.id === entry.id}
                   position={index + 1}
+                  disabled={processing || changedSinceReview}
                   onEdit={(selected) => {
                     setError('');
-                    setEditingEntry(editingEntry?.id === selected.id ? null : { ...selected });
+                    setDraft((current) => ({
+                      ...current,
+                      editingEntry:
+                        current.editingEntry?.id === selected.id ? null : { ...selected }
+                    }));
                   }}
+                  onRemove={(id) =>
+                    setDraft((current) => ({
+                      ...current,
+                      entries: current.entries.filter((entry) => entry.id !== id),
+                      editingEntry: current.editingEntry?.id === id ? null : current.editingEntry
+                    }))
+                  }
                   onEditCancel={() => {
-                    const entryId = editingEntry?.id;
-                    setEditingEntry(null);
+                    const id = editingEntry?.id;
+                    setDraft((current) => ({ ...current, editingEntry: null }));
                     setError('');
-                    focusEditButton(entryId);
+                    focusEditButton(id);
                   }}
                   onEditChange={(field, value) => {
                     setError('');
-                    setEditingEntry((current) => ({ ...current, [field]: value }));
+                    setDraft((current) => ({
+                      ...current,
+                      editingEntry: { ...current.editingEntry, [field]: value }
+                    }));
                   }}
                   onEditSave={saveEdit}
                   workbook={workbook}
@@ -827,12 +451,33 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             ) : (
               <div className="notes-review-empty">
                 <span>
-                  <Icon name="receipt_long" />
+                  <CavalryIcon name="receipt_long" />
                 </span>
-                <strong>Added transactions will appear here</strong>
+                <strong>Transactions to review will appear here</strong>
+                <p>Your original note stays as you wrote it.</p>
               </div>
             )}
           </div>
+          {pending.length ? (
+            <footer className="notes-panel-footer">
+              <PrivateValue as="span">
+                {pending.length - ready.length
+                  ? 'Check flagged details or remove unwanted rows.'
+                  : 'Check amounts, dates, and accounts.'}
+              </PrivateValue>
+              <PrivateValue
+                as="button"
+                className="btn btn-primary"
+                disabled={
+                  !ready.length || processing || Boolean(editingEntry) || changedSinceReview
+                }
+                onClick={addReady}
+                type="button"
+              >
+                Add {ready.length} transaction{ready.length === 1 ? '' : 's'}
+              </PrivateValue>
+            </footer>
+          ) : null}
         </section>
       </div>
     </section>
