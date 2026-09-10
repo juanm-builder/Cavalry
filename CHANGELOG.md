@@ -2,6 +2,25 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.12 - 2026-09-10
+
+### Added and improved
+
+- Adds a persistent Show / Hide Amounts control across financial screens, summaries,
+  rich text, and accessibility labels. The preference stays on this Mac; inputs,
+  calculations, exports, and saved workbook data remain readable and unchanged.
+- Improves Assistant recurring-bill and budget tools, evidence matching, confirmation
+  handling, memory relevance, and context budgeting.
+- Refines budget category rendering and financial screen presentation.
+
+### Compatibility and draft release notes
+
+- Retains the iCloud account selection, queued-save acknowledgments, and workbook
+  recovery fixes from 2.2.11. No workbook format or CloudKit migration is required.
+- Release validation, signing, notarization, and asset verification results are recorded
+  on the GitHub draft against its immutable source commit. Installer/update acceptance
+  and independent publication certification remain pending; keep this release a draft.
+
 ## 2.2.11 - 2026-09-08
 
 ### Fixed

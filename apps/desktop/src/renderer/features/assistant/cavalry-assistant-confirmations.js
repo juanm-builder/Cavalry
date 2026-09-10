@@ -39,9 +39,10 @@ export function confirmationMessage(confirmation) {
   );
 }
 
-export function pendingConfirmationFromResult(turnResult) {
+export function pendingConfirmationsFromResult(turnResult) {
   const toolResults = asArray(turnResult?.toolResults);
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
+  const pending = [];
+  for (let index = 0; index < toolResults.length; index += 1) {
     const toolResult = asObject(toolResults[index]);
     const result = asObject(toolResult.result);
     const confirmation = asObject(result.confirmation);
@@ -60,16 +61,20 @@ export function pendingConfirmationFromResult(turnResult) {
     const approvalField = confirmationApprovalField(confirmation);
     if (!approvalField) continue;
     delete argumentsWithoutApproval[approvalField];
-    return {
+    pending.push({
       id: toolResult.callId || `${toolResult.toolName}-${index}`,
       toolName: asText(toolResult.toolName),
       arguments: argumentsWithoutApproval,
       ...(proposal ? { proposal } : {}),
       approvalField,
       message: confirmationMessage(confirmation)
-    };
+    });
   }
-  return null;
+  return pending;
+}
+
+export function pendingConfirmationFromResult(turnResult) {
+  return pendingConfirmationsFromResult(turnResult)[0] || null;
 }
 
 export function chainedPendingConfirmation(toolResult, currentConfirmation, approvedArguments) {
@@ -100,6 +105,8 @@ export function chainedPendingConfirmation(toolResult, currentConfirmation, appr
   delete replayArguments[approvalField];
   return {
     id: asText(result.toolCallId) || currentConfirmation.id,
+    ...(currentConfirmation.messageId ? { messageId: currentConfirmation.messageId } : {}),
+    ...(currentConfirmation.origin ? { origin: plain(currentConfirmation.origin, {}) } : {}),
     toolName: currentConfirmation.toolName,
     arguments: replayArguments,
     ...(proposal ? { proposal } : {}),
@@ -149,4 +156,20 @@ export function isConfirmationDecline(value) {
   return /^(no|nope|no thanks|cancel|stop|don'?t|do not|never mind|nevermind|leave it)(?:[.!])?$/i.test(
     asText(value)
   );
+}
+
+export function pendingConfirmationAnswer(context, normalizeResult) {
+  const confirmation = pendingConfirmationFromResult({ toolResults: context.toolResults });
+  if (!confirmation) return null;
+  // The host already supplied the reviewable proposal and the panel renders its receipt.
+  // Another provider call cannot approve it, and only delays showing the confirmation.
+  return {
+    ...normalizeResult({
+      ok: true,
+      text: confirmation.message,
+      activities: context.activities,
+      toolResults: context.toolResults
+    }),
+    status: 'confirmation_required'
+  };
 }

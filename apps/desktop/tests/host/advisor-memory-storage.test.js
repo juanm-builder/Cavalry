@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const {
+  advisorMemoryContext,
   createAdvisorMemoryStorage,
   parseAdvisorMemoryDocument,
   selectRelevantAdvisorMemoryBlocks,
@@ -454,6 +455,162 @@ describe('Companion local memory', () => {
         }
       ]
     });
+  });
+
+  it('retrieves stable personal context on broad financial questions without unrelated details', () => {
+    const memory = {
+      memoryEnabled: true,
+      items: [
+        {
+          id: 'sam',
+          text: "User prefers to be called Sam and wants short, plain-English answers. Sam's priority is building a PHP 200,000 emergency fund. Company Cash belongs to the business and must not be treated as money available for Sam's personal spending."
+        },
+        { id: 'travel', text: 'I want to visit Kyoto next spring.' },
+        { id: 'constraint', text: 'Business money belongs to the business.' }
+      ]
+    };
+    const query =
+      'Hey, what should I focus on financially right now? Use what you know about me and my accounts, and keep it brief.';
+    const context = advisorMemoryContext(memory, query);
+    expect(context).toContain('Sam');
+    expect(context).toContain('PHP 200,000');
+    expect(context).toContain('Company Cash belongs to the business');
+    expect(context).toContain('Business money belongs to the business');
+    expect(context).not.toContain('Kyoto');
+    expect(context).toContain('A correction in the current conversation takes precedence');
+  });
+
+  it('recalls both notes and items for a broad personal recall and accepts string Responses input', () => {
+    const memory = {
+      memoryEnabled: true,
+      content: 'My preferred currency is PHP.',
+      items: [{ id: 'goal', text: 'I want to visit Kyoto next spring.' }]
+    };
+    const payload = withAdvisorMemoryContext(
+      { input: 'What do you know about me?' },
+      memory,
+      'responses'
+    );
+    expect(payload.instructions).toContain('preferred currency is PHP');
+    expect(payload.instructions).toContain('Kyoto');
+    expect(
+      withAdvisorMemoryContext({ input: 'Tell me about Kyoto.' }, memory, 'responses').instructions
+    ).toContain('Kyoto');
+  });
+
+  it('matches finance paraphrases and preserves complete memory facts under the context limit', () => {
+    const memory = {
+      memoryEnabled: true,
+      content: 'Legacy detail '.repeat(1_000),
+      items: [
+        { id: 'oversize', text: `My name is ${'x'.repeat(7_000)}`, scope: 'always' },
+        { id: 'fund', text: 'My emergency fund target is six months.' }
+      ]
+    };
+    const context = advisorMemoryContext(memory, 'How is my rainy day cushion looking?');
+    expect(context).toContain('My emergency fund target is six months.');
+    expect(context).not.toContain('My name is');
+    expect(context).not.toContain('Legacy detail');
+    expect(context.length).toBeLessThan(7_000);
+  });
+
+  it('fits whole memory facts into the remaining configured chat context, including schemas and escaping', () => {
+    const budget = (8192 - 1024) * 3;
+    const payload = {
+      connection: { provider: 'custom', contextWindowTokens: 8192 },
+      _cavalryMemoryQuery: 'What should I focus on financially?',
+      messages: [
+        { role: 'system', content: '' },
+        { role: 'user', content: 'What should I focus on financially?' }
+      ],
+      tools: [
+        { type: 'function', function: { name: 'read_accounts', description: 's'.repeat(4000) } }
+      ]
+    };
+    const inputChars = (value) =>
+      JSON.stringify({ messages: value.messages, tools: value.tools }).length;
+    payload.messages[0].content = 'x'.repeat(budget - 1500 - inputChars(payload));
+    const original = structuredClone(payload);
+    const projected = withAdvisorMemoryContext(payload, {
+      memoryEnabled: true,
+      items: [
+        { id: 'large', text: `Call me ${'"\\'.repeat(700)}`, scope: 'always' },
+        { id: 'name', text: 'Call me Sam.', scope: 'always' },
+        {
+          id: 'restriction',
+          text: 'Company Cash belongs to the business and must not fund personal spending.'
+        }
+      ]
+    });
+    expect(inputChars(projected)).toBeLessThanOrEqual(budget);
+    expect(projected.messages[1].content).toContain('Call me Sam.');
+    expect(projected.messages[1].content).toContain(
+      'Company Cash belongs to the business and must not fund personal spending.'
+    );
+    expect(projected.messages[1].content).not.toContain('"\\');
+    expect(projected.messages[0]).toEqual(original.messages[0]);
+    expect(projected.messages.at(-1)).toEqual(original.messages.at(-1));
+    expect(projected.tools).toEqual(original.tools);
+    expect(projected).not.toHaveProperty('_cavalryMemoryQuery');
+    expect(payload).toEqual(original);
+  });
+
+  it('skips optional memory when the configured input has no capacity without changing current instructions or request', () => {
+    const payload = {
+      connection: { provider: 'custom', contextWindowTokens: 8192 },
+      _cavalryMemoryQuery: 'What do you know about me?',
+      messages: [
+        { role: 'system', content: 's'.repeat((8192 - 1024) * 3 - 100) },
+        { role: 'user', content: 'Hello' }
+      ],
+      tools: []
+    };
+    const { _cavalryMemoryQuery: _query, ...expected } = payload;
+    const projected = withAdvisorMemoryContext(payload, {
+      memoryEnabled: true,
+      items: [{ id: 'name', text: 'Call me Sam.' }]
+    });
+    expect(projected).toEqual(expected);
+  });
+
+  it('accounts for Responses instructions, input, schema and an explicit output reserve', () => {
+    const budget = (8192 - 2048) * 3;
+    const payload = {
+      connection: { provider: 'custom', contextWindowTokens: 8192 },
+      max_output_tokens: 2048,
+      instructions: '',
+      input: [{ role: 'user', content: 'What do you know about me?' }],
+      tools: [{ type: 'function', name: 'read_accounts', description: 's'.repeat(3000) }]
+    };
+    const inputChars = (value) =>
+      JSON.stringify({ instructions: value.instructions, input: value.input, tools: value.tools })
+        .length;
+    payload.instructions = 's'.repeat(budget - 1200 - inputChars(payload));
+    const memory = { memoryEnabled: true, items: [{ id: 'name', text: 'Call me Sam.' }] };
+    const projected = withAdvisorMemoryContext(payload, memory, 'responses');
+    expect(projected.instructions).toContain('Call me Sam.');
+    expect(projected.instructions.startsWith(payload.instructions)).toBe(true);
+    expect(inputChars(projected)).toBeLessThanOrEqual(budget);
+    expect(projected.input).toEqual(payload.input);
+    expect(projected.tools).toEqual(payload.tools);
+    expect(
+      withAdvisorMemoryContext({ ...payload, max_output_tokens: 8192 }, memory, 'responses')
+    ).toEqual({ ...payload, max_output_tokens: 8192 });
+  });
+
+  it('retains useful personal goals when an 8k context has ample space', () => {
+    const projected = withAdvisorMemoryContext(
+      {
+        connection: { provider: 'custom', contextWindowTokens: 8192 },
+        messages: [{ role: 'user', content: 'What should I focus on financially?' }],
+        tools: []
+      },
+      {
+        memoryEnabled: true,
+        items: [{ id: 'goal', text: 'My priority is a PHP 250,000 emergency fund.' }]
+      }
+    );
+    expect(projected.messages[0].content).toContain('My priority is a PHP 250,000 emergency fund.');
   });
 
   it('escapes every reserved managed marker in free-form and item text before round trip', () => {

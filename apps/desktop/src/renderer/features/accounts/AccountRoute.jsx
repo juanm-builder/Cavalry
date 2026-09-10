@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -42,10 +43,16 @@ function PageHeader({ title, subtitle, children }) {
   return (
     <section className="page-header">
       <div>
-        <h1>{title}</h1>
-        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
+        <PrivateValue as="h1">{title}</PrivateValue>
+        {subtitle ? (
+          <PrivateValue as="p" className="page-subtitle">
+            {subtitle}
+          </PrivateValue>
+        ) : null}
       </div>
-      <div className="page-actions">{children}</div>
+      <PrivateValue as="div" className="page-actions">
+        {children}
+      </PrivateValue>
     </section>
   );
 }
@@ -54,20 +61,22 @@ function StatCard({ label, value, subtitle, icon, tone, binding }) {
   const body = (
     <>
       <div className="finance-stat-copy">
-        <label>{label}</label>
-        <b>{value}</b>
-        <span>{subtitle || ''}</span>
+        <PrivateValue as="label">{label}</PrivateValue>
+        <PrivateValue as="b">{value}</PrivateValue>
+        <PrivateValue as="span">{subtitle || ''}</PrivateValue>
       </div>
       {icon ? <Icon className="finance-stat-icon" name={icon} /> : null}
     </>
   );
   const className = `finance-stat-card ${tone || ''}${binding ? ' finance-stat-action' : ''}`;
   return binding ? (
-    <button className={className} type="button" {...binding}>
+    <PrivateValue as="button" className={className} type="button" {...binding}>
       {body}
-    </button>
+    </PrivateValue>
   ) : (
-    <article className={className}>{body}</article>
+    <PrivateValue as="article" className={className}>
+      {body}
+    </PrivateValue>
   );
 }
 
@@ -116,7 +125,8 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
       role="listitem"
       style={row.institutionColor ? { '--account-brand': row.institutionColor } : undefined}
     >
-      <button
+      <PrivateValue
+        as="button"
         aria-current={row.isSelected ? 'true' : undefined}
         aria-label={accessibleLabel}
         className="account-list-card-main"
@@ -129,17 +139,21 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
           institutionId={row.logoMode === 'icon' ? '' : row.institutionId}
         />
         <span className="account-list-card-copy">
-          <strong>{row.name}</strong>
-          <small>{meta}</small>
+          <PrivateValue as="strong">{row.name}</PrivateValue>
+          <PrivateValue as="small">{meta}</PrivateValue>
         </span>
         <span className="account-list-card-financial">
-          <b className={`amount ${row.balanceCell?.tone || ''}`}>{row.balanceCell?.copy}</b>
-          <small className={row.activityTone || 'info'}>{row.activityCopy}</small>
+          <PrivateValue as="b" className={`amount ${row.balanceCell?.tone || ''}`}>
+            {row.balanceCell?.copy}
+          </PrivateValue>
+          <PrivateValue as="small" className={row.activityTone || 'info'}>
+            {row.activityCopy}
+          </PrivateValue>
         </span>
         {view === 'list' ? (
           <Icon className="account-list-card-chevron" name="chevron_right" />
         ) : null}
-      </button>
+      </PrivateValue>
     </article>
   );
 }
@@ -185,7 +199,7 @@ function AccountCollection({
           <div className="account-empty-register" role="listitem">
             <div className="empty-state compact-empty">
               <Icon name="account_balance" />
-              <strong>{emptyCopy}</strong>
+              <PrivateValue as="strong">{emptyCopy}</PrivateValue>
             </div>
           </div>
         </div>
@@ -195,13 +209,18 @@ function AccountCollection({
   return (
     <div className="account-collection" data-account-view={view}>
       {groups.map((group, groupIndex) => (
-        <section aria-label={group.label} className="account-group" key={group.key}>
+        <PrivateValue
+          as="section"
+          aria-label={group.label}
+          className="account-group"
+          key={group.key}
+        >
           <header className="account-group-heading">
-            <h4>{group.label}</h4>
-            <span className="account-group-count">
+            <PrivateValue as="h4">{group.label}</PrivateValue>
+            <PrivateValue as="span" className="account-group-count">
               {group.rows.length} account{group.rows.length === 1 ? '' : 's'}
-            </span>
-            <small>{group.hint}</small>
+            </PrivateValue>
+            <PrivateValue as="small">{group.hint}</PrivateValue>
           </header>
           <div className={listClassName} role="list">
             {groupIndex === 0 ? (
@@ -220,7 +239,7 @@ function AccountCollection({
               />
             ))}
           </div>
-        </section>
+        </PrivateValue>
       ))}
     </div>
   );
@@ -279,7 +298,7 @@ function AccountHistoryVisual({
       <div className="account-history-visual empty">
         <div className="account-history-empty">
           <Icon name="timeline" />
-          <strong>{emptyCopy}</strong>
+          <PrivateValue as="strong">{emptyCopy}</PrivateValue>
         </div>
       </div>
     );
@@ -350,7 +369,8 @@ function AccountHistoryVisual({
                 className="account-history-grid"
                 d={`M${padLeft} ${tick.y.toFixed(1)}H${width - padRight}`}
               />
-              <text
+              <PrivateValue
+                as="text"
                 className="account-history-tick-label"
                 dominantBaseline="middle"
                 textAnchor="end"
@@ -358,7 +378,7 @@ function AccountHistoryVisual({
                 y={tick.y.toFixed(1)}
               >
                 {tick.copy}
-              </text>
+              </PrivateValue>
             </g>
           ))}
           {zeroY > padTop && zeroY < height - padBottom ? (
@@ -389,7 +409,8 @@ function AccountHistoryVisual({
               description.length > 23 ? `${description.slice(0, 22)}…` : description;
             const isLatest = index === points.length - 1;
             return (
-              <g
+              <PrivateValue
+                as="g"
                 aria-label={`${point.row.date}: ${description}, ${point.row.changeCopy || 'change unavailable'}, balance ${point.row.balanceCopy}`}
                 aria-haspopup="dialog"
                 className="account-history-interactive-point"
@@ -421,44 +442,46 @@ function AccountHistoryVisual({
                   transform={`translate(${tooltipX.toFixed(1)} ${tooltipY.toFixed(1)})`}
                 >
                   <rect height={tooltipHeight} rx="6" width={tooltipWidth} />
-                  <text className="account-history-svg-title" x="10" y="17">
+                  <PrivateValue as="text" className="account-history-svg-title" x="10" y="17">
                     {shortDescription}
-                  </text>
-                  <text className="account-history-svg-date" x="10" y="30">
+                  </PrivateValue>
+                  <PrivateValue as="text" className="account-history-svg-date" x="10" y="30">
                     {point.row.date}
-                  </text>
+                  </PrivateValue>
                   <text className="account-history-svg-label" x="10" y="48">
                     Change
                   </text>
-                  <text
+                  <PrivateValue
+                    as="text"
                     className={`account-history-svg-value ${point.row.changeTone || 'neutral'}`}
                     textAnchor="end"
                     x={tooltipWidth - 10}
                     y="48"
                   >
                     {point.row.changeCopy || '—'}
-                  </text>
+                  </PrivateValue>
                   <text className="account-history-svg-label" x="10" y="63">
                     Balance
                   </text>
-                  <text
+                  <PrivateValue
+                    as="text"
                     className="account-history-svg-value"
                     textAnchor="end"
                     x={tooltipWidth - 10}
                     y="63"
                   >
                     {point.row.balanceCopy}
-                  </text>
+                  </PrivateValue>
                 </g>
-              </g>
+              </PrivateValue>
             );
           })}
         </svg>
       </div>
       <div className="account-history-summary">
-        <span>{shortAxisDate(points[0].row.date)}</span>
-        <strong>{points.at(-1).row.balanceCopy || ''}</strong>
-        <span>{shortAxisDate(points.at(-1).row.date)}</span>
+        <PrivateValue as="span">{shortAxisDate(points[0].row.date)}</PrivateValue>
+        <PrivateValue as="strong">{points.at(-1).row.balanceCopy || ''}</PrivateValue>
+        <PrivateValue as="span">{shortAxisDate(points.at(-1).row.date)}</PrivateValue>
       </div>
     </div>
   );
@@ -476,7 +499,8 @@ function AccountDetailMenu({ selected, actions, onOpenModal }) {
         <Icon name="more_vert" />
       </summary>
       <div className="account-detail-menu-popover">
-        <button
+        <PrivateValue
+          as="button"
           className="account-detail-menu-item"
           type="button"
           {...withClick(
@@ -488,7 +512,7 @@ function AccountDetailMenu({ selected, actions, onOpenModal }) {
         >
           <Icon name={selected.isArchived ? 'unarchive' : 'archive'} />
           {selected.isArchived ? 'Restore Account' : 'Archive Account'}
-        </button>
+        </PrivateValue>
         <button
           className="account-detail-menu-item danger"
           type="button"
@@ -528,24 +552,30 @@ function AccountDetail({
           />
         </span>
         <div className="selected-account-copy">
-          <h3>{selected.name}</h3>
-          <small>{selected.institution}</small>
+          <PrivateValue as="h3">{selected.name}</PrivateValue>
+          <PrivateValue as="small">{selected.institution}</PrivateValue>
         </div>
       </div>
       <div className="selected-account-balance">
-        <b className={`amount ${selected.balanceTone || ''}`}>{selected.balanceCopy}</b>
-        <span>{selected.balanceLabel || 'Current Balance'}</span>
+        <PrivateValue as="b" className={`amount ${selected.balanceTone || ''}`}>
+          {selected.balanceCopy}
+        </PrivateValue>
+        <PrivateValue as="span">{selected.balanceLabel || 'Current Balance'}</PrivateValue>
       </div>
       {selected.hasCurrencyIntegrityIssue ? (
-        <div className="panel-note status-bad account-currency-integrity" role="alert">
+        <PrivateValue
+          as="div"
+          className="panel-note status-bad account-currency-integrity"
+          role="alert"
+        >
           <strong>Account currency needs review.</strong>
           <br />
           {selected.currencyIntegrityCopy}
           <br />
-          <small>
+          <PrivateValue as="small">
             The book balance above is shown in {selected.balanceCurrency} so Cavalry does not
             silently revalue mixed historical postings.
-          </small>
+          </PrivateValue>
           {selected.canRepairCurrency ? (
             <div className="modal-actions">
               <button
@@ -557,7 +587,7 @@ function AccountDetail({
               </button>
             </div>
           ) : null}
-        </div>
+        </PrivateValue>
       ) : null}
       <div className="selected-account-actions">
         <button className="btn account-primary-action" type="button" {...historyBinding}>
@@ -572,13 +602,17 @@ function AccountDetail({
       </div>
       {selected.changeCopy ? (
         <div className={`selected-account-delta ${selected.changeTone || ''}`}>
-          <span>{selected.changeCopy}</span>
-          <small>{selected.changePercentCopy || selected.activityLabel}</small>
+          <PrivateValue as="span">{selected.changeCopy}</PrivateValue>
+          <PrivateValue as="small">
+            {selected.changePercentCopy || selected.activityLabel}
+          </PrivateValue>
         </div>
       ) : null}
       <div className="reference-card-title account-subtitle-row">
         <h3>Balance History</h3>
-        <span className="tag">{selected.asOfLabel}</span>
+        <PrivateValue as="span" className="tag">
+          {selected.asOfLabel}
+        </PrivateValue>
       </div>
       <AccountHistoryVisual
         currency={selected.balanceCurrency || selected.currency}
@@ -588,23 +622,25 @@ function AccountDetail({
       />
       <div className="account-detail-grid">
         <span>Account Type</span>
-        <b>{selected.typeLabel}</b>
+        <PrivateValue as="b">{selected.typeLabel}</PrivateValue>
         <span>Institution</span>
-        <b>{selected.institutionName || '—'}</b>
+        <PrivateValue as="b">{selected.institutionName || '—'}</PrivateValue>
         <span>Opened</span>
-        <b>{selected.openedDate || 'Not set'}</b>
+        <PrivateValue as="b">{selected.openedDate || 'Not set'}</PrivateValue>
         <span>Currency</span>
-        <b>{selected.currency}</b>
+        <PrivateValue as="b">{selected.currency}</PrivateValue>
         {selected.hasCurrencyIntegrityIssue ? (
           <>
             <span>Ledger Postings</span>
-            <b>{asArray(selected.postingCurrencies).join(', ') || 'Missing currency data'}</b>
+            <PrivateValue as="b">
+              {asArray(selected.postingCurrencies).join(', ') || 'Missing currency data'}
+            </PrivateValue>
           </>
         ) : null}
         <span>Status</span>
-        <b>{selected.isArchived ? 'Archived' : 'Active'}</b>
+        <PrivateValue as="b">{selected.isArchived ? 'Archived' : 'Active'}</PrivateValue>
         <span>Notes</span>
-        <b>{selected.note || '—'}</b>
+        <PrivateValue as="b">{selected.note || '—'}</PrivateValue>
       </div>
     </>
   );
@@ -763,9 +799,9 @@ function AccountRouteController({
           <div className="accounts-register-toolbar">
             <div className="accounts-register-heading">
               <h3>All Accounts</h3>
-              <small>
+              <PrivateValue as="small">
                 {rows.length} account{rows.length === 1 ? '' : 's'}
-              </small>
+              </PrivateValue>
             </div>
             <div className="accounts-register-actions">
               <div aria-label="Account view" className="account-view-toggle" role="group">
@@ -827,9 +863,9 @@ function AccountRouteController({
             rows={rows}
             view={accountView}
           />
-          <p className="accounts-register-footer">
+          <PrivateValue as="p" className="accounts-register-footer">
             Showing {rows.length ? `1 to ${rows.length}` : '0'} of {allRows.length} accounts
-          </p>
+          </PrivateValue>
         </article>
         <aside className="reference-card account-detail-card">
           <AccountDetail

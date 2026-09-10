@@ -257,7 +257,7 @@ export function useFinanceApplicationController({
         });
       }
       const prepared = withoutUnchangedWorkbook({ ...result, events }, currentWorkbook);
-      return executeCommandResult(prepared);
+      return executeCommandResult(prepared, { markDirty: options.markDirty });
     },
     [executeCommandResult]
   );
@@ -542,10 +542,12 @@ export function useFinanceApplicationController({
           result,
           currentWorkbook: workbookRef.current,
           saveWorkbook,
+          now: () => ports.clock.now(),
           isSaveEvent: (event) => hasSaveEvent([translatedEvent(event)]),
           applyCommandResult: (committedResult) =>
             applyCommandResult(committedResult, {
               saveMutation: false,
+              markDirty: false,
               reason: options.reason || 'assistant_changed'
             }),
           updateCurrentWorkbook(nextWorkbook) {
@@ -560,7 +562,7 @@ export function useFinanceApplicationController({
         throw error;
       }
     },
-    [applyCommandResult, reportError, saveWorkbook]
+    [applyCommandResult, ports.clock, reportError, saveWorkbook]
   );
 
   const executeAssistantTool = useCallback(

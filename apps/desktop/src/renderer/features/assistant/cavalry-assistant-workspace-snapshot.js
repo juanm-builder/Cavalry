@@ -36,17 +36,19 @@ function quietly(build) {
   }
 }
 
-function isoMonthRange(today) {
+function isoMonthToDateRange(today) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asText(today));
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
+  const day = Number(match[3]);
   if (!(year > 0 && month >= 1 && month <= 12)) return null;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > lastDay) return null;
   const monthPart = String(month).padStart(2, '0');
   return {
     start: `${year}-${monthPart}-01`,
-    end: `${year}-${monthPart}-${String(lastDay).padStart(2, '0')}`
+    end: asText(today)
   };
 }
 
@@ -59,11 +61,14 @@ function positionSection(workbook, today) {
   };
 }
 
-function accountsSection(workbook, limit) {
-  const balances = getAccountBalances(workbook, {});
+function accountsSection(workbook, today, limit) {
+  const balances = getAccountBalances(workbook, { asOfDate: asText(today) });
   const baseCurrency = asText(workbook.currency).toUpperCase();
   const rows = asArray(workbook.accounts)
-    .filter((account) => account && account.isActive !== false)
+    .filter(
+      (account) =>
+        account && account.isActive !== false && ['asset', 'liability'].includes(account.group)
+    )
     .map((account) => {
       const projection = accountBalanceProjection(account, workbook, balances);
       const row = {
@@ -188,7 +193,7 @@ function serialized(snapshot) {
 
 export function buildCavalryAssistantWorkspaceSnapshot(workbook, { today } = {}) {
   if (!workbook || typeof workbook !== 'object') return null;
-  const range = quietly(() => isoMonthRange(today));
+  const range = quietly(() => isoMonthToDateRange(today));
   const snapshot = {
     workbook: {
       name: asText(workbook.name),
@@ -199,7 +204,7 @@ export function buildCavalryAssistantWorkspaceSnapshot(workbook, { today } = {})
   };
   const position = quietly(() => positionSection(workbook, today));
   if (position) snapshot.position = position;
-  const accounts = quietly(() => accountsSection(workbook, ACCOUNT_LIMIT));
+  const accounts = quietly(() => accountsSection(workbook, today, ACCOUNT_LIMIT));
   if (accounts && accounts.rows.length) snapshot.accounts = accounts;
   const month = quietly(() => monthSection(workbook, range));
   if (month) snapshot.thisMonth = month;

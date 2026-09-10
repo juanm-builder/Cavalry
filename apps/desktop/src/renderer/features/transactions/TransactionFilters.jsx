@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -46,10 +47,10 @@ function RangeSlider({ label, min, max, low, high, step = 1, onLow, onHigh, form
   return (
     <div className="field ledger-range-field">
       <div className="ledger-range-heading">
-        <label>{label}</label>
-        <span>
+        <PrivateValue as="label">{label}</PrivateValue>
+        <PrivateValue as="span">
           {format(low)} <span aria-hidden="true">–</span> {format(high)}
-        </span>
+        </PrivateValue>
       </div>
       <div
         className="ledger-dual-range"
@@ -257,9 +258,14 @@ export function InlineFilterToolbar({ filters, filterOpen, activeFilterCount }) 
       >
         <Icon name="filter_alt" />
         Filters
-        {activeFilterCount ? <span className="filter-count">{activeFilterCount}</span> : null}
+        {activeFilterCount ? (
+          <PrivateValue as="span" className="filter-count">
+            {activeFilterCount}
+          </PrivateValue>
+        ) : null}
       </button>
-      <button
+      <PrivateValue
+        as="button"
         className="btn transaction-sort-button"
         type="button"
         {...actions.action('toggle-ledger-sort-direction')}
@@ -267,7 +273,7 @@ export function InlineFilterToolbar({ filters, filterOpen, activeFilterCount }) 
       >
         <Icon name={data.sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward'} />
         {data.sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-      </button>
+      </PrivateValue>
       <button
         className="btn transaction-reset-button"
         disabled={!activeFilterCount}
@@ -290,9 +296,9 @@ export function FilterSidePanel({ filters, options, activeFilterCount }) {
       <div className="transaction-side-panel-header">
         <div>
           <h2>Filters</h2>
-          <small>
+          <PrivateValue as="small">
             {activeFilterCount ? `${activeFilterCount} active filters` : 'Refine your view'}
-          </small>
+          </PrivateValue>
         </div>
         <button
           aria-label="Close filters"

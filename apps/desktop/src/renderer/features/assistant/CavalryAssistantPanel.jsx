@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import {
@@ -51,13 +52,16 @@ export function CavalryAssistantPanel({
   onOpen,
   onOpenReference,
   onOpenSettings,
+  onReplyStyleChange,
   panelWidth,
   pending,
   pendingClarification,
   pendingConfirmation,
+  pendingConfirmationCount = 0,
   processingImages,
   provider,
   removeImage,
+  replyStyle,
   resizePanelWithKeyboard,
   resizingPanel,
   resumeConversation,
@@ -73,9 +77,23 @@ export function CavalryAssistantPanel({
   voice,
   workbook
 }) {
+  const activeConfirmationMessageId = pendingConfirmation
+    ? pendingConfirmation.messageId ||
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            (message.receipts || []).some(
+              (receipt) => receipt.lifecycle === 'awaiting_confirmation'
+            ) ||
+            (message.role === 'assistant' &&
+              message.text?.includes('Review the change below before confirming.'))
+        )?.id
+    : '';
   return (
     <>
-      <button
+      <PrivateValue
+        as="button"
         aria-expanded={isOpen}
         aria-label={isOpen ? 'Close Cavalry assistant' : 'Ask Cavalry'}
         className={`cavalry-assistant-launcher${isOpen ? ' open' : ''}${pending ? ' working' : ''}`}
@@ -85,7 +103,7 @@ export function CavalryAssistantPanel({
       >
         <CavalryAssistantMark working={pending} />
         {error ? <span aria-hidden="true" className="cavalry-assistant-launcher-alert" /> : null}
-      </button>
+      </PrivateValue>
       {isOpen ? (
         <aside
           aria-label="Cavalry assistant"
@@ -134,15 +152,15 @@ export function CavalryAssistantPanel({
             <CavalryAssistantMark className="cavalry-assistant-header-mark" working={pending} />
             <div className="cavalry-assistant-header-copy">
               <strong>Cavalry</strong>
-              <span className={`cavalry-assistant-provider ${provider.tone}`}>
+              <PrivateValue as="span" className={`cavalry-assistant-provider ${provider.tone}`}>
                 <Icon name={provider.icon} />
                 {provider.label}
-              </span>
+              </PrivateValue>
             </div>
             <button
               aria-label="New conversation"
               className="btn btn-icon"
-              disabled={pending || !messages.length || assistantSettingsOpen}
+              disabled={pending || (!messages.length && !historyOpen && !assistantSettingsOpen)}
               onClick={startConversation}
               title="New conversation"
               type="button"
@@ -177,14 +195,12 @@ export function CavalryAssistantPanel({
 
           <div className="cavalry-assistant-context-bar">
             <Icon name={assistantSettingsOpen ? 'tune' : route.icon} />
-            <span>
-              {assistantSettingsOpen ? 'Assistant settings' : `Working with ${route.label}`}
-            </span>
-            <small>
-              {assistantSettingsOpen
-                ? 'Local personalization'
-                : workbook?.name || 'Current workbook'}
-            </small>
+            <PrivateValue as="span">
+              {assistantSettingsOpen ? 'Preferences' : route.label}
+            </PrivateValue>
+            <PrivateValue as="small">
+              {assistantSettingsOpen ? '' : workbook?.name || 'Current workbook'}
+            </PrivateValue>
           </div>
 
           {historyOpen ? (
@@ -199,6 +215,8 @@ export function CavalryAssistantPanel({
               advisor={advisor}
               onBack={() => setAssistantSettingsOpen(false)}
               onOpenConnectionSettings={() => onOpenSettings?.('settings-advisor')}
+              onReplyStyleChange={onReplyStyleChange}
+              replyStyle={replyStyle}
             />
           ) : null}
           <div
@@ -209,6 +227,7 @@ export function CavalryAssistantPanel({
             {messages.length ? (
               messages.map((message) => (
                 <Message
+                  confirmationActive={message.id === activeConfirmationMessageId}
                   activeClarificationId={pendingClarification?.id || ''}
                   key={message.id}
                   message={message}
@@ -220,12 +239,23 @@ export function CavalryAssistantPanel({
             ) : (
               <div className="cavalry-assistant-empty">
                 <CavalryAssistantMark className="cavalry-assistant-empty-mark" />
-                <h2>What do you want to do?</h2>
-                <p>Ask anything about this workbook.</p>
+                <h2>What’s on your mind?</h2>
+                <p>Your money, plans, and everyday questions.</p>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    void voice.cancel();
+                    setAssistantSettingsOpen(true);
+                  }}
+                  type="button"
+                >
+                  <Icon name="tune" />
+                  Preferences
+                </button>
                 <div className="cavalry-assistant-suggestions">
                   {suggestions.map((suggestion) => (
                     <button key={suggestion} onClick={() => submit(suggestion)} type="button">
-                      <span>{suggestion}</span>
+                      <PrivateValue as="span">{suggestion}</PrivateValue>
                       <Icon name="north_east" />
                     </button>
                   ))}
@@ -237,10 +267,13 @@ export function CavalryAssistantPanel({
                 aria-label="Confirm Cavalry action"
                 className="cavalry-assistant-confirmation"
               >
-                <Icon name="warning" />
+                <Icon name="fact_check" />
                 <div>
-                  <strong>Confirm this action</strong>
-                  <p>{pendingConfirmation.message}</p>
+                  <strong>
+                    Review change
+                    {pendingConfirmationCount > 1 ? ` · ${pendingConfirmationCount} remaining` : ''}
+                  </strong>
+                  <PrivateValue as="p">{pendingConfirmation.message}</PrivateValue>
                 </div>
                 <div className="cavalry-assistant-confirmation-actions">
                   <button className="btn" onClick={cancelPendingAction} type="button">
@@ -256,7 +289,7 @@ export function CavalryAssistantPanel({
               <div className="cavalry-assistant-message assistant cavalry-assistant-streaming">
                 <CavalryAssistantMark className="cavalry-assistant-message-avatar" working />
                 <div className="cavalry-assistant-message-content">
-                  <p>{streamingText}</p>
+                  <PrivateValue as="p">{streamingText}</PrivateValue>
                 </div>
               </div>
             ) : null}
@@ -267,7 +300,9 @@ export function CavalryAssistantPanel({
                   <i />
                   <i />
                 </span>
-                <span>{streamingText ? 'Writing…' : liveStatus || 'Working…'}</span>
+                <PrivateValue as="span">
+                  {streamingText ? 'Writing…' : liveStatus || 'Working…'}
+                </PrivateValue>
               </div>
             ) : null}
           </div>
@@ -282,7 +317,7 @@ export function CavalryAssistantPanel({
             {error ? (
               <div className="cavalry-assistant-error" role="alert">
                 <Icon name="error" />
-                <span>{error}</span>
+                <PrivateValue as="span">{error}</PrivateValue>
                 {!provider.connected ? (
                   <button onClick={onOpenSettings} type="button">
                     Open settings
@@ -294,14 +329,19 @@ export function CavalryAssistantPanel({
               <div className="cavalry-assistant-composer-images" aria-label="Images ready to send">
                 {attachments.map((attachment, index) => (
                   <div className="cavalry-assistant-composer-image" key={attachment.id}>
-                    <img alt={attachment.name || `Image ${index + 1}`} src={attachment.dataUrl} />
-                    <button
+                    <PrivateValue
+                      as="img"
+                      alt={attachment.name || `Image ${index + 1}`}
+                      src={attachment.dataUrl}
+                    />
+                    <PrivateValue
+                      as="button"
                       aria-label={`Remove ${attachment.name || `image ${index + 1}`}`}
                       onClick={() => removeImage(attachment.id)}
                       type="button"
                     >
                       <Icon name="close" />
-                    </button>
+                    </PrivateValue>
                   </div>
                 ))}
               </div>
@@ -309,19 +349,19 @@ export function CavalryAssistantPanel({
             {processingImages || attachmentNotice ? (
               <div className="cavalry-assistant-attachment-summary" role="status">
                 <Icon name={processingImages ? 'progress_activity' : 'imagesmode'} />
-                <span>
+                <PrivateValue as="span">
                   {processingImages
                     ? 'Preparing images…'
                     : `${attachments.length}/${COMPANION_IMAGE_ATTACHMENT_MAX_COUNT} attached. ${attachmentNotice}`}
-                </span>
+                </PrivateValue>
               </div>
             ) : null}
             {voice.statusMessage ? (
               <div className={`cavalry-assistant-voice-status ${voice.status}`} role="status">
                 <Icon name={voice.isRecording ? 'graphic_eq' : 'mic'} />
-                <span>
+                <PrivateValue as="span">
                   {voice.statusMessage} {voice.timerCopy}
-                </span>
+                </PrivateValue>
                 {voice.canOpenMicrophoneSettings ? (
                   <button onClick={voice.openMicrophoneSettings} type="button">
                     Open settings
@@ -367,7 +407,8 @@ export function CavalryAssistantPanel({
                 value={composer}
               />
               <div className="cavalry-assistant-composer-actions">
-                <button
+                <PrivateValue
+                  as="button"
                   aria-label="Attach images"
                   className="btn btn-icon"
                   disabled={
@@ -380,8 +421,9 @@ export function CavalryAssistantPanel({
                   type="button"
                 >
                   <Icon name="add_photo_alternate" />
-                </button>
-                <button
+                </PrivateValue>
+                <PrivateValue
+                  as="button"
                   aria-label={voice.button.ariaLabel}
                   className={`btn btn-icon${voice.isRecording ? ' recording' : ''}`}
                   disabled={voice.button.disabled}
@@ -390,7 +432,7 @@ export function CavalryAssistantPanel({
                   type="button"
                 >
                   <Icon name={voice.button.icon} />
-                </button>
+                </PrivateValue>
                 {pending ? (
                   <button
                     aria-label="Stop Cavalry"
@@ -417,11 +459,7 @@ export function CavalryAssistantPanel({
                 )}
               </div>
             </form>
-            <small>
-              {pendingClarification
-                ? 'Pick an option or keep typing — Cavalry continues either way.'
-                : 'Cavalry verifies tool results and asks before changing anything.'}
-            </small>
+            {pendingClarification ? <small>Choose an option or type your answer.</small> : null}
           </footer>
         </aside>
       ) : null}

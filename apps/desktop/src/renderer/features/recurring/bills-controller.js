@@ -1,9 +1,15 @@
 import {
   confirmRecurringReconciliationCommand,
+  getRecurringOccurrenceDatesForMonth,
   normalizeRecurringItemForCommand,
   normalizeRecurringKind,
   rejectRecurringReconciliationCommand
 } from '@cavalry/finance-core';
+import {
+  normalizeRecurringDateKey,
+  normalizeRecurringMonthKey,
+  normalizeRecurringScheduleMap
+} from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
 import {
   buildBillsRouteBaseModel,
   buildBillsRouteModelFromBase,
@@ -57,11 +63,7 @@ function fail(workbook, code, message) {
 }
 
 function normalizeDateKey(value) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asString(value));
-  if (!match) return '';
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? match[0] : '';
+  return normalizeRecurringDateKey(value);
 }
 
 function getIdFactory(dependencies) {
@@ -91,6 +93,7 @@ function validateRecurringInput(workbook, payload) {
   const name = asString(payload.name);
   const amount = Number(payload.amount ?? payload.planned);
   const dueDate = normalizeDateKey(payload.dueDate || payload.anchorDate);
+  const endDate = normalizeDateKey(payload.endDate);
   const category = asArray(workbook.categories).find(
     (item) => item && item.id === payload.categoryId
   );
@@ -100,9 +103,40 @@ function validateRecurringInput(workbook, payload) {
     : null;
   const currency = asString(payload.currency || workbook.currency).toUpperCase() || 'PHP';
   if (!name) return { error: ['recurring.name-required', 'Name is required.'] };
-  if (!Number.isFinite(amount) || amount < 0)
+  if (
+    !asString(payload.amount ?? payload.planned) ||
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    (amount > 0 && amount < 0.01) ||
+    !Number.isSafeInteger(Math.round(amount * 100))
+  )
     return { error: ['recurring.amount-invalid', 'Enter a valid amount.'] };
+  if (payload.kind && !['bill', 'subscription'].includes(payload.kind))
+    return { error: ['recurring.kind-invalid', 'Choose bill or subscription.'] };
+  if (!/^[A-Z]{3}$/.test(currency))
+    return { error: ['recurring.currency-invalid', 'Use a three-letter currency code.'] };
   if (!dueDate) return { error: ['recurring.date-invalid', 'Choose a valid due date.'] };
+  if (asString(payload.endDate) && (!endDate || endDate < dueDate)) {
+    return {
+      error: [
+        'recurring.end-date-invalid',
+        'The end date must be a real date on or after the first due date.'
+      ]
+    };
+  }
+  if (
+    payload.frequency &&
+    !/^(?:weekly|every 2 weeks|every two weeks|biweekly|monthly|quarterly|yearly|annual|annually|one-time|one time|once)$/i.test(
+      asString(payload.frequency)
+    )
+  ) {
+    return {
+      error: [
+        'recurring.frequency-invalid',
+        'Choose Weekly, Every 2 Weeks, Monthly, Quarterly, Yearly, or One-time.'
+      ]
+    };
+  }
   if (!(category && ['expense', 'debt'].includes(category.type) && category.isActive !== false)) {
     return { error: ['recurring.category-invalid', 'Pick an active expense or debt category.'] };
   }
@@ -142,10 +176,128 @@ function validateRecurringInput(workbook, payload) {
       ]
     };
   }
-  return { name, amount, dueDate, category, account, currency };
+  return { name, amount, dueDate, endDate, category, account, currency };
+}
+
+function recurringScope(payload) {
+  const scope = asString(payload.scope) || 'series';
+  const monthKey = normalizeRecurringMonthKey(payload.monthKey);
+  if (!['series', 'month', 'from_month'].includes(scope))
+    return {
+      error: [
+        'recurring.scope-invalid',
+        'Choose series, month, or from_month for this tracker change.'
+      ]
+    };
+  if (scope === 'series' && asString(payload.monthKey))
+    return {
+      error: [
+        'recurring.scope-required',
+        'Choose month or from_month when targeting a specific month.'
+      ]
+    };
+  if (scope !== 'series' && !monthKey)
+    return { error: ['recurring.month-required', 'Choose a concrete month in YYYY-MM format.'] };
+  return { scope, monthKey };
+}
+
+function withoutFutureFields(schedule, monthKey, fields) {
+  return Object.fromEntries(
+    Object.entries(normalizeRecurringScheduleMap(schedule)).flatMap(([month, patch]) => {
+      const nextPatch = { ...patch };
+      if (month >= monthKey) fields.forEach((field) => delete nextPatch[field]);
+      return Object.keys(nextPatch).length ? [[month, nextPatch]] : [];
+    })
+  );
+}
+
+function saveScopedRecurringItem(workbook, existing, normalized, payload, target) {
+  if (existing.isActive === false)
+    return fail(
+      workbook,
+      'recurring.inactive',
+      'Restore the tracker before changing an individual month.'
+    );
+  const fields = asArray(payload.changedFields).length
+    ? payload.changedFields
+    : Object.keys(payload);
+  const changed = new Set(
+    fields.map(
+      (field) =>
+        ({ dueDate: 'anchorDate', category: 'categoryId', account: 'accountId' })[field] || field
+    )
+  );
+  if (
+    target.scope === 'month' &&
+    ['frequency', 'endDate', 'autoRenew'].some((field) => changed.has(field))
+  ) {
+    return fail(
+      workbook,
+      'recurring.month-schedule-invalid',
+      'A single-month change can adjust its amount, due date, account, category, name, note, or skipped status. Change the series to adjust cadence or its end date.'
+    );
+  }
+  const occurrences = getRecurringOccurrenceDatesForMonth(existing, target.monthKey);
+  const restoringSkippedMonth =
+    changed.has('isActive') &&
+    payload.isActive === true &&
+    existing.monthOverrides?.[target.monthKey]?.isActive === false;
+  if (target.scope === 'month' && !occurrences.length && !restoringSkippedMonth)
+    return fail(
+      workbook,
+      'recurring.month-not-scheduled',
+      'This tracker has no scheduled occurrence in that month.'
+    );
+  if (changed.has('anchorDate') && normalized.anchorDate.slice(0, 7) !== target.monthKey)
+    return fail(
+      workbook,
+      'recurring.month-date-mismatch',
+      'The changed due date must fall in the selected month.'
+    );
+  if (target.scope === 'month' && changed.has('anchorDate') && occurrences.length > 1)
+    return fail(
+      workbook,
+      'recurring.multiple-occurrences',
+      'This month has several scheduled charges. Change their amount together, or specify a series schedule change instead of replacing several due dates with one.'
+    );
+  const mapKey = target.scope === 'month' ? 'monthOverrides' : 'scheduleChanges';
+  const patch = Object.fromEntries(
+    Object.entries(normalized).filter(
+      ([field]) =>
+        changed.has(field) &&
+        !['id', 'monthOverrides', 'scheduleChanges', 'createdFromTransactionId'].includes(field)
+    )
+  );
+  if (!Object.keys(patch).length)
+    return fail(
+      workbook,
+      'recurring.change-required',
+      'Specify what should change for this tracker.'
+    );
+  const next = cloneSerializable(workbook);
+  const item = next.recurringItems.find((entry) => entry.id === existing.id);
+  if (target.scope === 'from_month') {
+    const replacedFields = Object.keys(patch);
+    item.scheduleChanges = withoutFutureFields(
+      item.scheduleChanges,
+      target.monthKey,
+      replacedFields
+    );
+    item.monthOverrides = withoutFutureFields(item.monthOverrides, target.monthKey, replacedFields);
+  }
+  item[mapKey] = {
+    ...normalizeRecurringScheduleMap(item[mapKey]),
+    [target.monthKey]: { ...normalizeRecurringScheduleMap(item[mapKey])[target.monthKey], ...patch }
+  };
+  return ok(next, [
+    { type: 'recurring/item-updated', payload: { recurringItemId: existing.id, ...target } },
+    { type: 'schedule-save' }
+  ]);
 }
 
 function saveRecurringItem(workbook, payload, dependencies) {
+  const target = recurringScope(payload);
+  if (target.error) return fail(workbook, ...target.error);
   const validation = validateRecurringInput(workbook, payload);
   if (validation.error) return fail(workbook, validation.error[0], validation.error[1]);
   const recurringItemId = asString(payload.recurringItemId);
@@ -155,6 +307,12 @@ function saveRecurringItem(workbook, payload, dependencies) {
   if (recurringItemId && !existing) {
     return fail(workbook, 'recurring.not-found', 'The recurring item no longer exists.');
   }
+  if (!existing && target.scope !== 'series')
+    return fail(
+      workbook,
+      'recurring.create-scope-invalid',
+      'Set the first due date and optional end date when creating a tracker. Use One-time for this month only.'
+    );
   const nextWorkbook = cloneSerializable(workbook);
   nextWorkbook.recurringItems = asArray(nextWorkbook.recurringItems);
   const index = existing
@@ -173,6 +331,7 @@ function saveRecurringItem(workbook, payload, dependencies) {
       currency: validation.currency,
       frequency: asString(payload.frequency) || 'Monthly',
       anchorDate: validation.dueDate,
+      endDate: Object.hasOwn(payload, 'endDate') ? validation.endDate : asString(existing?.endDate),
       autoRenew: payload.autoRenew === true,
       isActive: payload.isActive !== false,
       note: asString(payload.note),
@@ -185,6 +344,8 @@ function saveRecurringItem(workbook, payload, dependencies) {
       defaultDate: validation.dueDate
     }
   );
+  if (existing && target.scope !== 'series')
+    return saveScopedRecurringItem(workbook, existing, normalized, payload, target);
   if (existing) nextWorkbook.recurringItems[index] = normalized;
   else nextWorkbook.recurringItems.push(normalized);
   return ok(nextWorkbook, [
@@ -198,16 +359,46 @@ function saveRecurringItem(workbook, payload, dependencies) {
 }
 
 function archiveRecurringItem(workbook, payload) {
+  const target = recurringScope(payload);
+  if (target.error) return fail(workbook, ...target.error);
   const recurringItemId = asString(payload.recurringItemId);
   const current = asArray(workbook.recurringItems).find(
     (item) => item && item.id === recurringItemId
   );
   if (!current) return fail(workbook, 'recurring.not-found', 'Choose an existing recurring item.');
+  if (
+    target.scope === 'month' &&
+    !getRecurringOccurrenceDatesForMonth(current, target.monthKey).length
+  )
+    return fail(
+      workbook,
+      'recurring.month-not-scheduled',
+      'This tracker has no scheduled occurrence in that month.'
+    );
   const nextWorkbook = cloneSerializable(workbook);
   const item = nextWorkbook.recurringItems.find((entry) => entry.id === recurringItemId);
-  item.isActive = false;
+  if (target.scope === 'series') item.isActive = false;
+  else if (target.scope === 'month')
+    item.monthOverrides = {
+      ...normalizeRecurringScheduleMap(item.monthOverrides),
+      [target.monthKey]: {
+        ...normalizeRecurringScheduleMap(item.monthOverrides)[target.monthKey],
+        isActive: false
+      }
+    };
+  else {
+    item.scheduleChanges = {
+      ...withoutFutureFields(item.scheduleChanges, target.monthKey, ['isActive']),
+      [target.monthKey]: {
+        ...normalizeRecurringScheduleMap(item.scheduleChanges)[target.monthKey],
+        isActive: false
+      }
+    };
+    // A prior one-month restoration must not reopen a tracker after this stop date.
+    item.monthOverrides = withoutFutureFields(item.monthOverrides, target.monthKey, ['isActive']);
+  }
   return ok(nextWorkbook, [
-    { type: 'recurring/item-archived', payload: { recurringItemId } },
+    { type: 'recurring/item-archived', payload: { recurringItemId, ...target } },
     { type: 'close-modal' },
     { type: 'schedule-save' }
   ]);

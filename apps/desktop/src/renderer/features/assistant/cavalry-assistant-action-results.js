@@ -339,21 +339,22 @@ function accountReceipts(data, entity) {
     ...asArray(source.replacements),
     ...asArray(source.createdTransactions)
   ];
+  const routingOrLines = (value) => {
+    const record = asObject(value);
+    const routing = asArray(record.accounts);
+    return routing.length ? routing : asArray(record.lines);
+  };
   const candidates = [
     ...asArray(source.accounts),
     ...asArray(source.routing?.accounts),
-    ...asArray(entity.accounts),
-    ...asArray(entity.lines),
-    ...relatedTransactions.flatMap((transaction) => [
-      ...asArray(asObject(transaction).accounts),
-      ...asArray(asObject(transaction).lines)
-    ])
+    ...routingOrLines(entity),
+    ...relatedTransactions.flatMap(routingOrLines)
   ];
   const seen = new Set();
   return candidates
     .map((account) => {
       const item = asObject(account);
-      const id = asText(item.id || item.accountId);
+      const id = asText(item.accountId || item.id);
       const name = asText(item.name || item.accountName || item.label);
       const role = asText(item.role || item.accountRole || item.direction);
       const key = `${id}|${name}|${role}`;
@@ -539,7 +540,7 @@ export function cavalryAssistantActionReceiptMessage(receiptValue) {
     accounts: asArray(receipt.accounts)
   });
   if (lifecycle === 'awaiting_confirmation') {
-    return `Ready to ${asText(receipt.title).toLowerCase() || 'make this change'}. Please confirm before Cavalry changes your data.`;
+    return 'Review the change below before confirming.';
   }
   if (lifecycle === 'cancelled') return 'Cancelled. Cavalry made no changes.';
   if (lifecycle === 'rolled_back') {

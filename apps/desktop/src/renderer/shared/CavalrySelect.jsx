@@ -1,3 +1,4 @@
+import { PrivateValue } from './PrivateValue.jsx';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -220,7 +221,8 @@ export function CavalrySelect({
 
   const menu = open
     ? createPortal(
-        <div
+        <PrivateValue
+          as="div"
           aria-label={ariaLabel ? `${ariaLabel} options` : undefined}
           className={`categorized-select-menu cavalry-select-menu${hasIcons ? '' : ' is-plain'}`}
           id={listboxId}
@@ -230,20 +232,24 @@ export function CavalrySelect({
         >
           {normalized.length ? (
             grouped.map((entry) => (
-              <section
+              <PrivateValue
+                as="section"
                 aria-label={entry.group || undefined}
                 className="categorized-select-group"
                 key={entry.group || '__ungrouped'}
                 role="group"
               >
                 {entry.group ? (
-                  <div className="categorized-select-group-label">{entry.group}</div>
+                  <PrivateValue as="div" className="categorized-select-group-label">
+                    {entry.group}
+                  </PrivateValue>
                 ) : null}
                 {entry.options.map((option) => {
                   const index = normalized.indexOf(option);
                   const isSelected = option.value === selectedValue;
                   return (
-                    <button
+                    <PrivateValue
+                      as="button"
                       aria-label={option.meta ? `${option.label} — ${option.meta}` : option.label}
                       aria-selected={isSelected}
                       className={`${isSelected ? 'selected' : ''}${
@@ -259,29 +265,38 @@ export function CavalrySelect({
                       {hasIcons ? (
                         <CavalryIcon name={option.icon || leadingIcon || 'circle'} />
                       ) : null}
-                      <span className="cavalry-select-option-label">{option.label}</span>
-                      <small className="cavalry-select-option-meta">{option.meta}</small>
+                      <PrivateValue as="span" className="cavalry-select-option-label">
+                        {option.label}
+                      </PrivateValue>
+                      <PrivateValue as="small" className="cavalry-select-option-meta">
+                        {option.meta}
+                      </PrivateValue>
                       {isSelected ? (
                         <CavalryIcon className="categorized-select-check" name="check" />
                       ) : (
                         <span aria-hidden="true" />
                       )}
-                    </button>
+                    </PrivateValue>
                   );
                 })}
-              </section>
+              </PrivateValue>
             ))
           ) : (
             <p className="cavalry-select-empty">Nothing to choose from yet.</p>
           )}
-        </div>,
+        </PrivateValue>,
         document.body
       )
     : null;
 
   return (
-    <div className={`categorized-select cavalry-select ${className}`.trim()} ref={rootRef}>
-      <button
+    <PrivateValue
+      as="div"
+      className={`categorized-select cavalry-select ${className}`.trim()}
+      ref={rootRef}
+    >
+      <PrivateValue
+        as="button"
         {...rest}
         aria-controls={open ? listboxId : undefined}
         aria-expanded={open}
@@ -305,13 +320,17 @@ export function CavalrySelect({
             name={selected?.icon || leadingIcon || 'circle'}
           />
         ) : null}
-        <span className={selected ? '' : 'placeholder'}>{selected?.label || placeholder}</span>
-        <small className="cavalry-select-trigger-meta">{selected?.meta || ''}</small>
+        <PrivateValue as="span" className={selected ? '' : 'placeholder'}>
+          {selected?.label || placeholder}
+        </PrivateValue>
+        <PrivateValue as="small" className="cavalry-select-trigger-meta">
+          {selected?.meta || ''}
+        </PrivateValue>
         <CavalryIcon className="categorized-select-chevron" name="expand_more" />
-      </button>
+      </PrivateValue>
       {name ? <input name={name} type="hidden" value={selectedValue} /> : null}
       {menu}
-    </div>
+    </PrivateValue>
   );
 }
 

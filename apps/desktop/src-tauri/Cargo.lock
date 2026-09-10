@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "cavalry-desktop"
-version = "2.2.11"
+version = "2.2.12"
 dependencies = [
  "serde",
  "serde_json",

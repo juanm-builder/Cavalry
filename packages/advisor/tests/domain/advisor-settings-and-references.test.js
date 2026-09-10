@@ -26,6 +26,7 @@ const {
   getAdvisorServerToggleState,
   isAdvisorApiKeyMask,
   normalizeAdvisorSettings,
+  normalizeAdvisorReplyStyle,
   normalizeAdvisorProviderKind,
   normalizeAdvisorPublicSettings,
   normalizeAdvisorServerStatus,
@@ -51,6 +52,27 @@ describe('advisor references', () => {
 });
 
 describe('advisor settings', () => {
+  it('defaults to brief and preserves connection credentials when changing only reply style', () => {
+    const existing = normalizeAdvisorSettings({
+      provider: 'openai',
+      model: 'test-model',
+      apiKey: 'fake-test-key',
+      replyStyle: 'brief'
+    });
+    const next = normalizeAdvisorSettings({ replyStyle: 'detailed' }, existing);
+    expect(next).toEqual({ ...existing, replyStyle: 'detailed' });
+    expect(publicAdvisorSettings(next)).toMatchObject({ replyStyle: 'detailed', hasApiKey: true });
+    expect(publicAdvisorSettings(next)).not.toHaveProperty('apiKey');
+    expect(buildAdvisorSettingsStoragePayload({ replyStyle: 'balanced' }, next)).toMatchObject({
+      replyStyle: 'balanced',
+      provider: 'openai',
+      model: 'test-model',
+      apiKey: 'fake-test-key'
+    });
+    expect(normalizeAdvisorReplyStyle('invalid')).toBe('brief');
+    expect(normalizeAdvisorSettings({ replyStyle: 'invalid' }, next).replyStyle).toBe('detailed');
+  });
+
   it('normalizes local settings without active endpoints or models while preserving secrets', () => {
     expect(
       normalizeAdvisorSettings({
@@ -68,6 +90,7 @@ describe('advisor settings', () => {
       localModelPath: '',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       apiKey: 'secret'
     });
   });
@@ -88,6 +111,7 @@ describe('advisor settings', () => {
       localModelPath: '/models/cavalry.gguf',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       apiKey: ''
     });
   });
@@ -156,6 +180,7 @@ describe('advisor settings', () => {
       localModelPath: '',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       hasApiKey: true,
       apiKeyPreview: ADVISOR_API_KEY_MASK
     });
@@ -177,6 +202,7 @@ describe('advisor settings', () => {
       localModelPath: '',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       hasApiKey: true,
       apiKeyPreview: ADVISOR_API_KEY_MASK
     });
@@ -227,7 +253,8 @@ describe('advisor settings', () => {
       model: 'gpt-4.1',
       localModelPath: '',
       mmprojPath: '',
-      contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS
+      contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief'
     });
   });
 
@@ -302,6 +329,7 @@ describe('advisor settings', () => {
       localModelPath: '',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       hasApiKey: true,
       apiKeyPreview: ADVISOR_API_KEY_MASK
     });
@@ -325,6 +353,7 @@ describe('advisor settings', () => {
       localModelPath: '',
       mmprojPath: '',
       contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+      replyStyle: 'brief',
       hasApiKey: true,
       apiKeyPreview: ADVISOR_API_KEY_MASK
     });

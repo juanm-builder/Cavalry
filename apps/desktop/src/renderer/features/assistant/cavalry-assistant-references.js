@@ -1,3 +1,13 @@
+import {
+  emptyQuerySupportsClaim,
+  MONTH_INDEX,
+  MONTH_WORD
+} from './cavalry-assistant-empty-evidence.js';
+import {
+  recurringScheduleDetails,
+  mergeRecurringDetails
+} from './cavalry-assistant-recurring-evidence.js';
+
 const REFERENCE_KINDS = Object.freeze([
   'account',
   'transaction',
@@ -193,17 +203,20 @@ function recurringItemCandidate(value) {
       `${label} subscription`,
       label
     ],
-    detail: detailObject([
-      ['recurringItemId', id],
-      ['kind', recurringKind],
-      ['frequency', asText(source.frequency)],
-      ['amount', finiteNumber(source, 'amount')],
-      ['currency', asText(source.currency)],
-      ['dueDate', asText(source.dueDate || source.anchorDate)],
-      ['accountId', stableId(source.accountId)],
-      ['categoryId', stableId(source.categoryId)],
-      ['isActive', typeof source.isActive === 'boolean' ? source.isActive : undefined]
-    ])
+    detail: {
+      ...recurringScheduleDetails(source),
+      ...detailObject([
+        ['recurringItemId', id],
+        ['kind', recurringKind],
+        ['frequency', asText(source.frequency)],
+        ['amount', finiteNumber(source, 'amount')],
+        ['currency', asText(source.currency)],
+        ['dueDate', asText(source.dueDate || source.anchorDate)],
+        ['accountId', stableId(source.accountId)],
+        ['categoryId', stableId(source.categoryId)],
+        ['isActive', typeof source.isActive === 'boolean' ? source.isActive : undefined]
+      ])
+    }
   });
 }
 
@@ -290,7 +303,10 @@ function addCandidate(candidates, candidate) {
     ...previous,
     label: candidate.label || previous.label,
     aliases: uniqueText([...candidate.aliases, ...previous.aliases]),
-    detail: { ...previous.detail, ...candidate.detail }
+    detail:
+      candidate.kind === 'recurringItem'
+        ? mergeRecurringDetails(previous.detail, candidate.detail)
+        : { ...previous.detail, ...candidate.detail }
   });
 }
 
@@ -421,6 +437,21 @@ function addEvidenceSet(candidates, evidenceSets, evidenceSet) {
 function collectReferenceRegistry(toolResults) {
   const candidates = new Map();
   const evidenceSets = new Map();
+  const readOnlyActions =
+    asArray(toolResults).length > 0 &&
+    asArray(toolResults).every((entry) => {
+      const result = asObject(entry?.result);
+      const receipt = asObject(result.receipt);
+      return (
+        entry.ok === true &&
+        result.ok === true &&
+        result.changed === false &&
+        receipt.access === 'read' &&
+        receipt.changed === false &&
+        receipt.commitStatus === 'not_applicable' &&
+        receipt.verificationStatus === 'verified'
+      );
+    });
   asArray(toolResults).forEach((toolResult) => {
     const source = asObject(toolResult);
     const result = asObject(source.result);
@@ -432,6 +463,12 @@ function collectReferenceRegistry(toolResults) {
     addEntityShapes(candidates, data, 'recurringItem', 'recurringItems', recurringItemCandidate);
     addRelatedEntityShapes(candidates, data, 'transaction', 'transactions');
     addRelatedEntityShapes(candidates, data, 'recurringItem', 'recurringItems');
+    asArray(data.schedules).forEach((schedule) => {
+      asArray(schedule?.recurringItems).forEach((item) => {
+        addCandidate(candidates, recurringItemCandidate({ ...item, monthKey: schedule.monthKey }));
+        addRelatedCandidates(candidates, item);
+      });
+    });
     asArray(data.recurringCandidates).forEach((candidate) => {
       asArray(candidate?.transactions).forEach((transaction) =>
         addCandidate(candidates, transactionCandidate(transaction))
@@ -454,7 +491,7 @@ function collectReferenceRegistry(toolResults) {
       addEvidenceSet(candidates, evidenceSets, evidenceSet)
     );
   });
-  return { candidates: [...candidates.values()], evidenceSets };
+  return { candidates: [...candidates.values()], evidenceSets, readOnlyActions };
 }
 
 function transactionAmountAliases(value) {
@@ -733,34 +770,6 @@ function groupedReference({ index, label, sourceRefs, candidates, calculation, i
 }
 
 const INVALID_CITATION_PATTERN = /\[\[cavalry-invalid-citation-(\d+)\]\]/i;
-const MONTH_INDEX = Object.freeze({
-  jan: 0,
-  january: 0,
-  feb: 1,
-  february: 1,
-  mar: 2,
-  march: 2,
-  apr: 3,
-  april: 3,
-  may: 4,
-  jun: 5,
-  june: 5,
-  jul: 6,
-  july: 6,
-  aug: 7,
-  august: 7,
-  sep: 8,
-  sept: 8,
-  september: 8,
-  oct: 9,
-  october: 9,
-  nov: 10,
-  november: 10,
-  dec: 11,
-  december: 11
-});
-const MONTH_WORD = Object.keys(MONTH_INDEX).join('|');
-
 function claimStartBeforeMarker(text, markerStart) {
   let claimEnd = markerStart;
   while (claimEnd > 0 && /[ \t]/.test(text[claimEnd - 1])) claimEnd -= 1;
@@ -768,21 +777,32 @@ function claimStartBeforeMarker(text, markerStart) {
   while (searchEnd > 0 && /["')\]]/.test(text[searchEnd - 1])) searchEnd -= 1;
   if (searchEnd > 0 && /[.!?]/.test(text[searchEnd - 1])) searchEnd -= 1;
   const prefix = text.slice(0, searchEnd);
-  const boundary = /[.!?](?:["')\]]*)\s+|[;\n|]/g;
+  const boundary = /[.!?](?:["')\]*_~`]*)\s+|[;\n|]/g;
   let start = 0;
   let match = boundary.exec(prefix);
   while (match) {
-    start = match.index + match[0].length;
+    const wordBeforePeriod = /([a-z]+)$/i.exec(prefix.slice(0, match.index))?.[1];
+    const isDateAbbreviation =
+      prefix[match.index] === '.' &&
+      hasOwn(MONTH_INDEX, asText(wordBeforePeriod).toLowerCase()) &&
+      /^\d/.test(prefix.slice(match.index + match[0].length));
+    if (!isDateAbbreviation) start = match.index + match[0].length;
     match = boundary.exec(prefix);
   }
   return start;
 }
 
-function claimEndAfterMarker(text, markerEnd) {
+function claimEndAfterMarker(text, markerEnd, claim = '') {
   let cursor = markerEnd;
   while (cursor < text.length && /[ \t]/.test(text[cursor])) cursor += 1;
-  if (!/[.!?]/.test(text[cursor] || '')) return markerEnd;
-  cursor += 1;
+  // A model may put the marker inside a bold or italic span. Remove its closing delimiter
+  // with the failed claim instead of leaving broken Markdown after the replacement.
+  for (const delimiter of ['**', '__', '~~', '*', '_', '`']) {
+    if (!text.startsWith(delimiter, cursor)) continue;
+    const count = claim.split(delimiter).length - 1;
+    if (count % 2 === 1) cursor += delimiter.length;
+  }
+  if (/[.!?]/.test(text[cursor] || '')) cursor += 1;
   while (cursor < text.length && /["')\]]/.test(text[cursor])) cursor += 1;
   while (cursor < text.length && /[ \t]/.test(text[cursor])) cursor += 1;
   return cursor;
@@ -810,8 +830,8 @@ function replaceInvalidCitationClaims(text, { includeClaim = true } = {}) {
   let match = INVALID_CITATION_PATTERN.exec(output);
   while (match) {
     const start = claimStartBeforeMarker(output, match.index);
-    const end = claimEndAfterMarker(output, match.index + match[0].length);
     const removed = output.slice(start, match.index);
+    const end = claimEndAfterMarker(output, match.index + match[0].length, removed);
     const structure = /^(\s*(?:(?:[-+*]|\d+[.)])\s+)?)/.exec(removed)?.[1] || '';
     const replacement = `${structure}${verificationFailure(removed, includeClaim)}`;
     const suffix = output.slice(end);
@@ -832,7 +852,13 @@ function evidenceDate(value) {
 
 function evidenceDates(sourceRefs, candidates, inference) {
   return uniqueText([
-    ...asArray(sourceRefs).map((sourceRef) => asText(candidates.get(sourceRef)?.detail?.date)),
+    ...asArray(sourceRefs).flatMap((sourceRef) => {
+      const detail = candidates.get(sourceRef)?.detail;
+      return [
+        asText(detail?.date),
+        ...asArray(detail?.schedules).map((schedule) => `${schedule.monthKey}-01`)
+      ];
+    }),
     asText(inference?.firstSeenDate),
     asText(inference?.lastSeenDate)
   ])
@@ -890,6 +916,7 @@ function explicitCitations(text, registry) {
       let calculation = {};
       let inference = {};
       let sourceRefs = [];
+      const emptyEvidenceSets = [];
       let valid = values.length > 0 && rawParts.every((value) => Boolean(value.trim()));
       if (markerType.toLocaleLowerCase() === 'source-set') {
         values.forEach((value) => {
@@ -900,7 +927,7 @@ function explicitCitations(text, registry) {
           }
           label ||= evidenceSet.label;
           const evidenceSourceRefs = asArray(evidenceSet.source_refs);
-          if (!evidenceSourceRefs.length) valid = false;
+          if (!evidenceSourceRefs.length) emptyEvidenceSets.push(evidenceSet);
           const canonicalRefs = evidenceSourceRefs.map(canonicalEvidenceSourceRef);
           if (canonicalRefs.some((sourceRef) => !sourceRef)) valid = false;
           sourceRefs.push(...canonicalRefs);
@@ -914,9 +941,37 @@ function explicitCitations(text, registry) {
       sourceRefs = uniqueText(sourceRefs.filter(Boolean));
       const claimStart = claimStartBeforeMarker(text, markerOffset);
       const claim = text.slice(claimStart, markerOffset);
+      const cleanClaim = cleanClaimText(claim);
+      const assurance = cleanClaim.replace(/^read[- ]only(?: check| review)?\s*[;:.—-]\s*/i, '');
+      const explicitNoMutation =
+        /^(?:I made no changes|I did not (?:change|modify) (?:the|your) workbook)$/i.test(
+          cleanClaim
+        );
+      const readOnlyPrefix =
+        /\bread[- ]only(?: check| review)?\s*[;:.—-]\s*$/i.test(text.slice(0, claimStart)) ||
+        assurance !== cleanClaim;
+      if (
+        registry.readOnlyActions &&
+        (explicitNoMutation ||
+          (readOnlyPrefix &&
+            /^(?:nothing (?:was )?changed|no changes were made)$/i.test(assurance)))
+      ) {
+        // No mutation is an execution fact, not a financial claim that needs a record link.
+        return '';
+      }
+      if (
+        valid &&
+        emptyEvidenceSets.length === values.length &&
+        emptyEvidenceSets.every((evidenceSet) => emptyQuerySupportsClaim(evidenceSet, claim))
+      ) {
+        // A verified empty search has no record destination to open. Preserve the supported
+        // zero-result statement without manufacturing a clickable transaction reference.
+        return '';
+      }
       const calculationBacked = Object.keys(asObject(calculation)).length > 0;
       if (
         !sourceRefs.length ||
+        emptyEvidenceSets.length ||
         (!calculationBacked &&
           !dateRangeSupportedByEvidence(claim, sourceRefs, bySourceRef, inference)) ||
         !absenceAfterMonthSupported(claim, sourceRefs, bySourceRef, inference)

@@ -1,6 +1,8 @@
 // Commits an Assistant candidate only after Cavalry's normal persistence boundary accepts it.
 // Keeping this orchestration pure makes save failures and ordering independently testable.
 
+import { scheduleWorkbookSaveCommand } from '@cavalry/finance-core';
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -13,6 +15,7 @@ export async function commitAssistantCommandResultDurably({
   result,
   currentWorkbook,
   saveWorkbook,
+  now,
   applyCommandResult,
   isSaveEvent = () => false,
   updateCurrentWorkbook = () => {}
@@ -23,8 +26,12 @@ export async function commitAssistantCommandResultDurably({
     error.code = 'assistant_commit_unavailable';
     throw error;
   }
-  const nextWorkbook = result.workbook;
-  const workbookChanged = Boolean(nextWorkbook && nextWorkbook !== currentWorkbook);
+  const workbookChanged = Boolean(result.workbook && result.workbook !== currentWorkbook);
+  // Use the same save timestamp as manual commands before persistence sees the candidate.
+  // The later screen update deliberately skips the already completed save effects.
+  const nextWorkbook = workbookChanged
+    ? scheduleWorkbookSaveCommand(result.workbook, { now }).workbook
+    : result.workbook;
   let persistence = { status: 'not_required', durable: true };
   if (workbookChanged) {
     if (typeof saveWorkbook !== 'function') {
@@ -58,6 +65,7 @@ export async function commitAssistantCommandResultDurably({
 
   const committedResult = {
     ...result,
+    ...(nextWorkbook ? { workbook: nextWorkbook } : {}),
     events: asArray(result.events).filter((event) => !isSaveEvent(event)),
     commitStatus: workbookChanged ? 'committed' : 'not_applicable',
     verificationStatus: 'verified',

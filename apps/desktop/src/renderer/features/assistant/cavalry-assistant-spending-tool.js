@@ -116,7 +116,10 @@ export async function summarizeSpending(environment) {
             groupBy,
             type,
             range,
+            filters: { accountId: account.id, categoryId: category.id },
             transactionCount: evidenceSourceRefs.length,
+            matchedTransactionCount: view.allRows.length,
+            unresolvedTransactionCount: view.allRows.length - trustedRows.length,
             groupCount: sortedGroups.length
           }
         }

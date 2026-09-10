@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 // React CSV import preview. File selection and persistence stay behind injected app adapters.
 
 import React from 'react';
@@ -18,9 +19,9 @@ function StatCard({ label, value, subtitle, icon, tone }) {
   return (
     <article className={`finance-stat-card ${tone || ''}`}>
       <div className="finance-stat-copy">
-        <label>{label}</label>
-        <b>{value}</b>
-        <span>{subtitle || ''}</span>
+        <PrivateValue as="label">{label}</PrivateValue>
+        <PrivateValue as="b">{value}</PrivateValue>
+        <PrivateValue as="span">{subtitle || ''}</PrivateValue>
       </div>
       {icon ? <Icon className="finance-stat-icon" name={icon} /> : null}
     </article>
@@ -35,12 +36,13 @@ function IssueTags({ issues }) {
   return (
     <>
       {rows.map((issue, index) => (
-        <span
+        <PrivateValue
+          as="span"
           key={`${issue.copy || 'issue'}-${index}`}
           className={`tag ${issue.tone || 'status-warn'}`}
         >
           {issue.copy}
-        </span>
+        </PrivateValue>
       ))}
     </>
   );
@@ -73,17 +75,19 @@ function ImportRows({ rows }) {
         <tbody>
           {data.map((row) => (
             <tr key={row.id || row.sourceLineNumber}>
-              <td>{row.sourceLineNumber || ''}</td>
+              <PrivateValue as="td">{row.sourceLineNumber || ''}</PrivateValue>
               <td>
-                <span className={`tag ${row.statusTone || 'status-warn'}`}>
+                <PrivateValue as="span" className={`tag ${row.statusTone || 'status-warn'}`}>
                   {row.statusLabel || 'Needs Review'}
-                </span>
+                </PrivateValue>
               </td>
-              <td>{row.date || ''}</td>
-              <td>{row.description || ''}</td>
-              <td className="amount">{row.amount || ''}</td>
-              <td>{row.account || ''}</td>
-              <td>{row.category || ''}</td>
+              <PrivateValue as="td">{row.date || ''}</PrivateValue>
+              <PrivateValue as="td">{row.description || ''}</PrivateValue>
+              <PrivateValue as="td" className="amount">
+                {row.amount || ''}
+              </PrivateValue>
+              <PrivateValue as="td">{row.account || ''}</PrivateValue>
+              <PrivateValue as="td">{row.category || ''}</PrivateValue>
               <td>
                 <IssueTags issues={row.issues} />
               </td>
@@ -117,8 +121,8 @@ function ImportPreviewModalView({ model }) {
               <Icon name="table_view" />
               CSV Import Preview
             </div>
-            <h3>{data.fileName || 'transactions.csv'}</h3>
-            <p>{data.summaryCopy || '0 of 0 rows ready'}</p>
+            <PrivateValue as="h3">{data.fileName || 'transactions.csv'}</PrivateValue>
+            <PrivateValue as="p">{data.summaryCopy || '0 of 0 rows ready'}</PrivateValue>
           </div>
           <button
             className="btn btn-icon"
@@ -137,9 +141,9 @@ function ImportPreviewModalView({ model }) {
         </section>
         <div className="panel-note csv-mapping-report" style={{ marginTop: 12 }}>
           {asArray(data.mapping).map((item) => (
-            <span key={item.field} className="tag">
+            <PrivateValue as="span" key={item.field} className="tag">
               {item.copy}
-            </span>
+            </PrivateValue>
           ))}
         </div>
         {asArray(data.parseIssues).length ? (
@@ -148,24 +152,31 @@ function ImportPreviewModalView({ model }) {
           </div>
         ) : null}
         {data.resultMessage ? (
-          <div className="panel-note status-good" style={{ marginTop: 12 }}>
+          <PrivateValue as="div" className="panel-note status-good" style={{ marginTop: 12 }}>
             {data.resultMessage}
-          </div>
+          </PrivateValue>
         ) : null}
         {data.errorMessage ? (
-          <div className="panel-note status-bad" role="alert" style={{ marginTop: 12 }}>
+          <PrivateValue
+            as="div"
+            className="panel-note status-bad"
+            role="alert"
+            style={{ marginTop: 12 }}
+          >
             {data.errorMessage}
-          </div>
+          </PrivateValue>
         ) : null}
         <div className="reference-card-title" style={{ marginTop: 14 }}>
           <h3>Rejected Row Report</h3>
-          <span className="tag">{String(data.reviewRowCount || 0)} rows</span>
+          <PrivateValue as="span" className="tag">
+            {String(data.reviewRowCount || 0)} rows
+          </PrivateValue>
         </div>
         <ImportRows rows={data.rows} />
         <div className="modal-actions" style={{ marginTop: 14 }}>
-          <button className="btn" type="button" {...actions.action(actionName)}>
+          <PrivateValue as="button" className="btn" type="button" {...actions.action(actionName)}>
             {actionLabel}
-          </button>
+          </PrivateValue>
           <button
             className="btn btn-primary"
             type="button"

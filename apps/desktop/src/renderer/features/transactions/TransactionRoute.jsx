@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -9,6 +10,7 @@ import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { ImportPreviewModal } from '../import-export/ImportPreviewModal.jsx';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
+import { TransactionCell } from './TransactionCell.jsx';
 import { TransactionEditModal } from './TransactionEditModal.jsx';
 import { FilterSidePanel, InlineFilterToolbar } from './TransactionFilters.jsx';
 
@@ -40,10 +42,16 @@ function PageHeader({ title, subtitle, children }) {
   return (
     <section className="page-header">
       <div>
-        <h1>{title}</h1>
-        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
+        <PrivateValue as="h1">{title}</PrivateValue>
+        {subtitle ? (
+          <PrivateValue as="p" className="page-subtitle">
+            {subtitle}
+          </PrivateValue>
+        ) : null}
       </div>
-      <div className="page-actions">{children}</div>
+      <PrivateValue as="div" className="page-actions">
+        {children}
+      </PrivateValue>
     </section>
   );
 }
@@ -53,9 +61,9 @@ function StatCard({ label, value, subtitle, icon, tone, action, payload = {} }) 
   const body = (
     <>
       <div className="finance-stat-copy">
-        <label>{label}</label>
-        <b>{value}</b>
-        <span>{subtitle || ''}</span>
+        <PrivateValue as="label">{label}</PrivateValue>
+        <PrivateValue as="b">{value}</PrivateValue>
+        <PrivateValue as="span">{subtitle || ''}</PrivateValue>
       </div>
       {icon ? <Icon className="finance-stat-icon" name={icon} /> : null}
     </>
@@ -63,12 +71,21 @@ function StatCard({ label, value, subtitle, icon, tone, action, payload = {} }) 
   const className = `finance-stat-card ${tone || ''}${action ? ' finance-stat-action' : ''}`;
   if (action) {
     return (
-      <button className={className} type="button" {...actions.action(action, payload)}>
+      <PrivateValue
+        as="button"
+        className={className}
+        type="button"
+        {...actions.action(action, payload)}
+      >
         {body}
-      </button>
+      </PrivateValue>
     );
   }
-  return <article className={className}>{body}</article>;
+  return (
+    <PrivateValue as="article" className={className}>
+      {body}
+    </PrivateValue>
+  );
 }
 
 function TypeTabs({ activeType }) {
@@ -82,62 +99,18 @@ function TypeTabs({ activeType }) {
   return (
     <div className="pill-tabs">
       {types.map(([type, label]) => (
-        <button
+        <PrivateValue
+          as="button"
           key={type}
           className={activeType === type ? 'active' : ''}
           type="button"
           {...actions.action('set-ledger-type', { ledgerType: type })}
         >
           {label}
-        </button>
+        </PrivateValue>
       ))}
     </div>
   );
-}
-
-function TransactionCell({ cell }) {
-  const data = asObject(cell);
-  const className = data.className || 'transaction-cell';
-  if (data.kind === 'entity') {
-    return (
-      <td className={className}>
-        <div className="entity-cell inline-entity-cell transaction-entity-cell">
-          <span>
-            <strong>{data.value || ''}</strong>
-            <small className="transaction-origin-line">
-              {data.subtitle || ''}
-              {data.isAiOrigin ? (
-                <span
-                  aria-label="Added by Cavalry"
-                  className="transaction-origin-emoji"
-                  role="img"
-                  title="Added by Cavalry"
-                >
-                  ✨
-                </span>
-              ) : null}
-            </small>
-          </span>
-        </div>
-      </td>
-    );
-  }
-  if (data.kind === 'category') {
-    return (
-      <td className={className}>
-        <span className={`category-dot ${data.tone || 'info'}`} />
-        {data.value || 'Uncategorized'}
-      </td>
-    );
-  }
-  if (data.kind === 'status') {
-    return (
-      <td className={className}>
-        <span className={`status-pill ${data.tone || 'info'}`}>{data.value || 'Transaction'}</span>
-      </td>
-    );
-  }
-  return <td className={className}>{data.value || ''}</td>;
 }
 
 function TransactionTable({
@@ -173,12 +146,14 @@ function TransactionTable({
 
   if (!rows.length) {
     return (
-      <div className="transaction-empty-register">
+      <PrivateValue as="div" className="transaction-empty-register">
         {createEntry}
         <div className="empty-state compact-empty">
-          <strong>{emptyState || 'No transactions match this view.'}</strong>
+          <PrivateValue as="strong">
+            {emptyState || 'No transactions match this view.'}
+          </PrivateValue>
         </div>
-      </div>
+      </PrivateValue>
     );
   }
   return (
@@ -198,7 +173,9 @@ function TransactionTable({
         </thead>
         <tbody>
           <tr className="transaction-create-row">
-            <td colSpan={showRunningBalance ? 6 : 5}>{createEntry}</td>
+            <PrivateValue as="td" colSpan={showRunningBalance ? 6 : 5}>
+              {createEntry}
+            </PrivateValue>
           </tr>
           {rows.map((row) => (
             <tr
@@ -246,7 +223,9 @@ function Pagination({ pagination }) {
           Page 1
         </button>
       ) : null}
-      <span className="table-page-copy">{data.copy}</span>
+      <PrivateValue as="span" className="table-page-copy">
+        {data.copy}
+      </PrivateValue>
       <span className="rows-per-page">
         Rows per page:
         <CavalrySelect
@@ -275,12 +254,12 @@ function ModalHeader({ badge, title, detail }) {
   return (
     <div className="panel-header">
       <div>
-        <div className="badge">
+        <PrivateValue as="div" className="badge">
           <Icon name="receipt_long" />
           {badge}
-        </div>
-        <h3>{title}</h3>
-        {detail ? <p>{detail}</p> : null}
+        </PrivateValue>
+        <PrivateValue as="h3">{title}</PrivateValue>
+        {detail ? <PrivateValue as="p">{detail}</PrivateValue> : null}
       </div>
       <button
         className="btn btn-icon"
@@ -304,9 +283,13 @@ function MessageList({ errors = [], warnings = [] }) {
   return (
     <div className="stack-list" role="alert">
       {messages.map((message, index) => (
-        <div key={`${message.code || 'message'}-${index}`} className={`panel-note ${message.tone}`}>
+        <PrivateValue
+          as="div"
+          key={`${message.code || 'message'}-${index}`}
+          className={`panel-note ${message.tone}`}
+        >
           {message.message || String(message)}
-        </div>
+        </PrivateValue>
       ))}
     </div>
   );
@@ -341,7 +324,8 @@ function LegacyComposerModal({ modal }) {
     actions.change('transaction-composer-change', { field }, bindingOptions);
   return (
     <div className="modal-backdrop" data-react-modal="transaction-composer" onMouseDown={dismiss}>
-      <div
+      <PrivateValue
+        as="div"
         className="modal-card modal-card-wide"
         role="dialog"
         aria-modal="true"
@@ -472,26 +456,28 @@ function LegacyComposerModal({ modal }) {
               Cancel
             </button>
             {asArray(data.warnings).length ? (
-              <button
+              <PrivateValue
+                as="button"
                 className="btn btn-primary"
                 type="button"
                 {...actions.action('confirm-transaction-warnings')}
               >
                 {warningConfirmationCopy(data.warnings)}
-              </button>
+              </PrivateValue>
             ) : (
-              <button
+              <PrivateValue
+                as="button"
                 className="btn btn-primary"
                 type="button"
                 {...actions.action('submit-transaction')}
               >
                 <Icon name="save" />
                 {data.mode === 'edit' ? 'Save Changes' : 'Add Transaction'}
-              </button>
+              </PrivateValue>
             )}
           </div>
         </div>
-      </div>
+      </PrivateValue>
     </div>
   );
 }
@@ -502,7 +488,7 @@ function TransactionKindBadge({ kind }) {
   return (
     <div className={`transaction-kind-badge ${data.tone || 'info'}`}>
       <Icon name={data.icon || 'receipt_long'} />
-      <span>{data.label}</span>
+      <PrivateValue as="span">{data.label}</PrivateValue>
     </div>
   );
 }
@@ -524,7 +510,7 @@ function TransactionWizardHeader({ modal }) {
             <Icon name="arrow_back" />
           </button>
         ) : null}
-        <h2>{data.title || 'Add Transaction'}</h2>
+        <PrivateValue as="h2">{data.title || 'Add Transaction'}</PrivateValue>
       </div>
       <button
         aria-label="Close"
@@ -547,7 +533,8 @@ function TransactionTypeStep({ modal }) {
       <p className="transaction-wizard-prompt">What kind of transaction is this?</p>
       <div className="transaction-type-options">
         {asArray(data.kindOptions).map((option) => (
-          <button
+          <PrivateValue
+            as="button"
             aria-label={option.label}
             aria-pressed={data.kind?.kind === option.kind}
             className={`transaction-type-option ${option.tone || 'info'}`}
@@ -559,12 +546,12 @@ function TransactionTypeStep({ modal }) {
               <Icon name={option.icon} />
             </span>
             <span className="transaction-type-copy">
-              <strong>{option.label}</strong>
-              <span>{option.description}</span>
-              <small>{option.example}</small>
+              <PrivateValue as="strong">{option.label}</PrivateValue>
+              <PrivateValue as="span">{option.description}</PrivateValue>
+              <PrivateValue as="small">{option.example}</PrivateValue>
             </span>
             <Icon className="transaction-type-chevron" name="chevron_right" />
-          </button>
+          </PrivateValue>
         ))}
       </div>
       <MessageList errors={data.errors} />
@@ -605,7 +592,9 @@ function TransactionAccountField({
   const actions = useActionBindings();
   return (
     <div className="field transaction-account-field">
-      <label htmlFor={id}>{label}</label>
+      <PrivateValue as="label" htmlFor={id}>
+        {label}
+      </PrivateValue>
       <div className="transaction-account-control">
         <CavalrySelect
           aria-label={label}
@@ -617,10 +606,10 @@ function TransactionAccountField({
           {...actions.change('transaction-composer-change', { field })}
         />
         {selected ? (
-          <small>
+          <PrivateValue as="small">
             {selected.contextLabel} · {selected.balanceLabel}
             {selected.contextKind === 'credit_card' ? ' owed' : ''}
-          </small>
+          </PrivateValue>
         ) : null}
       </div>
     </div>
@@ -669,14 +658,16 @@ function TransactionDetailsStep({ modal }) {
               <Icon name={guidance.icon || 'info'} />
             </span>
             <span>
-              <strong>{guidance.title}</strong>
-              <small>{guidance.message}</small>
+              <PrivateValue as="strong">{guidance.title}</PrivateValue>
+              <PrivateValue as="small">{guidance.message}</PrivateValue>
             </span>
           </div>
         ) : null}
         <div className={`transaction-money-fields${data.showCurrency ? '' : ' single'}`}>
           <div className="field">
-            <label htmlFor="transaction-amount">{data.amountLabel || 'Amount'}</label>
+            <PrivateValue as="label" htmlFor="transaction-amount">
+              {data.amountLabel || 'Amount'}
+            </PrivateValue>
             <FinancialValueInput
               allowNegative={false}
               id="transaction-amount"
@@ -710,7 +701,9 @@ function TransactionDetailsStep({ modal }) {
         </div>
         {!isTransfer ? (
           <div className="field">
-            <label htmlFor="transaction-category">{isIncome ? 'Source' : 'Category'}</label>
+            <PrivateValue as="label" htmlFor="transaction-category">
+              {isIncome ? 'Source' : 'Category'}
+            </PrivateValue>
             <CategorizedSelect
               aria-label={isIncome ? 'Source' : 'Category'}
               createCategoryType={isIncome ? 'income' : 'expense'}
@@ -746,10 +739,10 @@ function TransactionDetailsStep({ modal }) {
               value={draft.fxRateToBase || ''}
               {...fieldBinding('fxRateToBase')}
             />
-            <small>
+            <PrivateValue as="small">
               {data.fxRateLabel ? `${data.fxRateLabel}. ` : ''}Enter the rate used for this
               transaction; Cavalry will not infer it silently.
-            </small>
+            </PrivateValue>
           </div>
         ) : null}
         <div className="field">
@@ -787,13 +780,13 @@ function TransactionReviewStep({ modal }) {
       <div className="transaction-review-card">
         {asArray(data.reviewRows).map((row) => (
           <div className="transaction-review-row" key={row.label}>
-            <span>{row.label}</span>
+            <PrivateValue as="span">{row.label}</PrivateValue>
             <strong className={row.tone || ''}>
-              <span>
+              <PrivateValue as="span">
                 {row.icon ? <Icon name={row.icon} /> : null}
                 {row.value || '—'}
-              </span>
-              {row.detail ? <small>{row.detail}</small> : null}
+              </PrivateValue>
+              {row.detail ? <PrivateValue as="small">{row.detail}</PrivateValue> : null}
             </strong>
           </div>
         ))}
@@ -803,16 +796,16 @@ function TransactionReviewStep({ modal }) {
           <span className="transaction-impact-icon">
             <Icon name={impact.icon || 'info'} />
           </span>
-          <p>
+          <PrivateValue as="p">
             {impact.prefix}
             {impact.amount ? (
               <>
                 {' '}
-                <strong>{impact.amount}</strong>
+                <PrivateValue as="strong">{impact.amount}</PrivateValue>
                 {impact.suffix || '.'}
               </>
             ) : null}
-          </p>
+          </PrivateValue>
         </div>
       ) : null}
       <MessageList errors={data.errors} warnings={data.warnings} />
@@ -820,7 +813,8 @@ function TransactionReviewStep({ modal }) {
         <button className="btn" type="button" {...actions.action('edit-transaction-details')}>
           Edit Details
         </button>
-        <button
+        <PrivateValue
+          as="button"
           className={`btn btn-primary transaction-wizard-submit${
             data.kind?.kind === 'income' ? ' good' : ''
           }`}
@@ -829,7 +823,7 @@ function TransactionReviewStep({ modal }) {
         >
           <Icon name="check_box" />
           {hasWarnings ? warningConfirmationCopy(data.warnings) : 'Add Transaction'}
-        </button>
+        </PrivateValue>
       </div>
     </div>
   );
@@ -842,7 +836,8 @@ function CreateTransactionWizard({ modal }) {
   const dismiss = useModalDismiss(closeModal.onClick);
   return (
     <div className="modal-backdrop" data-react-modal="transaction-composer" onMouseDown={dismiss}>
-      <div
+      <PrivateValue
+        as="div"
         aria-label={data.title || 'Add Transaction'}
         aria-modal="true"
         className={`modal-card transaction-wizard transaction-wizard-${data.step || 'type'}`}
@@ -852,7 +847,7 @@ function CreateTransactionWizard({ modal }) {
         {data.step === 'type' ? <TransactionTypeStep modal={data} /> : null}
         {data.step === 'details' ? <TransactionDetailsStep modal={data} /> : null}
         {data.step === 'review' ? <TransactionReviewStep modal={data} /> : null}
-      </div>
+      </PrivateValue>
     </div>
   );
 }
@@ -882,13 +877,15 @@ function DeleteModal({ modal }) {
             <div className="meta">
               <b>Date</b>
             </div>
-            <div>{data.date}</div>
+            <PrivateValue as="div">{data.date}</PrivateValue>
           </div>
           <div className="list-row">
             <div className="meta">
               <b>Amount</b>
             </div>
-            <div className="amount">{data.amount}</div>
+            <PrivateValue as="div" className="amount">
+              {data.amount}
+            </PrivateValue>
           </div>
         </div>
         <MessageList errors={data.errors} />
@@ -913,8 +910,10 @@ function DeleteModal({ modal }) {
 function DetailField({ label, value, tone = '' }) {
   return (
     <div className="transaction-detail-field">
-      <span>{label}</span>
-      <strong className={tone}>{value || '—'}</strong>
+      <PrivateValue as="span">{label}</PrivateValue>
+      <PrivateValue as="strong" className={tone}>
+        {value || '—'}
+      </PrivateValue>
     </div>
   );
 }
@@ -937,9 +936,11 @@ function DetailSidePanel({ modal }) {
           </span>
           <div className="transaction-detail-heading-copy">
             <div className="transaction-detail-title-row">
-              <h2 title={data.title}>{data.title}</h2>
+              <PrivateValue as="h2" title={data.title}>
+                {data.title}
+              </PrivateValue>
             </div>
-            <small>{data.displayDate || data.date}</small>
+            <PrivateValue as="small">{data.displayDate || data.date}</PrivateValue>
           </div>
         </div>
         <button
@@ -951,7 +952,9 @@ function DetailSidePanel({ modal }) {
           <Icon name="close" />
         </button>
       </div>
-      <div className={`transaction-detail-amount ${data.tone || ''}`}>{data.amount}</div>
+      <PrivateValue as="div" className={`transaction-detail-amount ${data.tone || ''}`}>
+        {data.amount}
+      </PrivateValue>
       <div className="transaction-detail-summary">
         <DetailField
           label={data.beforeLabel || 'Balance before'}
@@ -960,12 +963,12 @@ function DetailSidePanel({ modal }) {
         />
         <div className="transaction-detail-change">
           <span>
-            <b>{data.movementLabel || data.typeLabel}</b>
-            <small>{data.title}</small>
+            <PrivateValue as="b">{data.movementLabel || data.typeLabel}</PrivateValue>
+            <PrivateValue as="small">{data.title}</PrivateValue>
           </span>
-          <strong className={data.changeTone || data.tone || ''}>
+          <PrivateValue as="strong" className={data.changeTone || data.tone || ''}>
             {data.accountChange || data.amount}
-          </strong>
+          </PrivateValue>
         </div>
         <DetailField
           label={data.afterLabel || 'Balance after'}

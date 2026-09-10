@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import advisorSettings from '@cavalry/advisor/domain/advisor/settings.cjs';
 
 import { getRouteById } from '../../app/routes.js';
 import {
@@ -28,7 +29,7 @@ import {
   confirmationReplayArguments,
   isConfirmationDecline,
   isConfirmationReply,
-  pendingConfirmationFromResult,
+  pendingConfirmationsFromResult,
   readableToolName,
   toolFailureMessage
 } from './cavalry-assistant-confirmations.js';
@@ -194,13 +195,27 @@ export function CavalryAssistant({
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
+  const [replyStyleOverride, setReplyStyleOverride] = useState(null);
+  if (replyStyleOverride && replyStyleOverride.source !== settings.replyStyle) {
+    setReplyStyleOverride(null);
+  }
+  const replyStyle =
+    replyStyleOverride && replyStyleOverride.source === settings.replyStyle
+      ? replyStyleOverride.value
+      : advisorSettings.normalizeAdvisorReplyStyle(settings.replyStyle);
+  const setReplyStyle = (value) =>
+    setReplyStyleOverride({
+      source: settings.replyStyle,
+      value: advisorSettings.normalizeAdvisorReplyStyle(value)
+    });
   const [composer, setComposer] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attachmentNotice, setAttachmentNotice] = useState('');
   const [processingImages, setProcessingImages] = useState(false);
   const [draggingImages, setDraggingImages] = useState(false);
   const [pending, setPending] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  const [pendingConfirmations, setPendingConfirmations] = useState([]);
+  const pendingConfirmation = pendingConfirmations[0] || null;
   const [pendingClarification, setPendingClarification] = useState(null);
   const [error, setError] = useState('');
   const [liveStatus, setLiveStatus] = useState('');
@@ -308,7 +323,7 @@ export function CavalryAssistant({
     setAttachments([]);
     setAttachmentNotice('');
     setPending(false);
-    setPendingConfirmation(null);
+    setPendingConfirmations([]);
     setPendingClarification(null);
     setError('');
     setLiveStatus('');
@@ -462,7 +477,7 @@ export function CavalryAssistant({
       }
       if (isConfirmationDecline(question)) {
         setComposer('');
-        setPendingConfirmation(null);
+        setPendingConfirmations([]);
         setMessages((current) =>
           current.concat(
             {
@@ -474,7 +489,7 @@ export function CavalryAssistant({
             {
               id: makeId('assistant_message'),
               role: 'assistant',
-              text: 'Okay — I left it alone. Nothing changed.',
+              text: 'Okay — pending changes were left alone.',
               createdAt: now()
             }
           )
@@ -482,6 +497,15 @@ export function CavalryAssistant({
         return;
       }
     }
+    const clearedConfirmationMessage = pendingConfirmation
+      ? {
+          id: makeId('assistant_message'),
+          role: 'assistant',
+          text: 'Earlier pending changes were cleared.',
+          createdAt: now()
+        }
+      : null;
+    if (clearedConfirmationMessage) setPendingConfirmations([]);
     setPendingClarification(null);
     const version = ++requestVersionRef.current;
     const requestId = makeId('assistant_request');
@@ -498,7 +522,11 @@ export function CavalryAssistant({
       attachments: selectedAttachments,
       createdAt: now()
     };
-    setMessages((current) => current.concat(userMessage));
+    setMessages((current) =>
+      current.concat(
+        clearedConfirmationMessage ? [clearedConfirmationMessage, userMessage] : [userMessage]
+      )
+    );
     setComposer('');
     setAttachments([]);
     setAttachmentNotice('');
@@ -516,14 +544,16 @@ export function CavalryAssistant({
         advisor,
         createId: makeId,
         executeTool,
-        history,
+        history: clearedConfirmationMessage
+          ? history.concat({ role: 'assistant', content: clearedConfirmationMessage.text })
+          : history,
         maxIterations: 16,
-        pendingConfirmationMessage: pendingConfirmation ? pendingConfirmation.message : '',
+        pendingConfirmationMessage: '',
         question,
         images: selectedAttachments,
         requestId,
         signal: abortController.signal,
-        settings,
+        settings: { ...settings, replyStyle },
         today: todayValue,
         tools: getCavalryAssistantToolDefinitions({
           activeRouteId: route.id,
@@ -535,15 +565,23 @@ export function CavalryAssistant({
         workspaceSnapshot
       });
       if (version !== requestVersionRef.current) return;
-      const confirmation = pendingConfirmationFromResult(result);
+      const assistantMessageId = makeId('assistant_message');
+      const confirmations = pendingConfirmationsFromResult(result).map((confirmation) => ({
+        ...confirmation,
+        messageId: assistantMessageId,
+        origin: { question, today: todayValue, activeRouteId: route.id }
+      }));
+      const confirmation = confirmations[0] || null;
       const committedResults = committedToolResults(result);
       const receipts = actionReceipts(result?.toolResults);
       const writeOutcomeReceipts = receipts.filter(isWriteOutcomeReceipt);
       const hasWriteOutcome = committedResults.length > 0 || writeOutcomeReceipts.length > 0;
       const deterministicSummary = receiptSummary(writeOutcomeReceipts);
       const confirmationTerminalText = [
-        deterministicSummary,
-        'This action needs your confirmation. If you leave or reload this chat, ask Cavalry to prepare it again before confirming.'
+        receiptSummary(
+          writeOutcomeReceipts.filter((receipt) => receipt.lifecycle !== 'awaiting_confirmation')
+        ),
+        'Review the change below before confirming.'
       ]
         .map(asText)
         .filter(Boolean)
@@ -553,7 +591,9 @@ export function CavalryAssistant({
       );
       streamBufferRef.current = { requestId, rawText: '' };
       setStreamingText('');
-      if (confirmation) setPendingConfirmation(confirmation);
+      if (confirmations.length) {
+        setPendingConfirmations((current) => current.concat(confirmations));
+      }
       if (!(result && result.ok)) {
         const failure = structuredFailureMessage(
           result,
@@ -574,7 +614,7 @@ export function CavalryAssistant({
               : failure;
         setMessages((current) =>
           current.concat({
-            id: makeId('assistant_message'),
+            id: assistantMessageId,
             role: 'assistant',
             text: terminalText,
             ...(receipts.length ? { receipts } : {}),
@@ -584,7 +624,6 @@ export function CavalryAssistant({
         );
         return;
       }
-      const assistantMessageId = makeId('assistant_message');
       const clarification = asObject(result.clarification);
       setMessages((current) =>
         current.concat({
@@ -639,6 +678,15 @@ export function CavalryAssistant({
     }
   }
 
+  function advancePendingConfirmation(confirmation, replacement = null) {
+    setPendingConfirmations((current) => {
+      if (current[0]?.id !== confirmation.id || current[0]?.toolName !== confirmation.toolName) {
+        return current;
+      }
+      return replacement ? [replacement, ...current.slice(1)] : current.slice(1);
+    });
+  }
+
   async function confirmPendingAction() {
     const confirmation = pendingConfirmation;
     if (!confirmation || pending || typeof executeTool !== 'function') return;
@@ -655,7 +703,7 @@ export function CavalryAssistant({
       current.concat({
         id: makeId('assistant_message'),
         role: 'user',
-        text: `Confirm: ${confirmation.message}`,
+        text: 'Confirmed.',
         createdAt: now()
       })
     );
@@ -663,6 +711,9 @@ export function CavalryAssistant({
       const approvedArguments = confirmationReplayArguments(confirmation);
       const toolResult = await executeTool(confirmation.toolName, approvedArguments, {
         approvedByUser: true,
+        question: asText(confirmation.origin?.question),
+        today: asText(confirmation.origin?.today),
+        activeRouteId: asText(confirmation.origin?.activeRouteId),
         callId: confirmation.id,
         ...(confirmation.proposal ? { proposal: confirmation.proposal } : {}),
         requestId,
@@ -673,7 +724,7 @@ export function CavalryAssistant({
       const deterministicMessage = cavalryAssistantActionReceiptMessage(receipt);
       if (!(toolResult && toolResult.ok)) {
         if (asText(receipt.commitStatus) === 'committed') {
-          setPendingConfirmation(null);
+          advancePendingConfirmation(confirmation);
           const committedMessage = receiptSummary([receipt]) || UNVERIFIED_COMMIT_MESSAGE;
           setError(committedMessage);
           setMessages((current) =>
@@ -693,18 +744,18 @@ export function CavalryAssistant({
           approvedArguments
         );
         if (nextConfirmation) {
-          setPendingConfirmation(nextConfirmation);
+          advancePendingConfirmation(confirmation, nextConfirmation);
           setMessages((current) =>
             current.concat({
               id: makeId('assistant_message'),
               role: 'assistant',
-              text: 'A second confirmation is required before Cavalry can continue. If you leave or reload this chat, ask Cavalry to prepare it again before confirming.',
+              text: 'There’s another change to review before continuing.',
               createdAt: now()
             })
           );
           return;
         }
-        setPendingConfirmation(null);
+        advancePendingConfirmation(confirmation);
         const failureMessage =
           asText(deterministicMessage) ||
           toolFailureMessage(
@@ -723,7 +774,7 @@ export function CavalryAssistant({
         );
         return;
       }
-      setPendingConfirmation(null);
+      advancePendingConfirmation(confirmation);
       if (
         !isDurablyVerifiedReceipt(receipt) &&
         !isCavalryAssistantSuccessfulNoOpWriteReceipt(receipt)
@@ -753,7 +804,8 @@ export function CavalryAssistant({
       );
     } catch (confirmationError) {
       if (version === requestVersionRef.current) {
-        setPendingConfirmation(null);
+        if (abortController.signal.aborted) setPendingConfirmations([]);
+        else advancePendingConfirmation(confirmation);
         const failureMessage = abortController.signal.aborted
           ? 'Stopped. No completed change was confirmed.'
           : unexpectedFailureMessage(
@@ -796,13 +848,13 @@ export function CavalryAssistant({
 
   function cancelPendingAction() {
     if (!pendingConfirmation || pending) return;
-    setPendingConfirmation(null);
+    setPendingConfirmations([]);
     setError('');
     setMessages((current) =>
       current.concat({
         id: makeId('assistant_message'),
         role: 'assistant',
-        text: 'Cancelled. No changes were made.',
+        text: 'Cancelled. Pending changes were not applied.',
         createdAt: now()
       })
     );
@@ -817,7 +869,7 @@ export function CavalryAssistant({
     setAttachments([]);
     setAttachmentNotice('');
     setError('');
-    setPendingConfirmation(null);
+    setPendingConfirmations([]);
     setPendingClarification(null);
   }
 
@@ -895,13 +947,16 @@ export function CavalryAssistant({
       onOpen={onOpen}
       onOpenReference={onOpenReference}
       onOpenSettings={onOpenSettings}
+      onReplyStyleChange={setReplyStyle}
       panelWidth={panelWidth}
       pending={pending}
       pendingClarification={pendingClarification}
       pendingConfirmation={pendingConfirmation}
+      pendingConfirmationCount={pendingConfirmations.length}
       processingImages={processingImages}
       provider={provider}
       removeImage={removeImage}
+      replyStyle={replyStyle}
       resizePanelWithKeyboard={resizePanelWithKeyboard}
       resizingPanel={resizingPanel}
       resumeConversation={resumeConversation}

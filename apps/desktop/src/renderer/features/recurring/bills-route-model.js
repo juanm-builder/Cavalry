@@ -6,6 +6,7 @@ import {
   RECURRING_RECONCILIATION_DEFAULTS,
   reconcileRecurringOccurrences
 } from '@cavalry/finance-core';
+import { getRecurringItemForMonth } from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
 
 import { formatCurrencyAmount } from '../../shared/currency-format.js';
 
@@ -269,7 +270,26 @@ function getSheetLabel(workbook, sheet, today = '') {
   return `${MONTH_NAMES[monthIndex]} ${monthKey.slice(0, 4)}`;
 }
 
-function getRecurringItemPresentation(workbook, item) {
+function recurringEditorValues(workbook, item) {
+  return {
+    recurringItemId: asString(item.id || item.recurringItemId),
+    scope: 'series',
+    kind: asString(item.kind) || 'bill',
+    name: asString(item.name),
+    categoryId: asString(item.categoryId),
+    accountId: asString(item.accountId),
+    amount: String(Number(item.amount) || 0),
+    currency: asString(item.currency || workbook.currency).toUpperCase(),
+    frequency: asString(item.frequency) || 'Monthly',
+    dueDate: asString(item.anchorDate || item.dueDate),
+    endDate: asString(item.endDate),
+    autoRenew: item.autoRenew === true,
+    isActive: item.isActive !== false,
+    note: asString(item.note)
+  };
+}
+
+function getRecurringItemPresentation(workbook, item, editorItem = item) {
   const category = asArray(workbook && workbook.categories).find(
     (candidate) => candidate && candidate.id === item.categoryId
   );
@@ -324,27 +344,26 @@ function getRecurringItemPresentation(workbook, item) {
     autoRenew: item.autoRenew === true,
     isActive: item.isActive !== false,
     icon: getBillIcon({ ...item, kind, categoryName }),
-    editorValues: {
-      recurringItemId: asString(item.id),
-      kind,
-      name: asString(item.name),
-      categoryId: asString(item.categoryId),
-      accountId: asString(item.accountId),
-      amount: String(Number(item.amount) || 0),
-      currency,
-      frequency: asString(item.frequency) || 'Monthly',
-      dueDate: asString(item.anchorDate || item.dueDate),
-      autoRenew: item.autoRenew === true,
-      isActive: item.isActive !== false,
-      note: asString(item.note)
-    }
+    editorValues: recurringEditorValues(workbook, editorItem)
   };
 }
 
-function buildRecurringTemplateRows(workbook, { active } = {}) {
+function buildRecurringTemplateRows(workbook, { active, monthKey = '' } = {}) {
   return asArray(workbook && workbook.recurringItems)
     .filter((item) => item && (active === undefined || (item.isActive !== false) === active))
-    .map((item) => getRecurringItemPresentation(workbook, item))
+    .flatMap((sourceItem) => {
+      const item = monthKey ? getRecurringItemForMonth(sourceItem, monthKey) : sourceItem;
+      if (
+        active &&
+        monthKey &&
+        (item.isActive === false ||
+          asString(item.anchorDate).slice(0, 7) > monthKey ||
+          (item.endDate && asString(item.endDate).slice(0, 7) < monthKey) ||
+          (item.frequency === 'One-time' && asString(item.anchorDate).slice(0, 7) !== monthKey))
+      )
+        return [];
+      return [getRecurringItemPresentation(workbook, item, sourceItem)];
+    })
     .sort(
       (left, right) =>
         asString(left.name).localeCompare(asString(right.name)) ||
@@ -656,22 +675,10 @@ function buildOccurrenceRows(workbook, sheet, today) {
         (reconciliationModel.state === 'partial' && !!reconciliationModel.transaction),
       canReviewPossibleTransaction: !!possibleTransaction
     };
-    row.editorValues = {
-      recurringItemId: asString(row.recurringItemId),
-      kind: asString(row.kind) || 'bill',
-      name: asString(row.name),
-      categoryId: asString(row.categoryId),
-      accountId: asString(row.accountId),
-      amount: String(Number(recurringItem && recurringItem.amount) || Number(row.amount) || 0),
-      currency: asString(
-        (recurringItem && recurringItem.currency) || workbook.currency
-      ).toUpperCase(),
-      frequency: asString(row.frequency) || 'Monthly',
-      dueDate: asString((recurringItem && recurringItem.anchorDate) || row.dueDate),
-      autoRenew: recurringItem && recurringItem.autoRenew === true,
-      isActive: recurringItem ? recurringItem.isActive !== false : true,
-      note: asString(recurringItem && recurringItem.note)
-    };
+    row.editorValues = recurringEditorValues(
+      workbook,
+      recurringItem || { ...row, amount: row.nativeAmount ?? row.originalAmount ?? row.amount }
+    );
     return row;
   });
 }
@@ -872,7 +879,10 @@ export function buildBillsRouteBaseModel(workbook, viewState = {}, dependencies 
   const today = readToday(dependencies);
   const sheet = selectSheet(workbook, state, today);
   const rows = buildOccurrenceRows(workbook, sheet, today);
-  const recurringRows = buildRecurringTemplateRows(workbook, { active: true });
+  const recurringRows = buildRecurringTemplateRows(workbook, {
+    active: true,
+    monthKey: getSheetMonthKey(workbook, sheet, today)
+  });
   const filterOptions = getFilterOptions(workbook);
   const currency = asString(workbook.currency).toUpperCase() || 'PHP';
   return {

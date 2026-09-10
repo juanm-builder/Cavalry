@@ -75,6 +75,105 @@ function makeImages(count) {
 }
 
 describe('Cavalry assistant runtime', () => {
+  it.each(['responses', 'chat'])(
+    'passes the saved reply style to the %s prompt without limiting factual detail',
+    async (mode) => {
+      const advisor = {
+        invoke: vi.fn(async () =>
+          mode === 'responses'
+            ? {
+                ok: true,
+                response: { id: 'style-answer', output_text: 'Here is the detailed comparison.' }
+              }
+            : {
+                ok: true,
+                message: { role: 'assistant', content: 'Here is the detailed comparison.' }
+              }
+        )
+      };
+      await runCavalryAssistantTurn({
+        question: 'Please give me a detailed comparison this time.',
+        settings: {
+          provider: mode === 'responses' ? 'openai' : 'custom',
+          apiMode: mode,
+          hasApiKey: true,
+          replyStyle: 'brief'
+        },
+        advisor
+      });
+      const payload = advisor.invoke.mock.calls[0][1];
+      const instructions =
+        mode === 'responses' ? payload.instructions : payload.messages[0].content;
+      expect(instructions).toContain('Reply style — Brief:');
+      expect(instructions).toContain('target 60 words or fewer');
+      expect(instructions).toContain('3 short sentences total OR at most 3 short bullets total');
+      expect(instructions).toContain('without an extra introduction or closing paragraph');
+      expect(instructions).toContain(
+        'Do not repeat unchanged balances or goal calculations unless asked'
+      );
+      expect(instructions).toContain('what remains after required expenses and obligations');
+      expect(instructions).toContain('illustrative and conditional');
+      expect(instructions).toContain('current message for more or less detail takes priority');
+      expect(instructions).toContain('do not omit a material limitation');
+      expect(buildCavalryAssistantInstructions({ replyStyle: 'balanced' })).toContain(
+        'Reply style — Balanced:'
+      );
+      expect(buildCavalryAssistantInstructions({ replyStyle: 'detailed' })).toContain(
+        'Reply style — Detailed:'
+      );
+    }
+  );
+
+  it('continues a local tool conversation with a configured context limit and stable memory query', async () => {
+    const advisor = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'read-personal-cash',
+                type: 'function',
+                function: { name: 'search_transactions', arguments: '{"query":"personal cash"}' }
+              }
+            ]
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          message: { role: 'assistant', content: 'Keep Company Cash separate from personal funds.' }
+        })
+    };
+    const executeTool = vi.fn(async () => ({ ok: true, data: { transactions: [] } }));
+    const answer = await runCavalryAssistantTurn({
+      question: 'What can I spend personally?',
+      history: [{ role: 'user', text: 'Company Cash belongs to the business.' }],
+      settings: { provider: 'custom', model: 'local-model', contextWindowTokens: 8192 },
+      advisor,
+      tools: [SEARCH_TOOL],
+      executeTool
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      text: 'Keep Company Cash separate from personal funds.'
+    });
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(advisor.invoke).toHaveBeenCalledTimes(2);
+    for (const [command, payload] of advisor.invoke.mock.calls) {
+      expect(command).toBe('chat');
+      expect(payload._cavalryMemoryQuery).toBe('What can I spend personally?');
+      expect(
+        payload.messages.some(
+          (message) => message.content === 'Company Cash belongs to the business.'
+        )
+      ).toBe(true);
+    }
+  });
+
   it('builds route-aware instructions that keep the advisor contract without pinning wording', () => {
     const instructions = buildCavalryAssistantInstructions({
       activeRouteId: 'ledger',
@@ -105,6 +204,11 @@ describe('Cavalry assistant runtime', () => {
     // Conversational stance: assume and continue rather than interrogate.
     expect(instructions).toMatch(/Default to answering/i);
     expect(instructions).toMatch(/make the assumption/i);
+    expect(instructions).toContain('For explanations and planning');
+    expect(instructions).toContain('For writes, never guess an essential target or scope');
+    expect(instructions).toContain(
+      'App validation does not authorize substituting a different action'
+    );
     expect(instructions).toContain('request_clarification');
     expect(instructions).toContain('Never combine request_clarification with another tool call.');
     expect(instructions).toContain('Infer the conversational mode');
@@ -1184,9 +1288,11 @@ describe('Cavalry assistant runtime', () => {
 
     expect(answer).toMatchObject({
       ok: true,
-      text: 'Please confirm that you want me to permanently delete Rent.'
+      status: 'confirmation_required',
+      text: 'Confirm that you want Cavalry to delete Rent.'
     });
-    const confirmationOutput = JSON.parse(advisor.invoke.mock.calls[1][1].messages.at(-1).content);
+    expect(advisor.invoke).toHaveBeenCalledOnce();
+    const confirmationOutput = answer.toolResults[0].result;
     expect(confirmationOutput).toMatchObject({
       ok: false,
       status: 'confirmation_required',
@@ -1258,8 +1364,10 @@ describe('Cavalry assistant runtime', () => {
 
     expect(answer).toMatchObject({
       ok: true,
-      text: 'Please confirm the disclosed PHP to USD conversion.'
+      status: 'confirmation_required',
+      text: 'Confirm that you want Cavalry to post this transaction with the disclosed currency conversion.'
     });
+    expect(advisor.invoke).toHaveBeenCalledOnce();
     expect(executeTool).toHaveBeenCalledWith(
       'create_transaction',
       { amount: 20, allowCurrencyConversion: false },
@@ -1348,6 +1456,188 @@ describe('Cavalry assistant runtime', () => {
       },
       result: { confirmation: { field: 'userApproved' } }
     });
+  });
+
+  it.each(['responses', 'chat'])(
+    'returns the host confirmation after the issued %s tool batch without a final provider call',
+    async (mode) => {
+      const calls = [
+        { id: 'read_before', name: 'search_transactions', arguments: { query: 'before' } },
+        { id: 'conversion', name: 'create_transaction', arguments: { amount: 20 } },
+        { id: 'read_after', name: 'search_transactions', arguments: { query: 'after' } }
+      ];
+      const advisor = {
+        invoke: vi.fn(async () =>
+          mode === 'responses'
+            ? {
+                ok: true,
+                response: {
+                  id: 'batch_response',
+                  output: calls.map((call) => ({
+                    type: 'function_call',
+                    call_id: call.id,
+                    name: call.name,
+                    arguments: JSON.stringify(call.arguments)
+                  }))
+                }
+              }
+            : {
+                ok: true,
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: calls.map((call) => ({
+                    id: call.id,
+                    type: 'function',
+                    function: { name: call.name, arguments: JSON.stringify(call.arguments) }
+                  }))
+                }
+              }
+        )
+      };
+      const executeTool = vi.fn(async (name, args) => {
+        if (name === 'create_transaction')
+          return {
+            ok: false,
+            status: 'confirmation_required',
+            confirmation: {
+              required: true,
+              field: 'allowCurrencyConversion',
+              message: 'Review this conversion before posting.',
+              proposal: { arguments: { amount: 20, accountId: 'cash-usd' } }
+            }
+          };
+        return args.query === 'before'
+          ? { ok: false, error: 'Earlier records could not be loaded.' }
+          : { ok: true, data: { transactions: [] } };
+      });
+      const answer = await runCavalryAssistantTurn({
+        question: 'Check the records and prepare the transaction.',
+        settings:
+          mode === 'responses'
+            ? { provider: 'openai', apiMode: 'responses', hasApiKey: true }
+            : { provider: 'custom' },
+        advisor,
+        tools: [SEARCH_TOOL, CONVERTING_TRANSACTION_TOOL],
+        executeTool,
+        maxIterations: 1
+      });
+
+      expect(advisor.invoke).toHaveBeenCalledOnce();
+      expect(executeTool).toHaveBeenCalledTimes(3);
+      expect(answer).toMatchObject({
+        ok: true,
+        status: 'confirmation_required',
+        cancelled: false,
+        text: 'Review this conversion before posting.'
+      });
+      expect(answer.toolResults).toMatchObject([
+        { callId: 'read_before', ok: false, error: 'Earlier records could not be loaded.' },
+        {
+          callId: 'conversion',
+          ok: false,
+          result: {
+            status: 'confirmation_required',
+            confirmation: { proposal: { arguments: { amount: 20, accountId: 'cash-usd' } } }
+          }
+        },
+        { callId: 'read_after', ok: true }
+      ]);
+    }
+  );
+
+  it('keeps cancellation authoritative when a batch is cancelled after preparing a confirmation', async () => {
+    const abortController = new AbortController();
+    const advisor = {
+      invoke: vi.fn(async () => ({
+        ok: true,
+        response: {
+          id: 'cancelled_batch',
+          output: [
+            {
+              type: 'function_call',
+              call_id: 'prepare',
+              name: 'create_transaction',
+              arguments: '{"amount":20}'
+            },
+            {
+              type: 'function_call',
+              call_id: 'read',
+              name: 'search_transactions',
+              arguments: '{"query":"cash"}'
+            }
+          ]
+        }
+      }))
+    };
+    const executeTool = vi.fn(async (name) => {
+      if (name === 'create_transaction')
+        return {
+          ok: false,
+          status: 'confirmation_required',
+          confirmation: {
+            required: true,
+            field: 'allowCurrencyConversion',
+            action: 'post the conversion'
+          }
+        };
+      abortController.abort();
+      return { ok: true, data: { transactions: [] } };
+    });
+    const answer = await runCavalryAssistantTurn({
+      question: 'Prepare this transaction and check Cash.',
+      settings: { provider: 'openai', apiMode: 'responses', hasApiKey: true },
+      advisor,
+      tools: [SEARCH_TOOL, CONVERTING_TRANSACTION_TOOL],
+      executeTool,
+      signal: abortController.signal
+    });
+
+    expect(advisor.invoke).toHaveBeenCalledOnce();
+    expect(answer).toMatchObject({ ok: false, cancelled: true });
+    expect(answer).not.toHaveProperty('status', 'confirmation_required');
+    expect(answer.toolResults).toHaveLength(2);
+    expect(answer.toolResults[0].result.confirmation.required).toBe(true);
+  });
+
+  it('continues the model loop when a malformed confirmation cannot produce a review card', async () => {
+    const advisor = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'malformed',
+                type: 'function',
+                function: { name: 'create_transaction', arguments: '{"amount":20}' }
+              }
+            ]
+          }
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          message: { role: 'assistant', content: 'I could not prepare that review.' }
+        })
+    };
+    const answer = await runCavalryAssistantTurn({
+      question: 'Prepare the transaction.',
+      settings: { provider: 'custom' },
+      advisor,
+      tools: [CONVERTING_TRANSACTION_TOOL],
+      executeTool: async () => ({
+        ok: false,
+        status: 'confirmation_required',
+        confirmation: { required: true }
+      })
+    });
+
+    expect(advisor.invoke).toHaveBeenCalledTimes(2);
+    expect(answer.text).toBe('I could not prepare that review.');
+    expect(answer).not.toHaveProperty('status', 'confirmation_required');
   });
 
   it('stops the whole turn before another tool or model call after abort', async () => {

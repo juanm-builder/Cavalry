@@ -123,9 +123,14 @@ export const BILL_WRITE_PROPERTIES = Object.freeze({
   accountId: stringProperty('Payment account ID or exact name, matched case-insensitively.'),
   amount: numberProperty('Recurring amount; zero is allowed for a variable bill.'),
   currency: stringProperty('ISO currency code.'),
-  frequency: stringProperty('Cadence, such as Weekly, Monthly, Quarterly, or Yearly.'),
+  frequency: stringProperty('Cadence. Use One-time for a single month only.', {
+    enum: ['Weekly', 'Every 2 Weeks', 'Monthly', 'Quarterly', 'Yearly', 'One-time']
+  }),
   dueDate: stringProperty(
     'Schedule anchor date in YYYY-MM-DD format. This may be a past known charge/due date; it is not necessarily the next expected occurrence.'
+  ),
+  endDate: stringProperty(
+    'Optional inclusive last scheduled date in YYYY-MM-DD. Empty clears the end date. Must not be earlier than the first due date.'
   ),
   autoRenew: booleanProperty('Whether a subscription renews automatically.'),
   isActive: booleanProperty('Whether the recurring tracker is active.'),

@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -19,7 +20,11 @@ function emit(onAction, type, payload = {}) {
 }
 
 function StatusPill({ status, tone }) {
-  return <span className={`status-pill ${tone || 'info'}`}>{status || 'Upcoming'}</span>;
+  return (
+    <PrivateValue as="span" className={`status-pill ${tone || 'info'}`}>
+      {status || 'Upcoming'}
+    </PrivateValue>
+  );
 }
 
 export function BillsEditorModal({ initialValues, options, onAction, onClose }) {
@@ -67,7 +72,8 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
 
   const content = (
     <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
-      <div
+      <PrivateValue
+        as="div"
         aria-label={`${values.recurringItemId ? 'Edit' : 'Add'} bill or subscription`}
         aria-modal="true"
         className="modal-card modal-card-wide bill-form-modal"
@@ -75,16 +81,18 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
       >
         <div className="bill-form-header">
           <div>
-            <h3>
+            <PrivateValue as="h3">
               {values.recurringItemId
                 ? `Edit ${isSubscription ? 'Subscription' : 'Bill'}`
                 : `Add ${isSubscription ? 'Subscription' : 'Bill'}`}
-            </h3>
-            <p>
-              {isSubscription
-                ? 'Track a recurring service or membership'
-                : 'Create a recurring payment reminder'}
-            </p>
+            </PrivateValue>
+            <PrivateValue as="p">
+              {values.recurringItemId
+                ? 'Edit the usual schedule. Changes for specific months stay in place.'
+                : isSubscription
+                  ? 'Track a recurring service or membership'
+                  : 'Create a recurring payment reminder'}
+            </PrivateValue>
           </div>
           <button
             aria-label="Close"
@@ -122,14 +130,16 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
             </label>
           </div>
           {error ? (
-            <div className="panel-note status-bad" role="alert">
+            <PrivateValue as="div" className="panel-note status-bad" role="alert">
               {error}
-            </div>
+            </PrivateValue>
           ) : null}
           <div className="bill-form-body">
             <div className="bill-form-grid">
               <div className="field">
-                <label>{isSubscription ? 'Service Name *' : 'Name *'}</label>
+                <PrivateValue as="label">
+                  {isSubscription ? 'Service Name *' : 'Name *'}
+                </PrivateValue>
                 <input
                   aria-label="Recurring name"
                   name="name"
@@ -150,7 +160,9 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
                 />
               </div>
               <div className="field">
-                <label>{isSubscription ? 'Billing Anchor Date *' : 'Due Date *'}</label>
+                <PrivateValue as="label">
+                  {isSubscription ? 'Billing Anchor Date *' : 'Due Date *'}
+                </PrivateValue>
                 <input
                   aria-label="Recurring due date"
                   name="dueDate"
@@ -165,7 +177,9 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
                 ) : null}
               </div>
               <div className="field">
-                <label>{isSubscription ? 'Billing Cycle *' : 'Frequency *'}</label>
+                <PrivateValue as="label">
+                  {isSubscription ? 'Billing Cycle *' : 'Frequency *'}
+                </PrivateValue>
                 <CavalrySelect
                   aria-label="Recurring frequency"
                   name="frequency"
@@ -245,15 +259,17 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
                   name={isSubscription ? 'sync' : 'receipt_long'}
                 />
                 <span>
-                  <strong>{values.name || (isSubscription ? 'Netflix' : 'Internet')}</strong>
-                  <small>{values.frequency || 'Monthly'}</small>
+                  <PrivateValue as="strong">
+                    {values.name || (isSubscription ? 'Netflix' : 'Internet')}
+                  </PrivateValue>
+                  <PrivateValue as="small">{values.frequency || 'Monthly'}</PrivateValue>
                 </span>
               </div>
               <div className="bill-preview-details">
-                <span>{values.dueDate || 'Due date'}</span>
-                <b className="amount neutral">
+                <PrivateValue as="span">{values.dueDate || 'Due date'}</PrivateValue>
+                <PrivateValue as="b" className="amount neutral">
                   {formatFinancialValue(values.amount || 0)} {values.currency || options.currency}
-                </b>
+                </PrivateValue>
               </div>
               <div className="bill-preview-footer">
                 <StatusPill status="Upcoming" tone="warn" />
@@ -277,13 +293,13 @@ export function BillsEditorModal({ initialValues, options, onAction, onClose }) 
               <button className="btn" onClick={() => onClose(true)} type="button">
                 Cancel
               </button>
-              <button className="btn btn-primary" type="submit">
+              <PrivateValue as="button" className="btn btn-primary" type="submit">
                 Save {isSubscription ? 'Subscription' : 'Bill'}
-              </button>
+              </PrivateValue>
             </div>
           </div>
         </form>
-      </div>
+      </PrivateValue>
     </div>
   );
   return typeof document === 'undefined' ? content : createPortal(content, document.body);

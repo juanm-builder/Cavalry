@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 
 import { findInstitutionById } from '@cavalry/finance-core';
@@ -148,10 +149,10 @@ export function AccountCreateWizard({ defaultDate, defaultCurrency, error, onCan
         />
         {suggestion && suggestion !== name ? (
           <div className="account-name-suggestion">
-            <span>
+            <PrivateValue as="span">
               <Icon name="auto_awesome" />
               Suggestion: {suggestion}
-            </span>
+            </PrivateValue>
             <button onClick={() => setName(suggestion)} type="button">
               Use
             </button>
@@ -692,8 +693,8 @@ export function AccountCreateWizard({ defaultDate, defaultCurrency, error, onCan
             >
               <IconDisc className="mini-icon" name={option.icon} />
               <span>
-                <strong>{option.label}</strong>
-                <small>{option.description}</small>
+                <PrivateValue as="strong">{option.label}</PrivateValue>
+                <PrivateValue as="small">{option.description}</PrivateValue>
               </span>
               {option.disabled ? (
                 <span className="account-coming-soon-pill">Coming soon</span>
@@ -724,7 +725,9 @@ export function AccountCreateWizard({ defaultDate, defaultCurrency, error, onCan
         style={{ '--account-accent': selectedType.accent }}
       >
         <TypeBadge option={selectedType} />
-        <div className="account-flow-fields">{renderFields()}</div>
+        <PrivateValue as="div" className="account-flow-fields">
+          {renderFields()}
+        </PrivateValue>
         <button className="btn btn-primary account-flow-save" type="submit">
           <Icon name="save" />
           Save Account

@@ -1,6 +1,8 @@
+import { PrivateValue } from './PrivateValue.jsx';
 import React from 'react';
 
 import { formatUiDateTime } from './date-format.js';
+import { referenceMatchesClaimScope } from './reference-claim-matching.js';
 
 function safeLinkTarget(value) {
   const target = String(value || '').trim();
@@ -276,7 +278,8 @@ function SourceReferenceButton({ reference, onOpenReference, keyValue }) {
   const captionAddsDetail =
     text !== 'source' && text.toLocaleLowerCase() !== label.toLocaleLowerCase();
   return (
-    <button
+    <PrivateValue
+      as="button"
       aria-label={`Open ${sourceCount > 1 ? `${sourceCount} sources` : 'source'}: ${label}${
         captionAddsDetail ? `, ${caption.spoken}` : ''
       }`}
@@ -288,7 +291,7 @@ function SourceReferenceButton({ reference, onOpenReference, keyValue }) {
       type="button"
     >
       {text}
-    </button>
+    </PrivateValue>
   );
 }
 
@@ -325,7 +328,8 @@ function renderReferenceText(source, keyPrefix, options) {
     if (selectedIndex > cursor) output.push(text.slice(cursor, selectedIndex));
     const visibleText = text.slice(selectedIndex, selectedIndex + selected.matchLength);
     output.push(
-      <button
+      <PrivateValue
+        as="button"
         aria-label={`Open ${referenceKindLabel(selected.reference.kind)}: ${
           selected.reference.label || visibleText
         }`}
@@ -337,7 +341,7 @@ function renderReferenceText(source, keyPrefix, options) {
         type="button"
       >
         {visibleText}
-      </button>
+      </PrivateValue>
     );
     outputIndex += 1;
     cursor = selectedIndex + selected.matchLength;
@@ -365,12 +369,22 @@ function renderInline(source, keyPrefix = 'inline', options = {}) {
 
     if (token.startsWith('**') || token.startsWith('__')) {
       output.push(
-        <strong key={key}>{renderInline(token.slice(2, -2), `${key}-strong`, options)}</strong>
+        <PrivateValue as="strong" key={key}>
+          {renderInline(token.slice(2, -2), `${key}-strong`, options)}
+        </PrivateValue>
       );
     } else if (token.startsWith('~~')) {
-      output.push(<s key={key}>{renderInline(token.slice(2, -2), `${key}-strike`, options)}</s>);
+      output.push(
+        <PrivateValue as="s" key={key}>
+          {renderInline(token.slice(2, -2), `${key}-strike`, options)}
+        </PrivateValue>
+      );
     } else if (token.startsWith('`')) {
-      output.push(<code key={key}>{token.slice(1, -1)}</code>);
+      output.push(
+        <PrivateValue as="code" key={key}>
+          {token.slice(1, -1)}
+        </PrivateValue>
+      );
     } else if (token.startsWith('[')) {
       const separator = token.lastIndexOf('](');
       const label = token.slice(1, separator);
@@ -385,15 +399,19 @@ function renderInline(source, keyPrefix = 'inline', options = {}) {
             reference={citation}
           />
         ) : href ? (
-          <a href={href} key={key} rel="noopener noreferrer" target="_blank">
+          <PrivateValue as="a" href={href} key={key} rel="noopener noreferrer" target="_blank">
             {renderInline(label, `${key}-link`, { ...options, referenceAliases: [] })}
-          </a>
+          </PrivateValue>
         ) : (
           token
         )
       );
     } else {
-      output.push(<em key={key}>{renderInline(token.slice(1, -1), `${key}-em`, options)}</em>);
+      output.push(
+        <PrivateValue as="em" key={key}>
+          {renderInline(token.slice(1, -1), `${key}-em`, options)}
+        </PrivateValue>
+      );
     }
 
     cursor = match.index + token.length;
@@ -411,6 +429,7 @@ function referencesForClaim(source, options) {
   const references = new Map();
   (options.referenceAliases || []).forEach((alias) => {
     if (!findReferenceMatch(text, alias, 0)) return;
+    if (!referenceMatchesClaimScope(alias.reference, text)) return;
     references.set(referenceIdentity(alias.reference, references.size), alias.reference);
   });
   return [...references.values()];
@@ -533,9 +552,13 @@ function parseTable(lines, start, keyPrefix, options) {
           <thead>
             <tr>
               {headerCells.map((cell, cellIndex) => (
-                <th data-align={alignments[cellIndex] || undefined} key={`${key}-h-${cellIndex}`}>
+                <PrivateValue
+                  as="th"
+                  data-align={alignments[cellIndex] || undefined}
+                  key={`${key}-h-${cellIndex}`}
+                >
                   {renderInline(cell, `${key}-h-${cellIndex}`, options)}
-                </th>
+                </PrivateValue>
               ))}
             </tr>
           </thead>
@@ -547,7 +570,8 @@ function parseTable(lines, start, keyPrefix, options) {
                     const cell = row[cellIndex] || '';
                     const rowText = row.slice(0, headerCells.length).join(' ');
                     return (
-                      <td
+                      <PrivateValue
+                        as="td"
                         data-align={alignments[cellIndex] || undefined}
                         key={`${key}-r-${rowIndex}-${cellIndex}`}
                       >
@@ -555,7 +579,7 @@ function parseTable(lines, start, keyPrefix, options) {
                         {cellIndex === headerCells.length - 1
                           ? renderClaimSources(rowText, `${key}-r-${rowIndex}`, options)
                           : null}
-                      </td>
+                      </PrivateValue>
                     );
                   })}
                 </tr>
@@ -606,11 +630,11 @@ function parseList(lines, start, keyPrefix, options) {
     element: (
       <List className="markdown-list" key={`${keyPrefix}-${start}`}>
         {items.map((item, itemIndex) => (
-          <li key={`${keyPrefix}-${start}-${itemIndex}`}>
+          <PrivateValue as="li" key={`${keyPrefix}-${start}-${itemIndex}`}>
             {renderInline(item.text, `${keyPrefix}-${start}-${itemIndex}-text`, options)}
             {renderClaimSources(item.text, `${keyPrefix}-${start}-${itemIndex}-text`, options)}
             {item.children}
-          </li>
+          </PrivateValue>
         ))}
       </List>
     ),
@@ -649,7 +673,9 @@ export function renderMarkdown(text, options = {}) {
       if (index < lines.length) index += 1;
       blocks.push(
         <pre className="markdown-code-block" key={`code-${index}`}>
-          <code className={fence[1] ? `language-${fence[1]}` : undefined}>{code.join('\n')}</code>
+          <PrivateValue as="code" className={fence[1] ? `language-${fence[1]}` : undefined}>
+            {code.join('\n')}
+          </PrivateValue>
         </pre>
       );
       continue;
@@ -674,9 +700,9 @@ export function renderMarkdown(text, options = {}) {
         index += 1;
       }
       blocks.push(
-        <blockquote key={`quote-${index}`}>
+        <PrivateValue as="blockquote" key={`quote-${index}`}>
           {renderMarkdown(quote.join('\n'), renderOptions)}
-        </blockquote>
+        </PrivateValue>
       );
       continue;
     }
@@ -710,10 +736,10 @@ export function renderMarkdown(text, options = {}) {
       index += 1;
     }
     blocks.push(
-      <p key={`paragraph-${index}`}>
+      <PrivateValue as="p" key={`paragraph-${index}`}>
         {renderInline(paragraph.join(' '), `paragraph-${index}`, renderOptions)}
         {renderClaimSources(paragraph.join(' '), `paragraph-${index}`, renderOptions)}
-      </p>
+      </PrivateValue>
     );
   }
 
@@ -729,6 +755,8 @@ export function MarkdownText({
   ...props
 }) {
   return (
-    <Root {...props}>{renderMarkdown(text, { references, onOpenReference, referenceMode })}</Root>
+    <PrivateValue as={Root} {...props}>
+      {renderMarkdown(text, { references, onOpenReference, referenceMode })}
+    </PrivateValue>
   );
 }

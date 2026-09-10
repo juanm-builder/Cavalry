@@ -1,4 +1,10 @@
-import { normalizeDateKey, roundMoney } from '../../domain/money.js';
+import { roundMoney } from '../../domain/money.js';
+import {
+  getRecurringItemForMonth,
+  normalizeRecurringDateKey as normalizeDateKey,
+  normalizeRecurringMonthKey,
+  recurringScheduleBoundaryMonths
+} from './recurring-schedule.js';
 import {
   getLedgerTransactionBaseAmount,
   getLedgerTransactionFlowKind
@@ -158,7 +164,7 @@ export function normalizeRecurringKind(value) {
   return asString(value).toLowerCase() === 'subscription' ? 'subscription' : 'bill';
 }
 
-export function getRecurringOccurrenceDatesForMonth(item, monthKey) {
+function getUnboundedRecurringOccurrenceDatesForMonth(item, monthKey) {
   if (!(item && monthKey) || item.isActive === false) {
     return [];
   }
@@ -201,7 +207,33 @@ export function getRecurringOccurrenceDatesForMonth(item, monthKey) {
   return [clampMonthDate(monthKey, anchor.getUTCDate())];
 }
 
+export function getRecurringOccurrenceDatesForMonth(item, monthKey) {
+  if (!item || item.isActive === false || !normalizeRecurringMonthKey(monthKey)) return [];
+  const scheduled = getRecurringItemForMonth(item, monthKey);
+  const endDate = normalizeDateKey(scheduled.endDate);
+  return getUnboundedRecurringOccurrenceDatesForMonth(scheduled, monthKey).filter(
+    (date) => !endDate || date <= endDate
+  );
+}
+
 export function getRecurringScheduleSummary(item, asOfDate) {
+  if (!(item?.endDate || item?.scheduleChanges || item?.monthOverrides)) {
+    return getUnboundedRecurringScheduleSummary(item, asOfDate);
+  }
+  const asOf = normalizeDateKey(asOfDate);
+  const dates = asOf
+    ? recurringScheduleBoundaryMonths(item, asOf)
+        .flatMap((month) => getRecurringOccurrenceDatesForMonth(item, month))
+        .sort()
+    : [];
+  return {
+    anchorDate: normalizeDateKey(item?.anchorDate || item?.dueDate),
+    currentOccurrenceDate: dates.filter((date) => date <= asOf).at(-1) || '',
+    nextExpectedDate: dates.find((date) => date > asOf) || ''
+  };
+}
+
+function getUnboundedRecurringScheduleSummary(item, asOfDate) {
   const anchorDate =
     normalizeDateKey(item && item.anchorDate) || normalizeDateKey(item && item.dueDate);
   const asOf = normalizeDateKey(asOfDate);
@@ -361,12 +393,13 @@ export function getRecurringOccurrencesForSheet(workbook, sheet) {
   const monthKey = monthKeyFromSheet(workbook, sheet);
   return asArray(workbook && workbook.recurringItems)
     .filter((item) => item && item.isActive !== false)
-    .flatMap((item) => {
+    .flatMap((sourceItem) => {
+      const item = getRecurringItemForMonth(sourceItem, monthKey);
       const category = getCategoryById(workbook, item.categoryId);
       if (!(category && ['expense', 'debt'].includes(category.type))) {
         return [];
       }
-      return getRecurringOccurrenceDatesForMonth(item, monthKey).map((dueDate, index) => {
+      return getRecurringOccurrenceDatesForMonth(sourceItem, monthKey).map((dueDate, index) => {
         const account = item.accountId ? getAccountById(workbook, item.accountId) : null;
         const expectedTransactionKind =
           category.type === 'debt'
@@ -927,7 +960,8 @@ export function buildRecurringCandidates(workbook, options = {}) {
 
 export function buildRecurringItemRows(workbook, options = {}) {
   const asOfDate = normalizeDateKey(options.asOfDate || options.currentDate);
-  return asArray(workbook && workbook.recurringItems).map((item) => {
+  return asArray(workbook && workbook.recurringItems).map((sourceItem) => {
+    const item = getRecurringItemForMonth(sourceItem, asOfDate.slice(0, 7));
     const allLinkedTransactions = asArray(workbook && workbook.transactions).filter(
       (transaction) =>
         asString(transaction && transaction.recurringItemId) === asString(item && item.id)
@@ -940,7 +974,7 @@ export function buildRecurringItemRows(workbook, options = {}) {
       : allLinkedTransactions;
     const category = getCategoryById(workbook, item.categoryId);
     const account = item.accountId ? getAccountById(workbook, item.accountId) : null;
-    const schedule = getRecurringScheduleSummary(item, asOfDate);
+    const schedule = getRecurringScheduleSummary(sourceItem, asOfDate);
     const nativeCurrency = asString(item && item.currency).toUpperCase() || baseCurrency(workbook);
     const nativeAmount = roundMoney(Number(item && item.amount) || 0);
     const baseAmountVerified = canConvertRecurringAmountToBase(workbook, nativeCurrency);

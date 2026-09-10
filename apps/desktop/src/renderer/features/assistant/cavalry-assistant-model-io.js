@@ -1,7 +1,14 @@
 // Tool-schema normalization and context budgeting: the mechanical shaping a turn needs before
 // it can be sent to either an OpenAI-compatible or a local llama.cpp endpoint.
 
+import contextBudget from '@cavalry/advisor/domain/advisor/context-budget.cjs';
+
 export const CAVALRY_ASSISTANT_CLARIFICATION_TOOL_NAME = 'request_clarification';
+
+const { contextCharBudget, serializedLength } = contextBudget;
+const TRUNCATED_TOOL_OUTPUT_CHARS = 1200;
+const OMITTED_HISTORY_NOTE =
+  'Some earlier conversation messages were omitted to fit the model context. Use the available messages and supplied memory; do not assume missing details were never shared or invent what was said.';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -123,50 +130,48 @@ export function chatTemperature(connection) {
   return asObject(connection).provider === 'custom' ? 0.3 : 0.6;
 }
 
-function contextCharBudget(connection) {
-  const contextTokens = Number(asObject(connection).contextWindowTokens) || 0;
-  if (!(contextTokens > 0)) return 0;
-  return Math.max(
-    MINIMUM_CONTEXT_CHAR_BUDGET,
-    Math.floor((contextTokens - CONTEXT_RESERVED_OUTPUT_TOKENS) * CONTEXT_CHARS_PER_TOKEN)
-  );
-}
-
-function messageContentLength(message) {
-  const content = message && message.content;
-  if (typeof content === 'string') return content.length;
-  try {
-    const serialized = JSON.stringify(content);
-    return typeof serialized === 'string' ? serialized.length : 0;
-  } catch (_error) {
-    return 0;
-  }
-}
-
 function totalMessageChars(messages) {
-  return messages.reduce((total, message) => total + messageContentLength(message), 0);
+  return messages.reduce((total, message) => total + serializedLength(message), 0);
 }
 
-export function fitChatHistoryToContext(messages, historyCount, connection) {
+export function fitChatHistoryToContext(messages, historyCount, connection, tools = []) {
   const budget = contextCharBudget(connection);
   if (!budget) return messages;
-  let remainingHistory = historyCount;
-  while (remainingHistory > 0 && totalMessageChars(messages) > budget) {
-    messages.splice(1, 1);
-    remainingHistory -= 1;
+  const toolChars = serializedLength(tools);
+  let remainingHistory = Math.min(Math.max(0, historyCount), Math.max(0, messages.length - 2));
+  let omittedHistory = false;
+  while (
+    remainingHistory > 0 &&
+    totalMessageChars(messages) + toolChars + (omittedHistory ? OMITTED_HISTORY_NOTE.length : 0) >
+      budget
+  ) {
+    // Remove whole exchanges: an assistant answer without the user's question can look like
+    // an established fact or an instruction to a small model.
+    let count = 1;
+    while (count < remainingHistory && messages[1 + count]?.role !== 'user') count += 1;
+    messages.splice(1, count);
+    remainingHistory -= count;
+    omittedHistory = true;
+  }
+  if (omittedHistory && messages[0]?.role === 'system') {
+    messages[0] = {
+      ...messages[0],
+      content: `${messages[0].content}\n\n${OMITTED_HISTORY_NOTE}`
+    };
   }
   return messages;
 }
 
-export function truncateOlderToolOutputs(messages, connection) {
+export function truncateOlderToolOutputs(messages, connection, tools = []) {
   const budget = contextCharBudget(connection);
-  if (!budget || totalMessageChars(messages) <= budget) return;
+  const toolChars = serializedLength(tools);
+  if (!budget || totalMessageChars(messages) + toolChars <= budget) return;
   for (let index = 0; index < messages.length - 1; index += 1) {
     const message = messages[index];
     if (!(message && message.role === 'tool' && typeof message.content === 'string')) continue;
     if (message.content.length <= TRUNCATED_TOOL_OUTPUT_CHARS) continue;
     message.content = `${message.content.slice(0, TRUNCATED_TOOL_OUTPUT_CHARS)}…[Cavalry truncated this older tool output to fit the model context. Call the tool again if you need the full data.]`;
-    if (totalMessageChars(messages) <= budget) return;
+    if (totalMessageChars(messages) + toolChars <= budget) return;
   }
 }
 

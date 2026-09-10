@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect } from 'react';
 
 import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
@@ -251,7 +252,8 @@ export function ModalFrame({ title, error, children, onBack, onCancel, className
       className="modal-backdrop"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
-      <section
+      <PrivateValue
+        as="section"
         aria-labelledby="account-create-title"
         aria-modal="true"
         className={`modal-card account-create-modal ${className}`}
@@ -263,18 +265,20 @@ export function ModalFrame({ title, error, children, onBack, onCancel, className
               <Icon name="arrow_back" />
             </button>
           ) : null}
-          <h2 id="account-create-title">{title}</h2>
+          <PrivateValue as="h2" id="account-create-title">
+            {title}
+          </PrivateValue>
           <button aria-label="Close" className="btn btn-icon" onClick={onCancel} type="button">
             <Icon name="close" />
           </button>
         </header>
         {error ? (
-          <div className="panel-note status-bad" role="alert">
+          <PrivateValue as="div" className="panel-note status-bad" role="alert">
             {error}
-          </div>
+          </PrivateValue>
         ) : null}
         {children}
-      </section>
+      </PrivateValue>
     </div>,
     document.body
   );
@@ -282,9 +286,9 @@ export function ModalFrame({ title, error, children, onBack, onCancel, className
 
 export function FieldLabel({ htmlFor, label, required = false }) {
   return (
-    <label className={required ? 'is-required' : undefined} htmlFor={htmlFor}>
+    <PrivateValue as="label" className={required ? 'is-required' : undefined} htmlFor={htmlFor}>
       {label}
-    </label>
+    </PrivateValue>
   );
 }
 
@@ -318,9 +322,9 @@ export function TextField({
         />
       </div>
       {help ? (
-        <small className="account-field-copy" id={helpId}>
+        <PrivateValue as="small" className="account-field-copy" id={helpId}>
           {help}
-        </small>
+        </PrivateValue>
       ) : null}
     </div>
   );
@@ -355,9 +359,9 @@ export function SelectField({
         value={value}
       />
       {help ? (
-        <small className="account-field-copy" id={`${id}-help`}>
+        <PrivateValue as="small" className="account-field-copy" id={`${id}-help`}>
           {help}
-        </small>
+        </PrivateValue>
       ) : null}
     </div>
   );
@@ -377,9 +381,9 @@ export function AmountField({
     <div className="field account-flow-field">
       <FieldLabel htmlFor={id} label={label} required={required} />
       <div className="account-flow-control account-money-control">
-        <span aria-hidden="true" className="account-currency-prefix">
+        <PrivateValue as="span" aria-hidden="true" className="account-currency-prefix">
           {currencySymbol(currency)}
-        </span>
+        </PrivateValue>
         <FinancialValueInput
           allowNegative={false}
           aria-describedby={helpId}
@@ -391,9 +395,9 @@ export function AmountField({
         />
       </div>
       {help ? (
-        <small className="account-field-copy" id={helpId}>
+        <PrivateValue as="small" className="account-field-copy" id={helpId}>
           {help}
-        </small>
+        </PrivateValue>
       ) : null}
     </div>
   );
@@ -427,8 +431,14 @@ export function InstitutionField({
 
 export function SegmentedField({ label, name, onChange, options, value }) {
   return (
-    <fieldset aria-label={label} className="account-segmented-field account-flow-segmented">
-      <legend className="is-required">{label}</legend>
+    <PrivateValue
+      as="fieldset"
+      aria-label={label}
+      className="account-segmented-field account-flow-segmented"
+    >
+      <PrivateValue as="legend" className="is-required">
+        {label}
+      </PrivateValue>
       <div className="account-segmented-options">
         {options.map(([optionValue, optionLabel]) => (
           <label className={value === optionValue ? 'is-selected' : ''} key={optionValue}>
@@ -439,11 +449,11 @@ export function SegmentedField({ label, name, onChange, options, value }) {
               type="radio"
               value={optionValue}
             />
-            <span>{optionLabel}</span>
+            <PrivateValue as="span">{optionLabel}</PrivateValue>
           </label>
         ))}
       </div>
-    </fieldset>
+    </PrivateValue>
   );
 }
 
@@ -454,11 +464,13 @@ export function OptionalDetails({ children, defaultOpen = false, description = '
         <Icon name="format_list_bulleted" />
         <span className="account-flow-optional-copy">
           <span>Additional details — Optional</span>
-          {description ? <small>{description}</small> : null}
+          {description ? <PrivateValue as="small">{description}</PrivateValue> : null}
         </span>
         <Icon name="expand_more" />
       </summary>
-      <div className="account-flow-optional-fields">{children}</div>
+      <PrivateValue as="div" className="account-flow-optional-fields">
+        {children}
+      </PrivateValue>
     </details>
   );
 }
@@ -474,7 +486,9 @@ export function NoteField({ note, setNote }) {
         placeholder="Add notes…"
         value={note}
       />
-      <small className="field-counter">{note.length} / 200</small>
+      <PrivateValue as="small" className="field-counter">
+        {note.length} / 200
+      </PrivateValue>
     </div>
   );
 }
@@ -483,7 +497,7 @@ export function TypeBadge({ option }) {
   return (
     <div className="account-flow-type-badge">
       <Icon name={option.icon} />
-      <strong>{option.badge}</strong>
+      <PrivateValue as="strong">{option.badge}</PrivateValue>
     </div>
   );
 }
@@ -498,7 +512,7 @@ export function QuickInstitutionPicker({
 }) {
   return (
     <fieldset className="account-quick-picker">
-      <legend>{label}</legend>
+      <PrivateValue as="legend">{label}</PrivateValue>
       <div className="account-quick-picker-grid">
         {options.map((providerId) => {
           const provider = findInstitutionById(providerId);
@@ -512,7 +526,7 @@ export function QuickInstitutionPicker({
               type="button"
             >
               <InstitutionMark institutionId={providerId} />
-              <span>{provider?.shortName}</span>
+              <PrivateValue as="span">{provider?.shortName}</PrivateValue>
               {selected ? <Icon className="account-quick-check" name="check" /> : null}
             </button>
           );
@@ -542,7 +556,9 @@ export function CreditSummary({ balance, currency, limit }) {
         <Icon name="account_balance_wallet" />
       </span>
       <span>Available credit:</span>
-      <strong className={available < 0 ? 'bad' : ''}>{formatMoney(available, currency)}</strong>
+      <PrivateValue as="strong" className={available < 0 ? 'bad' : ''}>
+        {formatMoney(available, currency)}
+      </PrivateValue>
     </div>
   );
 }

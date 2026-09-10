@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -51,7 +52,11 @@ function BudgetEditorForm({ editor, categories }) {
   }, []);
 
   const initialCategoryId = String(
-    (editor && editor.categoryId) || (categories[0] && categories[0].id) || ''
+    (editor && editor.categoryId) ||
+      (editor.categoryType
+        ? categories.find((category) => category.type === editor.categoryType)?.id
+        : categories[0]?.id) ||
+      ''
   );
   const [categoryId, setCategoryId] = useState(initialCategoryId);
   const selectedCategory = categories.find((category) => category.id === categoryId) || null;
@@ -79,7 +84,9 @@ function BudgetEditorForm({ editor, categories }) {
   })();
   const numericPlanned = Number(planned);
   const canArchive = Number(selectedCategory && selectedCategory.planned) > 0;
-  const categoryType = String((selectedCategory && selectedCategory.type) || 'expense');
+  const categoryType = String(
+    (selectedCategory && selectedCategory.type) || editor.categoryType || 'expense'
+  );
   const copy = PLAN_COPY[categoryType] || PLAN_COPY.expense;
 
   return renderInBody(
@@ -99,12 +106,14 @@ function BudgetEditorForm({ editor, categories }) {
       >
         <div className="panel-header budget-editor-header">
           <div>
-            <div className="badge">
+            <PrivateValue as="div" className="badge">
               <CavalryIcon name="calendar_month" />
               {budgetMonth}
-            </div>
-            <h3>{canArchive ? 'Edit Monthly Plan' : 'Add to Monthly Plan'}</h3>
-            <p>{copy.description}</p>
+            </PrivateValue>
+            <PrivateValue as="h3">
+              {canArchive ? 'Edit Monthly Plan' : 'Add to Monthly Plan'}
+            </PrivateValue>
+            <PrivateValue as="p">{copy.description}</PrivateValue>
           </div>
           <button
             className="btn btn-icon"
@@ -122,7 +131,7 @@ function BudgetEditorForm({ editor, categories }) {
               <span>Category</span>
               <CategorizedSelect
                 aria-label="Budget category"
-                createCategoryType="expense"
+                createCategoryType={categoryType}
                 createCategoryTypes={BUDGET_CATEGORY_TYPES}
                 onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
                 options={categories}
@@ -141,7 +150,7 @@ function BudgetEditorForm({ editor, categories }) {
             </label>
 
             <label className="field budget-editor-amount-field">
-              <span>{copy.amountLabel}</span>
+              <PrivateValue as="span">{copy.amountLabel}</PrivateValue>
               <FinancialValueInput
                 allowNegative={false}
                 aria-label="Planned amount"

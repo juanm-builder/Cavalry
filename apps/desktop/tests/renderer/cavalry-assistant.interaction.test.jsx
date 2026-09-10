@@ -213,6 +213,7 @@ describe('Cavalry assistant', () => {
     await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('menuitem', { name: 'Assistant settings' }));
+    await user.click(await screen.findByText('Memory details'));
 
     expect(await screen.findByRole('heading', { name: 'Personalization' })).not.toBeNull();
     const memoryField = screen.getByRole('textbox', {
@@ -220,15 +221,13 @@ describe('Cavalry assistant', () => {
     });
     expect(memoryField.value).toBe('I prefer concise explanations.');
     expect(screen.getByText('memory.md')).not.toBeNull();
-    expect(
-      screen.getByRole('switch', { name: 'Enable local memory' }).getAttribute('aria-checked')
-    ).toBe('true');
+    expect(screen.getByRole('switch', { name: 'Use memory' }).getAttribute('aria-checked')).toBe(
+      'true'
+    );
 
     await user.clear(memoryField);
     await user.type(memoryField, 'My emergency fund is my top priority.');
-    await user.click(
-      screen.getByRole('switch', { name: 'Allow approved memory updates from chats' })
-    );
+    await user.click(screen.getByRole('switch', { name: 'Remember from chats' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(advisor.invoke).toHaveBeenCalledWith('saveMemory', {
@@ -289,6 +288,7 @@ describe('Cavalry assistant', () => {
     await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('menuitem', { name: 'Assistant settings' }));
+    await user.click(await screen.findByText('Memory details'));
     let memoryField = await screen.findByRole('textbox', {
       name: 'What should Cavalry know about you?'
     });
@@ -384,6 +384,7 @@ describe('Cavalry assistant', () => {
     await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('menuitem', { name: 'Assistant settings' }));
+    await user.click(await screen.findByText('Memory details'));
     await screen.findByRole('heading', { name: 'Personalization' });
 
     await user.type(screen.getByRole('textbox', { name: 'New memory item' }), 'Keep it concise.');
@@ -395,7 +396,7 @@ describe('Cavalry assistant', () => {
       })
     );
 
-    const itemField = await screen.findByRole('textbox', { name: 'Memory item memory-item-1' });
+    const itemField = await screen.findByRole('textbox', { name: 'Saved memory 1' });
     await user.clear(itemField);
     await user.type(itemField, 'Keep every answer concise.');
     const itemCard = itemField.closest('.cavalry-assistant-memory-item');
@@ -415,7 +416,7 @@ describe('Cavalry assistant', () => {
         expectedRevision: 'revision-3'
       })
     );
-    expect(await screen.findByText('No structured memory items yet.')).not.toBeNull();
+    expect(await screen.findByText('No memories saved yet.')).not.toBeNull();
   });
 
   it('preserves unsaved settings and item drafts across independent memory saves', async () => {
@@ -475,6 +476,7 @@ describe('Cavalry assistant', () => {
     await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('menuitem', { name: 'Assistant settings' }));
+    await user.click(await screen.findByText('Memory details'));
     const settingsField = await screen.findByRole('textbox', {
       name: 'What should Cavalry know about you?'
     });
@@ -491,7 +493,7 @@ describe('Cavalry assistant', () => {
     );
     expect(settingsField.value).toBe('Unsaved free-form draft.');
 
-    const itemField = screen.getByRole('textbox', { name: 'Memory item memory-item-1' });
+    const itemField = screen.getByRole('textbox', { name: 'Saved memory 1' });
     await user.clear(itemField);
     await user.type(itemField, 'Unsaved structured item edit.');
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -563,9 +565,9 @@ describe('Cavalry assistant', () => {
     expect(
       dialog.querySelector('.cavalry-assistant-empty-mark.cavalry-assistant-mark')
     ).not.toBeNull();
-    expect(screen.getByText('Working with Transactions')).not.toBeNull();
+    expect(screen.getByText('Transactions')).not.toBeNull();
     expect(screen.getByText('The Plan')).not.toBeNull();
-    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'What’s on your mind?' })).not.toBeNull();
     expect(screen.queryByText('AI Drafts')).toBeNull();
     expect(screen.queryByText('Sources')).toBeNull();
   });
@@ -1219,7 +1221,7 @@ describe('Cavalry assistant', () => {
     expect(await screen.findByText('Your savings rate is 42%.')).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'New conversation' }));
-    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'What’s on your mind?' })).not.toBeNull();
     await user.type(screen.getByRole('textbox', { name: 'Message Cavalry' }), 'Find largest bill');
     await user.click(screen.getByRole('button', { name: 'Send message' }));
     expect(await screen.findByText('Your largest bill is Rent.')).not.toBeNull();
@@ -1480,7 +1482,7 @@ describe('Cavalry assistant', () => {
     expect(executeTool.mock.calls[1][2]).toMatchObject({ approvedByUser: true });
   });
 
-  it('persists reload-safe confirmation copy and a deliberate card cancellation final', async () => {
+  it('keeps confirmation compact and cancelled proposals inactive after reload', async () => {
     const user = userEvent.setup();
     const storage = createMemoryStorage();
     const advisor = {
@@ -1540,21 +1542,23 @@ describe('Cavalry assistant', () => {
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     expect(await screen.findByRole('button', { name: 'Confirm' })).not.toBeNull();
-    expect(
-      await screen.findByText(/If you leave or reload this chat, ask Cavalry to prepare it again/i)
-    ).not.toBeNull();
+    expect(await screen.findByText('Review the change below before confirming.')).not.toBeNull();
     const storageKey = getCavalryAssistantConversationStorageKey({
       id: 'workbook-1',
       name: 'The Plan'
     });
     await waitFor(() =>
-      expect(storage.entries.get(storageKey)).toContain('ask Cavalry to prepare it again')
+      expect(storage.entries.get(storageKey)).toContain(
+        'Review the change below before confirming.'
+      )
     );
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(await screen.findByText('Cancelled. No changes were made.')).not.toBeNull();
+    expect(await screen.findByText('Cancelled. Pending changes were not applied.')).not.toBeNull();
     await waitFor(() =>
-      expect(storage.entries.get(storageKey)).toContain('Cancelled. No changes were made.')
+      expect(storage.entries.get(storageKey)).toContain(
+        'Cancelled. Pending changes were not applied.'
+      )
     );
     firstView.unmount();
 
@@ -1567,7 +1571,9 @@ describe('Cavalry assistant', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: 'Ask Cavalry' }));
-    expect(await screen.findByText('Cancelled. No changes were made.')).not.toBeNull();
+    expect(await screen.findByText('Cancelled. Pending changes were not applied.')).not.toBeNull();
+    expect(screen.getByText('This proposal is no longer active.')).not.toBeNull();
+    expect(screen.queryByText('Review the change below before confirming.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
   });
 
@@ -1834,6 +1840,11 @@ describe('Cavalry assistant', () => {
 
     expect(await screen.findByText(/Recorded “Coffee”/)).not.toBeNull();
     expect(screen.getByRole('alert').textContent).toContain('The model disconnected.');
+    const details = screen.getByText('Details').closest('details');
+    expect(details.open).toBe(false);
+    await user.click(screen.getByText('Details'));
+    expect(details.open).toBe(true);
+    expect(within(details).getByText('Saved')).not.toBeNull();
   });
 
   it('presents duplicate remember_memory as already current instead of saved or failed', async () => {
@@ -1974,6 +1985,9 @@ describe('Cavalry assistant', () => {
 
     expect(await screen.findByText(/without a verified durable receipt/i)).not.toBeNull();
     expect(screen.queryByText('Done. The transaction was definitely saved.')).toBeNull();
+    const receipt = screen.getByRole('region', { name: 'Action result' });
+    expect(receipt.closest('details')).toBeNull();
+    expect(within(receipt).getByText('Save unconfirmed')).not.toBeNull();
   });
 
   it('persists a deterministic failed-write result instead of later model success prose', async () => {

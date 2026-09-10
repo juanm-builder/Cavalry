@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useMemo, useState } from 'react';
 
 import {
@@ -278,7 +279,8 @@ function AccountAppearancePicker({
       <legend>Account icon / logo</legend>
       <div className="account-edit-appearance-options">
         {institution ? (
-          <button
+          <PrivateValue
+            as="button"
             aria-label={`Use ${institution.shortName} logo`}
             aria-pressed={logoMode === 'institution'}
             className={logoMode === 'institution' ? 'is-selected' : ''}
@@ -286,17 +288,18 @@ function AccountAppearancePicker({
             type="button"
           >
             <InstitutionMark institutionId={institution.id} />
-            <span>{institution.shortName}</span>
+            <PrivateValue as="span">{institution.shortName}</PrivateValue>
             <small>Logo</small>
             {logoMode === 'institution' ? (
               <Icon className="account-edit-appearance-check" name="check" />
             ) : null}
-          </button>
+          </PrivateValue>
         ) : null}
         {options.map(([value, label]) => {
           const selected = logoMode === 'icon' && icon === value;
           return (
-            <button
+            <PrivateValue
+              as="button"
               aria-label={`Use ${label} icon`}
               aria-pressed={selected}
               className={selected ? 'is-selected' : ''}
@@ -307,10 +310,10 @@ function AccountAppearancePicker({
               <span className="account-edit-generic-mark">
                 <Icon name={value} />
               </span>
-              <span>{label}</span>
+              <PrivateValue as="span">{label}</PrivateValue>
               <small>Icon</small>
               {selected ? <Icon className="account-edit-appearance-check" name="check" /> : null}
-            </button>
+            </PrivateValue>
           );
         })}
       </div>
@@ -337,15 +340,15 @@ function AccountEditSummary({
         />
       </span>
       <span className="account-edit-summary-copy">
-        <strong>{name || context.label}</strong>
-        <small>
+        <PrivateValue as="strong">{name || context.label}</PrivateValue>
+        <PrivateValue as="small">
           {context.label}
           {account?.isActive === false ? ' · Archived' : ''}
-        </small>
+        </PrivateValue>
       </span>
       <span className="account-edit-summary-balance">
-        <small>{balanceLabel || context.balanceLabel}</small>
-        <strong>{balanceCopy || 'Not available'}</strong>
+        <PrivateValue as="small">{balanceLabel || context.balanceLabel}</PrivateValue>
+        <PrivateValue as="strong">{balanceCopy || 'Not available'}</PrivateValue>
       </span>
     </section>
   );
@@ -979,7 +982,9 @@ export function AccountEditModal({
           <Icon name="info" />
           Account details can be changed here. Record a transaction to adjust the balance.
         </p>
-        <div className="account-flow-fields">{renderFields()}</div>
+        <PrivateValue as="div" className="account-flow-fields">
+          {renderFields()}
+        </PrivateValue>
         <button className="btn btn-primary account-flow-save" type="submit">
           <Icon name="save" />
           Save Changes

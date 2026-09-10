@@ -1,3 +1,4 @@
+import { PrivateValue } from './PrivateValue.jsx';
 import React from 'react';
 
 const ALLOWED_TAGS = new Set([
@@ -249,5 +250,9 @@ export function parseSanitizedHtml(html) {
 }
 
 export function SanitizedRichText({ html, as: Root = 'div', ...props }) {
-  return <Root {...props}>{parseSanitizedHtml(html)}</Root>;
+  return (
+    <PrivateValue as={Root} {...props}>
+      {parseSanitizedHtml(html)}
+    </PrivateValue>
+  );
 }

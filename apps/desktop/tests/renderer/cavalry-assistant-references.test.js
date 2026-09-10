@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { searchTransactions } from '../../src/renderer/features/assistant/cavalry-assistant-tool-support.js';
+import { normalizeCavalryAssistantActionResult } from '../../src/renderer/features/assistant/cavalry-assistant-action-results.js';
 
 import {
   buildCavalryAssistantCitations,
@@ -597,6 +599,229 @@ describe('Cavalry assistant references', () => {
       text: "I couldn't verify “Hosting is active” from the workbook.",
       references: []
     });
+  });
+
+  it('does not split a failed citation at a month abbreviation or leave broken bold markup', () => {
+    const text =
+      'No. **September’s zero only means nothing is recorded in Cavalry for Sept. 1–10—it doesn’t prove you spent nothing.** [[source-set:missing]]';
+    const answer = buildCavalryAssistantCitations({ text });
+
+    expect(answer.text).toBe(
+      "No. I couldn't verify “September’s zero only means nothing is recorded in Cavalry for Sept. 1–10—it doesn’t prove you spent nothing” from the workbook."
+    );
+    expect(answer.references).toEqual([]);
+    expect(
+      buildCavalryAssistantCitations({
+        text: '**Spending was ₱500 [[source:transaction:missing]]**.'
+      }).text
+    ).toBe("I couldn't verify “Spending was ₱500” from the workbook.");
+  });
+
+  it('preserves a verified empty-query explanation with an abbreviated date range', () => {
+    const claim =
+      'No. **September’s zero only means nothing is recorded in Cavalry for Sept. 1–10—it doesn’t prove you spent nothing.**';
+    const emptyEvidence = {
+      id: 'empty-september',
+      source_refs: [],
+      calculation: {
+        operation: 'grouped_spending_totals',
+        type: 'expense',
+        range: { start: '2026-09-01', end: '2026-09-10' },
+        filters: { accountId: '', categoryId: '' },
+        transactionCount: 0,
+        matchedTransactionCount: 0,
+        unresolvedTransactionCount: 0,
+        groupCount: 0
+      }
+    };
+    const toolResults = [successfulResult({ evidenceSets: [emptyEvidence] })];
+    const answer = buildCavalryAssistantCitations({
+      text: `${claim} [[source-set:empty-september]]`,
+      toolResults
+    });
+
+    expect(answer.text.trim()).toBe(claim);
+    expect(answer.references).toEqual([]);
+
+    for (const unsupported of [
+      'No spending was recorded in September.',
+      'No spending was recorded for Sept. 1–30.',
+      'No spending was recorded for Oct. 1–10.',
+      'No spending was recorded for 2026-09-01 through 2026-09-30.',
+      'No spending was recorded for Sept. 1–10, but you spent ₱500.'
+    ]) {
+      const rejected = buildCavalryAssistantCitations({
+        text: `${unsupported} [[source-set:empty-september]]`,
+        toolResults
+      });
+      expect(rejected.text).toContain("I couldn't verify");
+      expect(rejected.references).toEqual([]);
+    }
+    const unresolved = buildCavalryAssistantCitations({
+      text: `${claim} [[source-set:empty-september]]`,
+      toolResults: [
+        successfulResult({
+          evidenceSets: [
+            {
+              ...emptyEvidence,
+              calculation: {
+                ...emptyEvidence.calculation,
+                matchedTransactionCount: 1,
+                unresolvedTransactionCount: 1
+              }
+            }
+          ]
+        })
+      ]
+    });
+    expect(unresolved.text).toContain("I couldn't verify");
+    for (const filters of [
+      { accountId: 'personal-cash', categoryId: '' },
+      { accountId: '', categoryId: 'food' },
+      { accountId: '', categoryId: '', query: 'coffee' }
+    ]) {
+      const filtered = buildCavalryAssistantCitations({
+        text: `${claim} [[source-set:empty-september]]`,
+        toolResults: [
+          successfulResult({
+            evidenceSets: [
+              {
+                ...emptyEvidence,
+                calculation: { ...emptyEvidence.calculation, filters }
+              }
+            ]
+          })
+        ]
+      });
+      expect(filtered.text).toContain("I couldn't verify");
+    }
+  });
+
+  it('preserves a named empty transaction search only within its complete checked scope', async () => {
+    const result = await searchTransactions({
+      toolName: 'search_transactions',
+      toolCallId: 'qa-empty',
+      workbook: {
+        id: 'fixture',
+        year: 2026,
+        currency: 'PHP',
+        accounts: [],
+        categories: [],
+        transactions: []
+      },
+      arguments: { query: 'Advisor QA Stream', start: '2026-09-01', end: '2026-11-30' }
+    });
+    expect(result.data.evidenceSets[0].calculation).toMatchObject({
+      operation: 'filtered_transaction_totals',
+      transactionCount: 0,
+      recordPreviewCount: 0,
+      recordPreviewOmitted: 0
+    });
+    const build = (claim, searched = result) =>
+      buildCavalryAssistantCitations({
+        text: `${claim} [[source-set:transaction-search-qa-empty]]`,
+        toolResults: [{ ok: true, result: searched }]
+      });
+    for (const claim of [
+      'No Advisor QA Stream payment is recorded from September 1 through November 30, 2026.',
+      'No payment is recorded for the exact text “Advisor QA Stream” from September 1 through November 30, 2026.',
+      'No payment is recorded for Advisor QA Stream from September 1 through November 30, 2026.',
+      'No Advisor QA Stream payments were found in Cavalry from Sept. 1 to Nov. 30, 2026.',
+      'No recorded transactions for Advisor QA Stream from 2026-09-01 through 2026-11-30.'
+    ]) {
+      const answer = build(claim);
+      expect(answer.text.trim()).toBe(claim);
+      expect(answer.references).toEqual([]);
+    }
+    for (const claim of [
+      'No spending is recorded from September 1 through November 30, 2026.',
+      'No Advisor QA Music payment is recorded from September 1 through November 30, 2026.',
+      'No payment is recorded for the exact text “Advisor QA Music” from September 1 through November 30, 2026.',
+      'No payment is recorded for the exact text “Advisor QA Stream” from September 1 through December 31, 2026.',
+      'No Advisor QA Stream payment is recorded from September 1 through December 31, 2026.',
+      'No Advisor QA Stream payment is recorded from September 1 through November 30, 2025.',
+      'No Advisor QA Stream payment is recorded from October 1 through November 30, 2026.',
+      'No Advisor QA Stream payment is recorded from 2026-09-01 through 2026-12-31.',
+      'No Advisor QA Stream payment is recorded in September.',
+      'No Advisor QA Stream payment has ever been recorded.',
+      'No Advisor QA Stream payment is recorded from September 1 through November 30, 2026, and no spending happened.',
+      'No Advisor QA Stream payment is recorded from September 1 through November 30, 2026, but you spent PHP 500.'
+    ])
+      expect(build(claim).text).toContain("I couldn't verify");
+
+    const claim =
+      'No Advisor QA Stream payment is recorded from September 1 through November 30, 2026.';
+    for (const extraFilters of [
+      { accountId: 'cash' },
+      { categoryId: 'subscriptions' },
+      { minAmount: 1 },
+      { maxAmount: 500 },
+      { type: 'expense' },
+      { query: 'Other tracker' },
+      { query: '' },
+      { status: 'unpaid' },
+      { start: '2026-09-00' }
+    ]) {
+      const narrowed = structuredClone(result);
+      Object.assign(narrowed.data.evidenceSets[0].calculation.filters, extraFilters);
+      expect(build(claim, narrowed).text).toContain("I couldn't verify");
+    }
+    for (const changedCounts of [
+      { transactionCount: 1 },
+      { recordPreviewCount: 1 },
+      { recordPreviewOmitted: 1 }
+    ]) {
+      const incomplete = structuredClone(result);
+      Object.assign(incomplete.data.evidenceSets[0].calculation, changedCounts);
+      expect(build(claim, incomplete).text).toContain("I couldn't verify");
+    }
+    expect(build(claim, { ...result, ok: false }).text).toContain("I couldn't verify");
+  });
+
+  it('grounds explicit read-only assurances in completed action state instead of transaction citations', () => {
+    const readResult = {
+      ok: true,
+      result: normalizeCavalryAssistantActionResult(
+        { ok: true, changed: false, data: { transactions: [] } },
+        { toolName: 'search_transactions', access: 'read' }
+      )
+    };
+    const build = (claim, toolResults = [readResult]) =>
+      buildCavalryAssistantCitations({
+        text: `${claim} [[source-set:empty-check]]`,
+        toolResults
+      });
+    for (const claim of [
+      'Read-only check; nothing changed.',
+      'Read only review: no changes were made.',
+      'I made no changes.'
+    ]) {
+      const answer = build(claim);
+      expect(answer.text.trim()).toBe(claim);
+      expect(answer.references).toEqual([]);
+    }
+    for (const claim of [
+      'Nothing changed.',
+      'My balance is unchanged.',
+      'Read-only check; spending was PHP 500.',
+      'Read-only check; no payments were recorded.'
+    ]) {
+      expect(build(claim).text).toContain("I couldn't verify");
+    }
+    expect(build('Read-only check; nothing changed.', []).text).toContain("I couldn't verify");
+    const changed = structuredClone(readResult);
+    changed.result.changed = true;
+    changed.result.receipt.access = 'write';
+    changed.result.receipt.changed = true;
+    changed.result.receipt.commitStatus = 'committed';
+    expect(build('Read-only check; nothing changed.', [readResult, changed]).text).toContain(
+      "I couldn't verify"
+    );
+    const uncertain = structuredClone(readResult);
+    uncertain.result.receipt.verificationStatus = 'unknown';
+    expect(build('Read-only check; nothing changed.', [uncertain]).text).toContain(
+      "I couldn't verify"
+    );
   });
 
   it('rejects an entire source-set marker when any requested set is missing', () => {

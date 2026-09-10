@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAmountVisibility } from '../app/AmountVisibilityProvider.jsx';
 
 import { CavalryAssistantMark } from '../features/assistant/CavalryAssistantMark.jsx';
 import { SetupProgressButton } from '../features/onboarding/SetupChecklist.jsx';
@@ -50,6 +51,7 @@ export function WorkbookTopBar({
   onToggleNavigation,
   setupProgress = null
 }) {
+  const { amountsHidden, toggleAmounts } = useAmountVisibility();
   const savePresentation = getSaveStatusPresentation(save);
   const workbookName = workbook?.name || 'Cavalry';
   const subtitle = getWorkbookSubtitle(workbook);
@@ -91,6 +93,17 @@ export function WorkbookTopBar({
             totalCount={setupProgress.totalCount}
           />
         ) : null}
+        <button
+          aria-label={amountsHidden ? 'Show amounts' : 'Hide amounts'}
+          aria-pressed={amountsHidden}
+          className="btn btn-soft amount-visibility-toggle"
+          onClick={toggleAmounts}
+          title={amountsHidden ? 'Show amounts' : 'Hide amounts'}
+          type="button"
+        >
+          <CavalryIcon name={amountsHidden ? 'visibility_off' : 'visibility'} />
+          <span>{amountsHidden ? 'Show amounts' : 'Hide amounts'}</span>
+        </button>
         <button
           aria-label="Open command menu"
           className="btn btn-soft command-menu-trigger"

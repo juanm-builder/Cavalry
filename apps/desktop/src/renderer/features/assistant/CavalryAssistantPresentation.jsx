@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useId, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -267,7 +268,7 @@ function groupedClaimReferences(references) {
   });
 }
 
-function ActionReceipt({ receipt }) {
+function ActionReceipt({ receipt, confirmationActive = false }) {
   const source = asObject(receipt);
   const lifecycle = asText(source.lifecycle);
   const committed = asText(source.commitStatus) === 'committed';
@@ -277,17 +278,20 @@ function ActionReceipt({ receipt }) {
   const noOpWrite = isCavalryAssistantSuccessfulNoOpWriteReceipt(source);
   const summary = cavalryAssistantActionReceiptMessage(source);
   const itemLabels = asArray(source.items)
-    .map((item) => asText(asObject(item).label || asObject(item).id))
+    .map((item) => asText(asObject(item).label))
     .filter(Boolean)
     .slice(0, 4);
   const cardDetail =
     itemLabels.join(' · ') ||
-    asText(asObject(source.entity).label || asObject(source.entity).id) ||
-    (noOpWrite
-      ? 'Already current'
-      : asObject(source.persistence).durable === true
-        ? 'Durable workbook change'
-        : 'Structured action result');
+    (source.entity?.label !== source.entity?.id ? asText(source.entity?.label) : '') ||
+    (lifecycle === 'failed' ? summary : '');
+  const title = asText(source.title || source.actionVerb);
+  const cardTitle =
+    title && title.length <= 52
+      ? title
+      : asText(source.toolName)
+          .replace(/_/g, ' ')
+          .replace(/^./, (letter) => letter.toUpperCase()) || 'Change';
   const stateLabel =
     lifecycle === 'rolled_back'
       ? 'Rolled back'
@@ -296,16 +300,22 @@ function ActionReceipt({ receipt }) {
         : noOpWrite
           ? 'No change needed'
           : verifiedDurable
-            ? 'Saved · verified'
+            ? 'Saved'
             : committed && verification === 'verified'
-              ? 'Committed · durability unverified'
+              ? 'Save unconfirmed'
               : committed && verification === 'failed'
-                ? 'Saved · verification failed'
+                ? 'Saved · check needed'
                 : committed
-                  ? 'Saved · verification pending'
+                  ? 'Saved · check needed'
                   : lifecycle === 'failed'
                     ? 'Failed'
-                    : lifecycle.replace(/_/g, ' ');
+                    : lifecycle === 'awaiting_confirmation'
+                      ? confirmationActive
+                        ? 'Review'
+                        : 'Proposed'
+                      : lifecycle === 'completed'
+                        ? 'Checked'
+                        : lifecycle.replace(/_/g, ' ');
   const iconName =
     verifiedDurable || noOpWrite
       ? 'check_circle'
@@ -320,10 +330,12 @@ function ActionReceipt({ receipt }) {
     >
       <Icon name={iconName} />
       <span>
-        <strong>{asText(source.title || source.actionVerb) || 'Action result'}</strong>
-        <small>{cardDetail}</small>
+        <PrivateValue as="strong">{cardTitle}</PrivateValue>
+        {cardDetail ? <PrivateValue as="small">{cardDetail}</PrivateValue> : null}
       </span>
-      <span className="cavalry-assistant-action-receipt-state">{stateLabel}</span>
+      <PrivateValue as="span" className="cavalry-assistant-action-receipt-state">
+        {stateLabel}
+      </PrivateValue>
     </section>
   );
 }
@@ -505,7 +517,8 @@ function ReferencedRecords({
 
   return (
     <section aria-label="Referenced records" className="cavalry-assistant-references">
-      <button
+      <PrivateValue
+        as="button"
         aria-controls={expanded ? listId : undefined}
         aria-expanded={expanded}
         aria-label={`See references (${records.length})`}
@@ -514,12 +527,12 @@ function ReferencedRecords({
         type="button"
       >
         <Icon name="link" />
-        <span>{expanded ? 'Hide references' : 'See references'}</span>
-        <span aria-hidden="true" className="cavalry-assistant-references-count">
+        <PrivateValue as="span">{expanded ? 'Hide references' : 'See references'}</PrivateValue>
+        <PrivateValue as="span" aria-hidden="true" className="cavalry-assistant-references-count">
           {records.length}
-        </span>
+        </PrivateValue>
         <Icon name="expand_more" />
-      </button>
+      </PrivateValue>
       {!expanded ? null : (
         <ul className="cavalry-assistant-reference-list" id={listId}>
           {records.map(({ key, reference }) => {
@@ -535,7 +548,8 @@ function ReferencedRecords({
             const groupExpanded = grouped && expandedGroupId === groupId;
             return (
               <li key={key}>
-                <button
+                <PrivateValue
+                  as="button"
                   aria-label={`Open ${presentation.label}: ${label}${
                     accessibleDetail ? `, ${accessibleDetail}` : ''
                   }`}
@@ -547,15 +561,16 @@ function ReferencedRecords({
                 >
                   <Icon name={presentation.icon} />
                   <span>
-                    <strong>{label}</strong>
-                    <small>
+                    <PrivateValue as="strong">{label}</PrivateValue>
+                    <PrivateValue as="small">
                       {[presentation.label, detail, idHint].filter(Boolean).join(' · ')}
-                    </small>
+                    </PrivateValue>
                   </span>
                   {grouped ? <Icon name={groupExpanded ? 'expand_less' : 'expand_more'} /> : null}
-                </button>
+                </PrivateValue>
                 {groupExpanded ? (
-                  <ul
+                  <PrivateValue
+                    as="ul"
                     aria-label={`Sources for ${label}`}
                     className="cavalry-assistant-reference-records"
                   >
@@ -570,16 +585,16 @@ function ReferencedRecords({
                           >
                             <Icon name={childPresentation.icon} />
                             <span>
-                              <strong>{record.label}</strong>
-                              <small>
+                              <PrivateValue as="strong">{record.label}</PrivateValue>
+                              <PrivateValue as="small">
                                 {referenceDetailCopy(record) || childPresentation.label}
-                              </small>
+                              </PrivateValue>
                             </span>
                           </button>
                         </li>
                       );
                     })}
-                  </ul>
+                  </PrivateValue>
                 ) : null}
               </li>
             );
@@ -592,6 +607,7 @@ function ReferencedRecords({
 
 export function Message({
   message,
+  confirmationActive = false,
   activeClarificationId,
   onAnswerClarification,
   onComposeAnswer,
@@ -606,6 +622,27 @@ export function Message({
   const receipts = asArray(message.receipts).filter(
     (receipt) => receipt && typeof receipt === 'object'
   );
+  const needsAttention = (receipt) =>
+    ['failed', 'rolled_back'].includes(receipt.lifecycle) ||
+    (receipt.commitStatus === 'committed' &&
+      (receipt.verificationStatus !== 'verified' || receipt.persistence?.durable !== true));
+  const visibleReceipts = receipts.filter(needsAttention);
+  const detailReceipts = receipts.filter((receipt) => !needsAttention(receipt));
+  const hasProposal =
+    receipts.some((receipt) => receipt.lifecycle === 'awaiting_confirmation') ||
+    (assistant && asText(message.text).includes('Review the change below before confirming.'));
+  const messageText =
+    hasProposal && !confirmationActive
+      ? asText(message.text)
+          .replace(
+            'Review the change below before confirming.',
+            'This proposal is no longer active.'
+          )
+          .replace(
+            /This action needs your confirmation\.[\s\S]*?before confirming\./g,
+            'This earlier proposal is no longer active.'
+          )
+      : message.text;
   const [referencesExpanded, setReferencesExpanded] = useState(false);
   const [expandedReferenceId, setExpandedReferenceId] = useState('');
   const clarificationActive =
@@ -621,9 +658,17 @@ export function Message({
       )}
       <div className="cavalry-assistant-message-content">
         <div className="cavalry-assistant-message-meta">
-          <strong>{assistant ? 'Cavalry' : 'You'}</strong>
+          <PrivateValue as="strong">{assistant ? 'Cavalry' : 'You'}</PrivateValue>
           {message.createdAt ? (
-            <time dateTime={message.createdAt}>{formatUiDateTime(message.createdAt)}</time>
+            <PrivateValue
+              as="time"
+              dateTime={message.createdAt}
+              title={formatUiDateTime(message.createdAt)}
+            >
+              {formatUiDateTime(message.createdAt, {
+                format: { month: undefined, day: undefined, year: undefined }
+              })}
+            </PrivateValue>
           ) : null}
         </div>
         {assistant ? (
@@ -639,20 +684,34 @@ export function Message({
             }}
             referenceMode="claim"
             references={presentationReferences}
-            text={message.text}
+            text={messageText}
           />
         ) : (
-          <p>{message.text}</p>
+          <PrivateValue as="p">{message.text}</PrivateValue>
         )}
-        {assistant && receipts.length ? (
+        {assistant && visibleReceipts.length ? (
           <div className="cavalry-assistant-action-receipts">
-            {receipts.map((receipt, index) => (
+            {visibleReceipts.map((receipt, index) => (
               <ActionReceipt
-                key={asText(receipt.actionId || receipt.toolName) || `receipt-${index}`}
+                key={`${asText(receipt.actionId || receipt.toolName)}-${index}`}
                 receipt={receipt}
               />
             ))}
           </div>
+        ) : null}
+        {assistant && detailReceipts.length ? (
+          <details className="cavalry-assistant-activity">
+            <summary>Details</summary>
+            <div className="cavalry-assistant-action-receipts">
+              {detailReceipts.map((receipt, index) => (
+                <ActionReceipt
+                  confirmationActive={confirmationActive}
+                  key={`${asText(receipt.actionId || receipt.toolName)}-${index}`}
+                  receipt={receipt}
+                />
+              ))}
+            </div>
+          </details>
         ) : null}
         {assistant ? (
           <ReferencedRecords
@@ -671,11 +730,12 @@ export function Message({
           <div className="cavalry-assistant-message-images" aria-label="Attached images">
             {images.map((attachment, index) => (
               <div className="cavalry-assistant-message-image" key={attachment.id || index}>
-                <img
+                <PrivateValue
+                  as="img"
                   alt={attachment.name || `Attached image ${index + 1}`}
                   src={attachment.dataUrl}
                 />
-                <span>{index + 1}</span>
+                <PrivateValue as="span">{index + 1}</PrivateValue>
               </div>
             ))}
           </div>
@@ -690,15 +750,18 @@ export function Message({
                 role="group"
               >
                 {clarification.options.map((option, index) => (
-                  <button
+                  <PrivateValue
+                    as="button"
                     className="cavalry-assistant-clarification-option"
                     key={option.id || `${option.label}-${index}`}
                     onClick={() => onAnswerClarification(option.label)}
                     type="button"
                   >
                     {option.label}
-                    {option.description ? <small>{option.description}</small> : null}
-                  </button>
+                    {option.description ? (
+                      <PrivateValue as="small">{option.description}</PrivateValue>
+                    ) : null}
+                  </PrivateValue>
                 ))}
               </div>
             ) : null}
@@ -726,14 +789,15 @@ export function ConversationHistory({ activeConversationId, conversations, onSel
           <h2>Chat history</h2>
           <p>Saved on this Mac for this workbook.</p>
         </div>
-        <span>{conversations.length}</span>
+        <PrivateValue as="span">{conversations.length}</PrivateValue>
       </header>
       {conversations.length ? (
         <div className="cavalry-assistant-history-list">
           {conversations.map((conversation) => {
             const messageCount = asArray(conversation.messages).length;
             return (
-              <button
+              <PrivateValue
+                as="button"
                 aria-current={conversation.id === activeConversationId ? 'true' : undefined}
                 aria-label={`Resume ${conversation.title}`}
                 className={`cavalry-assistant-history-row${
@@ -747,14 +811,14 @@ export function ConversationHistory({ activeConversationId, conversations, onSel
                   <Icon name="chat_bubble" />
                 </span>
                 <span className="cavalry-assistant-history-copy">
-                  <strong>{conversation.title}</strong>
-                  <small>
+                  <PrivateValue as="strong">{conversation.title}</PrivateValue>
+                  <PrivateValue as="small">
                     {formatUiDateTime(conversation.updatedAt) || 'Saved conversation'} ·{' '}
                     {messageCount} {messageCount === 1 ? 'message' : 'messages'}
-                  </small>
+                  </PrivateValue>
                 </span>
                 <Icon name="chevron_right" />
-              </button>
+              </PrivateValue>
             );
           })}
         </div>

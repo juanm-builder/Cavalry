@@ -27,6 +27,7 @@ describe('Assistant durable command commit', () => {
       },
       currentWorkbook: original,
       saveWorkbook,
+      now: () => '2026-08-21T06:00:00.000Z',
       applyCommandResult,
       isSaveEvent: (event) => event.type === 'schedule-save',
       updateCurrentWorkbook
@@ -40,6 +41,11 @@ describe('Assistant durable command commit', () => {
       verificationStatus: 'verified',
       persistence: { status: 'saved', durable: true }
     });
+    expect(saveWorkbook.mock.calls[0][0]).toMatchObject({
+      updatedAt: '2026-08-21T06:00:00.000Z',
+      settings: { lastSavedAt: '2026-08-21T06:00:00.000Z' }
+    });
+    expect(candidate).not.toHaveProperty('updatedAt');
   });
 
   it('leaves the original state untouched when persistence rejects the candidate', async () => {
@@ -110,7 +116,7 @@ describe('Assistant durable command commit', () => {
       persistence: { status: 'saved', durable: true }
     });
 
-    expect(updateCurrentWorkbook).toHaveBeenCalledWith(candidate);
+    expect(updateCurrentWorkbook).toHaveBeenCalledWith(expect.objectContaining(candidate));
     expect(original.transactions).toEqual([{ id: 'old' }]);
   });
 });

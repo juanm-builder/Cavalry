@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -20,7 +21,11 @@ function Icon({ name }) {
 }
 
 function StatusPill({ children, tone = 'neutral' }) {
-  return <span className={`settings-status-pill ${tone}`}>{children}</span>;
+  return (
+    <PrivateValue as="span" className={`settings-status-pill ${tone}`}>
+      {children}
+    </PrivateValue>
+  );
 }
 
 function formatCloudTimestamp(value) {
@@ -79,13 +84,14 @@ function CloudWorkbookRow({
       </span>
       <div className="settings-cloud-workbook-copy">
         <div className="settings-cloud-workbook-title">
-          <strong>{item.name}</strong>
+          <PrivateValue as="strong">{item.name}</PrivateValue>
           {item.pending ? <StatusPill tone="info">Waiting</StatusPill> : null}
         </div>
-        {metadata ? <small>{metadata}</small> : null}
+        {metadata ? <PrivateValue as="small">{metadata}</PrivateValue> : null}
       </div>
       <div className="settings-cloud-workbook-actions">
-        <button
+        <PrivateValue
+          as="button"
           aria-label={`Open ${item.name} from iCloud`}
           className="btn"
           disabled={pending || item.pending || !item.id}
@@ -94,10 +100,11 @@ function CloudWorkbookRow({
         >
           <Icon name="open_in_new" />
           Open
-        </button>
+        </PrivateValue>
         {confirmingRemoval ? (
           <>
-            <button
+            <PrivateValue
+              as="button"
               aria-label={
                 queuedCreate
                   ? `Confirm canceling upload of ${item.name}`
@@ -110,13 +117,14 @@ function CloudWorkbookRow({
             >
               <Icon name="delete_forever" />
               {queuedCreate ? 'Cancel Upload' : 'Delete'}
-            </button>
+            </PrivateValue>
             <button className="btn" disabled={pending} onClick={onCancelRemoval} type="button">
               Cancel
             </button>
           </>
         ) : (
-          <button
+          <PrivateValue
+            as="button"
             aria-label={
               queuedCreate ? `Cancel upload of ${item.name}` : `Delete ${item.name} from iCloud`
             }
@@ -127,7 +135,7 @@ function CloudWorkbookRow({
           >
             <Icon name="delete_outline" />
             {queuedCreate ? 'Cancel Upload' : 'Delete'}
-          </button>
+          </PrivateValue>
         )}
       </div>
     </li>
@@ -149,7 +157,7 @@ export function CloudLibrarySurface({
   const pending = !!asString(cloud.pendingOperation);
 
   return (
-    <div className="settings-cloud-surfaces">
+    <PrivateValue as="div" className="settings-cloud-surfaces">
       <p className="settings-cloud-account-notice">
         iCloud workbooks open inside Cavalry. To keep a file in iCloud Drive, use Save As in Files
         &amp; Data settings.
@@ -180,6 +188,6 @@ export function CloudLibrarySurface({
           </ul>
         </section>
       ) : null}
-    </div>
+    </PrivateValue>
   );
 }

@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -8,7 +9,6 @@ import { BudgetTransactionsModal } from './BudgetTransactionsModal.jsx';
 import {
   BudgetCategoryAvatar,
   formatMoney,
-  getBudgetCategoryIcon,
   getCategoryColor,
   getPlanTypeCopy,
   getRowStatusDetail,
@@ -62,46 +62,51 @@ function BudgetStatus({ summary, currency, range, currentDate }) {
   const spentPercent = total > 0 ? Math.max(0, Math.round((spent / total) * 100)) : 0;
   const statusTone = over ? 'bad' : left > 0 ? 'good' : 'neutral';
   return (
-    <article className={`budget-status-card budget-status-compact ${statusTone}`}>
+    <article className={`budget-status-card budget-status-balance ${statusTone}`}>
       <div className="budget-status-summary">
-        <span className="budget-status-eyebrow">
+        <PrivateValue as="span" className="budget-status-eyebrow">
           <Icon name={over ? 'warning' : 'check_circle'} /> {over ? 'Over plan' : 'On track'}
-        </span>
-        <strong>{formatMoney(Math.abs(left), currency)}</strong>
-        <small>{over ? 'above your spending plan' : 'left in your spending plan'}</small>
+        </PrivateValue>
+        <PrivateValue as="strong">{formatMoney(Math.abs(left), currency)}</PrivateValue>
+        <PrivateValue as="small">
+          {over ? 'above your spending plan' : 'left in your spending plan'}
+        </PrivateValue>
       </div>
       <div className="budget-status-progress-block">
         <div className="budget-status-progress-copy">
           <span>Spent this month</span>
-          <strong className={spent > 0 ? 'bad-text' : 'neutral-text'}>{spentPercent}%</strong>
+          <PrivateValue as="strong" className={spent > 0 ? 'bad-text' : 'neutral-text'}>
+            {spentPercent}%
+          </PrivateValue>
         </div>
         <div className="budget-status-line">
           <i style={{ width: `${Math.min(100, spentPercent)}%` }} />
         </div>
-        <small>
+        <PrivateValue as="small">
           {total > 0
             ? `${formatMoney(spent, currency)} of ${formatMoney(total, currency)}`
             : `${formatMoney(spent, currency)} spent · no spending plan yet`}
-        </small>
+        </PrivateValue>
       </div>
       <div className="budget-status-quick-stats">
         <div>
           <span>Day</span>
-          <strong>
+          <PrivateValue as="strong">
             {daysElapsed} of {daysInPeriod}
-          </strong>
+          </PrivateValue>
         </div>
         <div>
           <span>Safe today</span>
-          <strong
+          <PrivateValue
+            as="strong"
             className={safeToday < 0 ? 'bad-text' : safeToday > 0 ? 'good-text' : 'neutral-text'}
           >
             {formatMoney(Math.max(0, safeToday), currency)}
-          </strong>
+          </PrivateValue>
         </div>
         <div>
           <span>Daily plan</span>
-          <strong>{formatMoney(dailyBudget, currency)}</strong>
+          <PrivateValue as="strong">{formatMoney(dailyBudget, currency)}</PrivateValue>
         </div>
       </div>
     </article>
@@ -114,39 +119,31 @@ function EmptyBudgetRows({
 }) {
   return (
     <div className="empty-state compact-empty">
-      <strong>{title}</strong>
-      <p>{detail}</p>
+      <PrivateValue as="strong">{title}</PrivateValue>
+      <PrivateValue as="p">{detail}</PrivateValue>
     </div>
   );
 }
 
 function PlanOverview({ summary, currency, onSelect }) {
   const plannedIncome = Number(summary.plannedIncome) || 0;
-  const actualIncome = Number(summary.income) || 0;
   const incomeBasis = Number(summary.incomePlanBasis) || 0;
   const cards = [
     {
       key: 'income',
       label: 'Income plan',
       value: plannedIncome > 0 ? plannedIncome : incomeBasis,
-      detail:
-        plannedIncome > 0
-          ? `${formatMoney(actualIncome, currency)} received`
-          : `${formatMoney(actualIncome, currency)} received · add a plan anytime`,
       icon: 'payments',
       tone: 'info',
-      valueTone: 'neutral',
-      detailTone: actualIncome > 0 ? 'good' : 'neutral'
+      valueTone: 'neutral'
     },
     {
       key: 'spending',
       label: 'Spending plan',
       value: Number(summary.plannedSpending) || 0,
-      detail: `${formatMoney(summary.spent, currency)} spent`,
       icon: 'account_balance_wallet',
       tone: Number(summary.leftToSpend) < 0 ? 'bad' : 'info',
-      valueTone: 'neutral',
-      detailTone: Number(summary.spent) > 0 ? 'bad' : 'neutral'
+      valueTone: 'neutral'
     },
     {
       key: 'commitments',
@@ -165,7 +162,6 @@ function PlanOverview({ summary, currency, onSelect }) {
       key: 'unallocated',
       label: 'Unallocated',
       value: Number(summary.unallocated) || 0,
-      detail: 'Income not assigned to this month’s plan',
       icon: 'calculate',
       tone:
         Number(summary.unallocated) < 0 ? 'bad' : Number(summary.unallocated) > 0 ? 'good' : 'info',
@@ -205,7 +201,7 @@ function PlanOverview({ summary, currency, onSelect }) {
     <section aria-label="Monthly Plan overview" className="monthly-plan-overview">
       {cards.map((card) => (
         <button
-          className={`monthly-plan-overview-card ${card.tone}`}
+          className={`monthly-plan-overview-card ${card.key} ${card.tone}`}
           key={card.key}
           onClick={() => onSelect(card.key)}
           type="button"
@@ -214,11 +210,15 @@ function PlanOverview({ summary, currency, onSelect }) {
             <Icon name={card.icon} />
           </span>
           <span className="monthly-plan-overview-copy">
-            <small>{card.label}</small>
-            <strong className={card.valueTone || 'neutral'}>
+            <PrivateValue as="small">{card.label}</PrivateValue>
+            <PrivateValue as="strong" className={card.valueTone || 'neutral'}>
               {formatMoney(card.value, currency)}
-            </strong>
-            <em className={card.detailTone || 'neutral'}>{card.detail}</em>
+            </PrivateValue>
+            {card.detail ? (
+              <PrivateValue as="em" className={card.detailTone || 'neutral'}>
+                {card.detail}
+              </PrivateValue>
+            ) : null}
           </span>
           <Icon className="monthly-plan-overview-chevron" name="chevron_right" />
         </button>
@@ -236,9 +236,9 @@ function TrustNotice({ trust }) {
     <aside className="monthly-plan-trust warn">
       <Icon name="warning" />
       <span>
-        <strong>
+        <PrivateValue as="strong">
           {unresolvedCount} item{unresolvedCount === 1 ? '' : 's'} need review
-        </strong>
+        </PrivateValue>
         <small>Review these before relying on the total.</small>
       </span>
     </aside>
@@ -354,13 +354,15 @@ function PlanMetricModal({ metricKey, summary, sections, currency, onClose, onSe
   }, []);
   return renderInBody(
     <div className="budget-drawer-layer budget-detail-modal-layer">
-      <button
+      <PrivateValue
+        as="button"
         aria-label={`Dismiss ${definition.title} details`}
         className="budget-drawer-scrim"
         onClick={onClose}
         type="button"
       />
-      <aside
+      <PrivateValue
+        as="aside"
         aria-label={`${definition.title} details`}
         aria-modal="true"
         className="budget-dialog monthly-plan-metric-dialog"
@@ -373,33 +375,37 @@ function PlanMetricModal({ metricKey, summary, sections, currency, onClose, onSe
             <span className="budget-status-eyebrow">
               <Icon name="query_stats" /> Plan details
             </span>
-            <h2>{definition.title}</h2>
+            <PrivateValue as="h2">{definition.title}</PrivateValue>
           </div>
-          <button
+          <PrivateValue
+            as="button"
             aria-label={`Close ${definition.title} details`}
             className="btn btn-icon"
             onClick={onClose}
             type="button"
           >
             <Icon name="close" />
-          </button>
+          </PrivateValue>
         </div>
         <div className="budget-detail-scroll monthly-plan-metric-scroll">
-          <section
+          <PrivateValue
+            as="section"
             className="monthly-plan-metric-summary"
             aria-label={`${definition.title} summary`}
           >
             {definition.lines.map(([label, value], index) => (
               <div className={index === definition.lines.length - 1 ? 'is-total' : ''} key={label}>
-                <span>{label}</span>
-                <strong>{value}</strong>
+                <PrivateValue as="span">{label}</PrivateValue>
+                <PrivateValue as="strong">{value}</PrivateValue>
               </div>
             ))}
-          </section>
+          </PrivateValue>
           <section className="budget-detail-card monthly-plan-metric-included">
             <div className="budget-detail-card-heading">
               <h3>Included categories</h3>
-              <span className="tag">{rows.length}</span>
+              <PrivateValue as="span" className="tag">
+                {rows.length}
+              </PrivateValue>
             </div>
             <div className="budget-transaction-list monthly-plan-metric-rows">
               {rows.length ? (
@@ -416,14 +422,16 @@ function PlanMetricModal({ metricKey, summary, sections, currency, onClose, onSe
                       type="button"
                     >
                       <span>
-                        <strong>{row.category?.name || 'Missing category'}</strong>
-                        <small>
+                        <PrivateValue as="strong">
+                          {row.category?.name || 'Missing category'}
+                        </PrivateValue>
+                        <PrivateValue as="small">
                           {metricKey === 'commitments'
                             ? `${formatMoney(row.planned, currency)} spending limit`
                             : `${formatMoney(row.actual, currency)} actual`}
-                        </small>
+                        </PrivateValue>
                       </span>
-                      <b>{formatMoney(amount, currency)}</b>
+                      <PrivateValue as="b">{formatMoney(amount, currency)}</PrivateValue>
                       <Icon name="chevron_right" />
                     </button>
                   );
@@ -438,10 +446,10 @@ function PlanMetricModal({ metricKey, summary, sections, currency, onClose, onSe
           </section>
           <details className="monthly-plan-calculation-note">
             <summary>How this is calculated</summary>
-            <p>{definition.explanation}</p>
+            <PrivateValue as="p">{definition.explanation}</PrivateValue>
           </details>
         </div>
-      </aside>
+      </PrivateValue>
     </div>
   );
 }
@@ -456,45 +464,45 @@ function BudgetCategoryTable({
 }) {
   const actions = useActionBindings();
   const copy = getPlanTypeCopy(type);
-  const createEntry = showCreate ? (
-    <button
-      aria-label="Create budget"
-      className="budget-category-create-row"
-      type="button"
-      {...actions.action('open-simple-budget')}
-    >
-      <span className="budget-category-list-name">
-        <span className="budget-category-create-icon">
-          <Icon name="add" />
+  const createEntry =
+    showCreate || !rows.length ? (
+      <button
+        aria-label={`Add ${type === 'expense' ? 'spending' : type} plan`}
+        className="budget-category-create-row"
+        type="button"
+        {...actions.action('open-simple-budget', { categoryType: type })}
+      >
+        <span className="budget-category-list-name">
+          <span className="budget-category-create-icon">
+            <Icon name="add" />
+          </span>
+          <span className="budget-category-list-copy">
+            <strong>Add to Monthly Plan</strong>
+          </span>
         </span>
-        <span className="budget-category-list-copy">
-          <strong>Add to Monthly Plan</strong>
-          <small>Add spending, savings, debt, or expected income</small>
-        </span>
-      </span>
-    </button>
-  ) : null;
+      </button>
+    ) : null;
   if (!rows.length && !showCreate && !alwaysRender) return null;
   return (
     <section className="budget-categories-section reference-card">
       <div className="budget-section-heading monthly-plan-section-heading">
         <div>
-          <h3>
+          <PrivateValue as="h3">
             <Icon name={copy.icon} /> {copy.title}
-          </h3>
-          <p>{copy.description}</p>
+          </PrivateValue>
+          <PrivateValue as="p">{copy.description}</PrivateValue>
         </div>
       </div>
       {rows.length ? (
         <>
           <div className="budget-category-list-head">
             <span>Category</span>
-            <span>{copy.planLabel}</span>
-            <span>{copy.actualLabel}</span>
+            <PrivateValue as="span">{copy.planLabel}</PrivateValue>
+            <PrivateValue as="span">{copy.actualLabel}</PrivateValue>
             <span>Status</span>
             <span />
           </div>
-          <div className="budget-category-list">
+          <PrivateValue as="div" className="budget-category-list">
             {createEntry}
             {rows.map((row, index) => {
               const tone = getUsageTone(row);
@@ -519,24 +527,27 @@ function BudgetCategoryTable({
                   type="button"
                 >
                   <span className="budget-category-list-name">
-                    <span className="budget-usage-category-icon">
-                      <Icon name={getBudgetCategoryIcon(row.category)} />
-                    </span>
+                    <BudgetCategoryAvatar category={row.category} />
                     <span className="budget-category-list-copy">
-                      <strong>{row.category?.name || 'Missing category'}</strong>
+                      <PrivateValue as="strong">
+                        {row.category?.name || 'Missing category'}
+                      </PrivateValue>
                       {commitmentCopy || row.isMissing || row.isArchived ? (
-                        <small>
+                        <PrivateValue as="small">
                           {row.isMissing
                             ? 'Missing category'
                             : row.isArchived
                               ? 'Archived category'
                               : commitmentCopy}
-                        </small>
+                        </PrivateValue>
                       ) : null}
                     </span>
                   </span>
-                  <span className="amount neutral">{formatMoney(row.planned, currency)}</span>
-                  <span
+                  <PrivateValue as="span" className="amount neutral">
+                    {formatMoney(row.planned, currency)}
+                  </PrivateValue>
+                  <PrivateValue
+                    as="span"
                     className={`amount ${
                       Number(row.actual) <= 0
                         ? 'neutral'
@@ -548,29 +559,25 @@ function BudgetCategoryTable({
                     }`}
                   >
                     {formatMoney(row.actual, currency)}
-                  </span>
+                  </PrivateValue>
                   <span className={`budget-category-status ${tone}`}>
-                    <b>{statusLabel}</b>
-                    <small>{statusDetail}</small>
+                    <PrivateValue as="b">{statusLabel}</PrivateValue>
+                    <PrivateValue as="small">{statusDetail}</PrivateValue>
                   </span>
                   <Icon name="chevron_right" />
-                  <span className="sr-only" id={rowDescriptionId}>
+                  <PrivateValue as="span" className="sr-only" id={rowDescriptionId}>
                     {copy.planLabel}: {formatMoney(row.planned, currency)}. {copy.actualLabel}:{' '}
                     {formatMoney(row.actual, currency)}. Status: {statusLabel}. {statusDetail}
-                  </span>
+                  </PrivateValue>
                 </button>
               );
             })}
-          </div>
+          </PrivateValue>
         </>
       ) : (
-        <div className="budget-category-list">
+        <PrivateValue as="div" className="budget-category-list">
           {createEntry}
-          <EmptyBudgetRows
-            detail="Add your first amount to build this month’s plan."
-            title="No plan entries yet."
-          />
-        </div>
+        </PrivateValue>
       )}
     </section>
   );
@@ -605,8 +612,8 @@ function PlanSectionTabs({ activeType, sections, onChange }) {
             role="tab"
             type="button"
           >
-            <span>{tab.label}</span>
-            <small>{count}</small>
+            <PrivateValue as="span">{tab.label}</PrivateValue>
+            <PrivateValue as="small">{count}</PrivateValue>
           </button>
         );
       })}
@@ -636,7 +643,7 @@ function DateRangeControl({ range, periodLabel }) {
       >
         <Icon name="chevron_left" />
       </button>
-      <span>{periodLabel}</span>
+      <PrivateValue as="span">{periodLabel}</PrivateValue>
       <button
         aria-label="Next month"
         className="budget-date-arrow"
@@ -794,15 +801,15 @@ function BudgetRouteView({
         </div>
       </section>
       <div className="monthly-plan-summary-shell">
+        <BudgetStatus
+          currency={currency}
+          currentDate={data.currentDate}
+          range={range}
+          summary={summary}
+        />
         <PlanOverview currency={currency} onSelect={openMetric} summary={summary} />
-        <TrustNotice trust={data.trust || {}} />
       </div>
-      <BudgetStatus
-        currency={currency}
-        currentDate={data.currentDate}
-        range={range}
-        summary={summary}
-      />
+      <TrustNotice trust={data.trust || {}} />
       <section className="monthly-plan-category-workspace">
         <div className="monthly-plan-workspace-heading">
           <div>

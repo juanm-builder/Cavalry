@@ -1,3 +1,4 @@
+import { buildBudgetSummary } from '@cavalry/finance-core';
 import { defineCavalryAssistantCapability } from '../assistant/cavalry-assistant-capability-registry.js';
 import {
   assistantBooleanProperty,
@@ -11,6 +12,7 @@ import {
   confirmationRequired,
   currentDate,
   errorItem,
+  envelope,
   hasAnyArgument,
   readBudgets,
   resolutionFailure,
@@ -21,6 +23,8 @@ import { BUDGET_CATEGORY_TYPES, createBudgetController } from './budget-controll
 const CONFIRMATION_COPY =
   'Set confirmed to true only after the user explicitly confirms this destructive action.';
 const BUDGET_CATEGORY_TYPE_SET = new Set(BUDGET_CATEGORY_TYPES);
+const BUDGET_READ_SCOPE =
+  'Monthly category plans only. A missing budget row does not mean a named bill or subscription is absent. Check list_recurring_bills for recurring names and requested schedule dates.';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -34,34 +38,37 @@ function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value || {}, key);
 }
 
-function budgetTargets(environment) {
-  const workbook = environment.workbook;
-  const args = environment.arguments;
-  let sheet;
-  if (hasAnyArgument(args, ['sheetId', 'sheet'])) {
-    sheet = resolveArgument(workbook, args, {
-      collection: 'sheets',
-      keys: ['sheetId', 'sheet'],
-      label: 'Budget sheet'
-    });
-  } else {
-    const first = collection(workbook, 'sheets')[0] || null;
-    sheet = first
-      ? { ok: true, value: first, id: asText(first.id), provided: false }
-      : {
-          ok: false,
-          status: 'validation_failed',
-          error: errorItem('budget_sheet_required', 'A budget sheet is required.', 'sheet')
-        };
+function budgetReference(workbook, args, options) {
+  const keys = options.keys.filter((key) => hasOwn(args, key));
+  let resolved;
+  for (const key of keys.length ? keys : [options.keys[0]]) {
+    const reference = asText(args[key]);
+    const idMatches = collection(workbook, options.collection).filter(
+      (item) =>
+        reference &&
+        (key.endsWith('Id')
+          ? asText(item.id).toLowerCase() === reference.toLowerCase()
+          : asText(item.id) === reference)
+    );
+    const candidate =
+      idMatches.length === 1
+        ? { ok: true, value: idMatches[0], id: asText(idMatches[0].id), provided: true }
+        : resolveArgument(workbook, args, { ...options, keys: [key] });
+    if (!candidate.ok) return candidate;
+    if (resolved && resolved.id !== candidate.id) {
+      return {
+        ok: false,
+        status: 'validation_failed',
+        error: errorItem(
+          'budget_reference_conflict',
+          `${options.label} references identify different records. Use one exact ID.`,
+          key
+        )
+      };
+    }
+    resolved = candidate;
   }
-  if (!sheet.ok) return { ok: false, resolution: sheet };
-  const category = resolveArgument(workbook, args, {
-    collection: 'categories',
-    keys: ['categoryId', 'category'],
-    label: 'Category'
-  });
-  if (!category.ok) return { ok: false, resolution: category };
-  return { ok: true, sheet, category };
+  return resolved;
 }
 
 function budgetMonthRange(month) {
@@ -90,34 +97,11 @@ function sheetMonthKey(workbook, sheet) {
     : '';
 }
 
-function setBudgetTargets(environment) {
+function resolveBudgetPeriod(environment, { allowMissing = false, optional = false } = {}) {
   const workbook = environment.workbook;
   const args = environment.arguments;
   const hasSheet = hasAnyArgument(args, ['sheetId', 'sheet']);
   const hasMonth = hasOwn(args, 'month');
-  const category = resolveArgument(workbook, args, {
-    collection: 'categories',
-    keys: ['categoryId', 'category'],
-    label: 'Category'
-  });
-  if (!category.ok) return { ok: false, resolution: category };
-  if (
-    category.value.isActive === false ||
-    !BUDGET_CATEGORY_TYPE_SET.has(asText(category.value.type))
-  ) {
-    return {
-      ok: false,
-      resolution: {
-        status: 'validation_failed',
-        error: errorItem(
-          'budget_category_invalid',
-          'Budgets require an active income, expense, debt, or savings category.',
-          'category'
-        )
-      }
-    };
-  }
-
   const range = hasMonth ? budgetMonthRange(args.month) : null;
   if (hasMonth && !range) {
     return {
@@ -128,9 +112,8 @@ function setBudgetTargets(environment) {
       }
     };
   }
-
   if (hasSheet) {
-    const sheet = resolveArgument(workbook, args, {
+    const sheet = budgetReference(workbook, args, {
       collection: 'sheets',
       keys: ['sheetId', 'sheet'],
       label: 'Budget sheet'
@@ -149,26 +132,46 @@ function setBudgetTargets(environment) {
         }
       };
     }
-    return { ok: true, sheet, category, range };
+    return { ok: true, sheet, range };
   }
-
   if (range) {
-    const existing = collection(workbook, 'sheets').find(
+    const matches = collection(workbook, 'sheets').filter(
       (sheet) => sheetMonthKey(workbook, sheet) === range.monthKey
     );
+    if (matches.length > 1) {
+      return {
+        ok: false,
+        resolution: {
+          status: 'ambiguous_reference',
+          error: errorItem(
+            'budget_period_ambiguous',
+            `More than one budget sheet uses ${range.monthKey}. Choose the sheet by ID.`,
+            'month'
+          )
+        }
+      };
+    }
+    if (!matches.length && !allowMissing) {
+      return {
+        ok: false,
+        resolution: {
+          status: 'not_found',
+          error: errorItem(
+            'budget_period_not_found',
+            `No budget sheet exists for ${range.monthKey}.`,
+            'month'
+          )
+        }
+      };
+    }
+    const existing = matches[0] || null;
     return {
       ok: true,
-      sheet: {
-        ok: true,
-        value: existing || null,
-        id: asText(existing && existing.id),
-        provided: true
-      },
-      category,
+      sheet: { ok: true, value: existing, id: asText(existing?.id), provided: true },
       range
     };
   }
-
+  if (optional) return { ok: true, sheet: null, range: null };
   return {
     ok: false,
     resolution: {
@@ -182,14 +185,84 @@ function setBudgetTargets(environment) {
   };
 }
 
+function budgetTargets(environment, { allowMissing = false, requireActive = false } = {}) {
+  const period = resolveBudgetPeriod(environment, { allowMissing });
+  if (!period.ok) return period;
+  const category = budgetReference(environment.workbook, environment.arguments, {
+    collection: 'categories',
+    keys: ['categoryId', 'category'],
+    label: 'Category'
+  });
+  if (!category.ok) return { ok: false, resolution: category };
+  if (
+    requireActive &&
+    (category.value.isActive === false ||
+      !BUDGET_CATEGORY_TYPE_SET.has(asText(category.value.type)))
+  ) {
+    return {
+      ok: false,
+      resolution: {
+        status: 'validation_failed',
+        error: errorItem(
+          'budget_category_invalid',
+          'Budgets require an active income, expense, debt, or savings category.',
+          'category'
+        )
+      }
+    };
+  }
+  return { ...period, category };
+}
+
+async function readBudgetPlans(environment) {
+  const targets = resolveBudgetPeriod(environment, { allowMissing: true, optional: true });
+  if (!targets.ok) return resolutionFailure(environment, targets.resolution);
+  if (targets.sheet && !targets.sheet.value) {
+    return envelope(environment.toolName, environment.toolCallId, {
+      data: { budgets: [], count: 0, month: targets.range.monthKey, scope: BUDGET_READ_SCOPE }
+    });
+  }
+  const result = await readBudgets({
+    ...environment,
+    workbook: targets.sheet
+      ? { ...environment.workbook, sheets: [targets.sheet.value] }
+      : environment.workbook,
+    arguments: {}
+  });
+  return { ...result, data: { ...result.data, scope: BUDGET_READ_SCOPE } };
+}
+
+function removalState(environment, targets) {
+  const sheet = targets.sheet.value;
+  return {
+    workbookId: asText(environment.workbook.id),
+    currency: asText(environment.workbook.currency).toUpperCase(),
+    sheetId: targets.sheet.id,
+    month: sheetMonthKey(environment.workbook, sheet),
+    sheetName: asText(sheet.name),
+    categoryId: targets.category.id,
+    categoryName: asText(targets.category.value.name),
+    categoryType: asText(targets.category.value.type),
+    budgets: asArray(sheet.budgets).filter(
+      (budget) => asText(budget.categoryId) === targets.category.id
+    ),
+    manualItems: asArray(sheet.budgetLineItems).filter(
+      (item) =>
+        asText(item.categoryId) === targets.category.id &&
+        item.isActive !== false &&
+        !asText(item.recurringItemId)
+    )
+  };
+}
+
 async function setBudget(environment) {
   const operation = asText(environment.arguments.operation).toLowerCase();
-  if (!['create', 'upsert'].includes(operation)) {
+  if (!['create', 'update', 'upsert'].includes(operation)) {
     return resolutionFailure(environment, {
       status: 'validation_failed',
       error: errorItem(
         'budget_operation_invalid',
-        'Budget operation must be either "create" or "upsert".',
+        'Budget operation must be "create", "update", or "upsert".',
         'operation'
       )
     });
@@ -204,7 +277,18 @@ async function setBudget(environment) {
       )
     });
   }
-  const targets = setBudgetTargets(environment);
+  const currency = asText(environment.arguments.currency).toUpperCase();
+  if (currency && currency !== asText(environment.workbook.currency).toUpperCase()) {
+    return resolutionFailure(environment, {
+      status: 'validation_failed',
+      error: errorItem(
+        'budget_currency_mismatch',
+        `Budgets are planned in ${asText(environment.workbook.currency).toUpperCase()}. Do not silently treat another currency as the base currency.`,
+        'currency'
+      )
+    });
+  }
+  const targets = budgetTargets(environment, { allowMissing: true, requireActive: true });
   if (!targets.ok) return resolutionFailure(environment, targets.resolution);
   const controller = createBudgetController(environment.services);
   const existing = asArray(targets.sheet.value && targets.sheet.value.budgets).find(
@@ -263,11 +347,57 @@ async function setBudget(environment) {
 async function archiveBudget(environment) {
   const targets = budgetTargets(environment);
   if (!targets.ok) return resolutionFailure(environment, targets.resolution);
-  if (environment.arguments.confirmed !== true) {
+  const state = removalState(environment, targets);
+  if (!state.budgets.length && !state.manualItems.length) {
+    return resolutionFailure(environment, {
+      status: 'not_found',
+      error: errorItem(
+        'budget_not_found',
+        'No removable category plan exists for this category and month. Recurring commitments must be managed separately.',
+        'category'
+      )
+    });
+  }
+  const fingerprint = JSON.stringify(state);
+  const expectedState = asText(environment.arguments.expectedBudgetState);
+  if (environment.arguments.confirmed !== true || !expectedState) {
+    const summary = buildBudgetSummary(environment.workbook, targets.sheet.value);
+    const planned =
+      Number(summary.rows.find((row) => row.categoryId === targets.category.id)?.planned) || 0;
     return confirmationRequired(
       environment,
-      `remove the ${targets.category.value.name} budget from ${targets.sheet.value.name || targets.sheet.id}`
+      `remove the ${targets.category.value.name} plan for ${state.month || state.sheetName}`,
+      {
+        data: {
+          budget: {
+            sheetId: targets.sheet.id,
+            sheetName: state.sheetName,
+            month: state.month,
+            categoryId: targets.category.id,
+            categoryName: state.categoryName,
+            planned,
+            currency: asText(environment.workbook.currency).toUpperCase()
+          }
+        },
+        proposal: {
+          arguments: {
+            sheetId: targets.sheet.id,
+            categoryId: targets.category.id,
+            expectedBudgetState: fingerprint
+          }
+        }
+      }
     );
+  }
+  if (expectedState !== fingerprint) {
+    return resolutionFailure(environment, {
+      status: 'conflict',
+      error: errorItem(
+        'budget_confirmation_stale',
+        'This budget changed after the removal was prepared. Review it and ask for removal again; nothing was removed.',
+        'expectedBudgetState'
+      )
+    });
   }
   const controller = createBudgetController(environment.services);
   const result = controller.handleAction(
@@ -280,7 +410,11 @@ async function archiveBudget(environment) {
   return commitCommand(environment, result, 'assistant_budget_archived', {
     budget: {
       sheetId: targets.sheet.id,
+      id: `budget:${targets.sheet.id}:${targets.category.id}`,
+      sheetName: state.sheetName,
+      month: state.month,
       categoryId: targets.category.id,
+      categoryName: state.categoryName,
       categoryType: asText(targets.category.value.type),
       archived: true
     }
@@ -296,23 +430,25 @@ export default defineCavalryAssistantCapability({
   compatibility: { minimumAppVersion: '2.1.0', workbookSchema: '2' },
   inputValidation: 'structure',
   instructions:
-    'Income plans are supported. When the user asks for expected salary, allowance, or other income, call set_budget with that income category; do not claim the app only supports expense budgets. Set operation to create for a new plan or upsert only when the user explicitly asks to set or update a possibly existing plan. Budgets are monthly and do not support recurrence.',
+    'For mixed requests, resolve each named item separately: category budgets and recurring bills/subscriptions are different records. read_budgets alone cannot establish that a bill or subscription is absent. If a requested name is not a matching budget category or the user asks for charge dates, check list_recurring_bills with every requested month in monthKeys; clarify any remaining ambiguous name. Keep each result labeled by its actual record type. ' +
+    'Income plans are supported. When the user asks for expected salary, allowance, or other income, call set_budget with that income category; do not claim the app only supports expense budgets. A budget is one monthly plan for an existing category, not a named sub-line under another category. If the user requests a separately named line, explain this limitation and ask before creating a new category. Never create a category merely to use it as a budget label. Set operation to create for a new plan, update for an existing plan, or upsert only when the user explicitly asks to set a possibly existing plan. Resolve the user’s requested month from the current date and pass YYYY-MM alone when known; the workbook name is not a budget sheet name. Use sheetId only when it comes from read_budgets, and never guess a sheet from the workbook title. For an unspecified period, ask which month before a write; each action affects only that month, never other months or recurring commitments. Read the target month before modifying an existing plan. Budgets are monthly and do not support recurrence.',
   tools: [
     {
       definition: () =>
         defineCavalryAssistantTool(
           'read_budgets',
-          'Read plan-versus-actual data, including expected income and planned expenses, debt, and savings.',
+          'Read plan-versus-actual data for a sheet or YYYY-MM month, including expected income and planned expenses, debt, and savings. Omit the period only to read all sheets.',
           {
             sheet: assistantStringProperty(
               'Optional sheet ID or exact sheet name, matched case-insensitively.'
             ),
             sheetId: assistantStringProperty(
               'Optional sheet ID or exact sheet name, matched case-insensitively.'
-            )
+            ),
+            month: assistantStringProperty('Optional budget month in YYYY-MM format.')
           }
         ),
-      execute: readBudgets,
+      execute: readBudgetPlans,
       access: 'read',
       confirmation: { mode: 'none' }
     },
@@ -320,7 +456,7 @@ export default defineCavalryAssistantCapability({
       definition: () =>
         defineCavalryAssistantTool(
           'set_budget',
-          'Create or upsert a monthly plan for an active income, expense, debt, or savings category. This is also the action for expected-income budgets. A sheet or YYYY-MM month is required. Create refuses an existing direct or legacy plan; upsert may update a direct plan but never shadows a legacy plan. Recurrence is unsupported.',
+          'Create, update, or upsert a monthly plan for an active income, expense, debt, or savings category. This is also the action for expected-income budgets. A sheet or YYYY-MM month is required. Create refuses an existing direct or legacy plan; update requires an existing direct plan; upsert may update a direct plan but never shadows a legacy plan. Recurrence is unsupported.',
           {
             sheet: assistantStringProperty(
               'Sheet ID or exact sheet name, matched case-insensitively.'
@@ -334,9 +470,14 @@ export default defineCavalryAssistantCapability({
             categoryId: assistantStringProperty(
               'Income, expense, debt, or savings category ID or exact name.'
             ),
-            planned: assistantNumberProperty('Positive planned amount.'),
+            planned: assistantNumberProperty(
+              'Positive planned amount of at least 0.01 in the workbook base currency.'
+            ),
+            currency: assistantStringProperty(
+              'Optional currency code; must match the workbook base currency. No automatic currency conversion.'
+            ),
             operation: assistantStringProperty(
-              'Required operation: "create" for a new plan, or "upsert" to create or update a direct category plan.'
+              'Required operation: "create" for a new plan, "update" for an existing plan only, or "upsert" to create or update a direct category plan.'
             ),
             month: assistantStringProperty(
               'Budget month in YYYY-MM format. Use this to create a missing month.'
@@ -376,6 +517,12 @@ export default defineCavalryAssistantCapability({
             ),
             category: assistantStringProperty('Category ID or exact name.'),
             categoryId: assistantStringProperty('Category ID or exact name.'),
+            month: assistantStringProperty(
+              'Required unless sheet is provided. Budget month in YYYY-MM format; only this month is removed.'
+            ),
+            expectedBudgetState: assistantStringProperty(
+              'Host-controlled snapshot of the reviewed removal target. Never invent or change it.'
+            ),
             confirmed: assistantBooleanProperty(CONFIRMATION_COPY)
           }
         ),
@@ -392,6 +539,7 @@ export default defineCavalryAssistantCapability({
       atomicity: 'single-workbook-commit',
       idempotency: 'stable-category-sheet',
       approvalFields: ['confirmed'],
+      hostInputFields: ['expectedBudgetState'],
       actionVerb: 'Removed plan for'
     }
   ]

@@ -3223,7 +3223,7 @@ describe('Cavalry assistant mutations', () => {
     const deleted = await executeCavalryAssistantTool(
       {
         name: 'delete_transaction',
-        arguments: { transaction: 'GROCERIES', confirmed: true }
+        arguments: { ...blocked.confirmation.proposal.arguments, confirmed: true }
       },
       { ...harness.context, approvedByUser: true }
     );
@@ -3575,7 +3575,7 @@ describe('Cavalry assistant mutations', () => {
     const updated = await executeCavalryAssistantTool(
       {
         name: 'update_bill',
-        arguments: { bill: 'Internet', isActive: false, confirmed: true }
+        arguments: { ...blocked.confirmation.proposal.arguments, confirmed: true }
       },
       { ...harness.context, approvedByUser: true }
     );

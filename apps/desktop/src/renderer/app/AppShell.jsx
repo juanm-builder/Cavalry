@@ -1,3 +1,4 @@
+import { PrivateValue } from '../shared/PrivateValue.jsx';
 // Hosts workbook state and command-result plumbing for the migrated React routes.
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -11,6 +12,7 @@ import { useFinanceApplicationController } from './use-finance-application-contr
 import { useWorkbookSession, WorkbookProvider } from './WorkbookProvider.jsx';
 import { DEFAULT_ROUTE_ID } from './routes.js';
 import { HYDRATION_STATUS } from './workbook-session-reducer.js';
+import { AmountVisibilityProvider } from './AmountVisibilityProvider.jsx';
 import { AppearanceProvider } from './AppearanceProvider.jsx';
 import { CavalryAssistant } from '../features/assistant/CavalryAssistant.jsx';
 import { CavalryIcon } from '../shared/CavalryIcon.jsx';
@@ -38,7 +40,7 @@ function NoticeStack({ errors = [], onDismissError }) {
           <CavalryIcon name="error" />
           <div>
             <strong>Something went wrong</strong>
-            <p>{error.message || String(error)}</p>
+            <PrivateValue as="p">{error.message || String(error)}</PrivateValue>
           </div>
           <button aria-label="Dismiss error" onClick={() => onDismissError?.(index)} type="button">
             <CavalryIcon name="close" />
@@ -307,19 +309,21 @@ export function AppShell({
 }) {
   return (
     <AppearanceProvider storage={appearanceStorage}>
-      <WorkbookProvider
-        initialWorkbook={initialWorkbook}
-        initialSaveStatus={initialSaveStatus}
-        initialRouteId={routeId}
-        ports={ports}
-        autoHydrate={autoHydrate}
-      >
-        <CommandExecutorProvider onEvent={onEvent} onEffect={onEffect}>
-          <div data-renderer-shell="app-shell">
-            <SessionContent routeId={routeId} routeModels={routeModels} onAction={onAction} />
-          </div>
-        </CommandExecutorProvider>
-      </WorkbookProvider>
+      <AmountVisibilityProvider>
+        <WorkbookProvider
+          initialWorkbook={initialWorkbook}
+          initialSaveStatus={initialSaveStatus}
+          initialRouteId={routeId}
+          ports={ports}
+          autoHydrate={autoHydrate}
+        >
+          <CommandExecutorProvider onEvent={onEvent} onEffect={onEffect}>
+            <div data-renderer-shell="app-shell">
+              <SessionContent routeId={routeId} routeModels={routeModels} onAction={onAction} />
+            </div>
+          </CommandExecutorProvider>
+        </WorkbookProvider>
+      </AmountVisibilityProvider>
     </AppearanceProvider>
   );
 }

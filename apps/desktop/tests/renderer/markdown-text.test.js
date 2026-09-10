@@ -177,6 +177,73 @@ describe('MarkdownText', () => {
     expect(html).not.toContain('class="markdown-reference"');
   });
 
+  it('keeps fallback budget sources in their own month and ignores month words inside tracker names', () => {
+    const references = [
+      {
+        id: 'budget:sept:coffee',
+        token: 'Advisor QA Coffee',
+        aliases: ['Advisor QA Coffee'],
+        label: 'Advisor QA Coffee',
+        kind: 'budget',
+        source_refs: ['budget:sept:coffee'],
+        detail: {
+          monthKey: '2026-09',
+          sheetName: 'September',
+          categoryName: 'Advisor QA Coffee',
+          planned: 3600
+        }
+      },
+      {
+        id: 'sheet:sept',
+        token: 'September',
+        aliases: ['September', 'September budget'],
+        label: 'September',
+        kind: 'sheet',
+        source_refs: ['sheet:sept'],
+        detail: { monthKey: '2026-09', sheetName: 'September' }
+      },
+      {
+        id: 'recurringItem:sept-only',
+        token: 'Advisor QA September Only',
+        aliases: ['Advisor QA September Only'],
+        label: 'Advisor QA September Only',
+        kind: 'recurringItem',
+        source_refs: ['recurringItem:sept-only']
+      }
+    ];
+    const render = (text) =>
+      renderToStaticMarkup(
+        React.createElement(MarkdownText, {
+          text,
+          referenceMode: 'claim',
+          references,
+          onOpenReference: () => {}
+        })
+      );
+    const html = render(
+      [
+        '| Name | Month | Planned | Date |',
+        '| --- | --- | --- | --- |',
+        '| Advisor QA Coffee | September 2026 | PHP 3,600 | — |',
+        '| Advisor QA Coffee | October 2026 | Not saved | — |',
+        '| Advisor QA September Only | September 2026 | PHP 249 | September 15 |',
+        '| Advisor QA September Only | October 2026 | PHP 0 | — |',
+        '| Advisor QA Coffee | September 2027 | PHP 3,600 | — |',
+        '| Advisor QA Coffee | 2026-10 | PHP 3,600 | — |'
+      ].join('\n')
+    );
+    const rows = [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].slice(1).map((match) => match[1]);
+    expect(rows[0].match(/class="markdown-source-reference"/g)).toHaveLength(1);
+    expect(rows[0]).toContain('Advisor QA Coffee, September budget');
+    for (const index of [1, 4, 5]) expect(rows[index]).not.toContain('markdown-source-reference');
+    for (const index of [2, 3]) {
+      expect(rows[index].match(/class="markdown-source-reference"/g)).toHaveLength(1);
+      expect(rows[index]).toContain('Advisor QA September Only, recurring');
+      expect(rows[index]).not.toContain('September, September budget');
+    }
+    expect(render('Review the September budget.')).toContain('markdown-source-reference');
+  });
+
   it('keeps one explicit source with each factual table row', () => {
     const references = [
       [

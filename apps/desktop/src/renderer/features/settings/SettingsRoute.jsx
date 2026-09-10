@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -49,10 +50,10 @@ function Icon({ name, className = '' }) {
 
 function StatusPill({ children, icon, tone = 'neutral' }) {
   return (
-    <span className={'settings-status-pill ' + tone}>
+    <PrivateValue as="span" className={'settings-status-pill ' + tone}>
       {icon ? <Icon name={icon} /> : null}
       {children}
-    </span>
+    </PrivateValue>
   );
 }
 
@@ -63,13 +64,13 @@ function SettingsFeedback({ feedback = {} }) {
       {feedback.error ? (
         <div className="settings-feedback-message bad" role="alert">
           <Icon name="error" />
-          <span>{feedback.error}</span>
+          <PrivateValue as="span">{feedback.error}</PrivateValue>
         </div>
       ) : null}
       {feedback.notice ? (
         <div className="settings-feedback-message good" role="status">
           <Icon name="check_circle" />
-          <span>{feedback.notice}</span>
+          <PrivateValue as="span">{feedback.notice}</PrivateValue>
         </div>
       ) : null}
     </div>
@@ -79,7 +80,7 @@ function SettingsFeedback({ feedback = {} }) {
 function SettingsCard({ children, className = '', headingId, icon, title, trailing }) {
   const classes = ['settings-card', className].filter(Boolean).join(' ');
   return (
-    <section aria-labelledby={headingId} className={classes}>
+    <PrivateValue as="section" aria-labelledby={headingId} className={classes}>
       <header className="settings-card-header">
         <div className="settings-card-heading">
           {icon ? (
@@ -88,13 +89,19 @@ function SettingsCard({ children, className = '', headingId, icon, title, traili
             </span>
           ) : null}
           <div>
-            <h3 id={headingId}>{title}</h3>
+            <PrivateValue as="h3" id={headingId}>
+              {title}
+            </PrivateValue>
           </div>
         </div>
-        {trailing ? <div className="settings-card-trailing">{trailing}</div> : null}
+        {trailing ? (
+          <PrivateValue as="div" className="settings-card-trailing">
+            {trailing}
+          </PrivateValue>
+        ) : null}
       </header>
       {children}
-    </section>
+    </PrivateValue>
   );
 }
 
@@ -105,8 +112,8 @@ function EmptyState({ detail, icon = 'inbox', title }) {
         <Icon name={icon} />
       </span>
       <div>
-        <strong>{title}</strong>
-        {detail ? <small>{detail}</small> : null}
+        <PrivateValue as="strong">{title}</PrivateValue>
+        {detail ? <PrivateValue as="small">{detail}</PrivateValue> : null}
       </div>
     </div>
   );
@@ -167,7 +174,8 @@ function SettingsSectionNav({ activeSection, onSelect }) {
         {SETTINGS_SECTIONS.map((section, index) => {
           const selected = activeSection === section.id;
           return (
-            <button
+            <PrivateValue
+              as="button"
               aria-controls={section.id}
               aria-label={section.label}
               aria-selected={selected}
@@ -184,9 +192,9 @@ function SettingsSectionNav({ activeSection, onSelect }) {
                 <Icon name={section.icon} />
               </span>
               <span className="settings-section-nav-copy">
-                <strong>{section.label}</strong>
+                <PrivateValue as="strong">{section.label}</PrivateValue>
               </span>
-            </button>
+            </PrivateValue>
           );
         })}
       </div>
@@ -196,7 +204,8 @@ function SettingsSectionNav({ activeSection, onSelect }) {
 
 function SettingsTabPanel({ activeSection, children, id }) {
   return (
-    <div
+    <PrivateValue
+      as="div"
       aria-labelledby={'settings-tab-' + id}
       className="settings-tab-panel"
       hidden={activeSection !== id}
@@ -205,7 +214,7 @@ function SettingsTabPanel({ activeSection, children, id }) {
       tabIndex="0"
     >
       {children}
-    </div>
+    </PrivateValue>
   );
 }
 
@@ -247,9 +256,9 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
           <dl className="settings-detail-list">
             {details.map((item) => (
               <div className="settings-detail-item" key={item.label}>
-                <dt>{item.label}</dt>
+                <PrivateValue as="dt">{item.label}</PrivateValue>
                 <dd>
-                  <span>{item.detail}</span>
+                  <PrivateValue as="span">{item.detail}</PrivateValue>
                   {item.amount ? <StatusPill tone="neutral">{item.amount}</StatusPill> : null}
                 </dd>
               </div>
@@ -271,7 +280,7 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
       >
         <div className="settings-setting-row settings-rate-row">
           <div className="settings-setting-copy">
-            <strong>USD to {workbook.currency || 'PHP'}</strong>
+            <PrivateValue as="strong">USD to {workbook.currency || 'PHP'}</PrivateValue>
             <small>Enter how much one US dollar is worth in your base currency.</small>
           </div>
           <form
@@ -280,9 +289,9 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
             id="usd-rate-form"
             onSubmit={(event) => submitAction(event, onAction, 'update-usd-rate')}
           >
-            <label className="sr-only" htmlFor="settings-usd-rate">
+            <PrivateValue as="label" className="sr-only" htmlFor="settings-usd-rate">
               USD to {workbook.currency || 'PHP'} rate
-            </label>
+            </PrivateValue>
             <div className="settings-input-suffix">
               <input
                 defaultValue={workbook.usdRate || ''}
@@ -294,7 +303,7 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
                 step="0.01"
                 type="number"
               />
-              <span>{workbook.currency || 'PHP'}</span>
+              <PrivateValue as="span">{workbook.currency || 'PHP'}</PrivateValue>
             </div>
             <button className="btn" type="submit">
               Update Rate
@@ -359,11 +368,12 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
                   <Icon name="person" />
                 </span>
                 <div className="settings-counterparty-copy">
-                  <strong>{counterparty.name}</strong>
-                  <small>{counterparty.note || 'No note'}</small>
+                  <PrivateValue as="strong">{counterparty.name}</PrivateValue>
+                  <PrivateValue as="small">{counterparty.note || 'No note'}</PrivateValue>
                 </div>
                 <StatusPill tone="neutral">{counterparty.kindLabel}</StatusPill>
-                <button
+                <PrivateValue
+                  as="button"
                   aria-label="Archive counterparty"
                   className="btn settings-row-action"
                   title={'Archive ' + counterparty.name}
@@ -374,7 +384,7 @@ function WorkspacePanel({ counterparties, feedback, onAction, workbook }) {
                 >
                   <Icon name="archive" />
                   Archive
-                </button>
+                </PrivateValue>
               </li>
             ))}
           </ul>
@@ -432,8 +442,8 @@ function AppearancePanel({ feedback }) {
                   ))}
                 </span>
                 <span className="appearance-theme-copy">
-                  <strong>{theme.label}</strong>
-                  <small>{theme.description}</small>
+                  <PrivateValue as="strong">{theme.label}</PrivateValue>
+                  <PrivateValue as="small">{theme.description}</PrivateValue>
                 </span>
                 <span className="appearance-theme-selection">
                   <Icon name={selected ? 'check_circle' : 'circle'} />
@@ -462,7 +472,8 @@ function AppearancePanel({ feedback }) {
                   ['dark', 'Dark'],
                   ['light', 'Light']
                 ].map(([id, label]) => (
-                  <button
+                  <PrivateValue
+                    as="button"
                     aria-pressed={preferences.customPalette.scheme === id}
                     className={preferences.customPalette.scheme === id ? 'active' : ''}
                     key={id}
@@ -470,14 +481,14 @@ function AppearancePanel({ feedback }) {
                     type="button"
                   >
                     {label}
-                  </button>
+                  </PrivateValue>
                 ))}
               </div>
             </div>
             <div className="custom-color-grid">
               {CUSTOM_COLOR_FIELDS.map((field) => (
                 <label className="custom-color-field" key={field.id}>
-                  <span>{field.label}</span>
+                  <PrivateValue as="span">{field.label}</PrivateValue>
                   <span className="custom-color-control">
                     <input
                       aria-label={field.label + ' color'}
@@ -485,7 +496,9 @@ function AppearancePanel({ feedback }) {
                       type="color"
                       value={preferences.customPalette[field.id]}
                     />
-                    <code>{preferences.customPalette[field.id].toUpperCase()}</code>
+                    <PrivateValue as="code">
+                      {preferences.customPalette[field.id].toUpperCase()}
+                    </PrivateValue>
                   </span>
                 </label>
               ))}
@@ -503,7 +516,8 @@ function AppearancePanel({ feedback }) {
             </div>
             <div className="segmented-control" role="group" aria-label="Layout density">
               {densities.map((density) => (
-                <button
+                <PrivateValue
+                  as="button"
                   aria-pressed={preferences.density === density.id}
                   className={preferences.density === density.id ? 'active' : ''}
                   key={density.id}
@@ -511,7 +525,7 @@ function AppearancePanel({ feedback }) {
                   type="button"
                 >
                   {density.label}
-                </button>
+                </PrivateValue>
               ))}
             </div>
           </div>
@@ -525,7 +539,8 @@ function AppearancePanel({ feedback }) {
                 ['expanded', 'Expanded'],
                 ['compact', 'Compact']
               ].map(([id, label]) => (
-                <button
+                <PrivateValue
+                  as="button"
                   aria-pressed={preferences.navigation === id}
                   className={preferences.navigation === id ? 'active' : ''}
                   key={id}
@@ -533,7 +548,7 @@ function AppearancePanel({ feedback }) {
                   type="button"
                 >
                   {label}
-                </button>
+                </PrivateValue>
               ))}
             </div>
           </div>
@@ -655,8 +670,8 @@ function AssistantPanel({ advisor, feedback, onAction }) {
               <div className="advisor-copilot-status">
                 <Icon name={advisorUsesLocalModel ? 'memory' : 'link_off'} />
                 <div>
-                  <strong>{advisorModeTitle}</strong>
-                  <small>{advisorModeDetail}</small>
+                  <PrivateValue as="strong">{advisorModeTitle}</PrivateValue>
+                  <PrivateValue as="small">{advisorModeDetail}</PrivateValue>
                 </div>
               </div>
             ) : null}
@@ -828,7 +843,8 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 </button>
               ) : null}
               {advisorCanToggleLocalModel ? (
-                <button
+                <PrivateValue
+                  as="button"
                   aria-busy={advisorToggle.pending === true}
                   className="btn"
                   disabled={advisorToggle.disabled}
@@ -841,10 +857,11 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 >
                   <Icon name={advisorToggle.icon || 'play_arrow'} />
                   {advisorToggle.label || 'Start Model'}
-                </button>
+                </PrivateValue>
               ) : null}
               {advisorUsesConfiguredModel ? (
-                <button
+                <PrivateValue
+                  as="button"
                   aria-busy={advisorTestPending}
                   className="btn"
                   disabled={advisorTestPending}
@@ -853,7 +870,7 @@ function AssistantPanel({ advisor, feedback, onAction }) {
                 >
                   <Icon name="network_check" />
                   {advisorTestPending ? 'Testing Model…' : 'Test Model'}
-                </button>
+                </PrivateValue>
               ) : null}
             </div>
           ) : null}
@@ -863,7 +880,7 @@ function AssistantPanel({ advisor, feedback, onAction }) {
             {statusLines.map((item, index) => (
               <div className="settings-status-item" key={item.icon + '-' + index}>
                 <Icon name={item.icon} />
-                <span>{item.text}</span>
+                <PrivateValue as="span">{item.text}</PrivateValue>
               </div>
             ))}
           </div>
@@ -883,7 +900,7 @@ function FileAction({ action, children, disabled, icon, primary = false }) {
       {...actions.action(action)}
     >
       <Icon name={icon} />
-      <span>{children}</span>
+      <PrivateValue as="span">{children}</PrivateValue>
     </button>
   );
 }
@@ -913,8 +930,10 @@ function FilesPanel({ feedback, files, summaryItems }) {
             <Icon name={files.canSaveFileNow ? 'cloud_done' : 'cloud_off'} />
           </span>
           <div>
-            <strong>{fileSummary.title || 'Local cache only'}</strong>
-            <small>{fileSummary.detail || 'No workbook file selected'}</small>
+            <PrivateValue as="strong">{fileSummary.title || 'Local cache only'}</PrivateValue>
+            <PrivateValue as="small">
+              {fileSummary.detail || 'No workbook file selected'}
+            </PrivateValue>
           </div>
         </div>
         <div className="settings-file-action-grid">

@@ -5,6 +5,7 @@ import {
   reconcileRecurringOccurrences,
   submitManualTransactionCommand
 } from '@cavalry/finance-core';
+import { getRecurringItemForMonth } from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
 
 import { asText, hasOwn } from './cavalry-assistant-tool-definitions.js';
 import {
@@ -77,12 +78,12 @@ function reconciliationCommandServices(services = {}) {
   };
 }
 
-function existingBillPaymentData(recurringItem, occurrenceDate, reconciliation) {
+function existingBillPaymentData(recurringItem, occurrenceDate, reconciliation, workbook) {
   const transaction =
     reconciliation.transaction || reconciliation.settlement?.allocations?.[0]?.transaction || null;
   return {
     recurringItem: summarizeRecurring(recurringItem),
-    transaction: summarizeTransaction(transaction),
+    transaction: summarizeTransaction(transaction, workbook),
     occurrenceDate,
     alreadyRecorded: true,
     reconciliation: {
@@ -110,14 +111,39 @@ function applyRemainingPaymentDefault(prepared, occurrence, reconciliation, args
 export async function payBill(environment) {
   const workbook = environment.workbook;
   const args = environment.arguments;
+  const request = asText(environment.context?.question);
+  if (request) {
+    const reportedPayment =
+      /\b(?:i|we)\s+(?:(?:have|already|just)\s+)*(?:paid|prepaid)\b|\b(?:was|were|has been|have been)\s+(?:already\s+)?(?:paid|charged)\b|\bcharged\s+(?:me|us|my\s+card)\b/i.test(
+        request
+      );
+    const explicitRecord =
+      /\b(?:record|log|enter|add|mark)\b[\s\S]{0,80}\b(?:payment|prepayment|paid|actual charge)\b/i.test(
+        request
+      );
+    const negated =
+      /\b(?:do not|don't|don’t|never)\s+(?:record|log|enter|add|pay)\b|\b(?:haven't|haven’t|have not|had not|didn't|did not|not yet|not)\s+(?:been\s+)?(?:paid|prepaid|charged)\b/i.test(
+        request
+      );
+    const plannedOnly =
+      /\b(?:expected|planned|scheduled|upcoming)\b/i.test(request) && !reportedPayment;
+    if (negated || (!reportedPayment && (!explicitRecord || plannedOnly))) {
+      return failure(
+        environment,
+        'validation_failed',
+        'recurring.payment-intent-required',
+        'Changing an expected charge does not record a payment. Has this already been paid, or should I only update the tracker?'
+      );
+    }
+  }
   const resolved = resolveArgument(workbook, args, {
     collection: 'recurringItems',
     keys: ['recurringItemId', 'bill'],
     label: 'Bill or subscription'
   });
   if (!resolved.ok) return resolutionFailure(environment, resolved);
-  const recurringItem = resolved.value;
-  if (recurringItem.isActive === false) {
+  const sourceItem = resolved.value;
+  if (sourceItem.isActive === false) {
     return failure(
       environment,
       'validation_failed',
@@ -128,7 +154,7 @@ export async function payBill(environment) {
   }
 
   const postingDate = asText(args.date) || currentDate(workbook, environment.services);
-  const occurrenceDate = recurringOccurrenceDateNearest(recurringItem, postingDate);
+  const occurrenceDate = recurringOccurrenceDateNearest(sourceItem, postingDate);
   if (!occurrenceDate) {
     return failure(
       environment,
@@ -138,6 +164,8 @@ export async function payBill(environment) {
       'date'
     );
   }
+
+  const recurringItem = getRecurringItemForMonth(sourceItem, occurrenceDate.slice(0, 7));
 
   const transactionArgs = {
     ...args,
@@ -219,7 +247,7 @@ export async function payBill(environment) {
     collection(workbook, 'transactions')
   ).results[occurrenceIndex];
   if (reconciliation.decision === 'matched' && reconciliation.transaction) {
-    const data = existingBillPaymentData(recurringItem, occurrenceDate, reconciliation);
+    const data = existingBillPaymentData(recurringItem, occurrenceDate, reconciliation, workbook);
     if (reconciliation.matchType === 'stored') {
       return envelope(environment.toolName, environment.toolCallId, { data });
     }
@@ -286,7 +314,7 @@ export async function payBill(environment) {
       data: {
         recurringItem: summarizeRecurring(recurringItem),
         occurrenceDate,
-        candidateTransaction: summarizeTransaction(candidate.transaction),
+        candidateTransaction: summarizeTransaction(candidate.transaction, workbook),
         reconciliation: {
           decision: reconciliation.decision,
           confidence: Number(candidate.confidence) || 0,
@@ -298,16 +326,16 @@ export async function payBill(environment) {
         required: true,
         field: 'allowDuplicate',
         action: 'post a new payment despite the possible recurring match',
-        message: `${message} If it is not the payment, retry only after the user confirms allowDuplicate.`
+        message: `${message} Record another payment anyway?`
       }
     });
   }
 
   applyRemainingPaymentDefault(prepared, occurrence, reconciliation, args);
   const result = submitManualTransactionCommand(workbook, prepared.payload, environment.services);
-  return commitCommand(environment, result, 'assistant_bill_paid', (_next, command) => ({
+  return commitCommand(environment, result, 'assistant_bill_paid', (next, command) => ({
     recurringItem: summarizeRecurring(recurringItem),
-    transaction: summarizeTransaction(command.transaction),
+    transaction: summarizeTransaction(command.transaction, next),
     occurrenceDate,
     events: safeEventList(command.events)
   }));

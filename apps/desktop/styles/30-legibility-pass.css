@@ -435,24 +435,25 @@
 
 .monthly-plan-all-sections {
   display: grid;
-  gap: 4px;
+  gap: 24px;
 }
 
 /* Single-section tabs hide the heading because the tab already names the
    section. Stacked together they need their labels back. */
 .monthly-plan-all-sections .monthly-plan-section-heading {
   display: block;
-  padding: 18px 2px 7px;
-  border-bottom: 2px solid var(--line-strong);
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .monthly-plan-all-sections .budget-categories-section:first-child .monthly-plan-section-heading {
-  padding-top: 4px;
+  padding-top: 0;
 }
 
 .monthly-plan-all-sections .monthly-plan-section-heading > div {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 12px;
   width: 100%;
 }
@@ -479,6 +480,18 @@
   color: var(--text-dim);
   font-size: 11px;
   text-align: right;
+}
+
+@container ledger-workspace (max-width: 560px) {
+  .monthly-plan-all-sections .monthly-plan-section-heading > div {
+    gap: 8px;
+  }
+
+  .monthly-plan-all-sections .monthly-plan-section-heading p {
+    flex-basis: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
 }
 
 /* ------------------------------------------------------- Page header spacing

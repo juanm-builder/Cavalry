@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -34,10 +35,10 @@ function Icon({ name, className = '' }) {
 
 function StatusPill({ children, icon, tone = 'neutral' }) {
   return (
-    <span className={`settings-status-pill ${tone}`}>
+    <PrivateValue as="span" className={`settings-status-pill ${tone}`}>
       {icon ? <Icon name={icon} /> : null}
       {children}
-    </span>
+    </PrivateValue>
   );
 }
 
@@ -48,13 +49,13 @@ function SettingsFeedback({ feedback = {} }) {
       {feedback.error ? (
         <div className="settings-feedback-message bad" role="alert">
           <Icon name="error" />
-          <span>{feedback.error}</span>
+          <PrivateValue as="span">{feedback.error}</PrivateValue>
         </div>
       ) : null}
       {feedback.notice ? (
         <div className="settings-feedback-message good" role="status">
           <Icon name="check_circle" />
-          <span>{feedback.notice}</span>
+          <PrivateValue as="span">{feedback.notice}</PrivateValue>
         </div>
       ) : null}
     </div>
@@ -63,7 +64,8 @@ function SettingsFeedback({ feedback = {} }) {
 
 function SettingsCard({ children, className = '', headingId, icon, title, trailing }) {
   return (
-    <section
+    <PrivateValue
+      as="section"
       aria-labelledby={headingId}
       className={['settings-card', className].filter(Boolean).join(' ')}
     >
@@ -74,12 +76,18 @@ function SettingsCard({ children, className = '', headingId, icon, title, traili
               <Icon name={icon} />
             </span>
           ) : null}
-          <h3 id={headingId}>{title}</h3>
+          <PrivateValue as="h3" id={headingId}>
+            {title}
+          </PrivateValue>
         </div>
-        {trailing ? <div className="settings-card-trailing">{trailing}</div> : null}
+        {trailing ? (
+          <PrivateValue as="div" className="settings-card-trailing">
+            {trailing}
+          </PrivateValue>
+        ) : null}
       </header>
       {children}
-    </section>
+    </PrivateValue>
   );
 }
 
@@ -160,10 +168,10 @@ function LocalProfile() {
         </button>
       </form>
       {profileNotice ? (
-        <div className="settings-inline-message" role="status">
+        <PrivateValue as="div" className="settings-inline-message" role="status">
           <Icon name="check_circle" />
           {profileNotice}
-        </div>
+        </PrivateValue>
       ) : null}
     </SettingsCard>
   );
@@ -234,7 +242,7 @@ function ICloudConnection({ cloud }) {
         <div className="settings-cloud-account-reference">
           <span>Account reference</span>
           <div className="settings-cloud-account-reference-value">
-            <strong>{accountReference}</strong>
+            <PrivateValue as="strong">{accountReference}</PrivateValue>
             <button
               aria-label="Copy account reference"
               className="btn btn-icon"
@@ -245,9 +253,9 @@ function ICloudConnection({ cloud }) {
             </button>
           </div>
           {copyNotice ? (
-            <span className="settings-cloud-account-notice" role="status">
+            <PrivateValue as="span" className="settings-cloud-account-notice" role="status">
               {copyNotice}
-            </span>
+            </PrivateValue>
           ) : null}
         </div>
       ) : null}
@@ -393,20 +401,21 @@ function CloudSyncError({ cloud, workbook, scope = 'global' }) {
         <Icon name="error" />
       </span>
       <div className="settings-cloud-error-copy" role="alert">
-        <strong>{error}</strong>
-        <p>
+        <PrivateValue as="strong">{error}</PrivateValue>
+        <PrivateValue as="p">
           {appliesToCurrentWorkbook
             ? `${workbookName} is still saved on this Mac.`
             : 'Your local files are unchanged.'}
-        </p>
+        </PrivateValue>
         {detailsOpen ? (
-          <div className="settings-cloud-error-details" role="note">
+          <PrivateValue as="div" className="settings-cloud-error-details" role="note">
             {details || `Technical code: ${errorCode || 'cloud_request_failed'}.`}
-          </div>
+          </PrivateValue>
         ) : null}
       </div>
       <div className="settings-cloud-error-actions">
-        <button
+        <PrivateValue
+          as="button"
           className="btn btn-primary"
           disabled={pending}
           type="button"
@@ -414,11 +423,16 @@ function CloudSyncError({ cloud, workbook, scope = 'global' }) {
         >
           <Icon name="refresh" />
           {retryLabel}
-        </button>
-        <button className="btn" onClick={() => setDetailsOpen((open) => !open)} type="button">
+        </PrivateValue>
+        <PrivateValue
+          as="button"
+          className="btn"
+          onClick={() => setDetailsOpen((open) => !open)}
+          type="button"
+        >
           <Icon name="info" />
           {detailsOpen ? 'Hide Details' : 'View Details'}
-        </button>
+        </PrivateValue>
       </div>
     </div>
   );
@@ -530,10 +544,10 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
       </span>
       <div className="settings-cloud-current-copy">
         <span className="settings-cloud-current-title">
-          <strong>{workbookName}</strong>
+          <PrivateValue as="strong">{workbookName}</PrivateValue>
           <StatusPill tone={status.tone}>{status.label}</StatusPill>
         </span>
-        <small>{detail}</small>
+        <PrivateValue as="small">{detail}</PrivateValue>
       </div>
       <div aria-label="Workbook save status" className="settings-workbook-save-status">
         <div className={locallySaved ? 'is-saved' : localStatus === 'error' ? 'has-error' : ''}>
@@ -597,7 +611,8 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           Save Local Copy
         </button>
         {legacyConflict ? (
-          <button
+          <PrivateValue
+            as="button"
             aria-expanded={detailsOpen}
             className="btn btn-primary settings-cloud-current-action"
             onClick={() => setDetailsOpen((open) => !open)}
@@ -605,9 +620,10 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           >
             <Icon name="info" />
             {detailsOpen ? 'Hide Details' : 'View Details'}
-          </button>
+          </PrivateValue>
         ) : (
-          <button
+          <PrivateValue
+            as="button"
             className="btn btn-primary settings-cloud-current-action"
             disabled={pending}
             type="button"
@@ -615,10 +631,11 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           >
             <Icon name={linked ? 'sync' : 'cloud_upload'} />
             {pendingOperation === 'upload' ? 'Syncing…' : linked ? 'Sync Now' : 'Add to iCloud'}
-          </button>
+          </PrivateValue>
         )}
         {linked && !legacyConflict ? (
-          <button
+          <PrivateValue
+            as="button"
             aria-label={`Remove ${workbookName} from iCloud`}
             className="btn settings-cloud-remove"
             disabled={pending}
@@ -627,14 +644,14 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           >
             <Icon name="delete_outline" />
             Remove
-          </button>
+          </PrivateValue>
         ) : null}
       </div>
 
       <div className="settings-cloud-autosave">
         <div>
           <strong>Autosave with iCloud</strong>
-          <small>
+          <PrivateValue as="small">
             {remoteDeleted
               ? 'Add to iCloud to resume'
               : syncBlocked
@@ -644,7 +661,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
                     ? 'Changes sync automatically'
                     : 'Resume this account’s connection to sync'
                   : 'Manual sync only'}
-          </small>
+          </PrivateValue>
         </div>
         <label className="settings-cloud-switch">
           <span className="sr-only">Autosave with iCloud</span>
@@ -663,10 +680,10 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
         <div className="settings-cloud-legacy-recovery" role="note">
           <div>
             <strong>Legacy sync recovery</strong>
-            <small>
+            <PrivateValue as="small">
               {asString(conflictNotice.summary) ||
                 'Choose the copy to keep. Your Mac file stays safe.'}
-            </small>
+            </PrivateValue>
           </div>
           <div>
             {cloudCopyAvailable ? (
@@ -680,7 +697,8 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
                 Use iCloud Copy
               </button>
             ) : null}
-            <button
+            <PrivateValue
+              as="button"
               className="btn btn-primary"
               disabled={pending}
               onClick={() => setConfirmation('mac')}
@@ -688,7 +706,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
             >
               <Icon name="cloud_upload" />
               {cloudCopyAvailable ? 'Use Mac Copy' : 'Add Mac Copy'}
-            </button>
+            </PrivateValue>
           </div>
         </div>
       ) : null}
@@ -699,7 +717,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
           role="group"
           aria-label="Confirm iCloud action"
         >
-          <span>
+          <PrivateValue as="span">
             {confirmation === 'delete'
               ? 'Remove the iCloud copy? The Mac file stays.'
               : confirmation === 'icloud'
@@ -707,8 +725,9 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
                 : cloudCopyAvailable
                   ? 'Replace the iCloud copy with this Mac copy?'
                   : 'Add this Mac copy to iCloud?'}
-          </span>
-          <button
+          </PrivateValue>
+          <PrivateValue
+            as="button"
             className={`btn ${confirmation === 'delete' ? 'btn-danger' : 'btn-primary'}`}
             disabled={pending}
             onClick={() => void runConfirmedAction()}
@@ -721,7 +740,7 @@ function CurrentWorkbookCard({ cloud, workbook, localSave = {} }) {
                 : cloudCopyAvailable
                   ? 'Confirm Use Mac Copy'
                   : 'Confirm Add to iCloud'}
-          </button>
+          </PrivateValue>
           <button
             className="btn"
             disabled={pending}

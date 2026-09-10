@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useMemo, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -39,16 +40,16 @@ function DraftCommandBar({ model }) {
     <section className="ai-drafts-command-bar">
       <div className="ai-drafts-command-copy">
         <span>Review queue</span>
-        <h3>{model.title}</h3>
-        <p>{model.copy}</p>
+        <PrivateValue as="h3">{model.title}</PrivateValue>
+        <PrivateValue as="p">{model.copy}</PrivateValue>
       </div>
       <div className="ai-draft-status-strip">
         {asArray(model.metrics).map((metric) => (
           <div key={metric.id} className={`ai-draft-metric ${metric.tone || ''}`}>
             <Icon name={metric.icon} />
             <span>
-              <strong>{metric.count}</strong>
-              <small>{metric.label}</small>
+              <PrivateValue as="strong">{metric.count}</PrivateValue>
+              <PrivateValue as="small">{metric.label}</PrivateValue>
             </span>
           </div>
         ))}
@@ -71,12 +72,15 @@ function CheckpointPanel({
     <section className="ai-checkpoint-review-panel">
       <div className="ai-checkpoint-review-head">
         <div>
-          <span className="badge">{model.badgeLabel}</span>
+          <PrivateValue as="span" className="badge">
+            {model.badgeLabel}
+          </PrivateValue>
           <h3>Review checkpoint</h3>
-          <p>{model.headerCopy}</p>
+          <PrivateValue as="p">{model.headerCopy}</PrivateValue>
         </div>
         <div className="page-actions">
-          <button
+          <PrivateValue
+            as="button"
             className="btn"
             disabled={model.reviewStatus === 'approved'}
             onClick={onApprove}
@@ -84,7 +88,7 @@ function CheckpointPanel({
           >
             <Icon name="verified" />
             {model.reviewStatus === 'approved' ? 'Approved' : 'Keep Changes'}
-          </button>
+          </PrivateValue>
           <button
             className="btn btn-primary"
             disabled={model.rollbackButton?.disabled}
@@ -109,14 +113,16 @@ function CheckpointPanel({
             onClick={() => onSelectCheckpoint(item.checkpointId)}
             type="button"
           >
-            <strong>{item.checkpointId}</strong>
-            <small>
+            <PrivateValue as="strong">{item.checkpointId}</PrivateValue>
+            <PrivateValue as="small">
               {formatUiDateTime(item.createdAt) || 'Unknown date'} · {item.appliedCount} applied
-            </small>
+            </PrivateValue>
           </button>
         ))}
       </div>
-      <p className="panel-note">{model.sourcePrompt}</p>
+      <PrivateValue as="p" className="panel-note">
+        {model.sourcePrompt}
+      </PrivateValue>
       <div className="ai-checkpoint-change-list">
         {asArray(model.visibleChangeRows).length ? (
           model.visibleChangeRows.map((row) => (
@@ -129,14 +135,18 @@ function CheckpointPanel({
               />
               <Icon name={row.icon} />
               <span>
-                <strong>{row.title}</strong>
-                <small>{row.summary}</small>
+                <PrivateValue as="strong">{row.title}</PrivateValue>
+                <PrivateValue as="small">{row.summary}</PrivateValue>
               </span>
-              <span className={`status-pill ${row.statusTone}`}>{row.statusLabel}</span>
+              <PrivateValue as="span" className={`status-pill ${row.statusTone}`}>
+                {row.statusLabel}
+              </PrivateValue>
             </label>
           ))
         ) : (
-          <div className="empty-state compact-empty">{model.emptyChangeCopy}</div>
+          <PrivateValue as="div" className="empty-state compact-empty">
+            {model.emptyChangeCopy}
+          </PrivateValue>
         )}
       </div>
     </section>
@@ -166,15 +176,17 @@ function DraftQueue({ items, selectedKey, onSelect, actions }) {
               <Icon name={item.kind === 'external-group' ? 'inventory_2' : 'auto_awesome'} />
             </span>
             <span className="ai-draft-queue-copy">
-              <small>
+              <PrivateValue as="small">
                 {item.kind === 'external-group' ? 'External draft group' : 'Automated draft'}
-              </small>
-              <strong>{item.title}</strong>
-              <em>{item.summary}</em>
+              </PrivateValue>
+              <PrivateValue as="strong">{item.title}</PrivateValue>
+              <PrivateValue as="em">{item.summary}</PrivateValue>
             </span>
             <span className="ai-draft-queue-side">
-              <strong>{item.amountDisplay}</strong>
-              <small className={item.statusTone}>{item.statusLabel}</small>
+              <PrivateValue as="strong">{item.amountDisplay}</PrivateValue>
+              <PrivateValue as="small" className={item.statusTone}>
+                {item.statusLabel}
+              </PrivateValue>
             </span>
           </button>
         ))}
@@ -188,12 +200,12 @@ function SourceMetadata({ source }) {
   return (
     <section className="ai-draft-why-panel">
       <small>Why this draft exists</small>
-      <p>{source.originLabel}</p>
+      <PrivateValue as="p">{source.originLabel}</PrivateValue>
       <div className="ai-draft-source-rows">
         {asArray(source.rows).map((row) => (
-          <span key={row.id} className="tag">
+          <PrivateValue as="span" key={row.id} className="tag">
             {row.label || formatUiDateTime(row.createdAt)}
-          </span>
+          </PrivateValue>
         ))}
       </div>
     </section>
@@ -269,7 +281,8 @@ function EditableDraftField({
   }
 
   return (
-    <div
+    <PrivateValue
+      as="div"
       aria-label={interactive ? `${row.label}: ${row.value}. Double-click to edit.` : undefined}
       className={`ai-draft-readout${interactive ? ' ai-draft-editable-field' : ''}${editing ? ' is-editing' : ''}`}
       onDoubleClick={() => interactive && onStartEdit(draftId, row)}
@@ -279,7 +292,7 @@ function EditableDraftField({
       title={interactive ? 'Double-click to edit this field' : undefined}
     >
       <span className="ai-draft-field-label">
-        <small>{row.label}</small>
+        <PrivateValue as="small">{row.label}</PrivateValue>
         {interactive && !editing ? <Icon name="edit" /> : null}
       </span>
       {editing ? (
@@ -323,20 +336,36 @@ function EditableDraftField({
             />
           )}
           <span className="ai-draft-inline-actions">
-            <button aria-label={`Cancel editing ${row.label}`} onClick={onCancelEdit} type="button">
+            <PrivateValue
+              as="button"
+              aria-label={`Cancel editing ${row.label}`}
+              onClick={onCancelEdit}
+              type="button"
+            >
               <Icon name="close" />
-            </button>
-            <button aria-label={`Save ${row.label}`} onClick={onSaveEdit} type="button">
+            </PrivateValue>
+            <PrivateValue
+              as="button"
+              aria-label={`Save ${row.label}`}
+              onClick={onSaveEdit}
+              type="button"
+            >
               <Icon name="check" />
-            </button>
+            </PrivateValue>
           </span>
         </div>
       ) : (
-        <strong className={row.money ? 'amount' : ''}>{row.value}</strong>
+        <PrivateValue as="strong" amount={row.money} className={row.money ? 'amount' : ''}>
+          {row.value}
+        </PrivateValue>
       )}
-      <em>{row.description}</em>
-      {editing && edit.error ? <span className="ai-draft-inline-error">{edit.error}</span> : null}
-    </div>
+      <PrivateValue as="em">{row.description}</PrivateValue>
+      {editing && edit.error ? (
+        <PrivateValue as="span" className="ai-draft-inline-error">
+          {edit.error}
+        </PrivateValue>
+      ) : null}
+    </PrivateValue>
   );
 }
 
@@ -368,15 +397,19 @@ function DraftDetail({
     <article className="ai-draft-detail-panel">
       <div className="ai-draft-detail-head">
         <div className="ai-draft-detail-title">
-          <small>{item.kind === 'external-group' ? 'Draft group' : 'Review proposal'}</small>
-          <h2>{item.title}</h2>
+          <PrivateValue as="small">
+            {item.kind === 'external-group' ? 'Draft group' : 'Review proposal'}
+          </PrivateValue>
+          <PrivateValue as="h2">{item.title}</PrivateValue>
           <div className="ai-draft-detail-meta">
-            <span className={`status-pill ${item.statusTone}`}>{item.statusLabel}</span>
-            <span>{formatUiDateTime(item.createdAt) || 'Not dated'}</span>
+            <PrivateValue as="span" className={`status-pill ${item.statusTone}`}>
+              {item.statusLabel}
+            </PrivateValue>
+            <PrivateValue as="span">{formatUiDateTime(item.createdAt) || 'Not dated'}</PrivateValue>
           </div>
         </div>
         <div className="ai-draft-detail-amount">
-          <strong>{item.amountDisplay}</strong>
+          <PrivateValue as="strong">{item.amountDisplay}</PrivateValue>
           <small>Nothing changes before approval</small>
         </div>
       </div>
@@ -387,11 +420,11 @@ function DraftDetail({
               <Icon name="warning" />
               <div>
                 <strong>Resolve before applying</strong>
-                <small>
+                <PrivateValue as="small">
                   {item.blockingConflicts
                     .map((conflict) => conflict.message || conflict.code)
                     .join(' · ')}
-                </small>
+                </PrivateValue>
               </div>
             </div>
           </div>
@@ -420,14 +453,16 @@ function DraftDetail({
                   />
                 ) : null}
                 <div className="ai-draft-compact-title">
-                  <small>{draft.type}</small>
-                  <strong>{draft.title}</strong>
+                  <PrivateValue as="small">{draft.type}</PrivateValue>
+                  <PrivateValue as="strong">{draft.title}</PrivateValue>
                 </div>
-                <span className={`status-pill ${draft.ready ? 'good' : 'warn'}`}>
+                <PrivateValue as="span" className={`status-pill ${draft.ready ? 'good' : 'warn'}`}>
                   {draft.status}
-                </span>
+                </PrivateValue>
               </div>
-              <p className="ai-draft-summary">{draft.summary}</p>
+              <PrivateValue as="p" className="ai-draft-summary">
+                {draft.summary}
+              </PrivateValue>
               <div className="ai-draft-details-heading">
                 <span>
                   <strong>Proposed details</strong>
@@ -495,39 +530,45 @@ function ConfirmationModal({
   const dismiss = useModalDismiss(onCancel);
   return (
     <div className="modal-backdrop" onMouseDown={dismiss}>
-      <section
+      <PrivateValue
+        as="section"
         aria-labelledby="draft-confirm-title"
         aria-modal="true"
         className="modal-card"
         role="dialog"
       >
         <div className="page-header">
-          <h2 id="draft-confirm-title">{title}</h2>
+          <PrivateValue as="h2" id="draft-confirm-title">
+            {title}
+          </PrivateValue>
           <button aria-label="Close" className="btn btn-icon" onClick={onCancel} type="button">
             <Icon name="close" />
           </button>
         </div>
-        <p className="panel-note">{copy}</p>
+        <PrivateValue as="p" className="panel-note">
+          {copy}
+        </PrivateValue>
         {children}
         {error ? (
-          <p className="panel-note status-bad" role="alert">
+          <PrivateValue as="p" className="panel-note status-bad" role="alert">
             {error}
-          </p>
+          </PrivateValue>
         ) : null}
         <div className="modal-actions">
           <button className="btn" onClick={onCancel} type="button">
             Cancel
           </button>
-          <button
+          <PrivateValue
+            as="button"
             className="btn btn-primary"
             disabled={confirmDisabled}
             onClick={onConfirm}
             type="button"
           >
             {confirmLabel}
-          </button>
+          </PrivateValue>
         </div>
-      </section>
+      </PrivateValue>
     </div>
   );
 }
@@ -544,10 +585,12 @@ function RecentDecisions({ items }) {
           {items.map((item) => (
             <div key={item.key} className="list-row">
               <span>
-                <strong>{item.title}</strong>
-                <small>{formatUiDateTime(item.resolvedAt)}</small>
+                <PrivateValue as="strong">{item.title}</PrivateValue>
+                <PrivateValue as="small">{formatUiDateTime(item.resolvedAt)}</PrivateValue>
               </span>
-              <span className="status-pill info">{item.status}</span>
+              <PrivateValue as="span" className="status-pill info">
+                {item.status}
+              </PrivateValue>
             </div>
           ))}
         </div>
@@ -743,7 +786,9 @@ function DraftReviewController({
               >
                 <Icon name="visibility" />
                 View all drafts{' '}
-                <span className="ai-draft-hidden-count">{resolvedModel.hiddenQueueCount}</span>
+                <PrivateValue as="span" className="ai-draft-hidden-count">
+                  {resolvedModel.hiddenQueueCount}
+                </PrivateValue>
               </button>
             ) : null}
           </>
@@ -822,12 +867,12 @@ function DraftReviewController({
           title="Rollback Preview"
         >
           <div className="ai-checkpoint-rollback-preview">
-            <span className="status-pill info">
+            <PrivateValue as="span" className="status-pill info">
               {asArray(confirmation.preview?.rolled_back_changes).length} safe
-            </span>
-            <span className="status-pill warn">
+            </PrivateValue>
+            <PrivateValue as="span" className="status-pill warn">
               {asArray(confirmation.preview?.conflicted_changes).length} conflicts
-            </span>
+            </PrivateValue>
           </div>
         </ConfirmationModal>
       ) : null}

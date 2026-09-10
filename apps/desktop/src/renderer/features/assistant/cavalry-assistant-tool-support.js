@@ -7,9 +7,11 @@ import {
   getAccountBalances,
   getAssetLiabilityTotalsAsOf,
   getAccountUsage,
+  getRecurringOccurrenceDatesForMonth,
   replaceLedgerTransactionCommand,
   submitManualTransactionCommand
 } from '@cavalry/finance-core';
+import { getRecurringItemForMonth } from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
 
 import { ACCOUNT_ACTIONS, executeAccountCommand } from '../accounts/account-controller.js';
 import { buildTransactionComposerDraft } from '../transactions/transaction-model.js';
@@ -45,17 +47,25 @@ import {
   summarizeTransaction,
   transactionRow
 } from './cavalry-assistant-tool-presenters.js';
+import { reviewedDestructiveTarget } from './cavalry-assistant-reviewed-target.js';
 import { createRecurringAnalysisTools } from './cavalry-assistant-recurring-analysis.js';
 import {
-  entitySuggestionLabel,
-  fuzzyEntitySuggestions
-} from './cavalry-assistant-entity-matching.js';
+  firstArgument,
+  hasAnyArgument,
+  resolveArgument
+} from './cavalry-assistant-argument-resolution.js';
 import {
   cavalryAssistantAccountResolutionError,
   resolveCavalryAssistantTransactionAccount
 } from './cavalry-assistant-entity-resolution.js';
 
 export { fuzzyEntitySuggestions } from './cavalry-assistant-entity-matching.js';
+export {
+  firstArgument,
+  hasAnyArgument,
+  resolveArgument,
+  resolveEntity
+} from './cavalry-assistant-argument-resolution.js';
 
 export {
   collection,
@@ -79,84 +89,6 @@ export {
   summarizeTransaction,
   transactionRow
 } from './cavalry-assistant-tool-presenters.js';
-
-export function resolveEntity(items, reference, options = {}) {
-  const ref = asText(reference);
-  if (!ref) {
-    return options.optional
-      ? { ok: true, value: null, id: '', provided: false }
-      : {
-          ok: false,
-          status: 'validation_failed',
-          error: errorItem(
-            'reference_required',
-            `${options.label || 'Entity'} is required.`,
-            options.field
-          )
-        };
-  }
-  const key = textKey(ref);
-  const names = options.names || ['name'];
-  const matches = asArray(items).filter((item) => {
-    if (textKey(item && item.id) === key) return true;
-    return names.some((name) => textKey(item && item[name]) === key);
-  });
-  if (!matches.length) {
-    const suggestions = fuzzyEntitySuggestions(items, ref, names);
-    return {
-      ok: false,
-      status: 'not_found',
-      error: errorItem(
-        'reference_not_found',
-        `${options.label || 'Entity'} “${ref}” was not found.${
-          suggestions ? ` Closest matches: ${suggestions}. Retry with the intended ID.` : ''
-        }`,
-        options.field
-      )
-    };
-  }
-  if (matches.length > 1) {
-    const matchList = matches.slice(0, 5).map(entitySuggestionLabel).join(', ');
-    return {
-      ok: false,
-      status: 'ambiguous_reference',
-      error: errorItem(
-        'ambiguous_reference',
-        `${options.label || 'Entity'} “${ref}” matches more than one record: ${matchList}. Use its ID.`,
-        options.field
-      )
-    };
-  }
-  return { ok: true, value: matches[0], id: asText(matches[0].id), provided: true };
-}
-
-export function firstArgument(args, keys) {
-  for (const key of keys) {
-    if (hasOwn(args, key)) return args[key];
-  }
-  return undefined;
-}
-
-export function hasAnyArgument(args, keys) {
-  return keys.some((key) => hasOwn(args, key));
-}
-
-export function resolveArgument(workbook, args, options) {
-  const provided = hasAnyArgument(args, options.keys);
-  if (!provided && options.optional) {
-    return { ok: true, value: null, id: '', provided: false };
-  }
-  const reference = firstArgument(args, options.keys);
-  if (provided && !asText(reference) && options.allowEmpty) {
-    return { ok: true, value: null, id: '', provided: true };
-  }
-  return resolveEntity(collection(workbook, options.collection), reference, {
-    optional: options.optional,
-    label: options.label,
-    field: options.keys[0],
-    names: options.names
-  });
-}
 
 export function resolutionFailure(environment, resolution) {
   return envelope(environment.toolName, environment.toolCallId, {
@@ -298,6 +230,7 @@ export function billFormDefaults(item, workbook) {
     currency: asText(item.currency || workbook.currency),
     frequency: asText(item.frequency) || 'Monthly',
     dueDate: asText(item.anchorDate || item.dueDate),
+    endDate: asText(item.endDate),
     autoRenew: item.autoRenew === true,
     isActive: item.isActive !== false,
     note: asText(item.note)
@@ -342,9 +275,30 @@ export function recurringItemsWithLabels(workbook, includeArchived, asOfDate = '
   const rowById = new Map(
     buildRecurringItemRows(workbook, { asOfDate }).map((row) => [asText(row.id), clonePlain(row)])
   );
+  const monthKey = asOfDate.slice(0, 7);
   return collection(workbook, 'recurringItems')
     .filter((item) => includeArchived || item.isActive !== false)
-    .map((item) => ({ ...rowById.get(asText(item.id)), ...summarizeRecurring(item) }));
+    .map((source) => {
+      const item = getRecurringItemForMonth(source, monthKey);
+      const row = { ...rowById.get(asText(item.id)), ...summarizeRecurring(item, workbook) };
+      const dueDates = getRecurringOccurrenceDatesForMonth(source, monthKey);
+      // Reads project the actual month so small models never need to apply raw schedule patches.
+      delete row.monthOverrides;
+      delete row.scheduleChanges;
+      return {
+        ...row,
+        monthKey,
+        scheduleStatus: dueDates.length ? 'scheduled' : 'no_charge_scheduled',
+        dueDates,
+        occurrenceCount: dueDates.length,
+        amount: dueDates.length ? row.amount : 0,
+        nativeAmount: dueDates.length ? row.nativeAmount : 0,
+        baseAmount: dueDates.length ? row.baseAmount : 0,
+        scheduledTotal: Math.round(row.amount * dueDates.length * 100) / 100,
+        amountMeaning:
+          'Amount per scheduled occurrence in this month; zero when none is scheduled. This is an expected charge, not a recorded payment.'
+      };
+    });
 }
 
 export async function createTransaction(environment) {
@@ -605,9 +559,14 @@ export async function deleteTransaction(environment) {
     names: ['description']
   });
   if (!resolved.ok) return resolutionFailure(environment, resolved);
-  if (environment.arguments.confirmed !== true) {
-    return confirmationRequired(environment, `permanently delete “${resolved.value.description}”`);
-  }
+  const pending = reviewedDestructiveTarget(
+    environment,
+    `permanently delete “${resolved.value.description}”`,
+    { transactionId: resolved.id },
+    { transaction: resolved.value },
+    { transaction: summarizeTransaction(resolved.value, environment.workbook) }
+  );
+  if (pending) return pending;
   const result = deleteLedgerTransactionCommand(environment.workbook, resolved.id);
   return commitCommand(environment, result, 'assistant_transaction_deleted', (_next, command) => ({
     deletedTransaction: summarizeTransaction(command.transaction, environment.workbook),
@@ -617,6 +576,19 @@ export async function deleteTransaction(environment) {
 
 export async function createAccountTool(environment) {
   const workbook = environment.workbook;
+  const name = asText(environment.arguments.name);
+  if (
+    name &&
+    collection(workbook, 'accounts').some((account) => textKey(account.name) === textKey(name))
+  ) {
+    return failure(
+      environment,
+      'validation_failed',
+      'account_name_exists',
+      'An account with this name already exists. Use its ID to update or restore it, or choose a distinct name for a new account.',
+      'name'
+    );
+  }
   const payload = mergeKnown(
     {
       group: 'asset',
@@ -678,21 +650,39 @@ export async function accountStateCommand(environment, actionType, reason, actio
     label: 'Account'
   });
   if (!resolved.ok) return resolutionFailure(environment, resolved);
-  if (confirmed && environment.arguments.confirmed !== true) {
-    return confirmationRequired(environment, `${actionLabel} “${resolved.value.name}”`);
+  if (confirmed) {
+    const pending = reviewedDestructiveTarget(
+      environment,
+      `${actionLabel} “${resolved.value.name}”`,
+      { accountId: resolved.id },
+      { account: resolved.value, usage: getAccountUsage(environment.workbook, resolved.id) },
+      { account: summarizeAccount(resolved.value, environment.workbook) }
+    );
+    if (pending) return pending;
   }
   const result = executeAccountCommand(
     environment.workbook,
     { type: actionType, payload: { accountId: resolved.id } },
     environment.services
   );
-  return commitCommand(environment, result, reason, (next) => ({
-    account: summarizeAccount(
-      collection(next, 'accounts').find((item) => item.id === resolved.id),
-      next
-    ),
-    events: safeEventList(result.events)
-  }));
+  const committed = await commitCommand(environment, result, reason, (next) => {
+    const saved = collection(next, 'accounts').find((item) => item.id === resolved.id);
+    return {
+      account: saved
+        ? summarizeAccount(saved, next)
+        : {
+            ...summarizeAccount(resolved.value, environment.workbook),
+            isActive: false,
+            deleted: true
+          },
+      events: safeEventList(result.events)
+    };
+  });
+  if (committed.ok && actionType === ACCOUNT_ACTIONS.DELETE) {
+    const archived = asArray(result.events).some((event) => event.type === 'account.archived');
+    return { ...committed, receipt: { actionVerb: archived ? 'Archived' : 'Deleted' } };
+  }
+  return committed;
 }
 
 export async function readWorkspaceContext(environment) {

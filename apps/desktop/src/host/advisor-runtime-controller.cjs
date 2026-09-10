@@ -924,7 +924,8 @@ function createAdvisorRuntimeController(dependencies = {}) {
       model: normalized.model,
       localModelPath: normalized.localModelPath,
       mmprojPath: normalized.mmprojPath,
-      contextWindowTokens: normalized.contextWindowTokens
+      contextWindowTokens: normalized.contextWindowTokens,
+      replyStyle: normalized.replyStyle
     };
     if (normalized.apiKey) {
       sealAdvisorApiKey(safeStorage, stored, normalized.apiKey);

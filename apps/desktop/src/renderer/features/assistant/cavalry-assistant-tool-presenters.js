@@ -5,7 +5,7 @@ import {
   roundMoney
 } from '@cavalry/finance-core';
 
-import { asArray, asObject, asText } from './cavalry-assistant-tool-definitions.js';
+import { asArray, asObject, asText, clonePlain } from './cavalry-assistant-tool-definitions.js';
 
 function collection(workbook, name) {
   return asArray(workbook && workbook[name]);
@@ -199,18 +199,25 @@ export function summarizeCategory(category, workbook) {
   };
 }
 
-export function summarizeRecurring(item) {
+export function summarizeRecurring(item, workbook) {
   if (!item) return null;
+  const account = collection(workbook, 'accounts').find((entry) => entry.id === item.accountId);
+  const category = collection(workbook, 'categories').find((entry) => entry.id === item.categoryId);
   return {
     id: asText(item.id),
     name: asText(item.name),
     kind: asText(item.kind),
     categoryId: asText(item.categoryId),
     accountId: asText(item.accountId),
+    ...(account?.name ? { accountName: asText(account.name) } : {}),
+    ...(category?.name ? { categoryName: asText(category.name) } : {}),
     amount: Number(item.amount) || 0,
     currency: asText(item.currency),
     frequency: asText(item.frequency),
     anchorDate: asText(item.anchorDate || item.dueDate),
+    endDate: asText(item.endDate),
+    ...(item.monthOverrides ? { monthOverrides: clonePlain(item.monthOverrides) } : {}),
+    ...(item.scheduleChanges ? { scheduleChanges: clonePlain(item.scheduleChanges) } : {}),
     autoRenew: item.autoRenew === true,
     isActive: item.isActive !== false,
     note: asText(item.note)

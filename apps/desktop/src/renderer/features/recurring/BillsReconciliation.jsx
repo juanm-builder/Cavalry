@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -122,9 +123,11 @@ export function ReconciliationProof({ reconciliation }) {
     >
       <Icon name={reconciliation.state === 'partial' ? 'pending_actions' : 'check_circle'} />
       <span>
-        <strong>{title}</strong>
+        <PrivateValue as="strong">{title}</PrivateValue>
         {detail || explanation ? (
-          <small>{[detail, explanation].filter(Boolean).join(' • ')}</small>
+          <PrivateValue as="small">
+            {[detail, explanation].filter(Boolean).join(' • ')}
+          </PrivateValue>
         ) : null}
       </span>
     </div>
@@ -135,18 +138,21 @@ export function ReconciliationReview({ row, reconciliation, onAction }) {
   const transactionId = asText(reconciliation.transaction && reconciliation.transaction.id);
   const payload = getReconciliationPayload(row, reconciliation);
   return (
-    <section
+    <PrivateValue
+      as="section"
       aria-label={`Review transaction match for ${row.name}`}
       className="bill-reconciliation-review"
       data-reconciliation-state="candidate"
     >
       <Icon className="bill-reconciliation-review-icon" name="rule" />
       <div className="bill-reconciliation-review-copy">
-        <strong>{getReconciliationTitle(reconciliation)}</strong>
+        <PrivateValue as="strong">{getReconciliationTitle(reconciliation)}</PrivateValue>
         {getReconciliationDetail(reconciliation) ? (
-          <span>{getReconciliationDetail(reconciliation)}</span>
+          <PrivateValue as="span">{getReconciliationDetail(reconciliation)}</PrivateValue>
         ) : null}
-        {reconciliation.explanation ? <small>{reconciliation.explanation}</small> : null}
+        {reconciliation.explanation ? (
+          <PrivateValue as="small">{reconciliation.explanation}</PrivateValue>
+        ) : null}
       </div>
       <div className="bill-reconciliation-review-actions">
         {reconciliation.canReject ? (
@@ -177,6 +183,6 @@ export function ReconciliationReview({ row, reconciliation, onAction }) {
           </button>
         ) : null}
       </div>
-    </section>
+    </PrivateValue>
   );
 }

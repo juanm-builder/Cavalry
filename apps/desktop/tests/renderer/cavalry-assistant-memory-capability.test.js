@@ -87,6 +87,35 @@ describe('Cavalry Assistant local-memory capability', () => {
     expect(namesFor('Store this for later')).toContain('remember_memory');
   });
 
+  it('recognizes natural recall and prefaced save requests without treating recall as a write', () => {
+    const namesFor = (question) =>
+      getCavalryAssistantToolDefinitions({ question }).map((definition) => definition.name);
+    for (const question of [
+      'What do you know about me?',
+      'Do you remember my name?',
+      'What have I told you about my goals?'
+    ]) {
+      expect(namesFor(question)).toContain('list_memory_items');
+      expect(namesFor(question)).not.toContain('remember_memory');
+    }
+    expect(
+      namesFor(
+        'For this test, please remember these preferences: call me Sam; give me short, plain-English answers; building a PHP 200,000 emergency fund is my priority; Company Cash belongs to the business.'
+      )
+    ).toContain('remember_memory');
+    expect(namesFor('I want you to remember that my emergency fund comes first.')).toContain(
+      'remember_memory'
+    );
+    expect(namesFor('Please do not remember my account number.')).not.toContain('remember_memory');
+    expect(namesFor('What do you know about index funds?')).not.toContain('list_memory_items');
+    expect(namesFor('Please remember that my target is six months instead of three.')).toEqual(
+      expect.arrayContaining(['list_memory_items', 'update_memory_item'])
+    );
+    expect(
+      namesFor('Please remember that my target is six months instead of three.')
+    ).not.toContain('remember_memory');
+  });
+
   it('lists safe item records without requiring a workbook', async () => {
     const port = advisor(async (command) => {
       expect(command).toBe('getMemory');
@@ -194,11 +223,51 @@ describe('Cavalry Assistant local-memory capability', () => {
     );
 
     expect(result).toMatchObject({
-      ok: false,
-      errors: [expect.objectContaining({ code: 'memory_disabled' })]
+      ok: true,
+      status: 'completed',
+      changed: false,
+      data: { memory: { memoryEnabled: false, availability: 'disabled', items: [], notes: [] } },
+      errors: []
     });
     expect(port.invoke).toHaveBeenCalledOnce();
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it('recalls relevant free-form notes as well as managed items without inventing editable IDs', async () => {
+    const port = advisor(async () => ({
+      ok: true,
+      memory: memory({
+        content: 'My emergency fund target is six months.\n\nMy favorite novel is Dune.',
+        items: [{ id: 'style', text: 'Use concise replies', scope: 'always' }]
+      })
+    }));
+    const result = await executeCavalryAssistantTool(
+      { name: 'list_memory_items', arguments: {} },
+      { advisor: port, question: 'What do you remember about my emergency fund?' }
+    );
+    expect(result.data.memory).toMatchObject({
+      items: [{ id: 'style' }],
+      notes: ['My emergency fund target is six months.']
+    });
+    expect(JSON.stringify(result)).not.toContain('Dune');
+    expect(result.data.memory).not.toHaveProperty('content');
+  });
+
+  it('does not let an oversized memory hide later complete facts', async () => {
+    const port = advisor(async () => ({
+      ok: true,
+      memory: memory({
+        items: [
+          { id: 'oversized', text: 'x'.repeat(7_000), scope: 'always' },
+          { id: 'goal', text: 'My emergency fund target is six months.' }
+        ]
+      })
+    }));
+    const result = await executeCavalryAssistantTool(
+      { name: 'list_memory_items', arguments: {} },
+      { advisor: port, question: 'What do you know about me?' }
+    );
+    expect(result.data.memory).toMatchObject({ items: [{ id: 'goal' }], limited: true });
   });
 
   it('returns only a bounded relevant memory subset for an explicit lookup', async () => {
@@ -386,6 +455,13 @@ describe('Cavalry Assistant local-memory capability', () => {
       text: 'Use very concise replies',
       tags: ['style'],
       expectedRevision: 'revision-1'
+    });
+    expect(proposal.confirmation.message).toBe(
+      'Confirm that you want Cavalry to update this saved memory.'
+    );
+    expect(proposal.data).toMatchObject({
+      before: 'Use concise replies',
+      after: 'Use very concise replies'
     });
 
     const committed = await executeCavalryAssistantTool(

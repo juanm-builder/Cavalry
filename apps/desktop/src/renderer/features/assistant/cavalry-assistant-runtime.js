@@ -1,4 +1,5 @@
 import { buildCavalryAssistantCitations } from './cavalry-assistant-references.js';
+import { pendingConfirmationAnswer } from './cavalry-assistant-confirmations.js';
 import {
   assistantVisibleText,
   buildChatHistory,
@@ -654,6 +655,8 @@ async function runResponsesLoop(context) {
         cancelled: true
       });
     }
+    const pendingConfirmation = pendingConfirmationAnswer(context, result);
+    if (pendingConfirmation) return pendingConfirmation;
     previousResponseId = asString(response && response.id);
     if (!previousResponseId) {
       return result({
@@ -729,13 +732,15 @@ async function runChatCompletionsLoop(context) {
       }
     ],
     historyMessages.length,
-    context.connection
+    context.connection,
+    context.chatTools
   );
   let retriedEmptyReply = false;
   for (let iteration = 1; iteration <= context.maxIterations; iteration += 1) {
-    truncateOlderToolOutputs(messages, context.connection);
+    truncateOlderToolOutputs(messages, context.connection, context.chatTools);
     const payload = {
       requestId: context.requestId,
+      _cavalryMemoryQuery: context.question,
       returnMessage: true,
       messages: copyPlain(messages) || [],
       tools: context.chatTools,
@@ -831,6 +836,8 @@ async function runChatCompletionsLoop(context) {
         cancelled: true
       });
     }
+    const pendingConfirmation = pendingConfirmationAnswer(context, result);
+    if (pendingConfirmation) return pendingConfirmation;
   }
   const wrapped = await runChatWrapUp(context, messages);
   if (wrapped) return wrapped;
@@ -850,6 +857,7 @@ async function runChatWrapUp(context, messages) {
   });
   const payload = {
     requestId: context.requestId,
+    _cavalryMemoryQuery: context.question,
     returnMessage: true,
     messages: wrapMessages,
     tools: context.chatTools,
@@ -1056,6 +1064,7 @@ export async function runCavalryAssistantTurn(options = {}) {
           ? options.workspaceSnapshot
           : asString(asObject(options.workspaceSnapshot).json),
       pendingConfirmationMessage: options.pendingConfirmationMessage,
+      replyStyle: settings.replyStyle,
       toolDefinitions: options.tools
     }),
     makeId,

@@ -985,6 +985,34 @@ describe('Advisor runtime controller', () => {
     ]);
   });
 
+  it('persists a reply-style-only update without replacing the model or encrypted key', async () => {
+    const { controller, ipcMain, fs } = createController();
+    const original = await controller.saveAdvisorSettings({
+      provider: 'openai',
+      model: 'fixture-model',
+      apiKey: 'fake-style-test-key'
+    });
+    controller.registerHandlers();
+    const answer = await ipcMain.handlers.get('cavalry-advisor:save-settings')(
+      { sender: {} },
+      { replyStyle: 'detailed' }
+    );
+    const loaded = await controller.loadAdvisorRuntimeSettings();
+
+    expect(loaded).toEqual({ ...original, replyStyle: 'detailed' });
+    expect(answer).toMatchObject({
+      ok: true,
+      settings: {
+        replyStyle: 'detailed',
+        provider: 'openai',
+        model: 'fixture-model',
+        hasApiKey: true
+      }
+    });
+    expect(answer.settings).not.toHaveProperty('apiKey');
+    expect([...fs.files.values()].join('')).not.toContain('fake-style-test-key');
+  });
+
   it('rereads memory.md for Companion requests without injecting it into unrelated model work', async () => {
     const { controller, fs } = createController();
     const memoryPath = '/tmp/cavalry-advisor-controller-test/memory.md';

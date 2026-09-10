@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -158,9 +159,13 @@ function MessageList({ errors = [], warnings = [] }) {
   return (
     <div className="transaction-edit-messages" role="alert">
       {messages.map((message, index) => (
-        <div className={`panel-note ${message.tone}`} key={`${message.code || 'message'}-${index}`}>
+        <PrivateValue
+          as="div"
+          className={`panel-note ${message.tone}`}
+          key={`${message.code || 'message'}-${index}`}
+        >
           {message.message || String(message)}
-        </div>
+        </PrivateValue>
       ))}
     </div>
   );
@@ -182,7 +187,9 @@ function AccountField({ disabledOptionId = '', fallbackIcon, field, id, label, o
   const selected = asArray(options).find((option) => option.value === value) || null;
   return (
     <div className="field transaction-edit-field transaction-edit-account-field">
-      <label htmlFor={id}>{label}</label>
+      <PrivateValue as="label" htmlFor={id}>
+        {label}
+      </PrivateValue>
       <div className="transaction-edit-account-control">
         <CavalrySelect
           aria-label={label}
@@ -202,11 +209,11 @@ function AccountField({ disabledOptionId = '', fallbackIcon, field, id, label, o
           {...actions.change('transaction-composer-change', { field })}
         />
         {selected ? (
-          <small>
+          <PrivateValue as="small">
             {selected.contextLabel || selected.institution || selected.label} ·{' '}
             {selected.balanceLabel}
             {selected.hasCurrencyIntegrityIssue ? ' · Currency repair required' : ''}
-          </small>
+          </PrivateValue>
         ) : null}
       </div>
     </div>
@@ -220,15 +227,15 @@ function ContextSummary({ context, account }) {
     <div className="transaction-edit-context-card">
       <AccountMark account={selectedAccount} fallbackIcon={data.icon} />
       <div className="transaction-edit-context-copy">
-        <strong>{selectedAccount.name || 'Transaction account'}</strong>
-        <span>
+        <PrivateValue as="strong">{selectedAccount.name || 'Transaction account'}</PrivateValue>
+        <PrivateValue as="span">
           {selectedAccount.institution || selectedAccount.contextLabel || data.badge || 'Account'}
-        </span>
+        </PrivateValue>
       </div>
       {selectedAccount.balanceLabel ? (
         <div className="transaction-edit-context-balance">
           <small>Current balance</small>
-          <b>{selectedAccount.balanceLabel}</b>
+          <PrivateValue as="b">{selectedAccount.balanceLabel}</PrivateValue>
         </div>
       ) : null}
     </div>
@@ -307,8 +314,8 @@ function TransactionEditModalContent({ modal }) {
       >
         <header className="transaction-edit-header">
           <div>
-            <h2>{context.title || 'Edit Transaction'}</h2>
-            {context.description ? <p>{context.description}</p> : null}
+            <PrivateValue as="h2">{context.title || 'Edit Transaction'}</PrivateValue>
+            {context.description ? <PrivateValue as="p">{context.description}</PrivateValue> : null}
           </div>
           <button
             aria-label="Close"
@@ -330,7 +337,7 @@ function TransactionEditModalContent({ modal }) {
         >
           <div className="transaction-edit-type-badge">
             <Icon name={context.icon || 'receipt_long'} />
-            <strong>{context.badge || 'Account transaction'}</strong>
+            <PrivateValue as="strong">{context.badge || 'Account transaction'}</PrivateValue>
           </div>
 
           <ContextSummary account={contextAccount} context={context} />
@@ -391,9 +398,13 @@ function TransactionEditModalContent({ modal }) {
 
           <div className="transaction-edit-grid transaction-edit-money-grid">
             <div className="field transaction-edit-field">
-              <label htmlFor="transaction-amount">{context.amountLabel || 'Amount'}</label>
+              <PrivateValue as="label" htmlFor="transaction-amount">
+                {context.amountLabel || 'Amount'}
+              </PrivateValue>
               <div className="transaction-edit-money-control">
-                <span aria-hidden="true">{currencyMark(draft.currency)}</span>
+                <PrivateValue as="span" aria-hidden="true">
+                  {currencyMark(draft.currency)}
+                </PrivateValue>
                 <FinancialValueInput
                   allowNegative={false}
                   id="transaction-amount"
@@ -423,7 +434,9 @@ function TransactionEditModalContent({ modal }) {
           >
             {showCategory ? (
               <div className="field transaction-edit-field">
-                <label htmlFor="transaction-category">{category.label}</label>
+                <PrivateValue as="label" htmlFor="transaction-category">
+                  {category.label}
+                </PrivateValue>
                 <CategorizedSelect
                   aria-label={category.label}
                   createCategoryType={expectedCategoryType(template) || 'expense'}
@@ -483,14 +496,18 @@ function TransactionEditModalContent({ modal }) {
           <MessageList errors={data.errors} warnings={data.warnings} />
 
           <div className="transaction-edit-actions">
-            <button className="btn btn-primary transaction-edit-submit" type="submit">
+            <PrivateValue
+              as="button"
+              className="btn btn-primary transaction-edit-submit"
+              type="submit"
+            >
               <Icon name={hasWarnings ? 'warning' : 'save'} />
               {hasWarnings
                 ? hasCurrencyConversionWarning
                   ? 'Confirm Conversion & Save'
                   : 'Post Anyway'
                 : 'Save Changes'}
-            </button>
+            </PrivateValue>
             <button className="btn transaction-edit-cancel" type="button" {...closeModal}>
               Cancel
             </button>

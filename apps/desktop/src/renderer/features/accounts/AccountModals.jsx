@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -20,25 +21,28 @@ function ModalFrame({ title, error, children, onCancel, className = '' }) {
       className="modal-backdrop"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
-      <section
+      <PrivateValue
+        as="section"
         aria-labelledby="account-modal-title"
         aria-modal="true"
         className={`modal-card account-create-modal ${className}`}
         role="dialog"
       >
         <div className="page-header">
-          <h2 id="account-modal-title">{title}</h2>
+          <PrivateValue as="h2" id="account-modal-title">
+            {title}
+          </PrivateValue>
           <button aria-label="Close" className="btn btn-icon" onClick={onCancel} type="button">
             <Icon name="close" />
           </button>
         </div>
         {error ? (
-          <div className="panel-note status-bad" role="alert">
+          <PrivateValue as="div" className="panel-note status-bad" role="alert">
             {error}
-          </div>
+          </PrivateValue>
         ) : null}
         {children}
-      </section>
+      </PrivateValue>
     </div>
   );
 }
@@ -72,49 +76,53 @@ export function AccountCurrencyRepairModal({ account, preview, error, onCancel, 
       title="Review Currency Repair"
     >
       <div className="stack-list">
-        <div className="panel-note status-warn" role="alert">
+        <PrivateValue as="div" className="panel-note status-warn" role="alert">
           <strong>This corrects a setup mistake; it does not convert money.</strong>
           <br />
           Cavalry will keep every transaction’s existing {preview?.baseCurrency ||
             'base-currency'}{' '}
           book value and will not apply an exchange rate.
-        </div>
+        </PrivateValue>
         <div className="account-detail-grid">
           <span>Account</span>
-          <b>{account?.name || preview?.accountName || 'Account'}</b>
+          <PrivateValue as="b">{account?.name || preview?.accountName || 'Account'}</PrivateValue>
           <span>Current setting</span>
-          <b>{preview?.configuredCurrency || '—'}</b>
+          <PrivateValue as="b">{preview?.configuredCurrency || '—'}</PrivateValue>
           <span>Ledger postings</span>
-          <b>{postingCurrencies || 'No recorded currency'}</b>
+          <PrivateValue as="b">{postingCurrencies || 'No recorded currency'}</PrivateValue>
           <span>Correct setting</span>
-          <b>{preview?.targetCurrency || '—'}</b>
+          <PrivateValue as="b">{preview?.targetCurrency || '—'}</PrivateValue>
           <span>Transactions affected</span>
-          <b>{preview?.affectedTransactionCount ?? 0}</b>
+          <PrivateValue as="b">{preview?.affectedTransactionCount ?? 0}</PrivateValue>
           <span>Book value before</span>
-          <b>{formatCurrency(preview?.before?.historicalBaseBalance, preview?.baseCurrency)}</b>
+          <PrivateValue as="b">
+            {formatCurrency(preview?.before?.historicalBaseBalance, preview?.baseCurrency)}
+          </PrivateValue>
           <span>Book value after</span>
-          <b>{formatCurrency(preview?.after?.historicalBaseBalance, preview?.baseCurrency)}</b>
+          <PrivateValue as="b">
+            {formatCurrency(preview?.after?.historicalBaseBalance, preview?.baseCurrency)}
+          </PrivateValue>
         </div>
         {blockers.length ? (
           <div className="panel-note status-bad" role="alert">
             <strong>Automatic repair is not safe for this account.</strong>
             <ul>
               {blockers.map((blocker, index) => (
-                <li key={`${blocker?.code || 'blocker'}-${index}`}>
+                <PrivateValue as="li" key={`${blocker?.code || 'blocker'}-${index}`}>
                   {blocker?.message || String(blocker)}
-                </li>
+                </PrivateValue>
               ))}
             </ul>
           </div>
         ) : null}
         <div className="modal-actions">
-          <button className="btn" onClick={onCancel} type="button">
+          <PrivateValue as="button" className="btn" onClick={onCancel} type="button">
             {canConfirm ? 'Cancel' : 'Close'}
-          </button>
+          </PrivateValue>
           {canConfirm ? (
-            <button className="btn btn-primary" onClick={onConfirm} type="button">
+            <PrivateValue as="button" className="btn btn-primary" onClick={onConfirm} type="button">
               Correct Account to {preview.targetCurrency}
-            </button>
+            </PrivateValue>
           ) : null}
         </div>
       </div>
@@ -150,18 +158,18 @@ export function AccountConfirmationModal({ mode, account, error, onCancel, onCon
   return (
     <ModalFrame error={error} onCancel={onCancel} title={content.title}>
       <div className="stack-list">
-        <p className="panel-note">
-          <strong>{account?.name}</strong>
+        <PrivateValue as="p" className="panel-note">
+          <PrivateValue as="strong">{account?.name}</PrivateValue>
           <br />
           {content.copy}
-        </p>
+        </PrivateValue>
         <div className="modal-actions">
           <button className="btn" onClick={onCancel} type="button">
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={onConfirm} type="button">
+          <PrivateValue as="button" className="btn btn-primary" onClick={onConfirm} type="button">
             {content.button}
-          </button>
+          </PrivateValue>
         </div>
       </div>
     </ModalFrame>

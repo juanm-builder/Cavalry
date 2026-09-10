@@ -334,6 +334,9 @@ export default defineCavalryAssistantCapability({
             transactionId: assistantStringProperty(
               'Transaction ID or exact description, matched case-insensitively.'
             ),
+            expectedTargetState: assistantStringProperty(
+              'Host-controlled snapshot of the reviewed transaction. Never invent or change it.'
+            ),
             confirmed: assistantBooleanProperty(CONFIRMATION_COPY)
           }
         ),
@@ -345,6 +348,7 @@ export default defineCavalryAssistantCapability({
         description: 'Permanent deletion requires explicit approval.'
       },
       approvalFields: ['confirmed'],
+      hostInputFields: ['expectedTargetState'],
       actionVerb: 'Deleted'
     },
     {

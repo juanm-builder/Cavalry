@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -12,8 +13,10 @@ function Icon({ name, className = '' }) {
 function DetailField({ label, value, className = '' }) {
   return (
     <div>
-      <dt>{label}</dt>
-      <dd className={className}>{value || '—'}</dd>
+      <PrivateValue as="dt">{label}</PrivateValue>
+      <PrivateValue as="dd" className={className}>
+        {value || '—'}
+      </PrivateValue>
     </div>
   );
 }
@@ -31,7 +34,8 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
       data-react-modal="account-transaction-detail"
       onMouseDown={dismiss}
     >
-      <section
+      <PrivateValue
+        as="section"
         aria-label={`Transaction details for ${title}`}
         aria-modal="true"
         className="modal-card account-transaction-detail-modal"
@@ -44,11 +48,13 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
             </span>
             <div className="account-transaction-detail-copy">
               <span className="account-transaction-detail-kicker">Transaction details</span>
-              <h2 title={title}>{title}</h2>
-              <p>
+              <PrivateValue as="h2" title={title}>
+                {title}
+              </PrivateValue>
+              <PrivateValue as="p">
                 {transaction.date || 'No date'}
                 {transaction.typeLabel ? ` · ${transaction.typeLabel}` : ''}
-              </p>
+              </PrivateValue>
             </div>
           </div>
           <button
@@ -63,25 +69,29 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
         </header>
 
         <div className="account-transaction-detail-impact">
-          <span>Impact on {transaction.accountName || 'this account'}</span>
-          <strong className={changeTone}>{transaction.changeCopy || '—'}</strong>
+          <PrivateValue as="span">
+            Impact on {transaction.accountName || 'this account'}
+          </PrivateValue>
+          <PrivateValue as="strong" className={changeTone}>
+            {transaction.changeCopy || '—'}
+          </PrivateValue>
         </div>
 
         <section aria-label="Balance impact" className="account-transaction-balance-flow">
           <div>
             <span>Balance before</span>
-            <strong>{transaction.beforeBalanceCopy || '—'}</strong>
+            <PrivateValue as="strong">{transaction.beforeBalanceCopy || '—'}</PrivateValue>
           </div>
           <div className={`account-transaction-flow-change ${changeTone}`}>
             <Icon name="arrow_forward" />
             <small>Change</small>
-            <b>{transaction.changeCopy || '—'}</b>
+            <PrivateValue as="b">{transaction.changeCopy || '—'}</PrivateValue>
           </div>
           <div>
             <span>Balance after</span>
-            <strong className={transaction.balanceTone || ''}>
+            <PrivateValue as="strong" className={transaction.balanceTone || ''}>
               {transaction.balanceCopy || '—'}
-            </strong>
+            </PrivateValue>
           </div>
         </section>
 
@@ -104,7 +114,7 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
             Done
           </button>
         </footer>
-      </section>
+      </PrivateValue>
     </div>,
     document.body
   );

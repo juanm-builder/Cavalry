@@ -23,7 +23,7 @@ export function normalizeCommandResult(result) {
 export function CommandExecutorProvider({ children, onEvent, onEffect }) {
   const { dispatch, ports, scheduleWorkbookSave, setWorkbook } = useWorkbookSession();
   const executeCommandResult = useCallback(
-    (result) => {
+    (result, options = {}) => {
       const normalized = normalizeCommandResult(result);
       const schedulesSave = normalized.events.some((event) => event.type === 'schedule-save');
       const scheduledSave =
@@ -39,7 +39,9 @@ export function CommandExecutorProvider({ children, onEvent, onEffect }) {
           : { ...normalized, workbook: committedWorkbook };
       let nextWorkbook;
       if (normalized.ok && typeof committedWorkbook !== 'undefined') {
-        nextWorkbook = setWorkbook(committedWorkbook);
+        nextWorkbook = setWorkbook(committedWorkbook, {
+          markDirty: options.markDirty !== false || schedulesSave
+        });
       }
       if (!normalized.ok && normalized.errors.length) {
         dispatch({

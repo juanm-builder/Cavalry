@@ -5,7 +5,6 @@ import {
   createCategoryTool
 } from '../categories/cavalry-assistant-category-actions.js';
 import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
-import { BILLS_ACTIONS, createBillsController } from '../recurring/bills-controller.js';
 import { SETTINGS_ACTIONS, createSettingsController } from '../settings/settings-controller.js';
 
 import { defineCavalryAssistantCapability } from '../assistant/cavalry-assistant-capability-registry.js';
@@ -13,7 +12,6 @@ import {
   ACCOUNT_UPDATE_PROPERTIES,
   ACCOUNT_WRITE_PROPERTIES,
   APP_ROUTES,
-  BILL_WRITE_PROPERTIES,
   CATEGORY_CUSTOMIZATION_PROPERTIES,
   DATE_RANGE_PROPERTIES,
   asText,
@@ -25,140 +23,25 @@ import {
 import {
   accountStateCommand,
   analyzeRecurringExpenses,
-  billFormDefaults,
   collection,
   commitCommand,
   confirmationRequired,
   createAccountTool,
-  currentDate,
   envelope,
   failure,
   listAccounts,
   listCategories,
   listCounterparties,
   listRecurringBills,
-  mergeKnown,
   readWorkspaceContext,
   readWorkspaceSummary,
   resolutionFailure,
   resolveArgument,
   summarizeCounterparty,
-  summarizeRecurring,
   updateAccountTool
 } from '../assistant/cavalry-assistant-tool-support.js';
 import { payBill } from '../assistant/cavalry-assistant-pay-bill.js';
 import { summarizeSpending } from '../assistant/cavalry-assistant-spending-tool.js';
-
-function resolveBillReferences(workbook, args, payload) {
-  const category = resolveArgument(workbook, args, {
-    collection: 'categories',
-    keys: ['categoryId', 'category'],
-    label: 'Category',
-    optional: true,
-    allowEmpty: true
-  });
-  if (!category.ok) return { ok: false, resolution: category };
-  if (category.provided) payload.categoryId = category.id;
-  const account = resolveArgument(workbook, args, {
-    collection: 'accounts',
-    keys: ['accountId', 'account'],
-    label: 'Payment account',
-    optional: true,
-    allowEmpty: true
-  });
-  if (!account.ok) return { ok: false, resolution: account };
-  if (account.provided) payload.accountId = account.id;
-  return { ok: true, payload };
-}
-
-async function createBill(environment) {
-  const workbook = environment.workbook;
-  const base = {
-    kind: 'bill',
-    name: '',
-    categoryId: '',
-    accountId: '',
-    amount: 0,
-    currency: asText(workbook.currency) || 'PHP',
-    frequency: 'Monthly',
-    dueDate: currentDate(workbook, environment.services),
-    autoRenew: false,
-    isActive: true,
-    note: ''
-  };
-  const payload = mergeKnown(base, environment.arguments, Object.keys(BILL_WRITE_PROPERTIES));
-  const prepared = resolveBillReferences(workbook, environment.arguments, payload);
-  if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
-  const controller = createBillsController(environment.services);
-  const result = controller.handleAction(workbook, {
-    type: BILLS_ACTIONS.saveRecurring,
-    payload: prepared.payload
-  });
-  return commitCommand(environment, result, 'assistant_bill_created', (next, command) => {
-    const event = command.events.find((item) => item.type === 'recurring/item-created');
-    const id = asText(event && event.payload && event.payload.recurringItemId);
-    return {
-      recurringItem: summarizeRecurring(
-        collection(next, 'recurringItems').find((item) => item.id === id)
-      )
-    };
-  });
-}
-
-async function updateBill(environment) {
-  const resolved = resolveArgument(environment.workbook, environment.arguments, {
-    collection: 'recurringItems',
-    keys: ['recurringItemId', 'bill'],
-    label: 'Bill or subscription'
-  });
-  if (!resolved.ok) return resolutionFailure(environment, resolved);
-  if (
-    resolved.value.isActive !== false &&
-    environment.arguments.isActive === false &&
-    environment.arguments.confirmed !== true
-  ) {
-    return confirmationRequired(environment, `deactivate “${resolved.value.name}”`);
-  }
-  const payload = mergeKnown(
-    billFormDefaults(resolved.value, environment.workbook),
-    environment.arguments,
-    Object.keys(BILL_WRITE_PROPERTIES)
-  );
-  const prepared = resolveBillReferences(environment.workbook, environment.arguments, payload);
-  if (!prepared.ok) return resolutionFailure(environment, prepared.resolution);
-  const controller = createBillsController(environment.services);
-  const result = controller.handleAction(environment.workbook, {
-    type: BILLS_ACTIONS.saveRecurring,
-    payload: prepared.payload
-  });
-  return commitCommand(environment, result, 'assistant_bill_updated', (next) => ({
-    recurringItem: summarizeRecurring(
-      collection(next, 'recurringItems').find((item) => item.id === resolved.id)
-    )
-  }));
-}
-
-async function archiveBill(environment) {
-  const resolved = resolveArgument(environment.workbook, environment.arguments, {
-    collection: 'recurringItems',
-    keys: ['recurringItemId', 'bill'],
-    label: 'Bill or subscription'
-  });
-  if (!resolved.ok) return resolutionFailure(environment, resolved);
-  if (environment.arguments.confirmed !== true) {
-    return confirmationRequired(environment, `archive “${resolved.value.name}”`);
-  }
-  const controller = createBillsController(environment.services);
-  const result = controller.handleAction(environment.workbook, {
-    type: BILLS_ACTIONS.archiveRecurring,
-    payload: { recurringItemId: resolved.id }
-  });
-  return commitCommand(environment, result, 'assistant_bill_archived', (next) => ({
-    recurringItem: summarizeRecurring(
-      collection(next, 'recurringItems').find((item) => item.id === resolved.id)
-    )
-  }));
-}
 
 async function createCounterparty(environment) {
   const controller = createSettingsController({
@@ -296,6 +179,7 @@ function coreTool(name, description, properties, required, execute, metadata = {
     access: metadata.access || 'write',
     actionVerb: metadata.actionVerb || '',
     approvalFields: metadata.approvalFields || [],
+    hostInputFields: metadata.hostInputFields || [],
     confirmation: metadata.confirmation || { mode: 'none' },
     entityRequirements: metadata.entityRequirements || [],
     requiresWorkbook: metadata.requiresWorkbook,
@@ -382,8 +266,23 @@ export default defineCavalryAssistantCapability({
     ),
     coreTool(
       'list_recurring_bills',
-      'List bills and subscriptions with linked category/account details.',
-      { includeArchived: assistantBooleanProperty('Include inactive recurring items.') },
+      'Read actual bill/subscription schedules for requested months. For a multi-month question pass every month in monthKeys; amounts and due dates are already resolved, including skips and future changes. Without a month, returns only the current calendar month. Expected charges are not payments.',
+      {
+        includeArchived: assistantBooleanProperty(
+          'Include globally inactive recurring trackers. Month-specific skips are always shown with zero scheduled charge.'
+        ),
+        monthKey: assistantStringProperty(
+          'One concrete YYYY-MM month to inspect. Use monthKeys instead for multiple months.'
+        ),
+        monthKeys: {
+          type: 'array',
+          description:
+            'Every concrete YYYY-MM month requested, including all months in a range. Returns a resolved schedule for each; do not extrapolate the current baseline.',
+          items: assistantStringProperty('YYYY-MM month.'),
+          minItems: 1,
+          maxItems: 24
+        }
+      },
       [],
       listRecurringBills,
       { access: 'read' }
@@ -445,6 +344,9 @@ export default defineCavalryAssistantCapability({
         accountId: assistantStringProperty(
           'Account ID or exact account name, matched case-insensitively.'
         ),
+        expectedTargetState: assistantStringProperty(
+          'Host-controlled snapshot of the reviewed account and its usage. Never invent or change it.'
+        ),
         confirmed: HOST_CONFIRMATION_PROPERTY
       },
       [],
@@ -459,6 +361,7 @@ export default defineCavalryAssistantCapability({
       {
         actionVerb: 'Archived',
         approvalFields: ['confirmed'],
+        hostInputFields: ['expectedTargetState'],
         confirmation: { mode: 'always' },
         entityRequirements: [{ type: 'account', role: 'target', ambiguity: 'clarify' }]
       }
@@ -498,6 +401,9 @@ export default defineCavalryAssistantCapability({
         accountId: assistantStringProperty(
           'Account ID or exact account name, matched case-insensitively.'
         ),
+        expectedTargetState: assistantStringProperty(
+          'Host-controlled snapshot of the reviewed account and its usage. Never invent or change it.'
+        ),
         confirmed: HOST_CONFIRMATION_PROPERTY
       },
       [],
@@ -512,6 +418,7 @@ export default defineCavalryAssistantCapability({
       {
         actionVerb: 'Retired',
         approvalFields: ['confirmed'],
+        hostInputFields: ['expectedTargetState'],
         confirmation: { mode: 'always' },
         entityRequirements: [{ type: 'account', role: 'target', ambiguity: 'clarify' }]
       }
@@ -525,6 +432,9 @@ export default defineCavalryAssistantCapability({
         ),
         accountId: assistantStringProperty(
           'Account ID or exact account name, matched case-insensitively.'
+        ),
+        expectedTargetState: assistantStringProperty(
+          'Host-controlled snapshot of the reviewed account and its usage. Never invent or change it.'
         ),
         confirmed: HOST_CONFIRMATION_PROPERTY
       },
@@ -540,6 +450,7 @@ export default defineCavalryAssistantCapability({
       {
         actionVerb: 'Deleted',
         approvalFields: ['confirmed'],
+        hostInputFields: ['expectedTargetState'],
         confirmation: { mode: 'always' },
         entityRequirements: [{ type: 'account', role: 'target', ambiguity: 'clarify' }]
       }
@@ -695,44 +606,8 @@ export default defineCavalryAssistantCapability({
       }
     ),
     coreTool(
-      'create_bill',
-      'Create a validated bill or subscription tracker. An active expense category is required.',
-      BILL_WRITE_PROPERTIES,
-      ['name', 'category', 'dueDate'],
-      createBill,
-      {
-        actionVerb: 'Created',
-        entityRequirements: [
-          { type: 'category', role: 'expense', ambiguity: 'clarify' },
-          { type: 'account', role: 'payment', required: false, ambiguity: 'clarify' }
-        ]
-      }
-    ),
-    coreTool(
-      'update_bill',
-      'Partially update a bill or subscription, preserving fields not supplied. Deactivation requires confirmation.',
-      {
-        bill: assistantStringProperty(
-          'Recurring item ID or exact name, matched case-insensitively.'
-        ),
-        recurringItemId: assistantStringProperty(
-          'Recurring item ID or exact name, matched case-insensitively.'
-        ),
-        ...BILL_WRITE_PROPERTIES,
-        confirmed: HOST_CONFIRMATION_PROPERTY
-      },
-      [],
-      updateBill,
-      {
-        actionVerb: 'Updated',
-        approvalFields: ['confirmed'],
-        confirmation: { mode: 'conditional' },
-        entityRequirements: [{ type: 'recurring_item', role: 'target', ambiguity: 'clarify' }]
-      }
-    ),
-    coreTool(
       'pay_bill',
-      'Record a bill or subscription payment as a validated linked Cavalry transaction. This records ledger activity; it does not send money.',
+      'Record an actual bill/subscription payment only when the user reports it paid/prepaid/charged or explicitly asks to record a payment. Expected charge, price, amount or schedule changes belong to update_bill, never this tool. This records ledger activity; it does not send money.',
       {
         bill: assistantStringProperty(
           'Recurring item ID or exact name, matched case-insensitively.'
@@ -763,27 +638,6 @@ export default defineCavalryAssistantCapability({
           { type: 'account', role: 'payment', required: false, ambiguity: 'clarify' }
         ],
         idempotency: 'ledger-match-or-confirmation'
-      }
-    ),
-    coreTool(
-      'archive_bill',
-      'Archive a bill or subscription. Confirmation is required.',
-      {
-        bill: assistantStringProperty(
-          'Recurring item ID or exact name, matched case-insensitively.'
-        ),
-        recurringItemId: assistantStringProperty(
-          'Recurring item ID or exact name, matched case-insensitively.'
-        ),
-        confirmed: HOST_CONFIRMATION_PROPERTY
-      },
-      [],
-      archiveBill,
-      {
-        actionVerb: 'Archived',
-        approvalFields: ['confirmed'],
-        confirmation: { mode: 'always' },
-        entityRequirements: [{ type: 'recurring_item', role: 'target', ambiguity: 'clarify' }]
       }
     ),
     coreTool(

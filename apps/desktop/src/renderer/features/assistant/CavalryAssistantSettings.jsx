@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useState } from 'react';
+import advisorSettings from '@cavalry/advisor/domain/advisor/settings.cjs';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 
@@ -26,8 +27,17 @@ function memoryErrorMessage(value, fallback) {
   );
 }
 
-export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings }) {
+export function AssistantSettings({
+  advisor,
+  onBack,
+  onOpenConnectionSettings,
+  replyStyle = 'brief',
+  onReplyStyleChange
+}) {
   const memoryFieldId = useId();
+  const [stylePending, setStylePending] = useState(false);
+  const [styleError, setStyleError] = useState('');
+  const currentReplyStyle = advisorSettings.normalizeAdvisorReplyStyle(replyStyle);
   const [memory, setMemory] = useState({
     content: '',
     items: [],
@@ -51,6 +61,23 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [conflictMemory, setConflictMemory] = useState(null);
+
+  async function saveReplyStyle(nextStyle) {
+    if (stylePending || nextStyle === currentReplyStyle) return;
+    setStylePending(true);
+    setStyleError('');
+    try {
+      const result = await advisor.invoke('saveSettings', { replyStyle: nextStyle });
+      if (!result?.ok) throw new Error(asText(result?.error) || 'Could not save reply style.');
+      onReplyStyleChange?.(
+        advisorSettings.normalizeAdvisorReplyStyle(result.settings?.replyStyle, nextStyle)
+      );
+    } catch (_error) {
+      setStyleError('Could not save reply style. Try again.');
+    } finally {
+      setStylePending(false);
+    }
+  }
 
   function applyMemory(nextMemory, options = {}) {
     const next = asObject(nextMemory);
@@ -371,9 +398,35 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
         </button>
         <div>
           <h2 id="cavalry-assistant-settings-title">Personalization</h2>
-          <p>Transparent context stored in your local memory.md file.</p>
+          <p>Make Cavalry feel more like you.</p>
         </div>
       </header>
+
+      <section className="cavalry-assistant-settings-card">
+        <strong id={`${memoryFieldId}-style`}>Reply style</strong>
+        <div
+          aria-labelledby={`${memoryFieldId}-style`}
+          className="cavalry-assistant-reply-styles"
+          role="radiogroup"
+        >
+          {advisorSettings.ADVISOR_REPLY_STYLES.map((style) => (
+            <label className={currentReplyStyle === style ? 'is-selected' : ''} key={style}>
+              <input
+                checked={currentReplyStyle === style}
+                disabled={stylePending}
+                name={`${memoryFieldId}-reply-style`}
+                onChange={() => void saveReplyStyle(style)}
+                type="radio"
+                value={style}
+              />
+              <span>{style.charAt(0).toUpperCase() + style.slice(1)}</span>
+            </label>
+          ))}
+        </div>
+        <small>Saved for every chat. Ask for more or less detail anytime.</small>
+        {stylePending ? <small role="status">Saving…</small> : null}
+        {styleError ? <small role="alert">{styleError}</small> : null}
+      </section>
 
       {loading ? (
         <div className="cavalry-assistant-settings-loading" role="status">
@@ -382,78 +435,106 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
         </div>
       ) : (
         <form className="cavalry-assistant-memory-form" onSubmit={saveMemory}>
-          <section className="cavalry-assistant-settings-card">
-            <div className="cavalry-assistant-memory-field-heading">
-              <label htmlFor={memoryFieldId}>What should Cavalry know about you?</label>
-              <span>{draft.length.toLocaleString()} characters</span>
-            </div>
-            <p>
-              Add preferences and lasting context. Cavalry uses it only when relevant instead of
-              repeating it in every reply.
-            </p>
-            <textarea
-              aria-describedby={`${memoryFieldId}-help`}
-              id={memoryFieldId}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="For example: I prefer concise explanations, and my emergency fund is my top priority."
-              rows="10"
-              value={draft}
-            />
-            <small id={`${memoryFieldId}-help`}>
-              Cavalry does not sync this file. External edits are picked up before the next request;
-              when enabled, its relevant contents are sent to your selected model.
-            </small>
-            <div className="cavalry-assistant-memory-file">
-              <Icon name="description" />
+          <section className="cavalry-assistant-settings-card cavalry-assistant-memory-controls">
+            <div className="cavalry-assistant-memory-control">
               <span>
-                <strong>{memory.fileName}</strong>
-                <small title={memory.path}>
-                  {memory.path || 'Stored in Cavalry’s local data folder'}
-                </small>
+                <strong>Use memory</strong>
+                <small>Use saved preferences and goals in future chats.</small>
               </span>
-              <span className="cavalry-assistant-memory-file-actions">
-                <button
-                  className="btn"
-                  onClick={() => void loadMemory('refreshMemory')}
-                  type="button"
-                >
-                  Refresh
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => void openMemory('openMemoryFile')}
-                  type="button"
-                >
-                  Open file
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => void openMemory('openMemoryFolder')}
-                  type="button"
-                >
-                  Open folder
-                </button>
+              <button
+                aria-checked={enabled}
+                aria-label="Use memory"
+                className="cavalry-assistant-switch"
+                onClick={() => setEnabled((current) => !current)}
+                role="switch"
+                type="button"
+              >
+                <span />
+              </button>
+            </div>
+            <div className="cavalry-assistant-memory-control">
+              <span>
+                <strong>Remember from chats</strong>
+                <small>Review each change before it is saved.</small>
               </span>
+              <button
+                aria-checked={allowAutomaticMemory}
+                aria-label="Remember from chats"
+                className="cavalry-assistant-switch"
+                onClick={() => setAllowAutomaticMemory((current) => !current)}
+                role="switch"
+                type="button"
+              >
+                <span />
+              </button>
             </div>
           </section>
+          <details className="cavalry-assistant-memory-details">
+            <summary>Memory details</summary>
+            <section className="cavalry-assistant-settings-card">
+              <div className="cavalry-assistant-memory-field-heading">
+                <label htmlFor={memoryFieldId}>What should Cavalry know about you?</label>
+                <span>{draft.length.toLocaleString()} characters</span>
+              </div>
+              <textarea
+                aria-describedby={`${memoryFieldId}-help`}
+                id={memoryFieldId}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="For example: I prefer concise explanations, and my emergency fund is my top priority."
+                rows="4"
+                value={draft}
+              />
+              <small id={`${memoryFieldId}-help`}>
+                Stored on this Mac. Relevant details are sent to your model when memory is on.
+              </small>
+              <div className="cavalry-assistant-memory-file">
+                <Icon name="description" />
+                <span>
+                  <strong>{memory.fileName}</strong>
+                  <small title={memory.path}>
+                    {memory.path || 'Stored in Cavalry’s local data folder'}
+                  </small>
+                </span>
+                <span className="cavalry-assistant-memory-file-actions">
+                  <button
+                    className="btn"
+                    onClick={() => void loadMemory('refreshMemory')}
+                    type="button"
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => void openMemory('openMemoryFile')}
+                    type="button"
+                  >
+                    Open file
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => void openMemory('openMemoryFolder')}
+                    type="button"
+                  >
+                    Open folder
+                  </button>
+                </span>
+              </div>
+            </section>
+          </details>
 
           <section className="cavalry-assistant-settings-card cavalry-assistant-memory-items">
             <div className="cavalry-assistant-memory-field-heading">
-              <span className="cavalry-assistant-memory-items-heading">Stable memory items</span>
+              <span className="cavalry-assistant-memory-items-heading">Saved memories</span>
               <span>{memory.items.length} saved</span>
             </div>
-            <p>
-              Each item keeps a stable id, so edits and deletions cannot accidentally target a
-              different memory.
-            </p>
             {memory.items.length ? (
               <div className="cavalry-assistant-memory-item-list">
-                {memory.items.map((item) => {
+                {memory.items.map((item, index) => {
                   const itemId = asText(item?.id);
                   return (
                     <div className="cavalry-assistant-memory-item" key={itemId}>
                       <textarea
-                        aria-label={`Memory item ${itemId}`}
+                        aria-label={`Saved memory ${index + 1}`}
                         disabled={pending}
                         onChange={(event) =>
                           setItemEdits((current) => ({
@@ -461,11 +542,10 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
                             [itemId]: event.target.value
                           }))
                         }
-                        rows="3"
+                        rows="2"
                         value={itemEdits[itemId] ?? asText(item?.text)}
                       />
                       <div>
-                        <small title={itemId}>{itemId}</small>
                         <button
                           className="btn"
                           disabled={pending || !memoryItemDirty(item)}
@@ -488,7 +568,7 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
                 })}
               </div>
             ) : (
-              <small>No structured memory items yet.</small>
+              <small>No memories saved yet.</small>
             )}
             <div className="cavalry-assistant-memory-item-add">
               <textarea
@@ -496,7 +576,7 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
                 disabled={pending}
                 onChange={(event) => setItemDraft(event.target.value)}
                 placeholder="Add one lasting fact, preference, or goal…"
-                rows="3"
+                rows="2"
                 value={itemDraft}
               />
               <button
@@ -506,44 +586,6 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
                 type="button"
               >
                 Add item
-              </button>
-            </div>
-          </section>
-
-          <section className="cavalry-assistant-settings-card cavalry-assistant-memory-controls">
-            <div className="cavalry-assistant-memory-control">
-              <span>
-                <strong>Enable local memory</strong>
-                <small>Include relevant memory in Companion conversations.</small>
-              </span>
-              <button
-                aria-checked={enabled}
-                aria-label="Enable local memory"
-                className="cavalry-assistant-switch"
-                onClick={() => setEnabled((current) => !current)}
-                role="switch"
-                type="button"
-              >
-                <span />
-              </button>
-            </div>
-            <div className="cavalry-assistant-memory-control">
-              <span>
-                <strong>Allow approved updates from chats</strong>
-                <small>
-                  Permits explicit, reviewable memory actions. Cavalry never writes memories
-                  silently.
-                </small>
-              </span>
-              <button
-                aria-checked={allowAutomaticMemory}
-                aria-label="Allow approved memory updates from chats"
-                className="cavalry-assistant-switch"
-                onClick={() => setAllowAutomaticMemory((current) => !current)}
-                role="switch"
-                type="button"
-              >
-                <span />
               </button>
             </div>
           </section>
@@ -601,7 +643,7 @@ export function AssistantSettings({ advisor, onBack, onOpenConnectionSettings })
         <Icon name="tune" />
         <span>
           <strong>Model and connection settings</strong>
-          <small>Provider, API key, local model, vision, and microphone controls</small>
+          <small>Choose your model or connection.</small>
         </span>
         <Icon name="chevron_right" />
       </button>

@@ -18,6 +18,15 @@ const DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS = 32768;
 const ADVISOR_CONTEXT_WINDOW_TOKEN_OPTIONS = [8192, 16384, 32768, 49152, 65536, 98304, 131072];
 const ADVISOR_LLAMA_IMAGE_MIN_TOKENS = 1024;
 const ADVISOR_API_KEY_MASK = '************';
+const ADVISOR_REPLY_STYLES = Object.freeze(['brief', 'balanced', 'detailed']);
+
+function normalizeAdvisorReplyStyle(value, fallback = 'brief') {
+  const style = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (ADVISOR_REPLY_STYLES.includes(style)) return style;
+  return ADVISOR_REPLY_STYLES.includes(fallback) ? fallback : 'brief';
+}
 
 function normalizeAdvisorContextWindowTokens(value, fallback) {
   const fallbackValue = Number(fallback) || DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS;
@@ -39,6 +48,7 @@ function getDefaultAdvisorSettings() {
     localModelPath: '',
     mmprojPath: '',
     contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+    replyStyle: 'brief',
     apiKey: ''
   };
 }
@@ -53,6 +63,7 @@ function getDefaultAdvisorPublicSettings() {
     localModelPath: '',
     mmprojPath: '',
     contextWindowTokens: DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+    replyStyle: 'brief',
     hasApiKey: false,
     apiKeyPreview: ''
   };
@@ -192,6 +203,7 @@ function normalizeAdvisorSettings(raw, existing) {
     mmprojPath: provider === 'custom' ? mmprojPath : '',
     contextWindowTokens:
       provider === 'custom' ? contextWindowTokens : DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+    replyStyle: normalizeAdvisorReplyStyle(raw && raw.replyStyle, previous.replyStyle),
     apiKey: nextKey
   };
 }
@@ -312,6 +324,7 @@ function normalizeAdvisorPublicSettings(raw, existing) {
     mmprojPath: provider === 'custom' ? mmprojPath : '',
     contextWindowTokens:
       provider === 'custom' ? contextWindowTokens : DEFAULT_LOCAL_ADVISOR_CONTEXT_WINDOW_TOKENS,
+    replyStyle: normalizeAdvisorReplyStyle(raw && raw.replyStyle, previous.replyStyle),
     hasApiKey,
     apiKeyPreview: getPublicAdvisorApiKeyPreview(raw, previous, hasApiKey)
   };
@@ -328,6 +341,7 @@ function publicAdvisorSettings(settings) {
     localModelPath: normalized.localModelPath,
     mmprojPath: normalized.mmprojPath,
     contextWindowTokens: normalized.contextWindowTokens,
+    replyStyle: normalized.replyStyle,
     hasApiKey: !!normalized.apiKey,
     apiKeyPreview: maskAdvisorApiKey(normalized.apiKey)
   };
@@ -459,6 +473,9 @@ function buildAdvisorSettingsPayload(values, currentSettings) {
   ) {
     payload.apiKey = apiKey;
   }
+  if (Object.prototype.hasOwnProperty.call(source, 'replyStyle')) {
+    payload.replyStyle = normalizeAdvisorReplyStyle(source.replyStyle, current.replyStyle);
+  }
   return payload;
 }
 
@@ -472,7 +489,8 @@ function buildAdvisorSettingsStoragePayload(payload, currentSettings) {
     model: normalized.model,
     localModelPath: normalized.localModelPath,
     mmprojPath: normalized.mmprojPath,
-    contextWindowTokens: normalized.contextWindowTokens
+    contextWindowTokens: normalized.contextWindowTokens,
+    replyStyle: normalized.replyStyle
   };
   if (normalized.apiKey) {
     stored.apiKey = normalized.apiKey;
@@ -523,6 +541,7 @@ function getAdvisorLlamaVisionArgs(settings, helpText) {
 }
 
 module.exports = {
+  ADVISOR_REPLY_STYLES,
   ADVISOR_API_KEY_MASK,
   ADVISOR_API_MODE,
   ADVISOR_API_MODES,
@@ -552,6 +571,7 @@ module.exports = {
   maskAdvisorApiKey,
   normalizeAdvisorApiMode,
   normalizeAdvisorSettings,
+  normalizeAdvisorReplyStyle,
   normalizeAdvisorContextWindowTokens,
   normalizeAdvisorProvider,
   normalizeAdvisorProviderKind,

@@ -71,7 +71,13 @@ function findById(items, id) {
 
 function monthKeyFromDate(value) {
   const date = asString(value);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : '';
+  return validBudgetDate(date) ? date.slice(0, 7) : '';
+}
+
+function validBudgetDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number(value.slice(0, 4)) < 1000) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function sheetMonthKey(workbook, sheet) {
@@ -199,6 +205,16 @@ function handleTransactionDetail(payload, context) {
 
 function handleAddBudget(payload, context, buildModel) {
   const routeModel = getRouteModel(buildModel, context);
+  const categoryType = BUDGET_CATEGORY_TYPE_SET.has(asString(payload.categoryType))
+    ? asString(payload.categoryType)
+    : '';
+  const categoryId =
+    asString(payload.categoryId) ||
+    (categoryType
+      ? asString(
+          asArray(routeModel.categoryOptions).find((category) => category.type === categoryType)?.id
+        )
+      : '');
   const sheetId = asString(payload.sheetId || (routeModel.sheet && routeModel.sheet.id));
   const sheet = sheetId ? findById(context.workbook && context.workbook.sheets, sheetId) : null;
   if (sheetId && !sheet) {
@@ -214,7 +230,8 @@ function handleAddBudget(payload, context, buildModel) {
       sheetId: sheet ? sheetId : '',
       rangeStart: routeModel.range.start,
       rangeEnd: routeModel.range.end,
-      categoryId: asString(payload.categoryId),
+      categoryId,
+      ...(categoryType ? { categoryType } : {}),
       planned: Number(payload.planned) || '',
       createdAt: asString(existingBudget && existingBudget.createdAt) || routeModel.currentDate,
       ...(note ? { note } : {}),
@@ -286,10 +303,10 @@ function handleSaveBudget(payload, context, dependencies = {}) {
       'Budget periods require complete ISO dates within one month.'
     );
   }
-  if (!['create', 'upsert'].includes(operation)) {
+  if (!['create', 'update', 'upsert'].includes(operation)) {
     return failure(
       'budget.save.operation-invalid',
-      'Budget operation must be either "create" or "upsert".'
+      'Budget operation must be "create", "update", or "upsert".'
     );
   }
   if (recurrence) {
@@ -310,13 +327,17 @@ function handleSaveBudget(payload, context, dependencies = {}) {
       'Choose an active income, expense, debt, or savings category.'
     );
   }
-  if (!Number.isFinite(planned) || planned <= 0) {
+  if (
+    !Number.isFinite(planned) ||
+    planned < 0.01 ||
+    !Number.isSafeInteger(Math.round(planned * 100))
+  ) {
     return failure(
       'budget.save.amount-required',
-      'Enter a planned budget amount greater than zero.'
+      'Enter a planned budget amount of at least 0.01 within the supported money range.'
     );
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(createdAt)) {
+  if (!validBudgetDate(createdAt)) {
     return failure('budget.save.created-date-required', 'Choose when this budget was created.');
   }
 
@@ -342,9 +363,22 @@ function handleSaveBudget(payload, context, dependencies = {}) {
     }
     const monthIndex = month - 1;
     const monthKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
-    sheet = asArray(workbook.sheets).find(
+    const matchingSheets = asArray(workbook.sheets).filter(
       (candidate) => sheetMonthKey(workbook, candidate) === monthKey
     );
+    if (matchingSheets.length > 1) {
+      return failure(
+        'budget.save.period-ambiguous',
+        'More than one sheet uses this budget month. Choose a sheet by ID.'
+      );
+    }
+    sheet = matchingSheets[0];
+    if (!sheet && operation === 'update') {
+      return failure(
+        'budget.save.not-found',
+        'No direct budget exists for this category and month. Use create only if you want a new plan.'
+      );
+    }
     if (!sheet) {
       const requestedId =
         typeof dependencies.createId === 'function'
@@ -378,9 +412,16 @@ function handleSaveBudget(payload, context, dependencies = {}) {
     }
   }
   const resolvedSheetId = asString(sheet.id);
-  const existing = asArray(sheet.budgets).find(
+  const matches = asArray(sheet.budgets).filter(
     (budget) => asString(budget && budget.categoryId) === categoryId
   );
+  if (matches.length > 1) {
+    return failure(
+      'budget.save.ambiguous',
+      'More than one direct plan exists for this category and month. Resolve the duplicates before editing.'
+    );
+  }
+  const existing = matches[0];
   const legacyOverlap = asArray(sheet.budgetLineItems).find(
     (item) =>
       asString(item && item.categoryId) === categoryId &&
@@ -393,10 +434,16 @@ function handleSaveBudget(payload, context, dependencies = {}) {
       'A direct budget already exists for this category and month. Use upsert to update it.'
     );
   }
-  if (!existing && legacyOverlap) {
+  if (legacyOverlap) {
     return failure(
       'budget.save.legacy-overlap',
       'A manually entered legacy budget already exists for this category and month and cannot be silently replaced.'
+    );
+  }
+  if (!existing && operation === 'update') {
+    return failure(
+      'budget.save.not-found',
+      'No direct budget exists for this category and month. Use create only if you want a new plan.'
     );
   }
   const resultOperation = existing ? 'updated' : 'created';

@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -64,11 +65,11 @@ function ThreadPanel({ state, controller, actions }) {
             >
               <Icon name="chat_bubble" />
               <span>
-                <strong>{thread.title}</strong>
-                <small>
+                <PrivateValue as="strong">{thread.title}</PrivateValue>
+                <PrivateValue as="small">
                   {thread.rangeLabel || formatUiDateTime(thread.updatedAt) || 'Advisor chat'}
-                </small>
-                <em>{thread.messages.length} messages</em>
+                </PrivateValue>
+                <PrivateValue as="em">{thread.messages.length} messages</PrivateValue>
               </span>
             </button>
           ))
@@ -90,18 +91,19 @@ function AttachmentList({ attachments, removable = false, onRemove }) {
             <Icon name={attachment.kind === 'image' ? 'image' : 'description'} />
           </span>
           <span>
-            <strong>{attachment.name}</strong>
-            <small>{attachment.mimeType || attachment.kind}</small>
+            <PrivateValue as="strong">{attachment.name}</PrivateValue>
+            <PrivateValue as="small">{attachment.mimeType || attachment.kind}</PrivateValue>
           </span>
           {removable ? (
-            <button
+            <PrivateValue
+              as="button"
               aria-label={`Remove ${attachment.name}`}
               className="advisor-attachment-remove"
               onClick={() => onRemove(attachment.id)}
               type="button"
             >
               <Icon name="close" />
-            </button>
+            </PrivateValue>
           ) : null}
         </div>
       ))}
@@ -117,14 +119,16 @@ function Message({ message, onSelectSource, onIntent }) {
       </span>
       <div className="advisor-message-content">
         <div className="advisor-message-meta">
-          <strong>{message.role === 'user' ? 'You' : 'Advisor'}</strong>
-          <time dateTime={message.createdAt}>{formatUiDateTime(message.createdAt)}</time>
+          <PrivateValue as="strong">{message.role === 'user' ? 'You' : 'Advisor'}</PrivateValue>
+          <PrivateValue as="time" dateTime={message.createdAt}>
+            {formatUiDateTime(message.createdAt)}
+          </PrivateValue>
         </div>
         <div className="advisor-message-body">
           {message.format === 'rich' ? (
             <SanitizedRichText html={message.richText} />
           ) : (
-            <p>{message.text}</p>
+            <PrivateValue as="p">{message.text}</PrivateValue>
           )}
         </div>
         <AttachmentList attachments={message.attachments} />
@@ -132,14 +136,15 @@ function Message({ message, onSelectSource, onIntent }) {
           <div className="advisor-source-ref-strip">
             {message.references.flatMap((reference) =>
               reference.sourceRefs.map((sourceRef) => (
-                <button
+                <PrivateValue
+                  as="button"
                   key={`${message.id}-${sourceRef}`}
                   className="advisor-source-token"
                   onClick={() => onSelectSource(sourceRef)}
                   type="button"
                 >
                   {reference.label}: {sourceRef}
-                </button>
+                </PrivateValue>
               ))
             )}
           </div>
@@ -147,7 +152,8 @@ function Message({ message, onSelectSource, onIntent }) {
         {message.actions.length ? (
           <div className="advisor-message-actions">
             {message.actions.map((action, index) => (
-              <button
+              <PrivateValue
+                as="button"
                 key={action.id || `${action.type}-${index}`}
                 className="btn"
                 onClick={() => onIntent('advisor/provider-action', action)}
@@ -155,7 +161,7 @@ function Message({ message, onSelectSource, onIntent }) {
               >
                 <Icon name="rule" />
                 {advisorActionLabel(action)}
-              </button>
+              </PrivateValue>
             ))}
           </div>
         ) : null}
@@ -200,16 +206,16 @@ function SourcePanel({ state, controller }) {
               >
                 <Icon name="description" />
                 <span>
-                  <strong>{source.label}</strong>
-                  <small>{source.id}</small>
+                  <PrivateValue as="strong">{source.label}</PrivateValue>
+                  <PrivateValue as="small">{source.id}</PrivateValue>
                 </span>
               </button>
             ))}
           </div>
           {selected ? (
             <section className="advisor-source-block">
-              <small>{selected.kind}</small>
-              <p>{selected.detail || selected.id}</p>
+              <PrivateValue as="small">{selected.kind}</PrivateValue>
+              <PrivateValue as="p">{selected.detail || selected.id}</PrivateValue>
             </section>
           ) : null}
         </>
@@ -257,7 +263,8 @@ function AdvisorComposer({ state, controller, actions }) {
           <Icon name="image" />
           <span>Upload image</span>
         </button>
-        <button
+        <PrivateValue
+          as="button"
           aria-label={voice.ariaLabel || 'Dictate to Advisor'}
           className={`btn btn-icon advisor-voice-button ${voice.className || ''}`}
           disabled={voice.disabled === true}
@@ -268,7 +275,7 @@ function AdvisorComposer({ state, controller, actions }) {
           )}
         >
           <Icon name={voice.icon || 'mic'} />
-        </button>
+        </PrivateValue>
         <textarea
           aria-label="Ask Advisor"
           disabled={state.pending}
@@ -303,14 +310,16 @@ function AdvisorComposer({ state, controller, actions }) {
       {voiceStatus.visible ? (
         <div className={`advisor-voice-status ${voiceStatus.className}`} role="status">
           <Icon name={voiceStatus.icon} />
-          <span>{voiceStatus.copy}</span>
-          {voiceStatus.timerCopy ? <small>{voiceStatus.timerCopy}</small> : null}
+          <PrivateValue as="span">{voiceStatus.copy}</PrivateValue>
+          {voiceStatus.timerCopy ? (
+            <PrivateValue as="small">{voiceStatus.timerCopy}</PrivateValue>
+          ) : null}
         </div>
       ) : null}
       {state.error ? (
-        <p className="panel-note status-bad" role="alert">
+        <PrivateValue as="p" className="panel-note status-bad" role="alert">
           {state.error}
-        </p>
+        </PrivateValue>
       ) : null}
     </form>
   );
@@ -337,7 +346,7 @@ function AdvisorView({ workbook, model, services, onAction, onCommandResult, onI
           <div className="advisor-chat-header">
             <div>
               <h3>Advisor</h3>
-              <p>{state.chatTitle}</p>
+              <PrivateValue as="p">{state.chatTitle}</PrivateValue>
             </div>
             <div className="advisor-header-actions">
               <button
@@ -421,7 +430,7 @@ function AdvisorView({ workbook, model, services, onAction, onCommandResult, onI
               {state.questionPresets.map((prompt) => (
                 <button key={prompt} onClick={() => controller.submit(prompt)} type="button">
                   <Icon name="north_east" />
-                  <span>{prompt}</span>
+                  <PrivateValue as="span">{prompt}</PrivateValue>
                 </button>
               ))}
             </div>

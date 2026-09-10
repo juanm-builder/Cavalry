@@ -292,7 +292,7 @@
 }
 
 .budget-category-avatar .cavalry-glyph {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .budget-category-name {
@@ -659,7 +659,8 @@
   font-size: 17px;
 }
 
-.budget-detail-heading span {
+/* Scope text layout to the status, preserving the heading avatar's grid. */
+.budget-detail-status {
   display: block;
   margin-top: 3px;
   font-size: 11px;
@@ -1630,7 +1631,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.budget-category-list-row .budget-usage-category-icon {
+.budget-category-list-row .budget-category-avatar {
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
@@ -1793,17 +1794,6 @@
   width: auto;
   height: auto;
   border-radius: 0;
-}
-.budget-category-list-row .budget-usage-category-icon {
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--category-color) 13%, var(--panel));
-  color: var(--category-color);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--category-color) 18%, transparent);
-}
-.budget-category-list-row .budget-usage-category-icon .cavalry-glyph {
-  font-size: 19px;
 }
 
 /* v1.0.26 Monthly Plan: simple at a glance, explainable on demand. */

@@ -347,16 +347,6 @@ function normalizeDuplicateDescription(value) {
   return asString(value).replace(/\s+/g, ' ').toLowerCase();
 }
 
-function transactionHasAccount(transaction, accountId) {
-  const targetId = asLegacyId(accountId);
-  return !!(
-    targetId &&
-    transaction &&
-    Array.isArray(transaction.lines) &&
-    transaction.lines.some((line) => asLegacyId(line && line.accountId) === targetId)
-  );
-}
-
 function getDuplicateCandidate(workbook, composerInput, existingIndex) {
   if (existingIndex >= 0) {
     return null;
@@ -366,18 +356,34 @@ function getDuplicateCandidate(workbook, composerInput, existingIndex) {
   const description = normalizeDuplicateDescription(composerInput.description);
   const categoryId = asLegacyId(composerInput.categoryId);
   const primaryAccountId = asLegacyId(composerInput.primaryAccountId);
-  if (!(date && amount > 0 && description && categoryId && primaryAccountId)) {
+  const secondaryAccountId = asLegacyId(composerInput.secondaryAccountId);
+  const template = normalizeTemplate(composerInput.template);
+  const movesBetweenAccounts = ['transfer', 'debt_payment', 'liability_payment'].includes(template);
+  const categoryRequired = !movesBetweenAccounts && template !== 'opening_balance';
+  const currency = asString(composerInput.currency || workbook.currency).toUpperCase();
+  if (
+    !(date && amount > 0 && description && primaryAccountId) ||
+    (categoryRequired && !categoryId)
+  ) {
     return null;
   }
   return (
-    getWorkbookTransactions(workbook).find(
-      (transaction) =>
+    getWorkbookTransactions(workbook).find((transaction) => {
+      const assignments = existingTransactionAssignments(workbook, transaction);
+      return (
+        normalizeTemplate(transaction && transaction.template) === template &&
+        asString(
+          (transaction && (transaction.originalCurrency || transaction.currency)) ||
+            workbook.currency
+        ).toUpperCase() === currency &&
         normalizeDateKey(transaction && transaction.date) === date &&
         roundMoney(Number(transaction && transaction.amount) || 0) === amount &&
         asLegacyId(transaction && transaction.categoryId) === categoryId &&
         normalizeDuplicateDescription(transaction && transaction.description) === description &&
-        transactionHasAccount(transaction, primaryAccountId)
-    ) || null
+        assignments.primaryAccountId === primaryAccountId &&
+        (!movesBetweenAccounts || assignments.secondaryAccountId === secondaryAccountId)
+      );
+    }) || null
   );
 }
 

@@ -238,7 +238,7 @@ describe('workspace snapshot', () => {
     expect(snapshot.asOf).toBe('2026-07-10');
     expect(snapshot.position).toHaveProperty('netWorth');
     expect(snapshot.accounts.rows.some((row) => row.name === 'Cash')).toBe(true);
-    expect(snapshot.thisMonth.range).toEqual({ start: '2026-07-01', end: '2026-07-31' });
+    expect(snapshot.thisMonth.range).toEqual({ start: '2026-07-01', end: '2026-07-10' });
     expect(snapshot.thisMonth.expense).toBe(2400);
     expect(snapshot.thisMonth.topExpenseCategories[0]).toMatchObject({
       category: 'Food',
@@ -269,6 +269,29 @@ describe('workspace snapshot', () => {
 
     expect(built.json.length).toBeLessThanOrEqual(CAVALRY_ASSISTANT_SNAPSHOT_MAX_CHARS);
     expect(built.snapshot.accounts.omittedCount).toBeGreaterThan(0);
+  });
+
+  it('keeps current balances and month-to-date flow consistent when future entries exist', () => {
+    const workbook = makeWorkbook();
+    const before = buildCavalryAssistantWorkspaceSnapshot(workbook, { today: '2026-07-10' });
+    workbook.transactions.push(
+      expenseTransaction({
+        id: 'future-spending',
+        date: '2026-07-20',
+        description: 'Planned groceries',
+        amount: 9000,
+        categoryId: 'food'
+      })
+    );
+    const after = buildCavalryAssistantWorkspaceSnapshot(workbook, { today: '2026-07-10' });
+
+    expect(after.snapshot.position).toEqual(before.snapshot.position);
+    expect(after.snapshot.accounts).toEqual(before.snapshot.accounts);
+    expect(after.snapshot.thisMonth).toEqual(before.snapshot.thisMonth);
+    expect(
+      after.snapshot.accounts.rows.every((row) => ['asset', 'liability'].includes(row.group))
+    ).toBe(true);
+    expect(after.snapshot.counts.transactions).toBe(4);
   });
 
   it('nets refunds in the snapshot instead of presenting them as new spending', () => {

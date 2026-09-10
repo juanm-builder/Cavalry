@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -191,9 +192,9 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onSave }) {
         </div>
         {needsFxRate ? (
           <div className="field">
-            <label htmlFor={`${entry.id}-fx-rate`}>
+            <PrivateValue as="label" htmlFor={`${entry.id}-fx-rate`}>
               {entry.currency} to {workbookCurrency} rate
-            </label>
+            </PrivateValue>
             <input
               {...fieldAccessibility('fxRateToBase')}
               id={`${entry.id}-fx-rate`}
@@ -208,13 +209,21 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onSave }) {
       </div>
 
       {entry.issues.length ? (
-        <ul aria-label={`Line ${entry.lineNumber} issues`} className="notes-editor-issues">
+        <PrivateValue
+          as="ul"
+          aria-label={`Line ${entry.lineNumber} issues`}
+          className="notes-editor-issues"
+        >
           {entry.issues.map((item, index) => (
-            <li id={`${entry.id}-issue-${index}`} key={`${item.code}:${item.field}`}>
+            <PrivateValue
+              as="li"
+              id={`${entry.id}-issue-${index}`}
+              key={`${item.code}:${item.field}`}
+            >
               {item.message}
-            </li>
+            </PrivateValue>
           ))}
-        </ul>
+        </PrivateValue>
       ) : null}
       <div className="notes-editor-actions">
         <span />
@@ -257,18 +266,22 @@ function ReviewEntry({
           <Icon name={categoryIcon(entry)} />
         </span>
         <span className="notes-entry-copy">
-          <strong>{entry.categoryName}</strong>
-          <small>{entry.description}</small>
+          <PrivateValue as="strong">{entry.categoryName}</PrivateValue>
+          <PrivateValue as="small">{entry.description}</PrivateValue>
         </span>
-        <strong
+        <PrivateValue
+          as="strong"
           aria-label={`${amountDirection} ${formatAmount(entry.amount, entry.currency)}`}
           className={`notes-entry-amount ${amountTone}`}
         >
           {amountSign}
           {formatAmount(Math.abs(Number(entry.amount) || 0), entry.currency)}
-        </strong>
-        <span className="notes-payment-pill">{entry.paymentLabel}</span>
-        <button
+        </PrivateValue>
+        <PrivateValue as="span" className="notes-payment-pill">
+          {entry.paymentLabel}
+        </PrivateValue>
+        <PrivateValue
+          as="button"
           aria-expanded={isEditing}
           aria-label={`Edit transaction ${position}: ${entry.description}`}
           className="notes-edit-button"
@@ -277,7 +290,7 @@ function ReviewEntry({
           type="button"
         >
           <Icon name={isEditing ? 'expand_less' : 'edit'} />
-        </button>
+        </PrivateValue>
       </div>
       {isEditing ? (
         <ReviewEditor
@@ -685,7 +698,7 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
           <Icon
             name={error ? 'error' : /\b(?:added|updated)\b/i.test(notice) ? 'check_circle' : 'info'}
           />
-          <span>{error || notice}</span>
+          <PrivateValue as="span">{error || notice}</PrivateValue>
           {!error && canConfigureAi ? (
             <button
               onClick={() =>
@@ -712,14 +725,14 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             <div>
               <h2>Quick entry</h2>
             </div>
-            <span className="notes-ai-badge">
+            <PrivateValue as="span" className="notes-ai-badge">
               <Icon name="auto_awesome" />
               {parseMode === 'ai'
                 ? 'AI enhanced'
                 : parseMode === 'hybrid'
                   ? 'AI + local'
                   : 'Smart entry'}
-            </span>
+            </PrivateValue>
           </header>
           <label className="notes-textarea-label" htmlFor="notes-quick-entry">
             Transaction notes
@@ -742,14 +755,15 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             value={text}
           />
           <footer className="notes-panel-footer">
-            <span>
+            <PrivateValue as="span">
               {processing
                 ? 'Reading and adding your transactions…'
                 : lines
                   ? `${lines} line${lines === 1 ? '' : 's'} ready to add`
                   : 'Start with an amount and description; payment method is optional'}
-            </span>
-            <button
+            </PrivateValue>
+            <PrivateValue
+              as="button"
               className="btn btn-primary notes-process-button"
               disabled={!lines || processing}
               onClick={() => void processTransactions()}
@@ -757,7 +771,7 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
             >
               <Icon name="auto_awesome" />
               {processing ? 'Adding…' : 'Add transactions'}
-            </button>
+            </PrivateValue>
           </footer>
         </section>
 
@@ -769,7 +783,8 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
               </h2>
             </div>
             {entries.length ? (
-              <span
+              <PrivateValue
+                as="span"
                 className={
                   unresolvedCount ? 'notes-review-count needs-review' : 'notes-review-count'
                 }
@@ -779,7 +794,7 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                       unresolvedCount === 1 ? 's' : ''
                     } details`
                   : `${entries.length} added`}
-              </span>
+              </PrivateValue>
             ) : null}
           </header>
           <div className="notes-review-list">

@@ -1,6 +1,10 @@
 // Owns immutable recurring tracker commands and returns domain events for the app to apply.
 
-import { normalizeDateKey, roundMoney } from '../../domain/money.js';
+import { roundMoney } from '../../domain/money.js';
+import {
+  normalizeRecurringDateKey as normalizeDateKey,
+  normalizeRecurringScheduleMap
+} from './recurring-schedule.js';
 import {
   normalizeRecurringFrequency,
   normalizeRecurringKind
@@ -133,6 +137,13 @@ export function normalizeRecurringItemForCommand(
     currency: asString(item && item.currency ? item.currency : baseCurrency || 'PHP').toUpperCase(),
     frequency: normalizeRecurringFrequency(item && item.frequency),
     anchorDate,
+    endDate: normalizeDateKey(item && item.endDate),
+    ...(Object.keys(normalizeRecurringScheduleMap(item?.monthOverrides)).length
+      ? { monthOverrides: normalizeRecurringScheduleMap(item.monthOverrides) }
+      : {}),
+    ...(Object.keys(normalizeRecurringScheduleMap(item?.scheduleChanges)).length
+      ? { scheduleChanges: normalizeRecurringScheduleMap(item.scheduleChanges) }
+      : {}),
     autoRenew: item && item.autoRenew === true ? true : false,
     isActive: item && item.isActive === false ? false : true,
     note: String(item && item.note ? item.note : ''),

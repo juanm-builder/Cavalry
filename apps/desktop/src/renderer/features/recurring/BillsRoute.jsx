@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useState } from 'react';
 
 import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
@@ -44,10 +45,12 @@ function PageHeader({ title, subtitle, children }) {
   return (
     <section className="page-header bills-page-header">
       <div>
-        <h1>{title}</h1>
-        {subtitle ? <p>{subtitle}</p> : null}
+        <PrivateValue as="h1">{title}</PrivateValue>
+        {subtitle ? <PrivateValue as="p">{subtitle}</PrivateValue> : null}
       </div>
-      <div className="page-actions">{children}</div>
+      <PrivateValue as="div" className="page-actions">
+        {children}
+      </PrivateValue>
     </section>
   );
 }
@@ -74,9 +77,11 @@ function SummaryPill({ tone, status, label, value, detail, onAction }) {
       type="button"
       onClick={() => emit(onAction, 'set-bills-status', { billsStatus: status })}
     >
-      <span>{label}</span>
-      <strong className={`amount ${tone || 'neutral'}`}>{value}</strong>
-      <small>{detail}</small>
+      <PrivateValue as="span">{label}</PrivateValue>
+      <PrivateValue as="strong" className={`amount ${tone || 'neutral'}`}>
+        {value}
+      </PrivateValue>
+      <PrivateValue as="small">{detail}</PrivateValue>
     </button>
   );
 }
@@ -90,14 +95,15 @@ function KindTabs({ activeKind, onAction }) {
   return (
     <div className="pill-tabs">
       {tabs.map(([kind, label]) => (
-        <button
+        <PrivateValue
+          as="button"
           key={kind}
           className={activeKind === kind ? 'active' : ''}
           type="button"
           onClick={() => emit(onAction, 'set-bills-kind', { billsKind: kind })}
         >
           {label}
-        </button>
+        </PrivateValue>
       ))}
     </div>
   );
@@ -113,13 +119,19 @@ function ActionMenu({ children }) {
       >
         <Icon name="more_vert" />
       </summary>
-      <div className="action-menu-popover">{children}</div>
+      <PrivateValue as="div" className="action-menu-popover">
+        {children}
+      </PrivateValue>
     </details>
   );
 }
 
 function StatusPill({ status, tone }) {
-  return <span className={`status-pill ${tone || 'info'}`}>{status || 'Upcoming'}</span>;
+  return (
+    <PrivateValue as="span" className={`status-pill ${tone || 'info'}`}>
+      {status || 'Upcoming'}
+    </PrivateValue>
+  );
 }
 
 function ArchiveModal({ row, onAction, onClose }) {
@@ -153,7 +165,7 @@ function ArchiveModal({ row, onAction, onClose }) {
               <Icon name="archive" />
               Archive Recurring Item
             </div>
-            <h3>{row.name}</h3>
+            <PrivateValue as="h3">{row.name}</PrivateValue>
           </div>
           <button
             className="btn btn-icon"
@@ -168,9 +180,9 @@ function ArchiveModal({ row, onAction, onClose }) {
           Future occurrences will be hidden. Posted transactions remain in the ledger.
         </div>
         {error ? (
-          <div className="panel-note status-bad" role="alert">
+          <PrivateValue as="div" className="panel-note status-bad" role="alert">
             {error}
-          </div>
+          </PrivateValue>
         ) : null}
         <div className="modal-actions">
           <button className="btn" type="button" onClick={() => onClose(true)}>
@@ -198,7 +210,9 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
       ? reconciliation.statusLabel || 'Review match'
       : reconciliation.state !== 'unmatched' && reconciliation.statusLabel
         ? reconciliation.statusLabel
-        : row.status;
+        : row.status === 'Expected charge not recorded'
+          ? 'Not recorded'
+          : row.status;
   const relativeDateLabel =
     reconciliation.state === 'matched' && reconciliation.statusLabel
       ? reconciliation.statusLabel
@@ -214,18 +228,20 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
       <button className="bill-register-main" type="button" onClick={openMain}>
         <IconDisc className={`mini-icon ${displayTone || ''}`} name={row.icon || 'receipt_long'} />
         <span>
-          <strong>{row.name}</strong>
-          <small>
+          <PrivateValue as="strong">{row.name}</PrivateValue>
+          <PrivateValue as="small">
             {row.metaLabel}
             {row.note ? ` • ${row.note}` : ''}
-          </small>
+          </PrivateValue>
         </span>
       </button>
       <div className="bill-register-due">
-        <strong>{row.dueDateCopy}</strong>
-        <small>{relativeDateLabel}</small>
+        <PrivateValue as="strong">{row.dueDateCopy}</PrivateValue>
+        <PrivateValue as="small">{relativeDateLabel}</PrivateValue>
       </div>
-      <b className={`bill-register-amount amount ${displayTone || 'neutral'}`}>{row.amountCopy}</b>
+      <PrivateValue as="b" className={`bill-register-amount amount ${displayTone || 'neutral'}`}>
+        {row.amountCopy}
+      </PrivateValue>
       <div className="bill-register-status">
         <StatusPill status={displayStatus} tone={displayTone} />
       </div>
@@ -263,7 +279,8 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
             </button>
           ) : null}
           {row.actions && row.actions.canOpenTransaction && linkedTransaction ? (
-            <button
+            <PrivateValue
+              as="button"
               className="btn btn-icon"
               type="button"
               aria-label={
@@ -276,7 +293,7 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
               }
             >
               <Icon name="visibility" />
-            </button>
+            </PrivateValue>
           ) : null}
           {row.actions && row.actions.canReviewPossibleTransaction && row.possibleTransaction ? (
             <button
@@ -356,7 +373,6 @@ function BillCreateRow({ onCreate }) {
       </span>
       <span>
         <strong>Create bill or subscription</strong>
-        <small>Add a recurring payment or subscription</small>
       </span>
     </button>
   );
@@ -367,9 +383,9 @@ function Pagination({ pagination, onAction }) {
   if (!data.visible) return null;
   return (
     <div className="table-pagination bills-table-footer">
-      <span className="table-page-copy">
+      <PrivateValue as="span" className="table-page-copy">
         Showing {data.showingStart} to {data.showingEnd} of {data.rowCount} items
-      </span>
+      </PrivateValue>
       <div>
         <button
           className="btn btn-icon"
@@ -379,13 +395,14 @@ function Pagination({ pagination, onAction }) {
         >
           <Icon name="chevron_left" />
         </button>
-        <button
+        <PrivateValue
+          as="button"
           className="btn btn-primary btn-icon"
           type="button"
           onClick={() => emit(onAction, 'bills-first-page')}
         >
           {String(data.currentPage || 1)}
-        </button>
+        </PrivateValue>
         <button
           className="btn btn-icon"
           type="button"
@@ -528,7 +545,8 @@ function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
     (['matched', 'partial'].includes(reconciliation.state) ? reconciliation.transaction : null);
   return renderInBody(
     <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
-      <div
+      <PrivateValue
+        as="div"
         aria-label={`${row.name} occurrence details`}
         aria-modal="true"
         className="modal-card modal-card-wide bill-form-modal"
@@ -536,7 +554,7 @@ function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
       >
         <div className="bill-form-header">
           <div>
-            <h3>{row.name}</h3>
+            <PrivateValue as="h3">{row.name}</PrivateValue>
             <p>This occurrence is separate from the recurring rule behind it.</p>
           </div>
           <button
@@ -553,35 +571,35 @@ function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
             <dl className="budget-detail-list">
               <div>
                 <dt>Status</dt>
-                <dd>{row.status}</dd>
+                <PrivateValue as="dd">{row.status}</PrivateValue>
               </div>
               <div>
                 <dt>Expected date</dt>
-                <dd>{row.dueDateCopy || row.dueDate}</dd>
+                <PrivateValue as="dd">{row.dueDateCopy || row.dueDate}</PrivateValue>
               </div>
               <div>
                 <dt>Expected amount</dt>
-                <dd>{row.dueAmountCopy || row.amountCopy}</dd>
+                <PrivateValue as="dd">{row.dueAmountCopy || row.amountCopy}</PrivateValue>
               </div>
               <div>
                 <dt>Category</dt>
-                <dd>{row.categoryName || 'Uncategorized'}</dd>
+                <PrivateValue as="dd">{row.categoryName || 'Uncategorized'}</PrivateValue>
               </div>
               <div>
                 <dt>Payment method</dt>
-                <dd>{row.paymentMethod || 'Not set'}</dd>
+                <PrivateValue as="dd">{row.paymentMethod || 'Not set'}</PrivateValue>
               </div>
               <div>
                 <dt>Frequency</dt>
-                <dd>{row.frequency || 'Not set'}</dd>
+                <PrivateValue as="dd">{row.frequency || 'Not set'}</PrivateValue>
               </div>
               <div>
                 <dt>Matching evidence</dt>
-                <dd>
+                <PrivateValue as="dd">
                   {reconciliation.explanation ||
                     reconciliation.detail ||
                     'No transaction has been linked yet.'}
-                </dd>
+                </PrivateValue>
               </div>
             </dl>
           </div>
@@ -608,7 +626,7 @@ function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
             <Icon name="edit" /> Edit recurring rule
           </button>
         </div>
-      </div>
+      </PrivateValue>
     </div>
   );
 }
@@ -619,7 +637,9 @@ function InactiveRecurring({ items, onAction }) {
     <article className="reference-card bill-month-note-card">
       <div className="reference-card-title">
         <h3>Inactive</h3>
-        <span className="tag">{String(items.length)}</span>
+        <PrivateValue as="span" className="tag">
+          {String(items.length)}
+        </PrivateValue>
       </div>
       <div className="bill-due-queue">
         {items.map((item) => (
@@ -629,13 +649,16 @@ function InactiveRecurring({ items, onAction }) {
               name={item.kind === 'subscription' ? 'sync' : 'archive'}
             />
             <span>
-              <strong>{item.name}</strong>
-              <small>
+              <PrivateValue as="strong">{item.name}</PrivateValue>
+              <PrivateValue as="small">
                 {item.frequency} • {item.categoryName}
-              </small>
+              </PrivateValue>
             </span>
-            <b className="amount neutral">{item.amountCopy}</b>
-            <button
+            <PrivateValue as="b" className="amount neutral">
+              {item.amountCopy}
+            </PrivateValue>
+            <PrivateValue
+              as="button"
               aria-label={`Restore ${item.name}`}
               className="btn btn-icon"
               onClick={() =>
@@ -644,7 +667,7 @@ function InactiveRecurring({ items, onAction }) {
               type="button"
             >
               <Icon name="restore" />
-            </button>
+            </PrivateValue>
           </div>
         ))}
       </div>
@@ -667,7 +690,9 @@ function DueNext({ groups, onSelect }) {
       {asArray(groups).length ? (
         asArray(groups).map((group) => (
           <div className="bill-due-group" key={group.label}>
-            <div className="bill-due-group-title">{group.label}</div>
+            <PrivateValue as="div" className="bill-due-group-title">
+              {group.label}
+            </PrivateValue>
             <div className="bill-due-queue">
               {asArray(group.rows).map((row) => (
                 <button
@@ -681,13 +706,15 @@ function DueNext({ groups, onSelect }) {
                     name={row.icon || 'receipt_long'}
                   />
                   <span>
-                    <strong>{row.name}</strong>
-                    <small>{row.dueDateCopy}</small>
+                    <PrivateValue as="strong">{row.name}</PrivateValue>
+                    <PrivateValue as="small">{row.dueDateCopy}</PrivateValue>
                   </span>
-                  <b className={`amount ${row.tone || 'neutral'}`}>
+                  <PrivateValue as="b" className={`amount ${row.tone || 'neutral'}`}>
                     {row.dueAmountCopy || row.amountCopy}
-                  </b>
-                  <span className={`bill-days-tag ${row.tone || ''}`}>{row.relativeDateLabel}</span>
+                  </PrivateValue>
+                  <PrivateValue as="span" className={`bill-days-tag ${row.tone || ''}`}>
+                    {row.relativeDateLabel}
+                  </PrivateValue>
                 </button>
               ))}
             </div>
@@ -731,7 +758,9 @@ function SubscriptionSuggestions({ review, onReview }) {
           <h3>Possible recurring charges</h3>
           <p>Review each suggestion before Cavalry adds anything.</p>
         </div>
-        <span className="tag">{candidates.length}</span>
+        <PrivateValue as="span" className="tag">
+          {candidates.length}
+        </PrivateValue>
       </div>
       <div className="subscription-suggestion-list">
         {candidates.map((candidate) => (
@@ -740,22 +769,27 @@ function SubscriptionSuggestions({ review, onReview }) {
               <Icon name={candidate.kind === 'subscription' ? 'subscriptions' : 'receipt_long'} />
             </span>
             <span className="subscription-suggestion-copy">
-              <strong>{candidate.name}</strong>
-              <small>
+              <PrivateValue as="strong">{candidate.name}</PrivateValue>
+              <PrivateValue as="small">
                 {candidate.frequency || 'Monthly'} · {candidate.transactionCount} similar charge
                 {candidate.transactionCount === 1 ? '' : 's'}
-              </small>
-              <em>{candidate.confidenceLabel || 'Possible recurring'}</em>
+              </PrivateValue>
+              <PrivateValue as="em">
+                {candidate.confidenceLabel || 'Possible recurring'}
+              </PrivateValue>
             </span>
-            <b className="amount neutral">{candidate.amountCopy}</b>
-            <button
+            <PrivateValue as="b" className="amount neutral">
+              {candidate.amountCopy}
+            </PrivateValue>
+            <PrivateValue
+              as="button"
               aria-label={`Review ${candidate.name} recurring suggestion`}
               className="btn subscription-suggestion-review"
               onClick={() => onReview(candidate)}
               type="button"
             >
               Review
-            </button>
+            </PrivateValue>
           </article>
         ))}
       </div>
@@ -876,7 +910,8 @@ export function BillsRoute({
   return (
     <section data-react-route="bills">
       <PageHeader title="Bills & Subscriptions">
-        <button
+        <PrivateValue
+          as="button"
           className="btn bills-scan-button"
           disabled={!header.sheetId || header.scanDisabled}
           onClick={() =>
@@ -886,7 +921,7 @@ export function BillsRoute({
         >
           <Icon name={header.scanIcon || 'manage_search'} />
           {header.scanLabel || 'Find recurring charges'}
-        </button>
+        </PrivateValue>
         <ControlSelect
           icon="calendar_month"
           label="Bills month"
@@ -897,14 +932,14 @@ export function BillsRoute({
         />
       </PageHeader>
       {data.feedback && data.feedback.error ? (
-        <div className="panel-note status-bad" role="alert">
+        <PrivateValue as="div" className="panel-note status-bad" role="alert">
           {data.feedback.error}
-        </div>
+        </PrivateValue>
       ) : null}
       {data.subscriptionReview && data.subscriptionReview.error ? (
-        <div className="panel-note status-bad" role="alert">
+        <PrivateValue as="div" className="panel-note status-bad" role="alert">
           {data.subscriptionReview.error}
-        </div>
+        </PrivateValue>
       ) : null}
       <SubscriptionSuggestions review={data.subscriptionReview} onReview={openCandidate} />
       <section className="bills-simple-summary">
@@ -917,9 +952,13 @@ export function BillsRoute({
           <div className="bills-register-title-row">
             <div>
               <h3>Bill List</h3>
-              <span className="muted">{data.periodLabel || ''}</span>
+              <PrivateValue as="span" className="muted">
+                {data.periodLabel || ''}
+              </PrivateValue>
             </div>
-            <span className="tag">{String(data.rowCount || 0)} items</span>
+            <PrivateValue as="span" className="tag">
+              {String(data.rowCount || 0)} items
+            </PrivateValue>
           </div>
           <div className="register-toolbar bills-register-toolbar">
             <KindTabs activeKind={filters.filterKind || 'all'} onAction={onAction} />
@@ -940,12 +979,13 @@ export function BillsRoute({
           />
           <div className="bill-filter-chips">
             {asArray(data.filterChips).map((chip, index) => (
-              <span
+              <PrivateValue
+                as="span"
                 className={`bill-filter-chip${data.filterChips.length === 1 && chip === 'All recurring items' ? ' is-muted' : ''}`}
                 key={`${chip}-${index}`}
               >
                 {chip}
-              </span>
+              </PrivateValue>
             ))}
             {asArray(data.filterChips).some((chip) => chip !== 'All recurring items') ? (
               <button
@@ -987,11 +1027,13 @@ export function BillsRoute({
           <article className="reference-card bill-month-note-card">
             <div className="reference-card-title">
               <h3>Recurring</h3>
-              <span className="tag">
+              <PrivateValue as="span" className="tag">
                 {String((data.recurring && data.recurring.monthlyCount) || 0)}
-              </span>
+              </PrivateValue>
             </div>
-            <p>{(data.recurring && data.recurring.monthlyTotalCopy) || '0'} monthly equivalent.</p>
+            <PrivateValue as="p">
+              {(data.recurring && data.recurring.monthlyTotalCopy) || '0'} monthly equivalent.
+            </PrivateValue>
           </article>
           <InactiveRecurring items={data.inactiveItems} onAction={onAction} />
         </aside>

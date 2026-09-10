@@ -25,7 +25,9 @@ describe('Cavalry assistant action results', () => {
       changed: false
     });
     expect(result.receipt.access).toBe('write');
-    expect(cavalryAssistantActionReceiptMessage(result.receipt)).toContain('Please confirm');
+    expect(cavalryAssistantActionReceiptMessage(result.receipt)).toBe(
+      'Review the change below before confirming.'
+    );
   });
 
   it('grounds a completed receipt in the returned entity and exact account', () => {
@@ -109,6 +111,49 @@ describe('Cavalry assistant action results', () => {
     const message = cavalryAssistantActionReceiptMessage(result.receipt);
     expect(message).toBe('No change was needed for “Use concise replies”. It was already current.');
     expect(message).not.toMatch(/saved|failed|could not/i);
+  });
+
+  it('uses canonical payment routing and never presents ledger-line IDs as accounts', () => {
+    const transaction = {
+      id: 'paid-bill',
+      description: 'Subscription payment',
+      amount: 599,
+      currency: 'PHP',
+      accounts: [{ id: 'bank', name: 'Main Bank', role: 'funding' }],
+      lines: [
+        {
+          id: 'line-private-1',
+          accountId: 'expense',
+          accountName: 'Subscription Expense',
+          direction: 'debit'
+        },
+        { id: 'line-private-2', accountId: 'bank', accountName: 'Main Bank', direction: 'credit' }
+      ]
+    };
+    const normalized = normalizeCavalryAssistantActionResult(
+      {
+        ok: true,
+        changed: true,
+        commitStatus: 'committed',
+        verificationStatus: 'verified',
+        persistence: { status: 'saved', durable: true },
+        data: { transaction }
+      },
+      { toolName: 'pay_bill', access: 'write', actionVerb: 'Recorded payment for' }
+    );
+    expect(normalized.receipt.accounts).toEqual([
+      { id: 'bank', name: 'Main Bank', role: 'funding' }
+    ]);
+    const message = cavalryAssistantActionReceiptMessage(normalized.receipt);
+    expect(message).toContain('Main Bank');
+    expect(message).not.toContain('line-private');
+    expect(message).not.toContain('Subscription Expense');
+
+    const fallback = normalizeCavalryAssistantActionResult(
+      { ok: true, data: { transaction: { ...transaction, accounts: [] } } },
+      { toolName: 'read_transaction', access: 'read' }
+    );
+    expect(fallback.receipt.accounts.map((account) => account.id)).toEqual(['expense', 'bank']);
   });
 
   it('reports rollback plainly and strips technical error artifacts', () => {

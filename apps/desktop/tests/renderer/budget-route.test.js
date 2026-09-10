@@ -78,7 +78,7 @@ describe('BudgetRoute', () => {
     expect(html).toContain('Monthly Plan sections');
     expect(html).toContain('Food');
     expect(html).toContain('Subscriptions');
-    expect(html).toContain('aria-label="Create budget"');
+    expect(html).toContain('aria-label="Add spending plan"');
     expect(foodDescription).not.toBeNull();
     expect(html).not.toContain('aria-label="Open Food budget details"');
     expect(html).toContain(`class="sr-only" id="${foodDescriptionId}">Plan: `);
@@ -89,14 +89,14 @@ describe('BudgetRoute', () => {
     expect(html).not.toContain('Spending Breakdown');
   });
 
-  it('renders a focused empty state with a single create action', () => {
+  it('renders one add row for the empty spending section', () => {
     const emptyModel = makeRouteModel();
     emptyModel.categoryRows = [];
     emptyModel.spendingRows = [];
     const html = renderBudgetRoute(emptyModel);
 
-    expect(html).toContain('No plan entries yet.');
-    expect(html).toContain('Add your first amount to build this month’s plan.');
-    expect(html).toContain('aria-label="Create budget"');
+    expect(html).toContain('Add to Monthly Plan');
+    expect(html.match(/aria-label="Add spending plan"/g)).toHaveLength(1);
+    expect(html).not.toContain('No plan entries yet.');
   });
 });

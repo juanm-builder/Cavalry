@@ -124,7 +124,7 @@ export function getCategoryColor(category, index = 0) {
 }
 
 export function BudgetCategoryAvatar({ category }) {
-  const color = String(category && category.color ? category.color : '#ef7f7f');
+  const color = getCategoryColor(category);
   return (
     <span className="budget-category-avatar" style={{ '--category-color': color }}>
       <CavalryIcon name={getBudgetCategoryIcon(category)} />

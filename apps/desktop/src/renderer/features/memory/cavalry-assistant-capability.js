@@ -1,4 +1,7 @@
+import memoryRelevance from '@cavalry/advisor/domain/advisor/memory-relevance.cjs';
 import { defineCavalryAssistantCapability } from '../assistant/cavalry-assistant-capability-registry.js';
+
+const { hasMemoryRecallIntent, rankMemoryBlocks, rankMemoryItems } = memoryRelevance;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -41,45 +44,6 @@ const EXPECTED_REVISION_PROPERTY = Object.freeze({
 
 const MEMORY_LOOKUP_LIMIT = 8;
 const MEMORY_LOOKUP_TEXT_LIMIT = 6_000;
-const MEMORY_QUERY_STOP_WORDS = new Set([
-  'about',
-  'all',
-  'and',
-  'are',
-  'can',
-  'companion',
-  'cavalry',
-  'do',
-  'edit',
-  'erase',
-  'for',
-  'forget',
-  'forgot',
-  'from',
-  'have',
-  'items',
-  'know',
-  'list',
-  'me',
-  'memory',
-  'memories',
-  'my',
-  'please',
-  'recall',
-  'remember',
-  'remembered',
-  'saved',
-  'delete',
-  'remove',
-  'show',
-  'that',
-  'the',
-  'this',
-  'update',
-  'what',
-  'which',
-  'you'
-]);
 
 function memoryIntentQuestion(context = {}) {
   return asText(asObject(context).question).toLocaleLowerCase();
@@ -87,6 +51,7 @@ function memoryIntentQuestion(context = {}) {
 
 function hasExplicitMemoryIntent(question) {
   return (
+    hasMemoryRecallIntent(question) ||
     /\b(?:memory|memories|remember|remembered|forget|forgot|recall|personalization|preferences?)\b/i.test(
       question
     ) ||
@@ -96,21 +61,18 @@ function hasExplicitMemoryIntent(question) {
 }
 
 function hasMemoryLookupIntent(question) {
-  if (!hasExplicitMemoryIntent(question)) return false;
-  return (
-    /\b(?:show|list|review|read|check|search|find)\b.*\b(?:memory|memories|remembered|preferences?)\b/i.test(
-      question
-    ) ||
-    /\b(?:what|which)\b.*\b(?:memory|memories|remember|remembered|preferences?)\b/i.test(
-      question
-    ) ||
-    /\bwhat\s+(?:do|did)\s+you\s+(?:remember|recall|know)\b/i.test(question) ||
-    /^(?:please\s+)?recall\b/i.test(question)
-  );
+  return hasMemoryRecallIntent(question);
 }
 
 function hasMemoryActionIntent(toolName, question) {
   if (!hasExplicitMemoryIntent(question)) return false;
+  if (
+    toolName !== 'list_memory_items' &&
+    /\b(?:do not|don't|don’t|never)\s+(?:save|store|remember|memorize|forget|delete|clear|update)\b/i.test(
+      question
+    )
+  )
+    return false;
   if (toolName === 'list_memory_items') {
     return (
       hasMemoryLookupIntent(question) ||
@@ -119,9 +81,16 @@ function hasMemoryActionIntent(toolName, question) {
     );
   }
   if (toolName === 'remember_memory') {
+    if (hasMemoryActionIntent('update_memory_item', question)) return false;
     return (
       /^(?:please\s+)?(?:remember|memorize|save|store|add)\b/i.test(question) ||
-      /\b(?:can|could|would)\s+you\s+remember\s+(?:that|this|my|i)\b/i.test(question) ||
+      /\bplease\s+(?:remember|memorize|save|store)\b/i.test(question) ||
+      /\b(?:i want|i would like|i’d like|i'd like)\s+you\s+to\s+(?:remember|memorize|save|store)\b/i.test(
+        question
+      ) ||
+      /\b(?:can|could|would)\s+you\s+(?:please\s+)?remember\s+(?:that|this|these|my|i)\b/i.test(
+        question
+      ) ||
       /\b(?:save|store|add)\b.*\b(?:memory|preferences?)\b/i.test(question) ||
       /\bkeep\s+(?:this|that|it)\s+in\s+mind\b/i.test(question) ||
       /\b(?:save|store)\s+(?:this|that|it)\s+for\s+later\b/i.test(question)
@@ -131,7 +100,11 @@ function hasMemoryActionIntent(toolName, question) {
     return (
       /\b(?:update|change|edit|replace)\b.*\b(?:memory|remembered|preferences?)\b/i.test(
         question
-      ) || /\bremember\b.*\binstead\b/i.test(question)
+      ) ||
+      /\bremember\b.*\b(?:instead|no longer)\b/i.test(question) ||
+      /\b(?:correct|correction|actually)\b.*\b(?:memory|remember|remembered|saved|preferences?)\b/i.test(
+        question
+      )
     );
   }
   if (toolName === 'forget_memory') {
@@ -155,45 +128,18 @@ function memoryToolAvailable(toolName) {
     hasMemoryActionIntent(toolName, memoryIntentQuestion(context));
 }
 
-function memoryWords(value) {
-  return new Set(
-    asText(value)
-      .toLocaleLowerCase()
-      .match(/[\p{L}\p{N}]{2,}/gu)
-      ?.filter((word) => !MEMORY_QUERY_STOP_WORDS.has(word)) || []
+function relevantMemoryItems(memory, question, content = '') {
+  const candidates = rankMemoryItems(
+    asArray(memory.items)
+      .map(publicItem)
+      .filter((item) => item.id && item.text),
+    question
   );
-}
-
-function relevantMemoryItems(memory, question) {
-  const queryWords = memoryWords(question);
-  const broadLookup = queryWords.size === 0;
-  const candidates = asArray(memory.items)
-    .map(publicItem)
-    .filter((item) => item.id && item.text)
-    .map((item, index) => {
-      const itemWords = memoryWords(`${item.text} ${item.tags.join(' ')}`);
-      let overlap = 0;
-      queryWords.forEach((word) => {
-        if (!itemWords.has(word)) return;
-        overlap += item.tags.some((tag) => memoryWords(tag).has(word)) ? 3 : 1;
-      });
-      return {
-        item,
-        index,
-        overlap,
-        selected: broadLookup || item.scope === 'always' || overlap > 0
-      };
-    })
-    .filter((entry) => entry.selected)
-    .sort((left, right) => {
-      if (left.item.scope !== right.item.scope) return left.item.scope === 'always' ? -1 : 1;
-      if (left.overlap !== right.overlap) return right.overlap - left.overlap;
-      const recency = right.item.updatedAt.localeCompare(left.item.updatedAt);
-      return recency || left.index - right.index;
-    });
   const items = [];
+  const notes = [];
   let textCharacters = 0;
-  for (const { item } of candidates) {
+  let limited = false;
+  for (const item of candidates) {
     const itemTextCharacters = [
       item.id,
       item.text,
@@ -206,15 +152,24 @@ function relevantMemoryItems(memory, question) {
       items.length >= MEMORY_LOOKUP_LIMIT ||
       textCharacters + itemTextCharacters > MEMORY_LOOKUP_TEXT_LIMIT
     ) {
-      break;
+      limited = true;
+      continue;
     }
     items.push(item);
     textCharacters += itemTextCharacters;
   }
-  return {
-    items,
-    limited: items.length < candidates.length
-  };
+  for (const note of rankMemoryBlocks(content, question)) {
+    if (
+      items.length + notes.length >= MEMORY_LOOKUP_LIMIT ||
+      textCharacters + note.length > MEMORY_LOOKUP_TEXT_LIMIT
+    ) {
+      limited = true;
+      continue;
+    }
+    notes.push(note);
+    textCharacters += note.length;
+  }
+  return { items, notes, limited };
 }
 
 function advisor(environment) {
@@ -301,7 +256,11 @@ function invocationFailure(environment, result) {
 async function loadMemory(environment) {
   const result = await invoke(environment, 'getMemory');
   return result.ok === true
-    ? { ok: true, memory: publicMemory(result.memory) }
+    ? {
+        ok: true,
+        memory: publicMemory(result.memory),
+        content: asText(asObject(result.memory).content)
+      }
     : { ok: false, result: invocationFailure(environment, result) };
 }
 
@@ -318,7 +277,7 @@ async function authorizeMemoryAccess(environment, options = {}) {
   }
   const loaded = await loadMemory(environment);
   if (!loaded.ok) return loaded;
-  if (loaded.memory.memoryEnabled !== true) {
+  if (loaded.memory.memoryEnabled !== true && options.allowDisabled !== true) {
     return {
       ok: false,
       result: failed(
@@ -342,6 +301,9 @@ async function authorizeMemoryAccess(environment, options = {}) {
 }
 
 function proposalRequired(environment, action, proposal, memory, label) {
+  const existing = asText(proposal.id)
+    ? memory.items.find((item) => item.id === asText(proposal.id))
+    : null;
   return {
     ok: false,
     toolName: environment.toolName,
@@ -353,7 +315,8 @@ function proposalRequired(environment, action, proposal, memory, label) {
         id: asText(proposal.id) || 'memory.md',
         label: label || asText(proposal.text) || 'Companion memory'
       },
-      revision: memory.revision
+      revision: memory.revision,
+      ...(existing && proposal.text ? { before: existing.text, after: asText(proposal.text) } : {})
     },
     warnings: [],
     errors: [
@@ -444,9 +407,37 @@ function completed(environment, memoryValue, itemValue, action) {
 }
 
 async function listMemory(environment) {
-  const loaded = await authorizeMemoryAccess(environment);
+  const loaded = await authorizeMemoryAccess(environment, { allowDisabled: true });
   if (!loaded.ok) return loaded.result;
-  const selection = relevantMemoryItems(loaded.memory, memoryIntentQuestion(environment.context));
+  if (loaded.memory.memoryEnabled !== true) {
+    return {
+      ok: true,
+      toolName: environment.toolName,
+      ...(environment.toolCallId ? { toolCallId: environment.toolCallId } : {}),
+      status: 'completed',
+      changed: false,
+      commitStatus: 'not_applicable',
+      verificationStatus: 'verified',
+      data: {
+        memory: {
+          memoryEnabled: false,
+          availability: 'disabled',
+          items: [],
+          notes: [],
+          limited: false
+        }
+      },
+      message:
+        'Saved memory is switched off, so no saved details were accessed. You can still use what the user says in this conversation and verified workbook data; distinguish those from saved memory.',
+      warnings: [],
+      errors: []
+    };
+  }
+  const selection = relevantMemoryItems(
+    loaded.memory,
+    memoryIntentQuestion(environment.context),
+    loaded.content
+  );
   return {
     ok: true,
     toolName: environment.toolName,
@@ -461,6 +452,7 @@ async function listMemory(environment) {
         memoryEnabled: true,
         empty: loaded.memory.empty === true,
         items: selection.items,
+        notes: selection.notes,
         limited: selection.limited
       }
     },
@@ -492,7 +484,7 @@ async function rememberMemory(environment) {
   const proposal = { text, ...(tags.length ? { tags } : {}) };
   const prepared = await prepareMemoryWrite(
     environment,
-    `remember “${text.slice(0, 120)}”`,
+    `remember “${text}”`,
     proposal,
     text,
     (memory) => {
@@ -540,7 +532,7 @@ async function updateMemory(environment) {
   }
   const prepared = await prepareMemoryWrite(
     environment,
-    `update memory item ${id}`,
+    'update this saved memory',
     (memory) => {
       const existing = memory.items.find((item) => item.id === id);
       return { id, text, tags: hasTags ? requestedTags : asArray(existing?.tags) };
@@ -649,7 +641,7 @@ export default defineCavalryAssistantCapability({
   description:
     'Reads and explicitly updates the user-controlled memory.md document in Cavalry’s local application-data folder.',
   instructions:
-    'Use list_memory_items before editing or forgetting an item. Only propose remember, update, forget, or clear actions when the user explicitly asks. Never claim that memory changed until the returned durable receipt says it was committed and verified.',
+    'Use list_memory_items before editing or forgetting an item. Saved memory notes and items are personal background, distinct from facts in this conversation and current workbook data. A disabled or empty lookup does not prevent an ordinary conversation. If a lookup is limited or has no matches, do not conclude that the user has no saved memory. Only propose remember, update, forget, or clear actions when the user explicitly asks. Never claim that memory changed until the returned durable receipt says it was committed and verified.',
   version: '1.0.0',
   compatibility: { minimumAppVersion: '2.1.0' },
   inputValidation: 'structure',
@@ -658,7 +650,7 @@ export default defineCavalryAssistantCapability({
     {
       definition: definition(
         'list_memory_items',
-        'List the individual, user-visible items in local Companion memory. This is read-only and does not require an open workbook.'
+        'Read relevant saved personal notes and individual memory items, including names, preferences, and goals. Notes without an item ID come from the free-form memory document and cannot be edited with an item-ID tool. This is read-only and does not require an open workbook.'
       ),
       execute: listMemory,
       access: 'read',

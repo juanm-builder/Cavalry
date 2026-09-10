@@ -1,3 +1,4 @@
+import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -58,14 +59,17 @@ function ActionMenu({ children }) {
       <summary aria-label="Category actions" title="Category actions">
         <Icon name="more_vert" />
       </summary>
-      <div className="category-action-popover">{children}</div>
+      <PrivateValue as="div" className="category-action-popover">
+        {children}
+      </PrivateValue>
     </details>
   );
 }
 
 function MenuButton({ icon, title, binding, onClick, danger = false }) {
   return (
-    <button
+    <PrivateValue
+      as="button"
       aria-label={title}
       className={danger ? 'danger' : ''}
       title={title}
@@ -73,8 +77,8 @@ function MenuButton({ icon, title, binding, onClick, danger = false }) {
       {...withClick(binding, onClick)}
     >
       <Icon name={icon} />
-      <span>{title}</span>
-    </button>
+      <PrivateValue as="span">{title}</PrivateValue>
+    </PrivateValue>
   );
 }
 
@@ -91,7 +95,8 @@ function CategoryCard({ row, currency, actions, onOpenModal, isTarget = false, t
   const activitySign = row.amountTone === 'good' ? '+' : row.amountTone === 'bad' ? '−' : '';
 
   return (
-    <article
+    <PrivateValue
+      as="article"
       aria-label={`${row.name} category`}
       className={`category-card${row.isArchived ? ' is-archived' : ''}${isTarget ? ' is-reference-target' : ''}`}
       data-category-id={row.id}
@@ -108,7 +113,7 @@ function CategoryCard({ row, currency, actions, onOpenModal, isTarget = false, t
       <div className="category-card-body">
         <div className="category-card-title-row">
           <div>
-            <strong>{row.name}</strong>
+            <PrivateValue as="strong">{row.name}</PrivateValue>
             {row.isArchived ? <span className="category-archived-badge">Hidden</span> : null}
           </div>
           {canRename || canToggle || canDelete || canLink ? (
@@ -154,24 +159,28 @@ function CategoryCard({ row, currency, actions, onOpenModal, isTarget = false, t
             <span className="category-system-badge">System</span>
           )}
         </div>
-        <b className={`category-card-amount ${row.amountTone || 'neutral'}`}>
+        <PrivateValue as="b" className={`category-card-amount ${row.amountTone || 'neutral'}`}>
           {activitySign}
           {formatMoney(Math.abs(Number(row.spent) || 0), currency)}
-        </b>
-        <div className="category-progress" aria-label={`${formatPercent(row.percent)} of activity`}>
+        </PrivateValue>
+        <PrivateValue
+          as="div"
+          className="category-progress"
+          aria-label={`${formatPercent(row.percent)} of activity`}
+        >
           <span />
-        </div>
-        <span className="category-card-share">
+        </PrivateValue>
+        <PrivateValue as="span" className="category-card-share">
           {row.activityLabel || 'Activity'} · {formatPercent(row.percent)} of activity
-        </span>
+        </PrivateValue>
         <div className="category-card-foot">
-          <span>
+          <PrivateValue as="span">
             {row.transactionCount || 0} transaction{row.transactionCount === 1 ? '' : 's'}
-          </span>
-          <span>{row.typeLabel}</span>
+          </PrivateValue>
+          <PrivateValue as="span">{row.typeLabel}</PrivateValue>
         </div>
       </div>
-    </article>
+    </PrivateValue>
   );
 }
 
@@ -190,8 +199,10 @@ function MoreCategoriesCard({ rows, expanded, onToggle }) {
         </span>
       </div>
       <div className="category-more-copy">
-        <strong>{expanded ? 'Show fewer' : `+ ${rows.length} more`}</strong>
-        <span>{expanded ? 'Collapse categories' : 'View all categories'}</span>
+        <PrivateValue as="strong">{expanded ? 'Show fewer' : `+ ${rows.length} more`}</PrivateValue>
+        <PrivateValue as="span">
+          {expanded ? 'Collapse categories' : 'View all categories'}
+        </PrivateValue>
       </div>
       {!expanded ? (
         <div className="category-more-preview" aria-hidden="true">
@@ -200,7 +211,7 @@ function MoreCategoriesCard({ rows, expanded, onToggle }) {
               <Icon name={row.icon || 'category'} />
             </span>
           ))}
-          {rows.length > 4 ? <small>+{rows.length - 4}</small> : null}
+          {rows.length > 4 ? <PrivateValue as="small">+{rows.length - 4}</PrivateValue> : null}
         </div>
       ) : null}
     </button>
@@ -279,7 +290,8 @@ function ModalFrame({ title, eyebrow = '', error, children, onCancel, className 
   const dismiss = useModalDismiss(onCancel);
   return (
     <div className="modal-backdrop" onMouseDown={dismiss}>
-      <section
+      <PrivateValue
+        as="section"
         aria-labelledby="category-modal-title"
         aria-modal="true"
         className={`modal-card category-modal ${className}`}
@@ -290,8 +302,10 @@ function ModalFrame({ title, eyebrow = '', error, children, onCancel, className 
             <Icon className="category-modal-back-mark" name="arrow_back" />
           ) : null}
           <div>
-            {eyebrow ? <span>{eyebrow}</span> : null}
-            <h2 id="category-modal-title">{title}</h2>
+            {eyebrow ? <PrivateValue as="span">{eyebrow}</PrivateValue> : null}
+            <PrivateValue as="h2" id="category-modal-title">
+              {title}
+            </PrivateValue>
           </div>
           <button
             aria-label="Close"
@@ -303,12 +317,12 @@ function ModalFrame({ title, eyebrow = '', error, children, onCancel, className 
           </button>
         </header>
         {error ? (
-          <div className="category-modal-error" role="alert">
+          <PrivateValue as="div" className="category-modal-error" role="alert">
             {error}
-          </div>
+          </PrivateValue>
         ) : null}
         {children}
-      </section>
+      </PrivateValue>
     </div>
   );
 }
@@ -319,7 +333,7 @@ function CategoryPreview({ name, icon, color, onChange }) {
       <span className="category-preview-icon">
         <Icon name={icon} />
       </span>
-      <strong>{name || 'New Category'}</strong>
+      <PrivateValue as="strong">{name || 'New Category'}</PrivateValue>
       {onChange ? (
         <button onClick={onChange} type="button">
           Change
@@ -341,12 +355,12 @@ function CategoryCreationPreview({ name, icon, color, currency, type }) {
           <Icon name={icon} />
         </span>
         <div>
-          <strong>{name.trim() || 'Your category'}</strong>
-          <b>{formatMoney(0, currency)}</b>
+          <PrivateValue as="strong">{name.trim() || 'Your category'}</PrivateValue>
+          <PrivateValue as="b">{formatMoney(0, currency)}</PrivateValue>
         </div>
-        <span className="category-live-preview-type">
+        <PrivateValue as="span" className="category-live-preview-type">
           {type.charAt(0).toUpperCase() + type.slice(1)}
-        </span>
+        </PrivateValue>
         <div className="category-live-preview-progress">
           <span />
         </div>
@@ -436,7 +450,7 @@ function CategoryFormModal({
               required
               value={name}
             />
-            <small>{name.length}/30</small>
+            <PrivateValue as="small">{name.length}/30</PrivateValue>
           </div>
 
           <CategoryCreationPreview
@@ -537,7 +551,7 @@ function CategoryFormModal({
               placeholder="e.g., Coffee shops, drinks, and related treats"
               value={description}
             />
-            <small>{description.length}/80</small>
+            <PrivateValue as="small">{description.length}/80</PrivateValue>
           </div>
 
           <div className="category-rules-heading">
@@ -591,7 +605,7 @@ function CategoryFormModal({
           <fieldset className={`category-type-fieldset${isEdit ? ' is-readonly' : ''}`}>
             <legend>Show in reports as</legend>
             {isEdit ? (
-              <div className="category-type-readonly">
+              <PrivateValue as="div" className="category-type-readonly">
                 <Icon
                   name={
                     {
@@ -603,7 +617,7 @@ function CategoryFormModal({
                   }
                 />
                 {type.charAt(0).toUpperCase() + type.slice(1)}
-              </div>
+              </PrivateValue>
             ) : (
               <div>
                 <label className={type === 'expense' ? 'selected expense' : 'expense'}>
@@ -652,9 +666,9 @@ function CategoryFormModal({
           <button className="category-secondary-action" onClick={onCancel} type="button">
             Cancel
           </button>
-          <button className="category-primary-action" type="submit">
+          <PrivateValue as="button" className="category-primary-action" type="submit">
             <Icon name="check" /> {isEdit ? 'Save Changes' : 'Create Category'}
-          </button>
+          </PrivateValue>
         </footer>
       </form>
     </ModalFrame>
@@ -675,17 +689,17 @@ function CategorySuccessModal({ category, plannerBucketName, onCancel, onAddAnot
         </span>
       </div>
       <h3>All set!</h3>
-      <p>“{category.name}” is ready to go.</p>
+      <PrivateValue as="p">“{category.name}” is ready to go.</PrivateValue>
       <div className="category-success-summary" style={{ '--category-color': category.color }}>
         <span>
           <Icon name={category.icon} />
         </span>
         <div>
-          <strong>{category.name}</strong>
-          <small>
+          <PrivateValue as="strong">{category.name}</PrivateValue>
+          <PrivateValue as="small">
             {plannerBucketName || 'Unassigned'} ·{' '}
             {category.type === 'income' ? 'Income' : 'Expense'}
-          </small>
+          </PrivateValue>
         </div>
       </div>
       <div className="category-success-tip">
@@ -776,16 +790,21 @@ function CategoryConfirmationModal({ mode, category, error, onCancel, onConfirm 
       title={content.title}
     >
       <div className="category-confirm-copy">
-        <strong>{category?.name}</strong>
-        <p>{content.copy}</p>
+        <PrivateValue as="strong">{category?.name}</PrivateValue>
+        <PrivateValue as="p">{content.copy}</PrivateValue>
       </div>
       <div className="category-create-footer">
         <button className="category-secondary-action" onClick={onCancel} type="button">
           Cancel
         </button>
-        <button className="category-primary-action" onClick={onConfirm} type="button">
+        <PrivateValue
+          as="button"
+          className="category-primary-action"
+          onClick={onConfirm}
+          type="button"
+        >
           {content.button}
-        </button>
+        </PrivateValue>
       </div>
     </ModalFrame>
   );
@@ -997,9 +1016,9 @@ function CategoryRouteController({
             value={search}
           />
         </label>
-        <strong className="categories-count">
+        <PrivateValue as="strong" className="categories-count">
           {rows.length} categor{rows.length === 1 ? 'y' : 'ies'}
-        </strong>
+        </PrivateValue>
         <label className="categories-hidden-toggle">
           <input
             checked={showHidden}

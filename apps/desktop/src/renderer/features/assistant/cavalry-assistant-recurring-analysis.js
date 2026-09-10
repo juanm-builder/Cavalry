@@ -1,4 +1,6 @@
 import { buildRecurringAnalysis } from '@cavalry/finance-core';
+import { normalizeRecurringMonthKey } from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
+import { failure } from './cavalry-assistant-command-result-support.js';
 
 import { asArray, asText } from './cavalry-assistant-tool-definitions.js';
 import { summarizeTransaction } from './cavalry-assistant-tool-presenters.js';
@@ -34,13 +36,41 @@ function countsBy(items, field) {
 export function createRecurringAnalysisTools({ currentDate, envelope, recurringItemsWithLabels }) {
   async function listRecurringBills(environment) {
     const asOfDate = currentDate(environment.workbook, environment.services);
-    const rows = recurringItemsWithLabels(
-      environment.workbook,
-      environment.arguments.includeArchived === true,
-      asOfDate
-    );
+    const args = environment.arguments;
+    const hasMonth = Object.hasOwn(args, 'monthKey');
+    const hasMonths = Object.hasOwn(args, 'monthKeys');
+    const requested = hasMonths
+      ? args.monthKeys
+      : [hasMonth ? args.monthKey : asOfDate.slice(0, 7)];
+    if (
+      (hasMonth && hasMonths) ||
+      !Array.isArray(requested) ||
+      !requested.length ||
+      requested.length > 24 ||
+      requested.some((month) => !normalizeRecurringMonthKey(month))
+    )
+      return failure(
+        environment,
+        'validation_failed',
+        'recurring.month-invalid',
+        'Provide either monthKey or monthKeys with 1 to 24 concrete YYYY-MM months.'
+      );
+    const monthKeys = [...new Set(requested.map(normalizeRecurringMonthKey))];
+    const schedules = monthKeys.map((monthKey) => {
+      const rows = recurringItemsWithLabels(
+        environment.workbook,
+        args.includeArchived === true,
+        monthKey === asOfDate.slice(0, 7) ? asOfDate : `${monthKey}-01`
+      );
+      return { monthKey, recurringItems: rows, count: rows.length };
+    });
     return envelope(environment.toolName, environment.toolCallId, {
-      data: { recurringItems: rows, count: rows.length, asOfDate }
+      data: {
+        asOfDate,
+        ...(hasMonths ? { monthKeys, schedules } : schedules[0]),
+        scheduleMeaning:
+          'Each month is already resolved using schedule changes and month exceptions. Use its amount/dueDates/scheduledTotal directly. No charge scheduled means zero expected charge; these are not recorded payments.'
+      }
     });
   }
 

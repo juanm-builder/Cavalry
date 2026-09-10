@@ -1,3 +1,4 @@
+import { PrivateValue } from './PrivateValue.jsx';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -154,7 +155,8 @@ function InlineCategoryCreateDialog({
       }}
       role="presentation"
     >
-      <section
+      <PrivateValue
+        as="section"
         aria-label={createLabel}
         aria-modal="true"
         className="categorized-select-create-dialog"
@@ -163,11 +165,11 @@ function InlineCategoryCreateDialog({
         <header>
           <CavalryIcon name="new_label" />
           <div>
-            <h2>{createLabel}</h2>
-            <p>
+            <PrivateValue as="h2">{createLabel}</PrivateValue>
+            <PrivateValue as="p">
               Add a {categoryTypeLabel(type).toLowerCase()} category without leaving{' '}
               {parentLabel.toLowerCase()}.
-            </p>
+            </PrivateValue>
           </div>
         </header>
         <form
@@ -229,20 +231,25 @@ function InlineCategoryCreateDialog({
             later in Categories.
           </small>
           {error ? (
-            <div className="categorized-select-create-error" role="alert">
+            <PrivateValue as="div" className="categorized-select-create-error" role="alert">
               {error}
-            </div>
+            </PrivateValue>
           ) : null}
           <footer>
             <button disabled={submitting} onClick={onCancel} type="button">
               Cancel
             </button>
-            <button className="btn btn-primary" disabled={!name.trim() || submitting} type="submit">
+            <PrivateValue
+              as="button"
+              className="btn btn-primary"
+              disabled={!name.trim() || submitting}
+              type="submit"
+            >
               {submitting ? 'Creating…' : 'Create & select'}
-            </button>
+            </PrivateValue>
           </footer>
         </form>
-      </section>
+      </PrivateValue>
     </div>,
     document.body
   );
@@ -373,7 +380,8 @@ export function CategorizedSelect({
 
   const menu = open
     ? createPortal(
-        <div
+        <PrivateValue
+          as="div"
           aria-label={`${ariaLabel} options`}
           className="categorized-select-menu"
           id={listboxId}
@@ -390,20 +398,23 @@ export function CategorizedSelect({
               type="button"
             >
               <CavalryIcon name="select_all" />
-              <span>{clearLabel}</span>
+              <PrivateValue as="span">{clearLabel}</PrivateValue>
               {!asString(value) ? (
                 <CavalryIcon className="categorized-select-check" name="check" />
               ) : null}
             </button>
           ) : null}
           {grouped.map((entry) => (
-            <section
+            <PrivateValue
+              as="section"
               aria-label={entry.group}
               className="categorized-select-group"
               key={entry.group}
               role="group"
             >
-              <div className="categorized-select-group-label">{entry.group}</div>
+              <PrivateValue as="div" className="categorized-select-group-label">
+                {entry.group}
+              </PrivateValue>
               {entry.options.map((option) => (
                 <button
                   aria-selected={option.value === asString(value)}
@@ -414,13 +425,13 @@ export function CategorizedSelect({
                   type="button"
                 >
                   <CavalryIcon name={option.icon} />
-                  <span>{option.label}</span>
+                  <PrivateValue as="span">{option.label}</PrivateValue>
                   {option.value === asString(value) ? (
                     <CavalryIcon className="categorized-select-check" name="check" />
                   ) : null}
                 </button>
               ))}
-            </section>
+            </PrivateValue>
           ))}
           {typeof onCreateCategory === 'function' ? (
             <button
@@ -434,18 +445,19 @@ export function CategorizedSelect({
               type="button"
             >
               <CavalryIcon name="add_circle" />
-              <span>{createLabel}</span>
+              <PrivateValue as="span">{createLabel}</PrivateValue>
               <CavalryIcon name="arrow_forward" />
             </button>
           ) : null}
-        </div>,
+        </PrivateValue>,
         document.body
       )
     : null;
 
   return (
-    <div className="categorized-select" ref={rootRef}>
-      <button
+    <PrivateValue as="div" className="categorized-select" ref={rootRef}>
+      <PrivateValue
+        as="button"
         aria-controls={open ? listboxId : undefined}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -470,9 +482,11 @@ export function CategorizedSelect({
         type="button"
       >
         <CavalryIcon className="categorized-select-leading" name={selected?.icon || 'category'} />
-        <span className={selected ? '' : 'placeholder'}>{selected?.label || placeholder}</span>
+        <PrivateValue as="span" className={selected ? '' : 'placeholder'}>
+          {selected?.label || placeholder}
+        </PrivateValue>
         <CavalryIcon className="categorized-select-chevron" name="expand_more" />
-      </button>
+      </PrivateValue>
       {name ? <input name={name} type="hidden" value={asString(value)} /> : null}
       {menu}
       {creating ? (
@@ -485,6 +499,6 @@ export function CategorizedSelect({
           parentLabel={ariaLabel}
         />
       ) : null}
-    </div>
+    </PrivateValue>
   );
 }

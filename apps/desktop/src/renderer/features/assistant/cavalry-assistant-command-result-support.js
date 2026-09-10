@@ -121,7 +121,7 @@ export function confirmationRequired(environment, actionLabel, options = {}) {
       required: true,
       field: 'confirmed',
       action: actionLabel,
-      message: `Confirm that you want Cavalry to ${actionLabel}, then retry with confirmed set to true.`,
+      message: `Confirm to ${actionLabel}.`,
       ...(options.proposal ? { proposal: clonePlain(options.proposal) } : {})
     }
   });
