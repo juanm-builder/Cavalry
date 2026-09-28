@@ -9,6 +9,7 @@ import {
 import { getRecurringItemForMonth } from '@cavalry/finance-core/application/recurring/recurring-schedule.js';
 
 import { formatCurrencyAmount } from '../../shared/currency-format.js';
+import { buildBillsOverview } from './bills-overview-model.js';
 
 const MONTH_NAMES = [
   'January',
@@ -982,6 +983,9 @@ export function buildBillsRouteModelFromBase(workbook, baseModel, viewState = {}
     rows: coreModel.pageRows,
     hasRows: coreModel.pageRows.length > 0,
     rowCount: coreModel.rowCount,
+    overview: buildBillsOverview(rows, coreModel.filters.filterKind, (amount) =>
+      formatMoney(amount, currency)
+    ),
     summaryPills: [
       {
         tone: attentionTotal > 0 ? 'warn' : 'neutral',

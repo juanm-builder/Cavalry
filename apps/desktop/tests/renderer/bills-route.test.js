@@ -144,8 +144,9 @@ describe('BillsRoute', () => {
     expect(html).toContain('bill-register-row warn');
     expect(html).toContain('Netflix');
     expect(html).toContain('Post linked transaction');
-    expect(html).toContain('bill-due-next-card');
-    expect(html).toContain('PHP 5,748.00 monthly equivalent.');
+    expect(html).not.toContain('bill-due-next-card');
+    expect(html).toContain('Billing overview');
+    expect(html).not.toContain('monthly equivalent.');
     expect(html).not.toContain('Add Bill / Subscription');
     expect(html).not.toContain('data-action=');
     expect(html).not.toContain('dangerouslySetInnerHTML');
@@ -174,7 +175,7 @@ describe('BillsRoute', () => {
     );
 
     expect(html).toContain('No bills match this view.');
-    expect(html).toContain('No upcoming bills.');
+    expect(html).not.toContain('No upcoming bills.');
     expect(html).toContain('aria-label="Create bill or subscription"');
     expect(html).not.toContain('bills-table-footer');
   });
@@ -250,13 +251,13 @@ describe('BillsRoute', () => {
       makeBillsModel({ rows: [row], dueNextGroups: [{ label: 'Unrecorded', rows: [row] }] })
     );
 
-    expect(html).toContain('Expected charge not recorded');
-    expect(html).toContain('Possible transaction match — review before marking paid');
+    expect(html).toContain('Review match');
+    expect(html).not.toContain('bill-reconciliation-review');
     expect(html).toContain('aria-label="Review possible matching transaction"');
     expect(html).not.toContain('aria-label="View paid transaction"');
   });
 
-  it('renders an explained candidate with visible confirm, reject, and view actions', () => {
+  it('keeps candidate details behind the review action', () => {
     const row = makeRow({
       status: 'Overdue',
       tone: 'bad',
@@ -282,16 +283,11 @@ describe('BillsRoute', () => {
     });
     const html = renderBillsRoute(makeBillsModel({ rows: [row], dueNextGroups: [] }));
 
-    expect(html).toContain('bill-register-row info has-reconciliation');
-    expect(html).toContain('data-reconciliation-state="candidate"');
-    expect(html).toContain('status-pill info">Review match');
-    expect(html).toContain('Likely transaction found');
-    expect(html).toContain('ChatGPT Pro • Jul 14 • PHP 6,490.00 • RCBC Credit Card');
-    expect(html).toContain('Same merchant, amount, account, and billing date.');
-    expect(html).toContain('>Not this</button>');
-    expect(html).toContain('>View</button>');
-    expect(html).toContain('>Confirm match</button>');
-    expect(html).toContain('2 days overdue');
+    expect(html).toContain('bill-register-row info');
+    expect(html).toContain('Review match: Netflix');
+    expect(html).not.toContain('bill-reconciliation-review');
+    expect(html).not.toContain('>Confirm match</button>');
+    expect(html).not.toContain('2 days overdue');
     expect(html).not.toContain('aria-label="Post linked transaction"');
   });
 
@@ -354,17 +350,12 @@ describe('BillsRoute', () => {
       makeBillsModel({ rows: [matched, partial], rowCount: 2, dueNextGroups: [] })
     );
 
-    expect(html).toContain('data-reconciliation-state="matched"');
-    expect(html).toContain('status-pill good">Charged');
-    expect(html).toContain('Matched automatically');
-    expect(html).toContain('ChatGPT Pro • Jul 14 • PHP 6,490.00 • RCBC Credit Card');
+    expect(html).toContain('Charged: Netflix');
     expect(html).toContain('aria-label="View matched transaction"');
     expect(html).toContain('aria-label="Undo matched transaction"');
-    expect(html).not.toContain('3 days overdue');
-    expect(html).toContain('data-reconciliation-state="partial"');
-    expect(html).toContain('status-pill warn">Partially paid');
-    expect(html).toContain('2 days overdue');
-    expect(html).toContain('Partial payment recorded');
-    expect(html).toContain('PHP 7,000.00 remains.');
+    expect(html).not.toContain('Matched automatically');
+    expect(html).not.toContain('bill-reconciliation-proof');
+    expect(html).toContain('Partially paid: Rent');
+    expect(html).not.toContain('Partial payment recorded');
   });
 });

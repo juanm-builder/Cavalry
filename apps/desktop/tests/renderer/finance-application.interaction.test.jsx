@@ -468,6 +468,6 @@ describe('finance application composition', () => {
     });
     expect((await screen.findAllByText('Internet')).length).toBeGreaterThan(0);
 
-    expect(screen.getByRole('button', { name: /Find recurring charges/ })).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Find recurring/ })).not.toBeNull();
   });
 });

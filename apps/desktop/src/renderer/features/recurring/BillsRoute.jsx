@@ -7,13 +7,12 @@ import { createPortal } from 'react-dom';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { BillsEditorModal } from './BillsEditorModal.jsx';
+import { BillOccurrenceModal } from './BillOccurrenceModal.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import {
   getReconciliationPayload,
   getReconciliationTone,
-  getRowReconciliation,
-  ReconciliationProof,
-  ReconciliationReview
+  getRowReconciliation
 } from './BillsReconciliation.jsx';
 
 function Icon({ name, className = '' }) {
@@ -70,19 +69,14 @@ function ControlSelect({ icon, label, options = [], value, className = '', onCha
   );
 }
 
-function SummaryPill({ tone, status, label, value, detail, onAction }) {
+function SummaryValue({ label, value }) {
   return (
-    <button
-      className={`bill-summary-pill ${tone || ''}`}
-      type="button"
-      onClick={() => emit(onAction, 'set-bills-status', { billsStatus: status })}
-    >
+    <div className="bill-overview-value">
       <PrivateValue as="span">{label}</PrivateValue>
-      <PrivateValue as="strong" className={`amount ${tone || 'neutral'}`}>
+      <PrivateValue as="strong" className="amount neutral">
         {value}
       </PrivateValue>
-      <PrivateValue as="small">{detail}</PrivateValue>
-    </button>
+    </div>
   );
 }
 
@@ -93,13 +87,14 @@ function KindTabs({ activeKind, onAction }) {
     ['subscription', 'Subscriptions']
   ];
   return (
-    <div className="pill-tabs">
+    <div className="bill-kind-tabs" aria-label="Bill type">
       {tabs.map(([kind, label]) => (
         <PrivateValue
           as="button"
           key={kind}
           className={activeKind === kind ? 'active' : ''}
           type="button"
+          aria-pressed={activeKind === kind}
           onClick={() => emit(onAction, 'set-bills-kind', { billsKind: kind })}
         >
           {label}
@@ -123,14 +118,6 @@ function ActionMenu({ children }) {
         {children}
       </PrivateValue>
     </details>
-  );
-}
-
-function StatusPill({ status, tone }) {
-  return (
-    <PrivateValue as="span" className={`status-pill ${tone || 'info'}`}>
-      {status || 'Upcoming'}
-    </PrivateValue>
   );
 }
 
@@ -213,37 +200,43 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
         : row.status === 'Expected charge not recorded'
           ? 'Not recorded'
           : row.status;
-  const relativeDateLabel =
-    reconciliation.state === 'matched' && reconciliation.statusLabel
-      ? reconciliation.statusLabel
-      : row.relativeDateLabel;
   const reconciliationPayload = getReconciliationPayload(row, reconciliation);
   const openMain = () => {
     if (typeof onSelect === 'function') onSelect(row);
   };
   return (
-    <div
-      className={`bill-register-row ${displayTone || ''}${reconciliation.state !== 'unmatched' ? ' has-reconciliation' : ''}`}
-    >
+    <div className={`bill-register-row ${displayTone || ''}`}>
       <button className="bill-register-main" type="button" onClick={openMain}>
         <IconDisc className={`mini-icon ${displayTone || ''}`} name={row.icon || 'receipt_long'} />
         <span>
           <PrivateValue as="strong">{row.name}</PrivateValue>
           <PrivateValue as="small">
-            {row.metaLabel}
-            {row.note ? ` • ${row.note}` : ''}
+            {[row.frequency, row.paymentMethod].filter(Boolean).join(' · ') || row.metaLabel}
           </PrivateValue>
         </span>
       </button>
       <div className="bill-register-due">
-        <PrivateValue as="strong">{row.dueDateCopy}</PrivateValue>
-        <PrivateValue as="small">{relativeDateLabel}</PrivateValue>
+        <PrivateValue as="span" title={row.dueDateCopy}>
+          {row.dueDateCopy?.replace(/^([A-Za-z]{3})[a-z]+ /, '$1 ').replace(/, \d{4}$/, '') ||
+            row.dueDate}
+        </PrivateValue>
       </div>
-      <PrivateValue as="b" className={`bill-register-amount amount ${displayTone || 'neutral'}`}>
+      <PrivateValue as="b" className="bill-register-amount amount neutral">
         {row.amountCopy}
       </PrivateValue>
       <div className="bill-register-status">
-        <StatusPill status={displayStatus} tone={displayTone} />
+        <button
+          className={`bill-status-link ${displayTone}`}
+          type="button"
+          onClick={openMain}
+          aria-label={`${displayStatus || 'Upcoming'}: ${row.name}`}
+        >
+          {reconciliation.state === 'matched' ? <Icon name="check" /> : null}
+          <PrivateValue as="span">{displayStatus || 'Upcoming'}</PrivateValue>
+          {reconciliation.state === 'candidate' || reconciliation.pendingCandidate ? (
+            <Icon name="chevron_right" />
+          ) : null}
+        </button>
       </div>
       <div className="bill-register-actions">
         <ActionMenu>
@@ -343,38 +336,7 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
           ) : null}
         </ActionMenu>
       </div>
-      {reconciliation.state === 'candidate' ? (
-        <ReconciliationReview row={row} reconciliation={reconciliation} onAction={onAction} />
-      ) : null}
-      {['matched', 'partial'].includes(reconciliation.state) ? (
-        <ReconciliationProof reconciliation={reconciliation} />
-      ) : null}
-      {reconciliation.state === 'partial' && reconciliation.pendingCandidate ? (
-        <ReconciliationReview
-          row={row}
-          reconciliation={reconciliation.pendingCandidate}
-          onAction={onAction}
-        />
-      ) : null}
     </div>
-  );
-}
-
-function BillCreateRow({ onCreate }) {
-  return (
-    <button
-      aria-label="Create bill or subscription"
-      className="bill-register-row bill-create-row"
-      onClick={onCreate}
-      type="button"
-    >
-      <span className="bill-create-row-icon">
-        <Icon name="add" />
-      </span>
-      <span>
-        <strong>Create bill or subscription</strong>
-      </span>
-    </button>
   );
 }
 
@@ -428,7 +390,7 @@ function Pagination({ pagination, onAction }) {
   );
 }
 
-function FilterPanel({ filters, options, onAction }) {
+function FilterPanel({ filters, options, header, onAction }) {
   const [draft, setDraft] = useState(filters);
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   return (
@@ -449,32 +411,44 @@ function FilterPanel({ filters, options, onAction }) {
             name="search"
             value={draft.search || ''}
             onChange={(event) => update('search', event.currentTarget.value)}
-            placeholder="Search bills, category, payment method"
+            placeholder="Search items"
           />
           <button className="bill-search-submit" type="submit" aria-label="Apply bill search">
             <Icon name="chevron_right" />
           </button>
         </div>
         <button
-          className="btn"
+          className="btn btn-quiet bills-scan-button"
+          disabled={!header.sheetId || header.scanDisabled}
+          onClick={() =>
+            emit(onAction, 'scan-subscription-review', { sheetId: header.sheetId || '' })
+          }
+          type="button"
+        >
+          <Icon name={header.scanIcon || 'manage_search'} />
+          {header.scanDisabled ? header.scanLabel : 'Find recurring'}
+        </button>
+        <button
+          className="btn btn-quiet btn-icon"
           type="button"
           onClick={() => emit(onAction, 'toggle-bills-filter')}
           aria-expanded={draft.filterOpen ? 'true' : 'false'}
+          aria-label="Filter and sort bills"
         >
           <Icon name="filter_alt" />
-          Filter
         </button>
-        <ControlSelect
-          icon="sort"
-          label="Sort bills"
-          options={options.sorts}
-          value={draft.sort}
-          className="bill-sort-select"
-          onChange={(value) => emit(onAction, 'set-bills-sort', { value })}
-        />
       </div>
       {draft.filterOpen ? (
         <div className="bill-filter-panel">
+          <div className="field">
+            <label>Sort</label>
+            <ControlSelect
+              label="Sort bills"
+              options={options.sorts}
+              value={draft.sort}
+              onChange={(value) => emit(onAction, 'set-bills-sort', { value })}
+            />
+          </div>
           <div className="field">
             <label>Due Date</label>
             <input
@@ -536,111 +510,14 @@ function FilterPanel({ filters, options, onAction }) {
   );
 }
 
-function BillOccurrenceModal({ row, onAction, onEdit, onClose }) {
-  const dismiss = useModalDismiss(() => onClose(true));
-  if (!row) return null;
-  const reconciliation = getRowReconciliation(row);
-  const linkedTransaction =
-    row.transaction ||
-    (['matched', 'partial'].includes(reconciliation.state) ? reconciliation.transaction : null);
-  return renderInBody(
-    <div className="modal-backdrop" data-modal-backdrop="true" onMouseDown={dismiss}>
-      <PrivateValue
-        as="div"
-        aria-label={`${row.name} occurrence details`}
-        aria-modal="true"
-        className="modal-card modal-card-wide bill-form-modal"
-        role="dialog"
-      >
-        <div className="bill-form-header">
-          <div>
-            <PrivateValue as="h3">{row.name}</PrivateValue>
-            <p>This occurrence is separate from the recurring rule behind it.</p>
-          </div>
-          <button
-            aria-label="Close occurrence details"
-            className="btn btn-icon"
-            onClick={() => onClose(true)}
-            type="button"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
-        <div className="bill-form-body">
-          <div className="budget-detail-card">
-            <dl className="budget-detail-list">
-              <div>
-                <dt>Status</dt>
-                <PrivateValue as="dd">{row.status}</PrivateValue>
-              </div>
-              <div>
-                <dt>Expected date</dt>
-                <PrivateValue as="dd">{row.dueDateCopy || row.dueDate}</PrivateValue>
-              </div>
-              <div>
-                <dt>Expected amount</dt>
-                <PrivateValue as="dd">{row.dueAmountCopy || row.amountCopy}</PrivateValue>
-              </div>
-              <div>
-                <dt>Category</dt>
-                <PrivateValue as="dd">{row.categoryName || 'Uncategorized'}</PrivateValue>
-              </div>
-              <div>
-                <dt>Payment method</dt>
-                <PrivateValue as="dd">{row.paymentMethod || 'Not set'}</PrivateValue>
-              </div>
-              <div>
-                <dt>Frequency</dt>
-                <PrivateValue as="dd">{row.frequency || 'Not set'}</PrivateValue>
-              </div>
-              <div>
-                <dt>Matching evidence</dt>
-                <PrivateValue as="dd">
-                  {reconciliation.explanation ||
-                    reconciliation.detail ||
-                    'No transaction has been linked yet.'}
-                </PrivateValue>
-              </div>
-            </dl>
-          </div>
-          {['candidate'].includes(reconciliation.state) ? (
-            <ReconciliationReview row={row} reconciliation={reconciliation} onAction={onAction} />
-          ) : null}
-          {['matched', 'partial'].includes(reconciliation.state) ? (
-            <ReconciliationProof reconciliation={reconciliation} />
-          ) : null}
-        </div>
-        <div className="modal-actions bill-form-actions">
-          {linkedTransaction ? (
-            <button
-              className="btn"
-              onClick={() =>
-                emit(onAction, 'open-transaction-detail', { transactionId: linkedTransaction.id })
-              }
-              type="button"
-            >
-              <Icon name="receipt_long" /> View transaction
-            </button>
-          ) : null}
-          <button className="btn" onClick={() => onEdit(row)} type="button">
-            <Icon name="edit" /> Edit recurring rule
-          </button>
-        </div>
-      </PrivateValue>
-    </div>
-  );
-}
-
 function InactiveRecurring({ items, onAction }) {
   if (!asArray(items).length) return null;
   return (
-    <article className="reference-card bill-month-note-card">
-      <div className="reference-card-title">
-        <h3>Inactive</h3>
-        <PrivateValue as="span" className="tag">
-          {String(items.length)}
-        </PrivateValue>
-      </div>
+    <details className="bill-inactive-section">
+      <summary>
+        <Icon name="chevron_right" />
+        <PrivateValue as="span">Inactive ({items.length})</PrivateValue>
+      </summary>
       <div className="bill-due-queue">
         {items.map((item) => (
           <div className="bill-due-row" key={item.id}>
@@ -671,61 +548,7 @@ function InactiveRecurring({ items, onAction }) {
           </div>
         ))}
       </div>
-    </article>
-  );
-}
-
-function DueNext({ groups, onSelect }) {
-  return (
-    <article className="reference-card bill-due-card bill-due-next-card">
-      <div className="reference-card-title">
-        <h3>Due Next</h3>
-      </div>
-      <div className="bill-date-strip">
-        <span>Overdue</span>
-        <span>Today</span>
-        <span>Tomorrow</span>
-        <span>Later</span>
-      </div>
-      {asArray(groups).length ? (
-        asArray(groups).map((group) => (
-          <div className="bill-due-group" key={group.label}>
-            <PrivateValue as="div" className="bill-due-group-title">
-              {group.label}
-            </PrivateValue>
-            <div className="bill-due-queue">
-              {asArray(group.rows).map((row) => (
-                <button
-                  className="bill-due-row"
-                  type="button"
-                  key={row.id}
-                  onClick={() => onSelect(row)}
-                >
-                  <IconDisc
-                    className={`mini-icon ${row.tone || ''}`}
-                    name={row.icon || 'receipt_long'}
-                  />
-                  <span>
-                    <PrivateValue as="strong">{row.name}</PrivateValue>
-                    <PrivateValue as="small">{row.dueDateCopy}</PrivateValue>
-                  </span>
-                  <PrivateValue as="b" className={`amount ${row.tone || 'neutral'}`}>
-                    {row.dueAmountCopy || row.amountCopy}
-                  </PrivateValue>
-                  <PrivateValue as="span" className={`bill-days-tag ${row.tone || ''}`}>
-                    {row.relativeDateLabel}
-                  </PrivateValue>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))
-      ) : (
-        <div className="empty-state compact-empty">
-          <strong>No upcoming bills.</strong>
-        </div>
-      )}
-    </article>
+    </details>
   );
 }
 
@@ -908,20 +731,8 @@ export function BillsRoute({
   }
 
   return (
-    <section data-react-route="bills">
+    <section data-react-route="bills" className="bills-minimal-page">
       <PageHeader title="Bills & Subscriptions">
-        <PrivateValue
-          as="button"
-          className="btn bills-scan-button"
-          disabled={!header.sheetId || header.scanDisabled}
-          onClick={() =>
-            emit(onAction, 'scan-subscription-review', { sheetId: header.sheetId || '' })
-          }
-          type="button"
-        >
-          <Icon name={header.scanIcon || 'manage_search'} />
-          {header.scanLabel || 'Find recurring charges'}
-        </PrivateValue>
         <ControlSelect
           icon="calendar_month"
           label="Bills month"
@@ -930,6 +741,15 @@ export function BillsRoute({
           className="bill-month-picker"
           onChange={(value) => emit(onAction, 'set-bills-sheet', { value })}
         />
+        <button
+          aria-label="Create bill or subscription"
+          className="btn btn-primary"
+          disabled={!header.sheetId}
+          onClick={() => openEditor(null)}
+          type="button"
+        >
+          <Icon name="add" /> Add item
+        </button>
       </PageHeader>
       {data.feedback && data.feedback.error ? (
         <PrivateValue as="div" className="panel-note status-bad" role="alert">
@@ -941,28 +761,20 @@ export function BillsRoute({
           {data.subscriptionReview.error}
         </PrivateValue>
       ) : null}
-      <SubscriptionSuggestions review={data.subscriptionReview} onReview={openCandidate} />
-      <section className="bills-simple-summary">
-        {asArray(data.summaryPills).map((pill) => (
-          <SummaryPill key={pill.status} {...pill} onAction={onAction} />
+      <section className="bills-overview" aria-label="Billing overview">
+        {(
+          data.overview || [
+            { label: 'Scheduled', value: '—' },
+            { label: 'Recorded', value: '—' },
+            { label: 'To review', value: '—' }
+          ]
+        ).map((item) => (
+          <SummaryValue key={item.label} {...item} />
         ))}
       </section>
-      <section className="bills-page-grid bills-simple-layout">
-        <article className="reference-card reference-card-wide bills-table-card bills-register-card">
-          <div className="bills-register-title-row">
-            <div>
-              <h3>Bill List</h3>
-              <PrivateValue as="span" className="muted">
-                {data.periodLabel || ''}
-              </PrivateValue>
-            </div>
-            <PrivateValue as="span" className="tag">
-              {String(data.rowCount || 0)} items
-            </PrivateValue>
-          </div>
-          <div className="register-toolbar bills-register-toolbar">
-            <KindTabs activeKind={filters.filterKind || 'all'} onAction={onAction} />
-          </div>
+      <article className="reference-card bills-minimal-register">
+        <div className="bills-minimal-toolbar">
+          <KindTabs activeKind={filters.filterKind || 'all'} onAction={onAction} />
           <FilterPanel
             key={[
               filters.search,
@@ -974,73 +786,60 @@ export function BillsRoute({
               data.filterOpen
             ].join('|')}
             filters={{ ...filters, filterOpen: data.filterOpen === true }}
+            header={header}
             options={options}
             onAction={onAction}
           />
-          <div className="bill-filter-chips">
-            {asArray(data.filterChips).map((chip, index) => (
-              <PrivateValue
-                as="span"
-                className={`bill-filter-chip${data.filterChips.length === 1 && chip === 'All recurring items' ? ' is-muted' : ''}`}
-                key={`${chip}-${index}`}
-              >
-                {chip}
-              </PrivateValue>
-            ))}
-            {asArray(data.filterChips).some((chip) => chip !== 'All recurring items') ? (
-              <button
-                className="bill-filter-chip bill-filter-reset-chip"
-                type="button"
-                onClick={() => emit(onAction, 'reset-bills-filter')}
-              >
-                Reset
-              </button>
-            ) : null}
-          </div>
-          {asArray(data.rows).length ? (
-            <div className="bill-register-list">
-              {header.sheetId ? <BillCreateRow onCreate={() => openEditor(null)} /> : null}
-              {data.rows.map((row) => (
-                <BillRow
-                  key={row.id}
-                  row={row}
-                  sheetId={header.sheetId}
-                  onAction={onAction}
-                  onEdit={openEditor}
-                  onArchive={setArchiveRow}
-                  onSelect={setDetailRow}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bill-empty-register">
-              {header.sheetId ? <BillCreateRow onCreate={() => openEditor(null)} /> : null}
-              <div className="empty-state compact-empty">
-                <strong>No bills match this view.</strong>
-              </div>
-            </div>
-          )}
-          <Pagination pagination={data.pagination} onAction={onAction} />
-        </article>
-        <aside className="bills-side-stack bills-simple-side">
-          <DueNext groups={data.dueNextGroups} onSelect={setDetailRow} />
-          <article className="reference-card bill-month-note-card">
-            <div className="reference-card-title">
-              <h3>Recurring</h3>
-              <PrivateValue as="span" className="tag">
-                {String((data.recurring && data.recurring.monthlyCount) || 0)}
-              </PrivateValue>
-            </div>
-            <PrivateValue as="p">
-              {(data.recurring && data.recurring.monthlyTotalCopy) || '0'} monthly equivalent.
+        </div>
+        {asArray(data.filterChips).some((chip) => chip !== 'All recurring items') ? (
+          <div className="bills-active-filter-note">
+            <PrivateValue as="span">
+              {asArray(data.filterChips)
+                .filter((chip) => chip !== 'All recurring items')
+                .join(' · ')}
             </PrivateValue>
-          </article>
-          <InactiveRecurring items={data.inactiveItems} onAction={onAction} />
-        </aside>
-      </section>
+            <button
+              className="btn btn-quiet"
+              type="button"
+              onClick={() => emit(onAction, 'reset-bills-filter')}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+        <div className="bill-register-head" aria-hidden="true">
+          <span>Item</span>
+          <span>Due</span>
+          <span>Amount</span>
+          <span>Status</span>
+          <span />
+        </div>
+        {asArray(data.rows).length ? (
+          <div className="bill-register-list">
+            {data.rows.map((row) => (
+              <BillRow
+                key={row.id}
+                row={row}
+                sheetId={header.sheetId}
+                onAction={onAction}
+                onEdit={openEditor}
+                onArchive={setArchiveRow}
+                onSelect={setDetailRow}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact-empty">
+            <strong>No bills match this view.</strong>
+          </div>
+        )}
+        <Pagination pagination={data.pagination} onAction={onAction} />
+      </article>
+      <SubscriptionSuggestions review={data.subscriptionReview} onReview={openCandidate} />
+      <InactiveRecurring items={data.inactiveItems} onAction={onAction} />
       {detailRow ? (
         <BillOccurrenceModal
-          row={detailRow}
+          row={asArray(data.rows).find((row) => row.id === detailRow.id) || detailRow}
           onAction={onAction}
           onEdit={openEditor}
           onClose={closeDetail}

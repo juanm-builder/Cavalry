@@ -322,7 +322,20 @@ describe('feature action callbacks', () => {
     unmount();
 
     const billsAction = vi.fn();
-    render(<BillsRoute onAction={billsAction} model={makeBillsModel()} />);
+    render(
+      <BillsRoute
+        onAction={billsAction}
+        model={makeBillsModel({
+          filterOpen: true,
+          filterOptions: {
+            statuses: [
+              { value: 'all', label: 'All statuses' },
+              { value: 'overdue', label: 'Overdue' }
+            ]
+          }
+        })}
+      />
+    );
     await chooseOption(user, screen.getByLabelText('Bills month'), 'July 2026');
     expect(billsAction).toHaveBeenLastCalledWith({
       type: 'set-bills-sheet',
@@ -333,10 +346,11 @@ describe('feature action callbacks', () => {
       type: 'set-bills-rows-per-page',
       payload: { value: 25 }
     });
-    await user.click(screen.getByRole('button', { name: /Overdue/ }));
+    await chooseOption(user, screen.getByRole('combobox', { name: 'Status' }), 'Overdue');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
     expect(billsAction).toHaveBeenLastCalledWith({
-      type: 'set-bills-status',
-      payload: { billsStatus: 'overdue' }
+      type: 'apply-bills-filter',
+      payload: expect.objectContaining({ status: 'overdue' })
     });
   });
 
@@ -374,12 +388,13 @@ describe('feature action callbacks', () => {
       transactionId: 'transaction-chatgpt'
     };
 
+    await user.click(screen.getByRole('button', { name: 'Review match: ChatGPT Pro' }));
     await user.click(screen.getByRole('button', { name: 'Not this' }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'reject-recurring-transaction-match',
       payload: matchPayload
     });
-    await user.click(screen.getByRole('button', { name: 'View' }));
+    await user.click(screen.getByRole('button', { name: 'View transaction' }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'open-transaction-detail',
       payload: { transactionId: 'transaction-chatgpt' }
@@ -413,6 +428,7 @@ describe('feature action callbacks', () => {
     rendered.rerender(
       <BillsRoute onAction={onAction} model={makeBillsModel({ rows: [matched], rowCount: 1 })} />
     );
+    await user.click(screen.getByRole('button', { name: 'Close occurrence details' }));
     await user.click(rendered.container.querySelector('summary[aria-label="Bill actions"]'));
     await user.click(screen.getByRole('button', { name: 'Undo matched transaction' }));
     expect(onAction).toHaveBeenLastCalledWith({
@@ -591,6 +607,7 @@ describe('feature action callbacks', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Post linked transaction' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Partially paid: Rent' }));
     await user.click(screen.getByRole('button', { name: 'Confirm match' }));
     expect(onAction).toHaveBeenLastCalledWith({
       type: 'confirm-recurring-transaction-match',

@@ -2,6 +2,17 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.14 - 2026-09-28
+
+### Improved
+
+- Simplifies Bills & Subscriptions with compact totals, a focused register, and
+  inactive items collapsed by default.
+- Redesigns bill details around the expected amount, date, status, and matched
+  transaction. Matching evidence stays collapsed until requested.
+- Preserves transaction review, confirmation, editing, and partial-payment details.
+- No workbook format or CloudKit migration is required.
+
 ## 2.2.12 - 2026-09-10
 
 ### Added and improved

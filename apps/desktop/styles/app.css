@@ -35,3 +35,5 @@
 @import './28-finance-friendly.css';
 @import './29-cerulean-vault.css';
 @import './30-legibility-pass.css';
+
+@import './features/recurring-bills/14-bills-minimal.css';
