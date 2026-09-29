@@ -152,6 +152,36 @@ function Harness({ onCommand = () => {} }) {
 }
 
 describe('Notes route', () => {
+  it('reviews and edits both transfer accounts without an expense category or negative amount', async () => {
+    const user = userEvent.setup();
+    const onCommandResult = vi.fn();
+    render(
+      <NotesRoute
+        workbook={makeWorkbook()}
+        services={makeServices()}
+        onCommandResult={onCommandResult}
+      />
+    );
+    await review(user, '2026-07-29\ntransfer 2k from BPI to Cash');
+    expect(screen.getByText('BPI Checking → Cash')).not.toBeNull();
+    expect(screen.getByLabelText('Transfer ₱2,000').textContent).toBe('₱2,000');
+    await user.click(screen.getByRole('button', { name: /Edit transaction 1/ }));
+    expect(screen.getByRole('combobox', { name: 'From account' })).not.toBeNull();
+    expect(screen.getByRole('combobox', { name: 'To account' })).not.toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Category' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Confirm details' }));
+    await user.click(screen.getByRole('button', { name: 'Add 1 transaction' }));
+    const result = onCommandResult.mock.calls[0][0];
+    expect(result.ok).toBe(true);
+    expect(result.transactions[0]).toMatchObject({ template: 'transfer', categoryId: '' });
+    expect(result.transactions[0].lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: 'bank', direction: 'credit', amount: 2000 }),
+        expect.objectContaining({ accountId: 'cash', direction: 'debit', amount: 2000 })
+      ])
+    );
+  });
+
   it('distinguishes the same purchase on different days when no date heading was written', () => {
     const first = sourceKeys([{ sourceText: '180 food cash', date: '2026-07-29' }])[0];
     const next = sourceKeys([{ sourceText: '180 food cash', date: '2026-07-30' }])[0];

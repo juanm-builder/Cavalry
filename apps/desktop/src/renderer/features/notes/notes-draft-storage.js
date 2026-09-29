@@ -65,7 +65,12 @@ function transactionPrimaryAccountId(workbook, transaction) {
   const group = template === 'expense_charged' ? 'liability' : 'asset';
   const line = asArray(transaction?.lines).find((candidate) => {
     const account = accountsById.get(asString(candidate?.accountId));
-    return candidate?.direction === direction && account?.group === group;
+    return (
+      candidate?.direction === direction &&
+      (template === 'transfer'
+        ? ['asset', 'liability'].includes(account?.group)
+        : account?.group === group)
+    );
   });
   return asString(line?.accountId);
 }
@@ -84,8 +89,15 @@ function entryFromTransaction(workbook, transaction, priorEntry = {}) {
     fxRateToBase: Number(transaction.fxRateToBase) || 0,
     date: asString(transaction.date),
     description: asString(transaction.description),
+    autoTransferDescription:
+      priorEntry.autoTransferDescription === true &&
+      asString(transaction.description) === asString(priorEntry.description),
     categoryId: asString(transaction.categoryId),
     primaryAccountId: transactionPrimaryAccountId(workbook, transaction),
+    secondaryAccountId:
+      transaction.template === 'transfer'
+        ? asString(asArray(transaction.lines).find((line) => line.direction === 'debit')?.accountId)
+        : '',
     template: asString(transaction.template),
     counterpartyId: asString(transaction.counterpartyId),
     transactionNote: asString(transaction.note),

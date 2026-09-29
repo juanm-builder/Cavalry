@@ -6,6 +6,7 @@ import {
   resolveNotesEntry,
   validateNotesEntry
 } from '../../src/renderer/features/notes/notes-parser.js';
+import { reconcileEntries } from '../../src/renderer/features/notes/notes-draft-storage.js';
 import { submitNotesBatchCommand } from '../../src/renderer/features/notes/notes-controller.js';
 
 function makeNotesWorkbook(overrides = {}) {
@@ -779,7 +780,6 @@ describe('messy financial notes corpus', () => {
   });
 
   it.each([
-    ['transfer 500 cash to bank', 'transaction_kind_unsupported'],
     ['paid credit card 500 cash', 'transaction_kind_unsupported'],
     ['refund 180 coffee cash', 'transaction_kind_unsupported'],
     ['lunch about 180 cash', 'amount_approximate'],
@@ -836,31 +836,29 @@ describe('source formatting stays financially safe', () => {
 });
 
 describe('Notes review cannot change unsupported financial intent', () => {
-  it.each([
-    'moved 500 from Cash to GCash',
-    'refund 180 coffee cash',
-    'paid credit card 500 cash',
-    'coffee 180 cash every month'
-  ])('blocks %s even after manual review', (text) => {
-    const workbook = makeSmartNotesWorkbook();
-    const parsed = parseNotesLine(text, workbook, { today: '2026-07-29' });
-    const reviewed = resolveNotesEntry(
-      workbook,
-      {
-        ...parsed,
-        amount: 500,
-        date: '2026-07-29',
-        description: 'Edited description',
-        categoryId: 'shopping',
-        primaryAccountId: 'cash'
-      },
-      { manuallyReviewed: true }
-    );
-    expect(reviewed.issues.map((issue) => issue.code)).toContain('transaction_kind_unsupported');
-    const result = submitNotesBatchCommand(workbook, [reviewed], makeServices());
-    expect(result.ok).toBe(false);
-    expect(workbook.transactions).toEqual([]);
-  });
+  it.each(['refund 180 coffee cash', 'paid credit card 500 cash', 'coffee 180 cash every month'])(
+    'blocks %s even after manual review',
+    (text) => {
+      const workbook = makeSmartNotesWorkbook();
+      const parsed = parseNotesLine(text, workbook, { today: '2026-07-29' });
+      const reviewed = resolveNotesEntry(
+        workbook,
+        {
+          ...parsed,
+          amount: 500,
+          date: '2026-07-29',
+          description: 'Edited description',
+          categoryId: 'shopping',
+          primaryAccountId: 'cash'
+        },
+        { manuallyReviewed: true }
+      );
+      expect(reviewed.issues.map((issue) => issue.code)).toContain('transaction_kind_unsupported');
+      const result = submitNotesBatchCommand(workbook, [reviewed], makeServices());
+      expect(result.ok).toBe(false);
+      expect(workbook.transactions).toEqual([]);
+    }
+  );
 
   it('does not save uncertain parser inference through a direct batch command', () => {
     const workbook = makeSmartNotesWorkbook();
@@ -898,6 +896,254 @@ describe('native Notes reminder regression', () => {
     expect(entries.map((entry) => entry.lineNumber)).toEqual([2, 3, 6]);
     expect(entries.map((entry) => entry.amount)).toEqual([180, 0, 500]);
     expect(entries.every((entry) => !entry.sourceText.includes('Remember'))).toBe(true);
-    expect(entries[2].issues.map((issue) => issue.code)).toContain('transaction_kind_unsupported');
+    expect(entries[2]).toMatchObject({
+      template: 'transfer',
+      primaryAccountId: 'cash',
+      secondaryAccountId: 'gcash',
+      issues: []
+    });
   });
 });
+
+describe('Notes transfers preserve human direction and financial safety', () => {
+  const today = '2026-07-29';
+  it.each([
+    'transfer 2k from BPI to GCash',
+    'transferred 2,000 from BPI Checking to GCash',
+    'moved two thousand from BPI to GCash',
+    'sent PHP 2000 to GCash from BPI',
+    'send 2000 from BPI to GCash',
+    'xfer 2k BPI to GCash',
+    'BPI -> GCash 2000',
+    'BPI => GCash 2000',
+    'BPI to GCash 2000',
+    'GCash ← BPI 2000',
+    'BPI → GCash 2000',
+    'GCash <- BPI 2000',
+    'deposited 2000 from BPI to GCash',
+    'topped up GCash 2000 from BPI to GCash'
+  ])('resolves %s without counting it as spending', (text) => {
+    const workbook = makeSmartNotesWorkbook();
+    const entry = parseNotesLine(text, workbook, { today });
+    expect(entry).toMatchObject({
+      template: 'transfer',
+      amount: 2000,
+      primaryAccountId: 'bank',
+      secondaryAccountId: 'gcash',
+      categoryId: '',
+      issues: []
+    });
+    const result = submitNotesBatchCommand(workbook, [entry], makeServices());
+    expect(result.ok).toBe(true);
+    const transaction = result.workbook.transactions[0];
+    expect(transaction).toMatchObject({ template: 'transfer', categoryId: '' });
+    expect(transaction.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: 'bank', direction: 'credit', amount: 2000 }),
+        expect.objectContaining({ accountId: 'gcash', direction: 'debit', amount: 2000 })
+      ])
+    );
+  });
+  it.each([
+    'tranfer 500 from BPI to GCash',
+    'tranfser 500 from BPI to GCash',
+    'transfr 500 frm BPI to GCash',
+    'transfer 500 form BPI to GCash',
+    "hasn't transferred 500 from BPI to GCash",
+    'transfer 500 to GCash',
+    'transfer 500 from BPI',
+    'transfer 500 from BPI to BPI',
+    'transfer 500 from BPl to GCash',
+    'transfer 500 between BPI and GCash',
+    'transfer 500 from BPI or Cash to GCash',
+    'transfer 500 from BPI to Unknown Bank',
+    'transfer 500 from Cash to Unknown Bank',
+    'transfer 500 from Cash to BPI Savings',
+    'transfer 500 from Cash to BPI Saving',
+    'transfer 500 from Cash or Unknown Account to GCash',
+    'transfer 2O00 from BPI to GCash',
+    'transfer 500 from BPI to GCash to Cash',
+    'did not transfer 500 from BPI to GCash',
+    "didn't transfer 500 from BPI to GCash",
+    "can't transfer 500 from BPI to GCash",
+    "won't transfer 500 from BPI to GCash",
+    'cannot transfer 500 from BPI to GCash',
+    'will transfer 500 from BPI to GCash',
+    'transfer 500 from BPI to GCash later today',
+    'transfer 500 from BPI to GCash tomorrow',
+    'transfer 500 actually 600 from BPI to GCash',
+    'transfer 500 BPI -> GCash -> Cash'
+  ])('requires review for %s instead of posting a guessed expense', (text) => {
+    const workbook = makeSmartNotesWorkbook();
+    const entry = parseNotesLine(text, workbook, { today });
+    expect(entry.template).toBe('transfer');
+    expect(entry.issues.length).toBeGreaterThan(0);
+    expect(submitNotesBatchCommand(workbook, [entry], makeServices()).ok).toBe(false);
+    expect(workbook.transactions).toEqual([]);
+  });
+  it('requires a choice when a shorthand bank name matches two accounts', () => {
+    const workbook = makeSmartNotesWorkbook();
+    workbook.accounts.push({
+      id: 'savings',
+      name: 'BPI Savings',
+      group: 'asset',
+      subtype: 'savings',
+      currency: 'PHP'
+    });
+    const entry = parseNotesLine('transfer 500 from BPI to GCash', workbook, { today });
+    expect(entry.primaryAccountId).toBe('');
+    expect(entry.issues.map((item) => item.code)).toContain('transfer_account_ambiguous');
+  });
+  it('does not turn bank-transfer payment method into an account transfer', () => {
+    const entry = parseNotesLine('groceries 500 paid via bank transfer', makeNotesWorkbook(), {
+      today
+    });
+    expect(entry.template).toBe('expense_paid');
+  });
+  it('keeps both transfer legs in duplicate checking and explicit review', () => {
+    const workbook = makeSmartNotesWorkbook();
+    const entry = parseNotesLine('transfer 500 from BPI to GCash', workbook, { today });
+    const first = submitNotesBatchCommand(workbook, [entry], makeServices());
+    expect(first.ok).toBe(true);
+    expect(submitNotesBatchCommand(first.workbook, [entry], makeServices()).ok).toBe(false);
+    const reworded = parseNotesLine('moved 500 to GCash from BPI', first.workbook, { today });
+    expect(submitNotesBatchCommand(first.workbook, [reworded], makeServices()).ok).toBe(false);
+    expect(
+      submitNotesBatchCommand(
+        workbook,
+        [entry, { ...entry, id: 'second', lineNumber: 2 }],
+        makeServices()
+      ).ok
+    ).toBe(false);
+    const anotherDestination = { ...entry, secondaryAccountId: 'cash' };
+    expect(submitNotesBatchCommand(first.workbook, [anotherDestination], makeServices()).ok).toBe(
+      true
+    );
+    const reviewed = resolveNotesEntry(first.workbook, entry, { manuallyReviewed: true });
+    expect(submitNotesBatchCommand(first.workbook, [reviewed], makeServices()).ok).toBe(true);
+  });
+  it('cannot change transfer intent to expense in direct command input', () => {
+    const workbook = makeSmartNotesWorkbook();
+    const entry = parseNotesLine('transfer 500 from BPI to GCash', workbook, { today });
+    const unsafe = { ...entry, template: 'expense_paid', categoryId: 'shopping', issues: [] };
+    expect(submitNotesBatchCommand(workbook, [unsafe], makeServices()).ok).toBe(false);
+  });
+});
+
+it.each([
+  'SGD 500',
+  'USD500',
+  'SGD500',
+  '500 SGD',
+  'CAD 500',
+  'AUD 500',
+  'HKD 500',
+  'JPY 500',
+  'S$500',
+  'C$500'
+])('preserves explicit foreign currency %s for transfer review', (amount) => {
+  const workbook = makeSmartNotesWorkbook();
+  const entry = parseNotesLine(`transfer ${amount} from Cash to GCash`, workbook, {
+    today: '2026-07-29'
+  });
+  expect(entry.amount).toBe(500);
+  expect(entry.currency).not.toBe('PHP');
+  expect(entry.issues.map((item) => item.code)).toContain('currency_conversion_review');
+  expect(submitNotesBatchCommand(workbook, [entry], makeServices()).ok).toBe(false);
+});
+
+it('requires review when shorthand might contain a decimal or thousands separator', () => {
+  const entry = parseNotesLine('transfer 1.234k from Cash to GCash', makeSmartNotesWorkbook(), {
+    today: '2026-07-29'
+  });
+  expect(entry).toMatchObject({ amount: 0, template: 'transfer' });
+  expect(entry.issues.map((item) => item.code)).toContain('amount_ambiguous');
+});
+it('keeps a salary deposit into one own account as income', () => {
+  const workbook = makeSmartNotesWorkbook();
+  workbook.accounts.push({
+    id: 'salary-income',
+    name: 'Salary Income',
+    group: 'income',
+    currency: 'PHP'
+  });
+  workbook.categories.push({
+    id: 'salary',
+    name: 'Salary',
+    type: 'income',
+    linkedAccountId: 'salary-income'
+  });
+  const entry = parseNotesLine('salary deposited 500 to BPI today', workbook, {
+    today: '2026-07-29'
+  });
+  expect(entry).toMatchObject({
+    template: 'income_received',
+    amount: 500,
+    primaryAccountId: 'bank'
+  });
+});
+it('uses a clear transfer description and keeps its original wording', () => {
+  const text = 'sent 500 to GCash from Cash for next week';
+  const entry = parseNotesLine(text, makeSmartNotesWorkbook(), { today: '2026-07-29' });
+  expect(entry.description).toBe('Transfer: Cash → GCash · next week');
+  expect(entry.sourceText).toBe(text);
+});
+
+it.each([
+  ['.5k', 500],
+  ['.50', 0.5]
+])('preserves a leading decimal in transfer amount %s', (amount, expected) => {
+  const entry = parseNotesLine(`transfer ${amount} from Cash to GCash`, makeSmartNotesWorkbook(), {
+    today: '2026-07-29'
+  });
+  expect(entry).toMatchObject({ amount: expected, template: 'transfer', issues: [] });
+});
+
+it('does not infer a misspelled multiword account from one common word', () => {
+  const workbook = makeSmartNotesWorkbook();
+  workbook.accounts.push({
+    id: 'freedom',
+    name: 'Freedom Fund',
+    group: 'asset',
+    subtype: 'savings',
+    currency: 'PHP'
+  });
+  const entry = parseNotesLine('transfer 500 from freedm fund to GCash', workbook, {
+    today: '2026-07-29'
+  });
+  expect(entry.primaryAccountId).toBe('');
+  expect(entry.issues.length).toBeGreaterThan(0);
+});
+
+it('reloads both current transfer legs and preserves a description edited elsewhere', () => {
+  const workbook = makeSmartNotesWorkbook();
+  const entry = parseNotesLine('transfer 500 from Credit Card to Cash', workbook, {
+    today: '2026-07-29'
+  });
+  const first = submitNotesBatchCommand(workbook, [entry], makeServices());
+  expect(first.ok).toBe(true);
+  const transaction = first.workbook.transactions[0];
+  transaction.lines.find((line) => line.direction === 'debit').accountId = 'gcash';
+  transaction.description = 'Changed in ledger';
+  const [reloaded] = reconcileEntries(first.workbook, [
+    { ...entry, transactionId: transaction.id }
+  ]);
+  expect(reloaded).toMatchObject({
+    primaryAccountId: 'card',
+    secondaryAccountId: 'gcash',
+    description: 'Changed in ledger',
+    template: 'transfer'
+  });
+});
+
+it.each(['¥500', '₫500', '₩500'])(
+  'requires currency review for %s instead of silently saving base currency',
+  (amount) => {
+    const workbook = makeSmartNotesWorkbook();
+    const entry = parseNotesLine(`transfer ${amount} from Cash to GCash`, workbook, {
+      today: '2026-07-29'
+    });
+    expect(entry.issues.map((item) => item.code)).toContain('currency_symbol_review');
+    expect(submitNotesBatchCommand(workbook, [entry], makeServices()).ok).toBe(false);
+  }
+);

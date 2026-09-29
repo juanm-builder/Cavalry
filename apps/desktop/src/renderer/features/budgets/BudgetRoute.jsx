@@ -37,82 +37,6 @@ function getMonthShift(range, offset) {
   return { start: toKey(shifted), end: toKey(end) };
 }
 
-function BudgetStatus({ summary, currency, range, currentDate }) {
-  const spent = Number(summary.spent) || 0;
-  const total = Number(summary.totalBudget) || 0;
-  const left = Number(summary.leftToSpend) || 0;
-  const over = left < 0;
-  const today = new Date(`${currentDate || range.end}T00:00:00`);
-  const start = new Date(`${range.start}T00:00:00`);
-  const end = new Date(`${range.end}T00:00:00`);
-  const calculatedPeriodDays = Math.max(1, Math.floor((end - start) / 86400000) + 1);
-  const calculatedDaysElapsed = Math.max(
-    0,
-    Math.min(calculatedPeriodDays, Math.floor((today - start) / 86400000) + 1)
-  );
-  const daysInPeriod = Number(summary.periodDays ?? calculatedPeriodDays);
-  const daysElapsed = Number(summary.daysElapsed ?? calculatedDaysElapsed);
-  const daysRemaining = Number(
-    summary.remainingDays ?? Math.max(0, daysInPeriod - daysElapsed + 1)
-  );
-  const safeToday = Number(
-    summary.safeToSpendToday ?? (left > 0 && daysRemaining > 0 ? left / daysRemaining : 0)
-  );
-  const dailyBudget = Number(summary.dailyBudget ?? total / Math.max(1, daysInPeriod));
-  const spentPercent = total > 0 ? Math.max(0, Math.round((spent / total) * 100)) : 0;
-  const statusTone = over ? 'bad' : left > 0 ? 'good' : 'neutral';
-  return (
-    <article className={`budget-status-card budget-status-balance ${statusTone}`}>
-      <div className="budget-status-summary">
-        <PrivateValue as="span" className="budget-status-eyebrow">
-          <Icon name={over ? 'warning' : 'check_circle'} /> {over ? 'Over plan' : 'On track'}
-        </PrivateValue>
-        <PrivateValue as="strong">{formatMoney(Math.abs(left), currency)}</PrivateValue>
-        <PrivateValue as="small">
-          {over ? 'above your spending plan' : 'left in your spending plan'}
-        </PrivateValue>
-      </div>
-      <div className="budget-status-progress-block">
-        <div className="budget-status-progress-copy">
-          <span>Spent this month</span>
-          <PrivateValue as="strong" className={spent > 0 ? 'bad-text' : 'neutral-text'}>
-            {spentPercent}%
-          </PrivateValue>
-        </div>
-        <div className="budget-status-line">
-          <i style={{ width: `${Math.min(100, spentPercent)}%` }} />
-        </div>
-        <PrivateValue as="small">
-          {total > 0
-            ? `${formatMoney(spent, currency)} of ${formatMoney(total, currency)}`
-            : `${formatMoney(spent, currency)} spent · no spending plan yet`}
-        </PrivateValue>
-      </div>
-      <div className="budget-status-quick-stats">
-        <div>
-          <span>Day</span>
-          <PrivateValue as="strong">
-            {daysElapsed} of {daysInPeriod}
-          </PrivateValue>
-        </div>
-        <div>
-          <span>Safe today</span>
-          <PrivateValue
-            as="strong"
-            className={safeToday < 0 ? 'bad-text' : safeToday > 0 ? 'good-text' : 'neutral-text'}
-          >
-            {formatMoney(Math.max(0, safeToday), currency)}
-          </PrivateValue>
-        </div>
-        <div>
-          <span>Daily plan</span>
-          <PrivateValue as="strong">{formatMoney(dailyBudget, currency)}</PrivateValue>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function EmptyBudgetRows({
   title = 'No plan entries yet.',
   detail = 'Add a monthly amount to start.'
@@ -126,104 +50,57 @@ function EmptyBudgetRows({
 }
 
 function PlanOverview({ summary, currency, onSelect }) {
-  const plannedIncome = Number(summary.plannedIncome) || 0;
-  const incomeBasis = Number(summary.incomePlanBasis) || 0;
+  const income = Number(summary.plannedIncome) || 0;
+  const spending = Number(summary.plannedSpending ?? summary.totalBudget) || 0;
+  const leftToSave = Math.round((income - spending) * 100) / 100;
   const cards = [
-    {
-      key: 'income',
-      label: 'Income plan',
-      value: plannedIncome > 0 ? plannedIncome : incomeBasis,
-      icon: 'payments',
-      tone: 'info',
-      valueTone: 'neutral'
-    },
-    {
-      key: 'spending',
-      label: 'Spending plan',
-      value: Number(summary.plannedSpending) || 0,
-      icon: 'account_balance_wallet',
-      tone: Number(summary.leftToSpend) < 0 ? 'bad' : 'info',
-      valueTone: 'neutral'
-    },
-    {
-      key: 'commitments',
-      label: 'Recurring',
-      value: Number(summary.committedSpending) || 0,
-      detail:
-        Number(summary.uncoveredCommitments) > 0
-          ? `${formatMoney(summary.uncoveredCommitments, currency)} outside your limits`
-          : 'Covered by your spending limits',
-      icon: 'event_repeat',
-      tone: Number(summary.uncoveredCommitments) > 0 ? 'warn' : 'info',
-      valueTone: 'neutral',
-      detailTone: Number(summary.uncoveredCommitments) > 0 ? 'bad' : 'neutral'
-    },
-    {
-      key: 'unallocated',
-      label: 'Unallocated',
-      value: Number(summary.unallocated) || 0,
-      icon: 'calculate',
-      tone:
-        Number(summary.unallocated) < 0 ? 'bad' : Number(summary.unallocated) > 0 ? 'good' : 'info',
-      valueTone:
-        Number(summary.unallocated) < 0
-          ? 'bad'
-          : Number(summary.unallocated) > 0
-            ? 'good'
-            : 'neutral'
-    }
+    { key: 'income', label: 'Expected income', value: income, icon: 'payments' },
+    { key: 'spending', label: 'Planned spending', value: spending, icon: 'account_balance_wallet' },
+    { key: 'left-to-save', label: 'Left to save', value: leftToSave, icon: 'savings' }
   ];
-  if (Number(summary.plannedSavings) > 0) {
-    cards.push({
-      key: 'savings',
-      label: 'Savings',
-      value: Number(summary.plannedSavings) || 0,
-      detail: `${formatMoney(summary.saved, currency)} saved`,
-      icon: 'savings',
-      tone: 'info',
-      valueTone: 'neutral',
-      detailTone: Number(summary.saved) > 0 ? 'good' : 'neutral'
-    });
-  }
-  if (Number(summary.plannedDebt) > 0) {
-    cards.push({
-      key: 'debt',
-      label: 'Debt target',
-      value: Number(summary.plannedDebt) || 0,
-      detail: `${formatMoney(summary.debtPaid, currency)} paid down`,
-      icon: 'credit_score',
-      tone: 'info',
-      valueTone: 'neutral',
-      detailTone: Number(summary.debtPaid) > 0 ? 'good' : 'neutral'
-    });
-  }
+  const amountLength = Math.max(...cards.map((card) => formatMoney(card.value, currency).length));
   return (
-    <section aria-label="Monthly Plan overview" className="monthly-plan-overview">
-      {cards.map((card) => (
-        <button
-          className={`monthly-plan-overview-card ${card.key} ${card.tone}`}
-          key={card.key}
-          onClick={() => onSelect(card.key)}
-          type="button"
-        >
-          <span className="monthly-plan-overview-icon">
-            <Icon name={card.icon} />
-          </span>
-          <span className="monthly-plan-overview-copy">
-            <PrivateValue as="small">{card.label}</PrivateValue>
-            <PrivateValue as="strong" className={card.valueTone || 'neutral'}>
-              {formatMoney(card.value, currency)}
-            </PrivateValue>
-            {card.detail ? (
-              <PrivateValue as="em" className={card.detailTone || 'neutral'}>
-                {card.detail}
-              </PrivateValue>
-            ) : null}
-          </span>
-          <Icon className="monthly-plan-overview-chevron" name="chevron_right" />
-        </button>
-      ))}
-    </section>
+    <>
+      <section
+        aria-label="Monthly Plan overview"
+        className="plan-summary-equation"
+        style={{ '--summary-card-min': `${Math.max(250, amountLength * 18 + 84)}px` }}
+      >
+        {cards.map((card) => (
+          <button
+            className={`plan-summary-card ${card.key} ${card.key === 'left-to-save' ? (leftToSave < 0 ? 'bad' : 'good') : ''}`}
+            key={card.key}
+            onClick={() => onSelect(card.key)}
+            type="button"
+          >
+            <span className="plan-summary-icon">
+              <Icon name={card.icon} />
+            </span>
+            <span className="plan-summary-copy">
+              <span>{card.label}</span>
+              <PrivateValue as="strong">{formatMoney(card.value, currency)}</PrivateValue>
+            </span>
+          </button>
+        ))}
+      </section>
+      <section aria-label="Monthly actuals" className="plan-monthly-actuals">
+        <h2>
+          <Icon name="query_stats" /> Monthly actuals
+        </h2>
+        <dl>
+          {[
+            ['Received', summary.income],
+            ['Spent', summary.spent],
+            ['Saved', summary.saved]
+          ].map(([label, amount]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <PrivateValue as="dd">{formatMoney(amount, currency)}</PrivateValue>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </>
   );
 }
 
@@ -254,7 +131,7 @@ function getMetricRows(metricKey, sections) {
   }
   if (metricKey === 'savings') return source.savings || [];
   if (metricKey === 'debt') return source.debt || [];
-  if (metricKey === 'unallocated') {
+  if (metricKey === 'unallocated' || metricKey === 'left-to-save') {
     return []
       .concat(source.income || [])
       .concat(source.spending || [])
@@ -267,6 +144,26 @@ function getMetricRows(metricKey, sections) {
 
 function getMetricDefinition(metricKey, summary, currency) {
   const definitions = {
+    'left-to-save': {
+      title: 'Left to save',
+      explanation:
+        'Expected income minus planned spending. This is the amount available before savings and debt targets are allocated.',
+      lines: [
+        ['Expected income', formatMoney(summary.plannedIncome, currency)],
+        [
+          'Planned spending',
+          `− ${formatMoney(summary.plannedSpending ?? summary.totalBudget, currency)}`
+        ],
+        [
+          'Left to save',
+          formatMoney(
+            (Number(summary.plannedIncome) || 0) -
+              (Number(summary.plannedSpending ?? summary.totalBudget) || 0),
+            currency
+          )
+        ]
+      ]
+    },
     income: {
       title: 'Income plan',
       explanation:
@@ -459,11 +356,24 @@ function BudgetCategoryTable({
   currency,
   onSelect,
   type = 'expense',
-  showCreate = false,
+  showCreate = true,
   alwaysRender = false
 }) {
   const actions = useActionBindings();
   const copy = getPlanTypeCopy(type);
+  const totalPlanned = rows.reduce(
+    (sum, row) => sum + (row.includedInPlanTotals === false ? 0 : Number(row.planned) || 0),
+    0
+  );
+  const totalActual = rows.reduce((sum, row) => sum + (Number(row.actual) || 0), 0);
+  const totals = (
+    <div aria-label={`Total ${copy.title.toLowerCase()}`} className="budget-section-total">
+      <strong>Total {copy.title}</strong>
+      <PrivateValue as="strong">{formatMoney(totalPlanned, currency)}</PrivateValue>
+      <PrivateValue as="strong">{formatMoney(totalActual, currency)}</PrivateValue>
+      <span />
+    </div>
+  );
   const createEntry =
     showCreate || !rows.length ? (
       <button
@@ -477,7 +387,7 @@ function BudgetCategoryTable({
             <Icon name="add" />
           </span>
           <span className="budget-category-list-copy">
-            <strong>Add to Monthly Plan</strong>
+            <strong>Add a budget</strong>
           </span>
         </span>
       </button>
@@ -490,16 +400,24 @@ function BudgetCategoryTable({
           <PrivateValue as="h3">
             <Icon name={copy.icon} /> {copy.title}
           </PrivateValue>
-          <PrivateValue as="p">{copy.description}</PrivateValue>
+          <PrivateValue as="span" className="plan-section-count">
+            {rows.length}{' '}
+            {type === 'debt'
+              ? rows.length === 1
+                ? 'payment'
+                : 'payments'
+              : rows.length === 1
+                ? 'category'
+                : 'categories'}
+          </PrivateValue>
         </div>
       </div>
       {rows.length ? (
         <>
           <div className="budget-category-list-head">
             <span>Category</span>
-            <PrivateValue as="span">{copy.planLabel}</PrivateValue>
+            <PrivateValue as="span">{type === 'expense' ? 'Planned' : copy.planLabel}</PrivateValue>
             <PrivateValue as="span">{copy.actualLabel}</PrivateValue>
-            <span>Status</span>
             <span />
           </div>
           <PrivateValue as="div" className="budget-category-list">
@@ -560,7 +478,7 @@ function BudgetCategoryTable({
                   >
                     {formatMoney(row.actual, currency)}
                   </PrivateValue>
-                  <span className={`budget-category-status ${tone}`}>
+                  <span className={`budget-category-status sr-only ${tone}`}>
                     <PrivateValue as="b">{statusLabel}</PrivateValue>
                     <PrivateValue as="small">{statusDetail}</PrivateValue>
                   </span>
@@ -572,11 +490,16 @@ function BudgetCategoryTable({
                 </button>
               );
             })}
+            {totals}
           </PrivateValue>
         </>
       ) : (
         <PrivateValue as="div" className="budget-category-list">
           {createEntry}
+          <p className="plan-empty-copy">
+            {type === 'debt' ? 'No payments planned' : 'No entries planned'}
+          </p>
+          {totals}
         </PrivateValue>
       )}
     </section>
@@ -669,7 +592,8 @@ function BudgetRouteView({
   const data = model || {};
   const [selectedRow, setSelectedRow] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState('');
-  const [activePlanType, setActivePlanType] = useState('expense');
+  const [activePlanType, setActivePlanType] = useState('all');
+  const [sortOrder, setSortOrder] = useState('amount-desc');
   const [detailInstanceKey, setDetailInstanceKey] = useState(0);
   const currency = data.currency || 'PHP';
   const summary = data.summary || {};
@@ -691,8 +615,15 @@ function BudgetRouteView({
           canDelete: details.canDelete
         };
       })
-      .sort((left, right) => (Number(right.actual) || 0) - (Number(left.actual) || 0));
-  }, [data.categoryOptions, data.categoryRows]);
+      .sort((left, right) => {
+        const nameOrder = String(left.category?.name || '').localeCompare(
+          String(right.category?.name || '')
+        );
+        if (sortOrder === 'name') return nameOrder;
+        const difference = (Number(left.planned) || 0) - (Number(right.planned) || 0);
+        return (sortOrder === 'amount-asc' ? difference : -difference) || nameOrder;
+      });
+  }, [data.categoryOptions, data.categoryRows, sortOrder]);
   const sections = useMemo(
     () => ({
       income: categoryRows.filter((row) => row.categoryType === 'income'),
@@ -784,7 +715,7 @@ function BudgetRouteView({
   ]);
 
   return (
-    <section data-react-route="budgets">
+    <section className="budget-plan-page" data-react-route="budgets">
       <section className="page-header monthly-plan-header">
         <div>
           <h1>Monthly Plan</h1>
@@ -800,15 +731,7 @@ function BudgetRouteView({
           <DateRangeControl periodLabel={periodLabel} range={range} />
         </div>
       </section>
-      <div className="monthly-plan-summary-shell">
-        <BudgetStatus
-          currency={currency}
-          currentDate={data.currentDate}
-          range={range}
-          summary={summary}
-        />
-        <PlanOverview currency={currency} onSelect={openMetric} summary={summary} />
-      </div>
+      <PlanOverview currency={currency} onSelect={openMetric} summary={summary} />
       <TrustNotice trust={data.trust || {}} />
       <section className="monthly-plan-category-workspace">
         <div className="monthly-plan-workspace-heading">
@@ -821,16 +744,27 @@ function BudgetRouteView({
             sections={sections}
           />
         </div>
+        <div className="plan-sort-toolbar">
+          <select
+            aria-label="Sort plan entries"
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value)}
+          >
+            <option value="amount-desc">Sort: Amount — High to low</option>
+            <option value="amount-asc">Sort: Amount — Low to high</option>
+            <option value="name">Sort: Name — A to Z</option>
+          </select>
+        </div>
         {activePlanType === 'all' ? (
           <div className="monthly-plan-all-sections">
-            {PLAN_SECTION_TABS.filter((tab) => tab.key !== 'all').map((tab, index) => (
+            {PLAN_SECTION_TABS.filter((tab) => tab.key !== 'all').map((tab) => (
               <BudgetCategoryTable
                 alwaysRender
                 currency={currency}
                 key={tab.key}
                 onSelect={openDetail}
                 rows={activeRowsByType[tab.key] || []}
-                showCreate={index === 0}
+                showCreate
                 type={tab.key}
               />
             ))}

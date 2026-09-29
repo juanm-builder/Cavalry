@@ -215,7 +215,10 @@ describe('budget editor interactions', () => {
     expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe(
       'true'
     );
-    expect(screen.getByText('Spending plan vs actual')).not.toBeNull();
+    const overview = screen.getByRole('tabpanel');
+    expect(within(overview).getByText('Planned')).not.toBeNull();
+    expect(within(overview).getByText('Spent')).not.toBeNull();
+    expect(within(overview).getByText('Left to spend')).not.toBeNull();
     expect(screen.queryByText('Coffee beans')).toBeNull();
     await user.click(screen.getByRole('tab', { name: 'Transactions' }));
     expect(screen.getByText('Coffee beans')).not.toBeNull();

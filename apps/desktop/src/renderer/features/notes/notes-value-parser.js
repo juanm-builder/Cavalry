@@ -77,7 +77,43 @@ export function parseNotesDate(source, today) {
   };
 }
 
+const ISO_CURRENCIES =
+  typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('currency')
+    : [
+        'PHP',
+        'USD',
+        'EUR',
+        'GBP',
+        'SGD',
+        'CAD',
+        'AUD',
+        'NZD',
+        'JPY',
+        'CNY',
+        'HKD',
+        'CHF',
+        'INR',
+        'KRW',
+        'THB',
+        'MYR',
+        'IDR',
+        'VND',
+        'AED',
+        'SAR',
+        'TWD',
+        'BRL',
+        'ZAR'
+      ];
 const CURRENCY_CODES = {
+  ...Object.fromEntries(ISO_CURRENCIES.map((code) => [code.toLowerCase(), code])),
+  s$: 'SGD',
+  c$: 'CAD',
+  a$: 'AUD',
+  hk$: 'HKD',
+  nz$: 'NZD',
+  r$: 'BRL',
+  '₹': 'INR',
   '₱': 'PHP',
   php: 'PHP',
   peso: 'PHP',
@@ -90,11 +126,14 @@ const CURRENCY_CODES = {
   '£': 'GBP',
   gbp: 'GBP'
 };
-const amountPattern =
-  /(?<![\p{L}\d])(?:(₱|PHP|US\$|USD|\$|€|EUR|£|GBP)\s*)?([+-]?\d+(?:[.,]\d+)*)([km])?(?:\s*(PHP|USD|EUR|GBP|pesos?))?(?![\p{L}\d])/giu;
+const currencyPattern = ISO_CURRENCIES.join('|');
+const amountPattern = new RegExp(
+  String.raw`(?<![\p{L}\d.,])(?:(₱|(?:US|HK|NZ|S|C|A|R)\$|\$|€|£|₹|${currencyPattern})\s*)?([+-]?(?:\d+(?:[.,]\d+)*|[.,]\d+))([km])?(?:\s*(${currencyPattern}|pesos?))?(?![\p{L}\d])`,
+  'giu'
+);
 
 function numericAmount(value) {
-  const unsigned = value.replace(/^[+-]/, '');
+  const unsigned = value.replace(/^[+-]/, '').replace(/^(?=[.,])/, '0');
   if (/^\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/.test(unsigned) || /^\d+(?:\.\d{1,2})?$/.test(unsigned))
     return Number(unsigned.replace(/,/g, ''));
   if (/^\d{1,3}(?:\.\d{3})+,\d{2}$/.test(unsigned) || /^\d+,\d{2}$/.test(unsigned))
@@ -167,13 +206,17 @@ export function parseNotesAmount(source, workbookCurrency = 'PHP') {
         ))
     )
       continue;
-    const numeric = numericAmount(match[2]);
     const multiplier =
       match[3]?.toLowerCase() === 'k' ? 1000 : match[3]?.toLowerCase() === 'm' ? 1000000 : 1;
+    const numeric =
+      multiplier > 1 && /^\d+\.\d{1,5}$/.test(match[2])
+        ? Number(match[2])
+        : numericAmount(match[2]);
     const prefixCurrency = CURRENCY_CODES[match[1]?.toLowerCase()];
     const suffixCurrency = CURRENCY_CODES[match[4]?.toLowerCase()];
     candidates.push({
       amount: numeric * multiplier,
+      ambiguous: multiplier > 1 && /^\d{1,3}\.\d{3}$/.test(match[2]),
       currency: prefixCurrency || suffixCurrency || workbookCurrency,
       matchedText: match[0].trim(),
       signed: /^[+-]/.test(match[2]) || (/\(\s*$/.test(before) && /^\s*\)/.test(after)),
@@ -200,7 +243,7 @@ export function parseNotesAmount(source, workbookCurrency = 'PHP') {
     }
   }
   const chosen = candidates[0];
-  const ambiguous = candidates.length > 1;
+  const ambiguous = candidates.length > 1 || candidates.some((candidate) => candidate.ambiguous);
   return {
     amount: chosen && !chosen.invalid && !chosen.signed && !ambiguous ? chosen.amount : 0,
     currency: chosen?.currency || workbookCurrency,
@@ -221,7 +264,7 @@ export function unsupportedNotesIntent(source) {
   )
     return 'recurring';
   if (
-    /\b(?:transfer(?:red)?|mov(?:e|ed)|(?:paid|pay|payment)\s+(?:(?:my|the)\s+)?(?:credit\s*card|loan|debt)|repay(?:ment|ing|ed)?|refund(?:ed)?|reimburs(?:e|ed|ement)|borrow(?:ed)?|lent|withdraw(?:al|n)?|deposit(?:ed)?\s+(?:to|from))\b/i.test(
+    /\b(?:(?:paid|pay|payment)\s+(?:(?:my|the)\s+)?(?:credit\s*card|loan|debt)|repay(?:ment|ing|ed)?|refund(?:ed)?|reimburs(?:e|ed|ement)|borrow(?:ed)?|lent)\b/i.test(
       source
     )
   )
@@ -231,6 +274,12 @@ export function unsupportedNotesIntent(source) {
 
 export function notesIntentIssues(source) {
   const issues = [];
+  if (/\p{Sc}/u.test(source.replace(/[₱$€£₹]/g, '')))
+    issues.push({
+      code: 'currency_symbol_review',
+      field: 'currency',
+      message: 'Choose the currency; this symbol is ambiguous or unsupported.'
+    });
   if (
     /\b(?:actually|correction|corrected|instead|not\s+\d|(?:should|meant)\s+(?:be|to)|cancel(?:led)?|void(?:ed)?)\b|(?:→|->|~~)/i.test(
       source

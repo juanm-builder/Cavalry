@@ -2,6 +2,25 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.15 - 2026-09-29
+
+### Fixed and improved
+
+- Includes the approved Monthly Plan redesign omitted from 2.2.14: compact expected
+  income, planned spending, and left-to-save cards, followed by monthly actuals.
+- Brings plan entries closer together, adds totals to every classification, and keeps
+  an Add a budget row in Spending, Income, Savings, and Debt.
+- Adds sorting by planned amount or name, with All selected by default.
+- Redesigns category details with Overview and Transactions tabs, account filtering,
+  search, sorting, and totals that include refunds and exclude unresolved conversions.
+- Corrects Notes transfers so both account directions survive review and reload,
+  flags duplicate transfers, and requires review for ambiguous amounts and currencies.
+- Keeps salary deposits as income and prevents AI from recasting transfers as spending.
+- Retains the Bills & Subscriptions improvements from 2.2.14. No workbook format or
+  CloudKit migration is required.
+- Signing, notarization, asset verification, and native certification evidence are
+  recorded on the GitHub draft. Keep the release in draft until certification passes.
+
 ## 2.2.14 - 2026-09-28
 
 ### Improved

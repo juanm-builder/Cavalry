@@ -17,6 +17,7 @@ function Icon({ name, className = '' }) {
 }
 
 function categoryIcon(entry) {
+  if (entry.template === 'transfer') return 'swap_horiz';
   if (entry.categoryIcon) return entry.categoryIcon;
   const descriptor = `${entry.categoryName} ${entry.description}`.toLowerCase();
   if (/transport|commute|fare|taxi|grab/.test(descriptor)) return 'directions_car';
@@ -52,6 +53,7 @@ function accountTypeLabel(account) {
 }
 
 function ReviewEditor({ entry, workbook, onCancel, onChange, onSave, disabled }) {
+  const isTransfer = entry.template === 'transfer';
   const categories = asArray(workbook && workbook.categories).filter(
     (category) =>
       category &&
@@ -67,9 +69,11 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onSave, disabled })
   const selectedCategory =
     categories.find((category) => asString(category.id) === asString(entry.categoryId)) || null;
   const eligibleAccounts = accounts.filter((account) =>
-    selectedCategory?.type === 'income'
-      ? account.group === 'asset'
-      : account.group === 'asset' || isCreditCardAccount(account)
+    isTransfer
+      ? true
+      : selectedCategory?.type === 'income'
+        ? account.group === 'asset'
+        : account.group === 'asset' || isCreditCardAccount(account)
   );
   const currencies = Array.from(
     new Set([
@@ -140,29 +144,51 @@ function ReviewEditor({ entry, workbook, onCancel, onChange, onSave, disabled })
             value={entry.currency}
           />
         </div>
+        {!isTransfer ? (
+          <div className="field">
+            <label htmlFor={`${entry.id}-category`}>Category</label>
+            <CavalrySelect
+              {...fieldAccessibility('categoryId')}
+              aria-label="Category"
+              id={`${entry.id}-category`}
+              leadingIcon="category"
+              onChange={(event) => onChange('categoryId', event.target.value)}
+              options={categories.map((category) => ({
+                value: category.id,
+                label: category.name,
+                icon: category.icon || 'category',
+                meta: category.type === 'income' ? 'Income' : ''
+              }))}
+              placeholder="Choose category"
+              value={entry.categoryId}
+            />
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor={`${entry.id}-destination`}>To account</label>
+            <CavalrySelect
+              {...fieldAccessibility('secondaryAccountId')}
+              aria-label="To account"
+              id={`${entry.id}-destination`}
+              leadingIcon="account_balance_wallet"
+              onChange={(event) => onChange('secondaryAccountId', event.target.value)}
+              options={eligibleAccounts.map((account) => ({
+                value: account.id,
+                label: accountTypeLabel(account),
+                icon: 'account_balance_wallet'
+              }))}
+              placeholder="Choose destination"
+              value={entry.secondaryAccountId || ''}
+            />
+          </div>
+        )}
         <div className="field">
-          <label htmlFor={`${entry.id}-category`}>Category</label>
-          <CavalrySelect
-            {...fieldAccessibility('categoryId')}
-            aria-label="Category"
-            id={`${entry.id}-category`}
-            leadingIcon="category"
-            onChange={(event) => onChange('categoryId', event.target.value)}
-            options={categories.map((category) => ({
-              value: category.id,
-              label: category.name,
-              icon: category.icon || 'category',
-              meta: category.type === 'income' ? 'Income' : ''
-            }))}
-            placeholder="Choose category"
-            value={entry.categoryId}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${entry.id}-account`}>Payment account</label>
+          <label htmlFor={`${entry.id}-account`}>
+            {isTransfer ? 'From account' : 'Payment account'}
+          </label>
           <CavalrySelect
             {...fieldAccessibility('primaryAccountId')}
-            aria-label="Payment account"
+            aria-label={isTransfer ? 'From account' : 'Payment account'}
             id={`${entry.id}-account`}
             leadingIcon="account_balance_wallet"
             onChange={(event) => onChange('primaryAccountId', event.target.value)}
@@ -250,9 +276,13 @@ export function ReviewEntry({
   const paymentAccount = asArray(workbook?.accounts).find(
     (account) => asString(account.id) === asString(entry.primaryAccountId)
   );
-  const amountTone = entry.template === 'income_received' ? 'good' : 'bad';
-  const amountDirection = amountTone === 'good' ? 'Income' : 'Expense';
-  const amountSign = amountTone === 'good' ? '+' : '−';
+  const isTransfer = entry.template === 'transfer';
+  const destination = asArray(workbook?.accounts).find(
+    (account) => asString(account.id) === asString(entry.secondaryAccountId)
+  );
+  const amountTone = isTransfer ? '' : entry.template === 'income_received' ? 'good' : 'bad';
+  const amountDirection = isTransfer ? 'Transfer' : amountTone === 'good' ? 'Income' : 'Expense';
+  const amountSign = isTransfer ? '' : amountTone === 'good' ? '+' : '−';
   return (
     <article
       className={`notes-review-entry${entry.transactionId ? '' : ' needs-review'}${isEditing ? ' is-editing' : ''}`}
@@ -288,7 +318,9 @@ export function ReviewEntry({
             : 'Check amount'}
         </PrivateValue>
         <PrivateValue as="span" className="notes-payment-pill">
-          {paymentAccount?.name || entry.paymentLabel}
+          {isTransfer
+            ? `${paymentAccount?.name || 'From account'} → ${destination?.name || 'To account'}`
+            : paymentAccount?.name || entry.paymentLabel}
         </PrivateValue>
         <PrivateValue
           as="button"

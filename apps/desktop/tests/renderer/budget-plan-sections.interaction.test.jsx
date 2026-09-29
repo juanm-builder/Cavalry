@@ -91,7 +91,7 @@ describe('monthly plan sections', () => {
 
     const allTab = screen.getByRole('tab', { name: /^All/ });
     expect(within(allTab).getByText('3')).not.toBeNull();
-    expect(allTab.getAttribute('aria-selected')).toBe('false');
+    expect(allTab.getAttribute('aria-selected')).toBe('true');
 
     await user.click(allTab);
     expect(screen.getByRole('tab', { name: /^All/ }).getAttribute('aria-selected')).toBe('true');
@@ -116,8 +116,62 @@ describe('monthly plan sections', () => {
     expect(within(combined).getByText('Emergency Fund')).not.toBeNull();
     expect(within(combined).getByRole('button', { name: 'Add debt plan' })).not.toBeNull();
 
-    // Keep the existing spending action and add exactly one action to the empty debt section.
-    expect(combined.querySelectorAll('.budget-category-create-row')).toHaveLength(2);
+    // Each classification keeps its add action even when it already has entries.
+    expect(combined.querySelectorAll('.budget-category-create-row')).toHaveLength(4);
+  });
+
+  it('sorts within each section and retains totals and every add action', async () => {
+    const user = userEvent.setup();
+    const data = model();
+    data.categoryRows.push(planRow('transport', 'Transport', 'expense', 500, 100));
+    const { container } = render(<BudgetRoute model={data} />);
+    const section = container.querySelector('.budget-categories-section');
+    const names = () =>
+      [...section.querySelectorAll('.budget-category-list-row strong')].map(
+        (node) => node.textContent
+      );
+    expect(names()).toEqual(['Food', 'Transport']);
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Sort plan entries' }),
+      'amount-asc'
+    );
+    expect(names()).toEqual(['Transport', 'Food']);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort plan entries' }), 'name');
+    expect(names()).toEqual(['Food', 'Transport']);
+    expect(screen.getByLabelText('Total spending').textContent).toContain('8,500.00');
+    expect(screen.getByLabelText('Total spending').textContent).toContain('1,300.00');
+    expect(screen.getByLabelText('Total income').textContent).toContain('100,000.00');
+    expect(screen.getByLabelText('Total savings').textContent).toContain('10,000.00');
+    expect(container.querySelectorAll('.budget-category-create-row')).toHaveLength(4);
+  });
+
+  it('keeps expected income distinct from receipts and calculates full-sized savings amounts', () => {
+    const data = model();
+    data.summary = {
+      plannedIncome: 1250000,
+      plannedSpending: 1020322.5,
+      income: 500,
+      saved: 25,
+      spent: 100
+    };
+    const { container } = render(<BudgetRoute model={data} />);
+    expect(container.querySelector('.plan-summary-card.income').textContent).toContain(
+      '1,250,000.00'
+    );
+    expect(container.querySelector('.plan-summary-card.left-to-save').textContent).toContain(
+      '229,677.50'
+    );
+    expect(screen.getByLabelText('Monthly actuals').textContent).toContain('500.00');
+  });
+
+  it('excludes archived targets from section totals and shows a deficit in red', () => {
+    const data = model();
+    data.categoryRows[0].includedInPlanTotals = false;
+    data.summary = { plannedIncome: 0, plannedSpending: 100, income: 9000 };
+    const { container } = render(<BudgetRoute model={data} />);
+    expect(container.querySelector('.plan-summary-card.left-to-save.bad')).not.toBeNull();
+    expect(container.querySelector('.plan-summary-card.income').textContent).toContain('0.00');
+    expect(screen.getByLabelText('Total spending').textContent).toContain('0.00');
   });
 
   it('keeps the combined view open when a row is opened from it', async () => {

@@ -816,3 +816,28 @@ describe('AI Notes admission limits', () => {
     expect(advisor.invoke).not.toHaveBeenCalled();
   });
 });
+
+it('AI cannot reverse a transfer or recast it as spending', async () => {
+  const advisor = configuredAdvisor(
+    responsesResult([
+      transaction({
+        amount: 500,
+        description: 'Transfer',
+        categoryId: 'food',
+        primaryAccountId: 'cash'
+      })
+    ])
+  );
+  const result = await parseNotesWithAi('transfer 500 from Everyday Visa to Cash', makeWorkbook(), {
+    today: '2026-07-29',
+    advisor
+  });
+  expect(result.entries[0]).toMatchObject({
+    template: 'transfer',
+    categoryId: '',
+    primaryAccountId: 'card',
+    secondaryAccountId: 'cash',
+    amount: 500,
+    issues: []
+  });
+});

@@ -1,6 +1,9 @@
 import { submitManualTransactionCommand, validateLedgerInvariants } from '@cavalry/finance-core';
 
-import { withNotesDuplicateReview } from './notes-duplicate-review.js';
+import {
+  withNotesBatchDuplicateReview,
+  withNotesDuplicateReview
+} from './notes-duplicate-review.js';
 import { notesEntryToTransactionInput, validateNotesEntry } from './notes-parser.js';
 
 function asArray(value) {
@@ -18,7 +21,7 @@ function commandError(workbook, code, message, extra = {}) {
 }
 
 export function submitNotesBatchCommand(workbook, entries, services = {}) {
-  const batch = asArray(entries);
+  const batch = withNotesBatchDuplicateReview(asArray(entries));
   if (!batch.length) {
     return commandError(workbook, 'notes.empty_batch', 'Process at least one transaction first.');
   }

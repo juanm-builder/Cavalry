@@ -1,3 +1,5 @@
+import { validateNotesEntryFields } from './notes-entry-validation.js';
+import { matchNotesAccounts, parseNotesTransfer } from './notes-transfer-parser.js';
 import { prepareNotesSources } from './notes-source.js';
 import {
   notesIntentIssues,
@@ -615,6 +617,21 @@ function primaryAccountIdFromTransaction(workbook, transaction) {
 
 function findPayment(workbook, normalizedLine, transactionKind, description = normalizedLine) {
   const accounts = balanceAccounts(workbook);
+  const incomeDestination =
+    transactionKind === 'income' && /\b(?:to|into)\s+(.+)$/.exec(normalizedLine);
+  if (incomeDestination) {
+    const matches = matchNotesAccounts(
+      incomeDestination[1],
+      accounts.filter((account) => account.group === 'asset')
+    );
+    return {
+      account: matches.length === 1 ? matches[0] : null,
+      matchedPhrase: incomeDestination[1],
+      label: matches.length === 1 ? paymentLabel(matches[0]) : 'Destination',
+      ambiguous: matches.length > 1,
+      unavailable: matches.length === 0
+    };
+  }
   const direct = accounts
     .map((account) => ({ account, phrase: normalize(account.name) }))
     .filter(({ phrase }) => phrase && containsPhrase(normalizedLine, phrase))
@@ -748,117 +765,11 @@ function issue(code, field, message) {
 }
 
 export function validateNotesEntry(workbook, entry) {
-  const issues = [];
-  const unsupportedIntent =
-    entry?.unsupportedIntent || unsupportedNotesIntent(asString(entry?.sourceText));
-  if (unsupportedIntent)
-    issues.push(
-      issue(
-        'transaction_kind_unsupported',
-        'review',
-        unsupportedIntent === 'recurring'
-          ? 'Use Bills to set up recurring payments.'
-          : 'Use Add Transaction for transfers, refunds or debt payments.'
-      )
-    );
-  const categories = activeCategories(workbook);
-  const accounts = balanceAccounts(workbook);
-  const allAccounts = asArray(workbook && workbook.accounts);
-  const category = categories.find(
-    (candidate) => asString(candidate.id) === asString(entry && entry.categoryId)
-  );
-  const account = accounts.find(
-    (candidate) => asString(candidate.id) === asString(entry && entry.primaryAccountId)
-  );
-  const amount = Number(entry && entry.amount);
-  const date = asString(entry && entry.date);
-  const currency = asString(entry && entry.currency).toUpperCase();
-  const workbookCurrency = asString(workbook && workbook.currency).toUpperCase() || 'PHP';
-  const dateTimestamp = Date.parse(`${date}T00:00:00Z`);
-  const dateIsValid =
-    /^\d{4}-\d{2}-\d{2}$/.test(date) &&
-    Number.isFinite(dateTimestamp) &&
-    new Date(dateTimestamp).toISOString().slice(0, 10) === date;
-
-  if (!(amount > 0) || !Number.isFinite(amount)) {
-    issues.push(issue('amount_missing', 'amount', 'Enter an amount greater than zero.'));
-  }
-  if (!category) {
-    issues.push(issue('category_missing', 'categoryId', 'Choose a category.'));
-  } else {
-    const linkedAccount = allAccounts.find(
-      (candidate) =>
-        asString(candidate && candidate.id) === asString(category && category.linkedAccountId)
-    );
-    const expectedGroup = category.type === 'income' ? 'income' : 'expense';
-    if (
-      !linkedAccount ||
-      linkedAccount.isActive === false ||
-      asString(linkedAccount.group).toLowerCase() !== expectedGroup
-    ) {
-      issues.push(
-        issue(
-          'category_link_invalid',
-          'categoryId',
-          `${category.name} is not linked to an active ${expectedGroup} account.`
-        )
-      );
-    }
-  }
-  if (!account) {
-    issues.push(issue('payment_missing', 'primaryAccountId', 'Choose a payment account.'));
-  }
-  if (!dateIsValid) {
-    issues.push(issue('date_invalid', 'date', 'Choose a valid transaction date.'));
-  }
-  if (!/^[A-Z]{3}$/.test(currency)) {
-    issues.push(issue('currency_invalid', 'currency', 'Choose a valid currency.'));
-  }
-  const accountCurrency = asString(account && account.currency).toUpperCase() || currency;
-  if (
-    account &&
-    currency &&
-    (currency !== workbookCurrency || accountCurrency !== currency) &&
-    !(Number(entry && entry.fxRateToBase) > 0)
-  ) {
-    issues.push(
-      issue(
-        'fx_rate_missing',
-        'fxRateToBase',
-        `Enter the conversion rate used for this ${currency} transaction.`
-      )
-    );
-  }
-  if (category && account) {
-    if (category.type === 'income' && account.group !== 'asset') {
-      issues.push(
-        issue('income_account_invalid', 'primaryAccountId', 'Income must go to an asset account.')
-      );
-    }
-    if (category.type === 'expense' && !['asset', 'liability'].includes(account.group)) {
-      issues.push(
-        issue(
-          'expense_account_invalid',
-          'primaryAccountId',
-          'Expenses must use an asset or liability account.'
-        )
-      );
-    }
-    if (
-      category.type === 'expense' &&
-      account.group === 'liability' &&
-      !isCreditCardAccount(account)
-    ) {
-      issues.push(
-        issue(
-          'expense_liability_invalid',
-          'primaryAccountId',
-          'Choose a cash, bank, e-wallet, or credit card account.'
-        )
-      );
-    }
-  }
-  return issues;
+  return validateNotesEntryFields(workbook, entry, {
+    categories: activeCategories(workbook),
+    accounts: balanceAccounts(workbook),
+    isCreditCardAccount
+  });
 }
 
 function resolveTemplate(category, account) {
@@ -874,17 +785,26 @@ export function resolveNotesEntry(workbook, entry, options = {}) {
   const account =
     accounts.find((candidate) => asString(candidate.id) === asString(entry.primaryAccountId)) ||
     null;
+  const isTransfer = entry.template === 'transfer';
+  const destination = accounts.find(
+    (candidate) => asString(candidate.id) === asString(entry.secondaryAccountId)
+  );
+  const transferDescription = `Transfer: ${account?.name || 'Choose source'} → ${destination?.name || 'Choose destination'}${entry.transferMemo ? ` · ${entry.transferMemo}` : ''}`;
   const structuralIssues = validateNotesEntry(workbook, entry);
   return {
     ...entry,
     amount: Number(entry.amount) || 0,
     currency: asString(entry.currency || workbook?.currency || 'PHP').toUpperCase(),
-    description: asString(entry.description).trim() || 'Transaction from Notes',
-    categoryName: category?.name || 'Choose category',
-    categoryColor: category?.color || '',
-    categoryIcon: category?.icon || '',
+    description:
+      isTransfer && entry.autoTransferDescription
+        ? transferDescription
+        : asString(entry.description).trim() || 'Transaction from Notes',
+    categoryId: isTransfer ? '' : entry.categoryId,
+    categoryName: isTransfer ? 'Transfer' : category?.name || 'Choose category',
+    categoryColor: isTransfer ? '' : category?.color || '',
+    categoryIcon: isTransfer ? '' : category?.icon || '',
     paymentLabel: account ? paymentLabel(account) : 'Choose account',
-    template: resolveTemplate(category, account),
+    template: isTransfer ? 'transfer' : resolveTemplate(category, account),
     issues: options.keepInferenceIssues
       ? [...asArray(entry.issues), ...structuralIssues].filter(
           (candidate, index, all) =>
@@ -910,6 +830,7 @@ export function parseNotesLine(line, workbook, options = {}) {
     parsingText
   );
   const amountResult = parseNotesAmount(amountSource, workbookCurrency);
+  const transferResult = parseNotesTransfer(parsingText, balanceAccounts(workbook));
   const normalizedLine = normalize(parsingText);
   const paymentPattern = PAYMENT_PATTERNS.find((candidate) => candidate.pattern.test(parsingText));
   const paymentPhrase = paymentPattern?.pattern.exec(parsingText)?.[0] || '';
@@ -934,7 +855,17 @@ export function parseNotesLine(line, workbook, options = {}) {
     ...explicitDate.matchedTexts,
     paymentPhrase || paymentResult.matchedPhrase
   );
-  const inferenceIssues = notesIntentIssues(parsingText);
+  const inferenceIssues = notesIntentIssues(parsingText).filter(
+    (item) =>
+      !(
+        transferResult &&
+        item.code === 'correction_review' &&
+        !/\b(?:actually|correction|corrected|instead|not\s+\d|(?:should|meant)\s+(?:be|to)|cancel(?:led)?|void(?:ed)?)\b|~~/i.test(
+          parsingText
+        )
+      )
+  );
+  if (transferResult) inferenceIssues.push(...transferResult.issues);
   const suggestedFxRate =
     amountResult.currency === 'USD' && workbookCurrency !== 'USD'
       ? Number(asObject(workbook && workbook.settings).usdToBaseRate) || 0
@@ -966,12 +897,16 @@ export function parseNotesLine(line, workbook, options = {}) {
     );
   if (amountResult.ambiguous) {
     inferenceIssues.push(
-      issue('amount_ambiguous', 'amount', 'More than one amount appears in this note.')
+      issue(
+        'amount_ambiguous',
+        'amount',
+        'Check the amount; this note has multiple amounts or an ambiguous separator.'
+      )
     );
   } else if (!amountResult.amount) {
     inferenceIssues.push(issue('amount_missing', 'amount', 'Cavalry could not find an amount.'));
   }
-  if (categoryResult.typo)
+  if (!transferResult && categoryResult.typo)
     inferenceIssues.push(
       issue(
         'category_typo_review',
@@ -979,11 +914,11 @@ export function parseNotesLine(line, workbook, options = {}) {
         `Check whether ${categoryResult.category.name} matches the spelling in your note.`
       )
     );
-  if (categoryResult.ambiguous) {
+  if (!transferResult && categoryResult.ambiguous) {
     inferenceIssues.push(
       issue('category_ambiguous', 'categoryId', 'More than one category matched this line.')
     );
-  } else if (!categoryResult.category || categoryResult.fallback) {
+  } else if (!transferResult && (!categoryResult.category || categoryResult.fallback)) {
     inferenceIssues.push(
       issue(
         'category_uncertain',
@@ -994,7 +929,7 @@ export function parseNotesLine(line, workbook, options = {}) {
       )
     );
   }
-  if (paymentResult.unavailable) {
+  if (!transferResult && paymentResult.unavailable) {
     inferenceIssues.push(
       issue(
         'payment_unavailable',
@@ -1002,11 +937,11 @@ export function parseNotesLine(line, workbook, options = {}) {
         `${paymentResult.label} does not match an account in this workbook.`
       )
     );
-  } else if (paymentResult.missing) {
+  } else if (!transferResult && paymentResult.missing) {
     inferenceIssues.push(
       issue('payment_unspecified', 'primaryAccountId', 'Check the payment account.')
     );
-  } else if (paymentResult.ambiguous) {
+  } else if (!transferResult && paymentResult.ambiguous) {
     inferenceIssues.push(
       issue(
         'payment_ambiguous',
@@ -1039,6 +974,10 @@ export function parseNotesLine(line, workbook, options = {}) {
         }
       : null,
     sourceText,
+    autoTransferDescription: !!transferResult,
+    transferMemo: transferResult
+      ? /\b(?:for|memo:|note:)\s+(.+)$/i.exec(parsingText)?.[1]?.trim() || ''
+      : '',
     unsupportedIntent: unsupportedNotesIntent(parsingText),
     amount: amountResult.amount,
     currency: amountResult.currency,
@@ -1049,11 +988,16 @@ export function parseNotesLine(line, workbook, options = {}) {
     categoryName: categoryResult.category?.name || 'Choose category',
     categoryColor: categoryResult.category?.color || '',
     categoryIcon: categoryResult.category?.icon || '',
-    primaryAccountId: asString(paymentResult.account?.id),
+    primaryAccountId: transferResult
+      ? transferResult.primaryAccountId
+      : asString(paymentResult.account?.id),
+    secondaryAccountId: transferResult?.secondaryAccountId || '',
     paymentLabel: paymentResult.account
       ? paymentResult.label || paymentLabel(paymentResult.account)
       : paymentResult.label || 'Choose account',
-    template: resolveTemplate(categoryResult.category, paymentResult.account),
+    template: transferResult
+      ? 'transfer'
+      : resolveTemplate(categoryResult.category, paymentResult.account),
     issues: inferenceIssues,
     manuallyReviewed: false
   };
@@ -1081,9 +1025,13 @@ export function notesEntryToTransactionInput(entry) {
     description: entry.description,
     categoryId: entry.categoryId,
     primaryAccountId: entry.primaryAccountId,
-    secondaryAccountId: '',
+    secondaryAccountId: asString(entry.secondaryAccountId),
     counterpartyId: asString(entry.counterpartyId),
-    note: asString(entry.transactionNote) || 'Captured from Notes',
+    note:
+      asString(entry.transactionNote) ||
+      (entry.template === 'transfer'
+        ? `Captured from Notes\n${asString(entry.sourceText)}`
+        : 'Captured from Notes'),
     sourceRoute: 'notes',
     // Existing ledger matches require Notes review; repeated lines in this reviewed batch
     // remain separate transactions.

@@ -307,6 +307,7 @@ function materializeAiEntry(workbook, fallback, candidate) {
     'payment_unspecified',
     'payment_unavailable',
     'currency_conversion_review',
+    'currency_symbol_review',
     'date_ambiguous',
     'date_invalid',
     'date_future_review',
@@ -597,6 +598,8 @@ export async function parseNotesWithAi(text, workbook, options = {}) {
 
   let fallbackCount = 0;
   const entries = fallbackEntries.map((fallback) => {
+    // Transfer direction and both account IDs are resolved locally; AI cannot recast them as spending.
+    if (fallback.template === 'transfer') return fallback;
     const candidate = candidatesBySource.get(fallback.id);
     if (!candidate || duplicateSources.has(fallback.id)) {
       fallbackCount += 1;

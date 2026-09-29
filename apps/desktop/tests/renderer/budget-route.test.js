@@ -55,19 +55,18 @@ describe('BudgetRoute', () => {
     expect(html).toContain('data-react-route="budgets"');
     expect(html).toContain('Monthly Plan');
     expect(html).toContain('Monthly Plan overview');
-    expect(html).toContain('Income plan');
-    expect(html).toContain('Spending plan');
-    expect(html).toContain('Recurring');
-    expect(html).toContain('Unallocated');
-    expect(html).toMatch(/On track|Over plan/);
-    expect(html).toContain('Spent this month');
-    expect(html).toContain('Safe today');
-    expect(html).toContain('Daily plan');
+    expect(html).toContain('Expected income');
+    expect(html).toContain('Planned spending');
+    expect(html).toContain('Left to save');
+    expect(html).toContain('Monthly actuals');
+    expect(html).not.toContain('Safe today');
+    expect(html).not.toContain('Daily plan');
+    expect(html).not.toContain('Total allocated');
     expect(html).not.toContain('Budget Usage');
     expect(html).not.toContain('data-action=');
   });
 
-  it('shows one plan section at a time instead of a duplicate usage dashboard', () => {
+  it('shows the combined plan with category details and totals', () => {
     const html = renderBudgetRoute();
     const foodDescription = html.match(
       /aria-describedby="([^"]+)" class="budget-category-list-row"/
@@ -95,7 +94,7 @@ describe('BudgetRoute', () => {
     emptyModel.spendingRows = [];
     const html = renderBudgetRoute(emptyModel);
 
-    expect(html).toContain('Add to Monthly Plan');
+    expect(html).toContain('Add a budget');
     expect(html.match(/aria-label="Add spending plan"/g)).toHaveLength(1);
     expect(html).not.toContain('No plan entries yet.');
   });

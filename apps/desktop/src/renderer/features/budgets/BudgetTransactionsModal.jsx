@@ -23,6 +23,9 @@ function renderInBody(content) {
 export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, sheetId }) {
   const actions = useActionBindings();
   const [activeTab, setActiveTab] = useState('overview');
+  const [search, setSearch] = useState('');
+  const [account, setAccount] = useState('');
+  const [sort, setSort] = useState('newest');
   const drawerRef = useRef(null);
   useEffect(() => {
     if (!row) return undefined;
@@ -46,6 +49,50 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
   const canDelete = !!sheetId && row.canDelete !== false && hasBudget;
   const canEdit = !!category.id && !row.isMissing && !row.isArchived && !row.isUncategorized;
   const status = row.statusLabel || 'Review';
+  const accounts = [
+    ...new Map(
+      [...(row.transactions || []), ...(row.receipt?.unresolved || [])].map((item) => [
+        item.accountId || '',
+        item.accountName || 'No account'
+      ])
+    ).entries()
+  ];
+  const matchesSearch = (item) =>
+    `${item.description} ${item.date} ${item.accountName || ''}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+  const transactions = (row.transactions || [])
+    .filter((item) => matchesSearch(item) && (!account || item.accountId === account))
+    .slice()
+    .sort((a, b) => {
+      const order =
+        sort === 'highest'
+          ? Math.abs(b.amount) - Math.abs(a.amount)
+          : sort === 'lowest'
+            ? Math.abs(a.amount) - Math.abs(b.amount)
+            : sort === 'oldest'
+              ? a.date.localeCompare(b.date)
+              : b.date.localeCompare(a.date);
+      return order || a.id.localeCompare(b.id);
+    });
+  const unresolved = (row.receipt?.unresolved || []).filter(
+    (item) => matchesSearch(item) && (!account || item.accountId === account)
+  );
+  const filteredTotal = transactions.reduce((total, item) => total + (Number(item.amount) || 0), 0);
+  const expense = row.categoryType === 'expense';
+  const varianceLabel = expense
+    ? row.remaining < 0
+      ? 'Over budget'
+      : 'Left to spend'
+    : row.actual < row.planned
+      ? 'To target'
+      : 'Above target';
+  const signedAmount = (amount) =>
+    `${(expense ? -amount : amount) < 0 ? '−' : (expense ? -amount : amount) > 0 ? '+' : ''}${formatMoney(Math.abs(amount), currency)}`;
+  const plannedShare =
+    expense && row.actual > row.planned && row.actual > 0
+      ? Math.max(0, (row.planned / row.actual) * 100)
+      : Math.min(100, Math.max(0, Number(row.progressPercent) || 0));
   const editBinding = actions.action('open-simple-budget', {
     sheetId,
     categoryId: category.id,
@@ -79,6 +126,9 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
             <BudgetCategoryAvatar category={category} />
             <div>
               <PrivateValue as="h2">{category.name}</PrivateValue>
+              <PrivateValue as="small" className="budget-detail-period">
+                {periodLabel || 'Monthly plan'}
+              </PrivateValue>
               <PrivateValue
                 as="span"
                 className={`budget-detail-status ${
@@ -132,24 +182,32 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
               role="tabpanel"
             >
               <section className="budget-detail-card">
-                <div className="budget-detail-card-heading">
-                  <PrivateValue as="h3">{copy.detailTitle}</PrivateValue>
-                  <span className="tag">Monthly</span>
-                </div>
-                <div className="budget-vs-actual">
+                <div className="budget-detail-metrics">
                   <div>
-                    <PrivateValue as="strong" className={tone === 'bad' ? 'status-bad' : ''}>
-                      {formatMoney(row.actual, currency)}
-                    </PrivateValue>
-                    <PrivateValue as="span">{copy.actualLabel}</PrivateValue>
+                    <span>{expense ? 'Planned' : copy.planLabel}</span>
+                    <PrivateValue as="strong">{formatMoney(row.planned, currency)}</PrivateValue>
                   </div>
                   <div>
-                    <PrivateValue as="strong">{formatMoney(row.planned, currency)}</PrivateValue>
-                    <PrivateValue as="span">{copy.planLabel}</PrivateValue>
+                    <span>{copy.actualLabel}</span>
+                    <PrivateValue as="strong">{formatMoney(row.actual, currency)}</PrivateValue>
+                  </div>
+                  <div>
+                    <span>{varianceLabel}</span>
+                    <PrivateValue
+                      as="strong"
+                      className={tone === 'bad' ? 'status-bad' : 'good-text'}
+                    >
+                      {formatMoney(Math.abs(row.remaining), currency)}
+                    </PrivateValue>
                   </div>
                 </div>
                 <div className="budget-detail-progress">
-                  <span style={{ width: `${Math.min(100, Number(row.progressPercent) || 0)}%` }} />
+                  <span style={{ width: `${plannedShare}%`, background: 'var(--accent)' }} />
+                  {expense && row.actual > row.planned ? (
+                    <span
+                      style={{ width: `${100 - plannedShare}%`, background: 'var(--budget-red)' }}
+                    />
+                  ) : null}
                 </div>
                 <div className="budget-detail-progress-meta">
                   <PrivateValue as="span">{row.percent}% of plan</PrivateValue>
@@ -162,36 +220,11 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
                 <section className="budget-detail-card">
                   <div className="budget-detail-card-heading">
                     <h3>Recurring commitments</h3>
-                    <span className="tag">Separate</span>
+                    <PrivateValue as="strong">{formatMoney(row.committed, currency)}</PrivateValue>
                   </div>
                   <p className="monthly-plan-formula-copy">
-                    These items inform the plan but do not automatically change this category’s
-                    limit.
+                    Scheduled payments in this category. Your plan limit is set separately.
                   </p>
-                  <dl className="budget-detail-list">
-                    <div>
-                      <dt>Committed</dt>
-                      <PrivateValue as="dd">{formatMoney(row.committed, currency)}</PrivateValue>
-                    </div>
-                    <div>
-                      <dt>Covered by plan</dt>
-                      <PrivateValue as="dd">
-                        {formatMoney(
-                          Math.min(Number(row.planned) || 0, Number(row.committed) || 0),
-                          currency
-                        )}
-                      </PrivateValue>
-                    </div>
-                    <div>
-                      <dt>Not covered</dt>
-                      <PrivateValue as="dd">
-                        {formatMoney(
-                          Math.max(0, (Number(row.committed) || 0) - (Number(row.planned) || 0)),
-                          currency
-                        )}
-                      </PrivateValue>
-                    </div>
-                  </dl>
                   {row.commitmentRows?.length ? (
                     <div className="monthly-plan-commitment-list">
                       {row.commitmentRows.map((commitment) => (
@@ -209,6 +242,14 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
                       ))}
                     </div>
                   ) : null}
+                  <div className="budget-commitment-coverage">
+                    <PrivateValue as="span">
+                      Covered {formatMoney(Math.min(row.planned, row.committed), currency)}
+                    </PrivateValue>
+                    <PrivateValue as="span">
+                      Uncovered {formatMoney(Math.max(0, row.committed - row.planned), currency)}
+                    </PrivateValue>
+                  </div>
                 </section>
               ) : null}
               {needsAttention ? (
@@ -227,7 +268,7 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
                 </section>
               ) : null}
               <details className="budget-detail-card budget-detail-more">
-                <summary>More details</summary>
+                <summary>Calculation details</summary>
                 <dl className="budget-detail-list">
                   <div>
                     <dt>Difference</dt>
@@ -258,15 +299,62 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
               id="budget-transactions-panel"
               role="tabpanel"
             >
-              <div className="budget-transaction-tab-heading">
-                <h3>Transactions</h3>
-                <PrivateValue as="p">
-                  {row.transactions?.length || 0} associated transactions
+              <div className="budget-transaction-summary">
+                <PrivateValue as="span">
+                  {copy.actualLabel} <strong>{formatMoney(row.actual, currency)}</strong>
+                </PrivateValue>
+                <PrivateValue as="span" className={tone === 'bad' ? 'status-bad' : ''}>
+                  {getRowStatusDetail(row, currency)}
                 </PrivateValue>
               </div>
+              <div className="budget-transaction-controls">
+                <label className="budget-transaction-search">
+                  <Icon name="search" />
+                  <input
+                    aria-label="Search transactions"
+                    placeholder="Search transactions"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </label>
+                <select
+                  aria-label="Sort transactions"
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value)}
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="highest">Amount: High to low</option>
+                  <option value="lowest">Amount: Low to high</option>
+                </select>
+                <PrivateValue as="span" className="budget-transaction-period">
+                  {periodLabel || 'This month'}
+                </PrivateValue>
+                <select
+                  aria-label="Filter by account"
+                  value={account}
+                  onChange={(event) => setAccount(event.target.value)}
+                >
+                  <option value="">All accounts</option>
+                  {accounts
+                    .filter(([id]) => id)
+                    .map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="budget-transaction-table-heading">
+                <span>Date</span>
+                <span>Transaction</span>
+                <span>Account</span>
+                <span>Amount</span>
+                <span />
+              </div>
               <div className="budget-transaction-list">
-                {row.transactions?.length ? (
-                  row.transactions.map((transaction) => (
+                {transactions.length ? (
+                  transactions.map((transaction) => (
                     <PrivateValue
                       as="button"
                       aria-label={`View ${transaction.description} transaction details`}
@@ -277,37 +365,54 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
                         transactionId: transaction.id
                       })}
                     >
+                      <PrivateValue as="small">{transaction.date}</PrivateValue>
                       <span>
                         <PrivateValue as="strong">{transaction.description}</PrivateValue>
-                        <PrivateValue as="small">
-                          {transaction.date}
-                          {transaction.eventKind
-                            ? ` • ${String(transaction.eventKind).replaceAll('_', ' ')}`
-                            : ''}
-                        </PrivateValue>
+                        {transaction.nativeCurrency && transaction.nativeCurrency !== currency ? (
+                          <PrivateValue as="small">
+                            {formatMoney(transaction.nativeAmount, transaction.nativeCurrency)} ·
+                            converted to {currency}
+                          </PrivateValue>
+                        ) : null}
                       </span>
-                      <PrivateValue as="b">
-                        {formatMoney(transaction.amount, transaction.currency || currency)}
+                      <PrivateValue as="span" className="budget-transaction-account">
+                        {transaction.accountName || 'No account'}
+                      </PrivateValue>
+                      <PrivateValue
+                        as="b"
+                        className={
+                          (expense ? -transaction.amount : transaction.amount) < 0
+                            ? 'status-bad'
+                            : 'good-text'
+                        }
+                      >
+                        {signedAmount(transaction.amount)}
                       </PrivateValue>
                       <Icon name="chevron_right" />
                     </PrivateValue>
                   ))
                 ) : (
                   <div className="empty-state compact-empty">
-                    <strong>No transactions in this period.</strong>
+                    <strong>
+                      {search || account
+                        ? 'No matching transactions.'
+                        : 'No transactions in this period.'}
+                    </strong>
                   </div>
                 )}
-                {row.receipt?.unresolved?.map((transaction) => (
+                {unresolved.map((transaction) => (
                   <div
                     className="budget-transaction-row unresolved"
                     key={`unresolved:${transaction.transactionId}`}
                   >
+                    <PrivateValue as="small">{transaction.date}</PrivateValue>
                     <span>
                       <PrivateValue as="strong">{transaction.description}</PrivateValue>
-                      <PrivateValue as="small">
-                        {transaction.date} • excluded from total
-                      </PrivateValue>
+                      <small>Needs review · excluded from total</small>
                     </span>
+                    <PrivateValue as="span" className="budget-transaction-account">
+                      {transaction.accountName || 'No account'}
+                    </PrivateValue>
                     <PrivateValue as="b">
                       {formatMoney(transaction.nativeAmount, transaction.nativeCurrency)}
                     </PrivateValue>
@@ -315,10 +420,20 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
                   </div>
                 ))}
               </div>
+              <div className="budget-transaction-total">
+                <span>
+                  {transactions.length + unresolved.length} transaction
+                  {transactions.length + unresolved.length === 1 ? '' : 's'}
+                  {unresolved.length ? ` · ${unresolved.length} excluded from total` : ''}
+                </span>
+                <PrivateValue as="strong">
+                  Total {formatMoney(filteredTotal, currency)}
+                </PrivateValue>
+              </div>
             </div>
           )}
         </div>
-        {activeTab === 'overview' && (canEdit || canDelete) ? (
+        {canEdit || canDelete ? (
           <div
             className={`budget-detail-actions budget-detail-footer${canEdit && canDelete ? '' : ' single'}`}
           >
@@ -326,7 +441,7 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
               <PrivateValue
                 as="button"
                 aria-label="Edit Budget"
-                className="btn"
+                className="btn btn-primary"
                 onClick={(event) => {
                   editBinding.onClick?.(event);
                   onClose();
@@ -339,7 +454,7 @@ export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, s
             {canDelete ? (
               <button
                 aria-label="Delete Budget"
-                className="btn btn-danger"
+                className="btn budget-remove-plan"
                 onClick={(event) => {
                   deleteBinding.onClick?.(event);
                   onClose();

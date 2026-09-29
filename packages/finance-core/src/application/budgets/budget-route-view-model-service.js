@@ -233,6 +233,26 @@ function buildCategoryRows(workbook, visibleRange, actual, planData) {
     ...Object.keys(actual.categoryTotals || {})
   ]);
   const transactions = getTransactionsInRange(workbook, visibleRange);
+  const transactionsById = new Map(
+    transactions.map((transaction) => [transaction.id, transaction])
+  );
+  const accountsById = new Map(asArray(workbook?.accounts).map((account) => [account.id, account]));
+  const paymentAccountId = (item, categoryType) => {
+    const transaction = transactionsById.get(item.transactionId);
+    const direction = (
+      categoryType === 'income'
+        ? (Number(item.signedBaseAmount) || 0) >= 0
+        : (Number(item.signedBaseAmount) || 0) < 0
+    )
+      ? 'debit'
+      : 'credit';
+    const lines = asArray(transaction?.lines).filter((line) =>
+      ['asset', 'liability'].includes(accountsById.get(line.accountId)?.group)
+    );
+    return (
+      lines.find((line) => line.direction === direction)?.accountId || lines[0]?.accountId || ''
+    );
+  };
 
   return Array.from(categoryIds)
     .map((categoryId) => {
@@ -288,10 +308,20 @@ function buildCategoryRows(workbook, visibleRange, actual, planData) {
         unresolvedCommitments: clonePlain(
           planData.unresolvedCommitmentsByCategory[categoryId] || []
         ),
-        receipt,
+        receipt: {
+          ...receipt,
+          unresolved: receipt.unresolved.map((item) => ({
+            ...item,
+            accountId: paymentAccountId(item, categoryType),
+            accountName:
+              accountsById.get(paymentAccountId(item, categoryType))?.name || 'No account'
+          }))
+        },
         transactions: receipt.contributions.map((item) => ({
           id: item.transactionId,
           transactionId: item.transactionId,
+          accountId: paymentAccountId(item, categoryType),
+          accountName: accountsById.get(paymentAccountId(item, categoryType))?.name || 'No account',
           description: item.description,
           date: item.date,
           eventKind: item.eventKind,

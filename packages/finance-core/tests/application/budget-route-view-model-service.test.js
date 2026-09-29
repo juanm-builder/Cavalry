@@ -94,6 +94,22 @@ describe('budget route view-model service', () => {
     expect(model.spendingRows).toEqual([]);
   });
 
+  it('identifies the payment account from ledger lines for category transaction filters', () => {
+    const model = buildBudgetRouteViewModel(makeBudgetWorkbook(), {
+      range: { start: '2026-06-01', end: '2026-06-30' },
+      currentDate: '2026-06-30'
+    });
+    expect(
+      model.categoryRows.find((row) => row.category.id === 'food').transactions[0]
+    ).toMatchObject({ id: 'txn-food-cash', accountId: 'cash', accountName: 'Cash', amount: 250 });
+    expect(
+      model.categoryRows.find((row) => row.category.id === 'subscriptions').transactions[0]
+    ).toMatchObject({ id: 'txn-subscription', accountId: 'bank', amount: 499 });
+    expect(
+      model.categoryRows.find((row) => row.category.id === 'shopping').transactions[0]
+    ).toMatchObject({ id: 'txn-card-shopping', accountId: 'credit-card', amount: 1200 });
+  });
+
   it('builds planned category rows when a budget has no activity', () => {
     const workbook = makeBudgetWorkbook();
     workbook.transactions = [];

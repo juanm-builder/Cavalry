@@ -4,7 +4,10 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { submitNotesBatchCommand } from './notes-controller.js';
 import { parseNotesWithAi } from './notes-ai-parser.js';
 import { parseNotesText, resolveNotesEntry } from './notes-parser.js';
-import { withNotesDuplicateReview } from './notes-duplicate-review.js';
+import {
+  withNotesBatchDuplicateReview,
+  withNotesDuplicateReview
+} from './notes-duplicate-review.js';
 import { ReviewEntry } from './NotesReviewEntry.jsx';
 import {
   readNotesDraft,
@@ -119,14 +122,16 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
       const candidates = sourceKeys(result.entries).filter(
         (entry) => !savedSources.has(entry.sourceKey)
       );
-      const prepared = candidates.map((entry, index) => ({
-        ...withNotesDuplicateReview(
-          workbook,
-          resolveNotesEntry(workbook, entry, { keepInferenceIssues: true })
-        ),
-        id: `${batchId}-${index + 1}`,
-        transactionId: ''
-      }));
+      const prepared = withNotesBatchDuplicateReview(
+        candidates.map((entry, index) => ({
+          ...withNotesDuplicateReview(
+            workbook,
+            resolveNotesEntry(workbook, entry, { keepInferenceIssues: true })
+          ),
+          id: `${batchId}-${index + 1}`,
+          transactionId: ''
+        }))
+      );
       setDraft((current) => ({
         ...current,
         entries: [...added, ...prepared],
@@ -441,7 +446,11 @@ export function NotesRoute({ advisor, workbook = {}, services = {}, onAction, on
                     setError('');
                     setDraft((current) => ({
                       ...current,
-                      editingEntry: { ...current.editingEntry, [field]: value }
+                      editingEntry: {
+                        ...current.editingEntry,
+                        [field]: value,
+                        ...(field === 'description' ? { autoTransferDescription: false } : {})
+                      }
                     }));
                   }}
                   onEditSave={saveEdit}

@@ -4,6 +4,8 @@ const money = (value) => Math.round((Number(value) || 0) * 100);
 const list = (value) => (Array.isArray(value) ? value : []);
 
 function primaryAccountId(workbook, transaction) {
+  if (transaction.template === 'transfer')
+    return text(list(transaction.lines).find((line) => line.direction === 'credit')?.accountId);
   const direction = transaction.template === 'income_received' ? 'debit' : 'credit';
   const group = transaction.template === 'expense_charged' ? 'liability' : 'asset';
   return text(
@@ -32,15 +34,45 @@ export function withNotesDuplicateReview(workbook, entry) {
           transaction.originalCurrency || transaction.currency || workbook.currency
         ).toUpperCase() === text(entry.currency || workbook.currency).toUpperCase() &&
         text(transaction.categoryId) === text(entry.categoryId) &&
-        description(transaction.description) === description(entry.description) &&
-        primaryAccountId(workbook, transaction) === text(entry.primaryAccountId)
+        (entry.template === 'transfer' ||
+          description(transaction.description) === description(entry.description)) &&
+        primaryAccountId(workbook, transaction) === text(entry.primaryAccountId) &&
+        (entry.template !== 'transfer' ||
+          text(list(transaction.lines).find((line) => line.direction === 'debit')?.accountId) ===
+            text(entry.secondaryAccountId))
     );
   if (duplicate)
     issues.push({
       code: 'existing_transaction_review',
       field: 'review',
       message:
-        'A matching transaction is already recorded. Confirm details only if this is another purchase.'
+        'A matching transaction is already recorded. Confirm details only if this is another transaction.'
     });
   return { ...entry, issues };
+}
+
+export function withNotesBatchDuplicateReview(entries) {
+  const seen = new Set();
+  return list(entries).map((entry) => {
+    if (entry.template !== 'transfer' || entry.transactionId) return entry;
+    const key = JSON.stringify([
+      entry.date,
+      text(entry.currency).toUpperCase(),
+      money(entry.amount),
+      text(entry.primaryAccountId),
+      text(entry.secondaryAccountId)
+    ]);
+    const issues = list(entry.issues).filter(
+      (item) => item.code !== 'batch_transfer_duplicate_review'
+    );
+    if (!entry.manuallyReviewed && seen.has(key))
+      issues.push({
+        code: 'batch_transfer_duplicate_review',
+        field: 'review',
+        message:
+          'This transfer appears twice in the note. Confirm details only if both transfers happened.'
+      });
+    seen.add(key);
+    return { ...entry, issues };
+  });
 }
