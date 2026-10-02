@@ -1,0 +1,59 @@
+{
+  "title": "Cavalry Privacy Policy",
+  "updatedAt": "October 2, 2026",
+  "introduction": "Cavalry is a personal finance workbook app for iOS. This policy describes how the app handles information you enter and optional iCloud synchronization.",
+  "sections": [
+    {
+      "title": "Your workbooks and notes",
+      "paragraphs": [
+        "Cavalry stores your accounts, transactions, balances, categories, budgets, bills, people and merchant records, and workbook settings on your device so that you can organize and review your finances. Local recovery copies retain earlier workbook versions to help recover from accidental changes.",
+        "Unfinished notes and prepared transactions are kept in device-only iOS Keychain storage. Notes review prepares possible transactions on your device. App preferences are stored on your device."
+      ]
+    },
+    {
+      "title": "Optional iCloud synchronization",
+      "paragraphs": [
+        "When iCloud sync is connected and enabled for a workbook, Cavalry sends workbook contents and related sync information to the private CloudKit database for the Apple Account signed into your device. Apple processes and stores this information to synchronize your copies. Cavalry does not use a separate developer-operated server to store your workbooks.",
+        "Use the Cloud screen to pause synchronization or turn off a workbook's automatic sync. Pausing does not delete copies already stored in iCloud. Apple controls your iCloud account, service security, and retention under its own terms and privacy policy."
+      ]
+    },
+    {
+      "title": "Device protection",
+      "paragraphs": [
+        "Local workbook storage uses the app's private device storage. Protect your device with a passcode and keep iOS up to date. Exported workbook files are readable files, not password-protected vaults."
+      ]
+    },
+    {
+      "title": "Imports, exports, and tracking",
+      "paragraphs": [
+        "Cavalry reads workbook files you select or explicitly open in the app. Exporting creates an HTML copy containing your workbook information and opens the iOS share sheet. The destination you choose controls its resulting copy. Temporary picker and export copies are removed after use when possible.",
+        "Cavalry does not include advertising, cross-app tracking, or third-party analytics SDKs. It does not sell your financial information. Apple may separately process App Store, iCloud, and device diagnostic information under your Apple settings and its policies."
+      ]
+    },
+    {
+      "title": "Retention and your controls",
+      "paragraphs": [
+        "Your local workbooks and recovery copies remain on the device while the app's data remains installed. Removing a record from the current workbook does not immediately erase it from earlier recovery copies. Deleting the app removes its local app-container data; offloading an app can preserve that data.",
+        "To remove an iCloud workbook, use Remove from iCloud in the Cloud screen. Local copies remain on each device, and exported files remain wherever you saved or shared them. Remove those copies separately if desired. Apple manages its own retention and deletion procedures.",
+        "Use Clear note to remove the current note and its prepared entries. iOS Keychain items can survive uninstalling an app, so clear notes before uninstalling if you want to remove those protected items."
+      ]
+    },
+    {
+      "title": "Questions and policy changes",
+      "paragraphs": [
+        "For privacy questions or help with your information, open Cavalry support (GitHub) using the link below. GitHub issues are public; do not include financial records or personal information.",
+        "This policy may be updated as Cavalry changes. The date above identifies this version. You can read this policy in Settings → Privacy even when you are offline."
+      ]
+    }
+  ],
+  "links": [
+    {
+      "label": "Cavalry support (GitHub)",
+      "url": "https://github.com/juanm-builder/Cavalry/issues"
+    },
+    {
+      "label": "Apple privacy policy",
+      "url": "https://www.apple.com/legal/privacy/"
+    }
+  ]
+}
