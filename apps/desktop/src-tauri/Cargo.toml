@@ -1,6 +1,6 @@
 [package]
 name = "cavalry-desktop"
-version = "2.2.15"
+version = "2.2.16"
 description = "Cavalry local-first desktop finance app"
 authors = ["Cavalry"]
 license = "Apache-2.0"

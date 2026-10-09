@@ -187,6 +187,9 @@ jobs:
           # are checked below and must still request CloudKit explicitly.
           /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.icloud-services' "$profile_plist" | grep -Eq 'CloudKit|^[[:space:]]*\*[[:space:]]*$'
 
+      - name: Test native sync recovery before packaging
+        run: npm run test:cloudkit:native --workspace @cavalry/desktop
+
       - name: Build, sign, and upload Tauri release
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:

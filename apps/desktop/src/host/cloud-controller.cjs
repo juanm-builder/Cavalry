@@ -6,6 +6,9 @@ const {
   normalizeSaveAcknowledgements
 } = require('./cloud-workbook-controller.cjs');
 
+const LIBRARY_REFRESH_INTERVAL_MS = 10_000;
+const LIBRARY_REFRESH_ERROR_INTERVAL_MS = 30_000;
+
 const CLOUD_IPC_CHANNELS = Object.freeze({
   getState: 'cavalry-cloud:get-state',
   setConnection: 'cavalry-cloud:set-connection',
@@ -69,12 +72,14 @@ function createCloudController(dependencies = {}) {
   let queuedNativeEvents = [];
   let connectionGeneration = 0;
   let connectionChangeInProgress = false;
-  let browserRefreshTimer = null;
+  let libraryRefreshTimer = null;
 
-  function scheduleBrowserRefresh() {
-    if (disposed || browserRefreshTimer) return;
-    browserRefreshTimer = setTimeout(async () => {
-      browserRefreshTimer = null;
+  // CKSyncEngine push delivery is best-effort. The same serialized check also
+  // bounds native receive latency while the app is open, and backs off failures.
+  function scheduleLibraryRefresh(delay = LIBRARY_REFRESH_INTERVAL_MS) {
+    if (disposed || libraryRefreshTimer) return;
+    libraryRefreshTimer = setTimeout(async () => {
+      libraryRefreshTimer = null;
       const generation = connectionGeneration;
       const connectionIsCurrent = () => {
         const details = dependencies.cloudKit?.details?.();
@@ -83,7 +88,8 @@ function createCloudController(dependencies = {}) {
           generation === connectionGeneration &&
           !connectionChangeInProgress &&
           !workbookMutationInProgress &&
-          details?.accountSource === 'browser' &&
+          (details?.accountSource === 'browser' ||
+            (details?.accountSource === 'system' && account.status === 'available')) &&
           !details.syncPaused &&
           !details.accountSignedOut
         );
@@ -132,10 +138,12 @@ function createCloudController(dependencies = {}) {
           }
         }
       } finally {
-        scheduleBrowserRefresh();
+        scheduleLibraryRefresh(
+          stateError ? LIBRARY_REFRESH_ERROR_INTERVAL_MS : LIBRARY_REFRESH_INTERVAL_MS
+        );
       }
-    }, 30000);
-    browserRefreshTimer.unref?.();
+    }, delay);
+    libraryRefreshTimer.unref?.();
   }
 
   function userForAccount() {
@@ -389,7 +397,7 @@ function createCloudController(dependencies = {}) {
   }
 
   async function initialize() {
-    scheduleBrowserRefresh();
+    scheduleLibraryRefresh();
     if (initializationPromise) return initializationPromise;
     const operation = (async () => {
       await refreshStatus();
@@ -699,7 +707,7 @@ function createCloudController(dependencies = {}) {
 
   function dispose() {
     disposed = true;
-    clearTimeout(browserRefreshTimer);
+    clearTimeout(libraryRefreshTimer);
     dependencies.cloudKit?.dispose?.();
     queuedNativeEvents = [];
     nativeRefreshQueued = false;

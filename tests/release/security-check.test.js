@@ -212,10 +212,19 @@ describe('release security content scanner', () => {
       )
     };
 
-    expect(reviewDependencyAudit(report, lockfile)).toMatchObject({
+    expect(
+      reviewDependencyAudit(report, lockfile, Date.parse('2026-07-29T00:00:00.000Z'))
+    ).toMatchObject({
       ok: true,
       blocked: [],
       reviewedSources: [1124334]
+    });
+    expect(
+      reviewDependencyAudit(report, lockfile, Date.parse('2026-10-01T00:00:00.000Z'))
+    ).toMatchObject({
+      ok: false,
+      blocked: ['brace-expansion', 'app-builder-lib', 'dmg-builder'],
+      reviewedSources: []
     });
   });
 });

@@ -71,7 +71,7 @@ describe('Tauri desktop security and compatibility boundary', () => {
     expect(cloudKitStore).toContain('standardFormatter.date(from: normalized)');
   });
 
-  it('wires executable account and durability checks to the production CloudKit store', () => {
+  it('wires executable account, durability, and record checks to the production CloudKit store', () => {
     const cloudKitStore = readFileSync(
       resolve(desktopRoot, 'src-tauri/src/cloudkit/CavalryCloudKitStore.swift'),
       'utf8'
@@ -79,9 +79,13 @@ describe('Tauri desktop security and compatibility boundary', () => {
     // Queue-reset and filesystem behavior are exercised by the compiled Swift
     // harnesses. This cross-platform test verifies the shipped test wiring.
     expect(readJson('package.json').scripts['test:cloudkit:native']).toBe(
-      'node scripts/verify-cloudkit-durability.mjs && node scripts/verify-cloudkit-account-events.mjs'
+      'node scripts/verify-cloudkit-durability.mjs && node scripts/verify-cloudkit-account-events.mjs && node scripts/verify-cloudkit-records.mjs'
     );
-    for (const script of ['verify-cloudkit-durability.mjs', 'verify-cloudkit-account-events.mjs']) {
+    for (const script of [
+      'verify-cloudkit-durability.mjs',
+      'verify-cloudkit-account-events.mjs',
+      'verify-cloudkit-records.mjs'
+    ]) {
       const runner = readFileSync(resolve(desktopRoot, 'scripts', script), 'utf8');
       expect(runner).toContain('src-tauri/src/cloudkit/CavalryCloudKitStore.swift');
       expect(runner).toContain('swiftc');
@@ -159,7 +163,8 @@ describe('Tauri desktop security and compatibility boundary', () => {
       /actionableCloudError\([\s\S]*?itemID: AnyHashable\(failure\.record\.recordID\)/
     );
     expect(cloudKitStore).toContain('switch actionableError.code');
-    expect(cloudKitStore).toContain('actionableError.serverRecord');
+    expect(cloudKitStore).toContain('await hydrateConflictingRecord(failure.record.recordID');
+    expect(cloudKitStore).not.toContain('applyFetchedRecord(serverRecord)');
     expect(cloudKitStore).not.toContain('switch failure.error.code');
     expect(cloudKitStore).toContain('var lastErrorOperation: String?');
     expect(cloudKitStore).toContain('var lastErrorWorkbookId: String?');
@@ -198,7 +203,9 @@ describe('Tauri desktop security and compatibility boundary', () => {
     );
     expect(cloudKitStore).toContain('var rejectedDeleteCodes: [String: String]?');
     expect(cloudKitStore).toContain('var rejectedDeleteDetails: [String: String]?');
-    expect(cloudKitStore).toContain('details: "Technical code: remote_record_fields_invalid."');
+    expect(cloudKitStore).toContain('invalidRemoteRecordFields(record).joined(separator: ", ")');
+    expect(cloudKitStore).toContain('private func cloudRecordValueType(_ value: Any?) -> String');
+    expect(cloudKitStore).toContain('var recordRecovery: CavalryCloudKitRecordRecovery?');
     expect(cloudKitStore).toMatch(
       /let recoverableWorkbookId = normalizedWorkbookId\([\s\S]*?code: "cloud_snapshot_invalid"[\s\S]*?workbookId: recoverableWorkbookId/
     );

@@ -498,7 +498,7 @@ describe('native CloudKit workbook boundary', () => {
   });
 });
 
-describe('browser iCloud background refresh', () => {
+describe('iCloud background refresh', () => {
   function deferred() {
     let resolve;
     const promise = new Promise((done) => {
@@ -507,7 +507,7 @@ describe('browser iCloud background refresh', () => {
     return { promise, resolve };
   }
 
-  function pollingFixture() {
+  function pollingFixture(source = 'browser') {
     const handlers = new Map();
     const sent = [];
     let owner = 'owner-a';
@@ -522,7 +522,7 @@ describe('browser iCloud background refresh', () => {
     });
     const cloudKit = {
       details: vi.fn(() => ({
-        accountSource: 'browser',
+        accountSource: source,
         syncPaused: paused,
         accountSignedOut: signedOut
       })),
@@ -577,28 +577,56 @@ describe('browser iCloud background refresh', () => {
     };
   }
 
-  it('refreshes incoming browser revisions without treating a missing list entry as deletion', async () => {
+  it.each(['browser', 'system'])(
+    'refreshes incoming %s revisions within ten seconds without inferring deletion',
+    async (source) => {
+      vi.useFakeTimers();
+      const h = pollingFixture(source);
+      try {
+        await h.controller.initialize();
+        h.sent.length = 0;
+        h.setLibrary([{ id: 'book-a', name: 'Personal', revision: 2, currency: 'PHP' }]);
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(
+          h.sent.some(
+            (state) =>
+              state.workbookChange?.eventType === 'UPDATE' && state.workbookChange.revision === 2
+          )
+        ).toBe(true);
+        h.sent.length = 0;
+        h.setLibrary([]);
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(h.controller.getState().workbooks).toEqual([]);
+        expect(h.sent.some((state) => state.workbookChange?.eventType === 'DELETE')).toBe(false);
+        expect(
+          h.cloudKit.request.mock.calls.some(([payload]) => payload.operation === 'delete')
+        ).toBe(false);
+      } finally {
+        h.controller.dispose();
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('waits for a slow refresh before scheduling another check', async () => {
     vi.useFakeTimers();
     const h = pollingFixture();
     try {
       await h.controller.initialize();
-      h.sent.length = 0;
-      h.setLibrary([{ id: 'book-a', name: 'Personal', revision: 2, currency: 'PHP' }]);
-      await vi.advanceTimersByTimeAsync(30000);
-      expect(
-        h.sent.some(
-          (state) =>
-            state.workbookChange?.eventType === 'UPDATE' && state.workbookChange.revision === 2
-        )
-      ).toBe(true);
-      h.sent.length = 0;
-      h.setLibrary([]);
-      await vi.advanceTimersByTimeAsync(30000);
-      expect(h.controller.getState().workbooks).toEqual([]);
-      expect(h.sent.some((state) => state.workbookChange?.eventType === 'DELETE')).toBe(false);
-      expect(
-        h.cloudKit.request.mock.calls.some(([payload]) => payload.operation === 'delete')
-      ).toBe(false);
+      const held = h.hold('list');
+      vi.advanceTimersByTime(10000);
+      await held.started.promise;
+      const calls = h.cloudKit.request.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(h.cloudKit.request.mock.calls).toHaveLength(calls);
+      held.response.resolve({
+        ok: true,
+        workbooks: [{ id: 'book-a', name: 'Personal', revision: 2, currency: 'PHP' }]
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.controller.getState().workbooks[0].revision).toBe(2);
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(h.cloudKit.request.mock.calls.length).toBeGreaterThan(calls);
     } finally {
       h.controller.dispose();
       vi.useRealTimers();
@@ -613,7 +641,7 @@ describe('browser iCloud background refresh', () => {
       try {
         await h.controller.initialize();
         const held = h.hold('list');
-        const polling = vi.advanceTimersByTimeAsync(30000);
+        const polling = vi.advanceTimersByTimeAsync(10000);
         await held.started.promise;
         if (action === 'pause')
           await h.invoke(CLOUD_IPC_CHANNELS.setConnection, { enabled: false });
@@ -653,7 +681,7 @@ describe('browser iCloud background refresh', () => {
     try {
       await h.controller.initialize();
       const held = h.hold('status');
-      const polling = vi.advanceTimersByTimeAsync(30000);
+      const polling = vi.advanceTimersByTimeAsync(10000);
       await held.started.promise;
       await h.invoke(CLOUD_IPC_CHANNELS.selectAccount, { source: 'browser' });
       const calls = h.cloudKit.request.mock.calls.length;
@@ -686,17 +714,20 @@ describe('browser iCloud background refresh', () => {
         account: { status: 'no_account', userId: null },
         cloudEnvironment: 'Production'
       });
-      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(10000);
       expect(h.sent.at(-1).user).toBeNull();
       h.cloudKit.details.mockImplementationOnce(() => {
         throw new Error('Unexpected runtime failure');
       });
-      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(10000);
       expect(h.controller.getState()).toMatchObject({
         errorCode: 'cloud_state_refresh_failed',
         errorRetryable: true
       });
-      await vi.advanceTimersByTimeAsync(30000);
+      const requestsBeforeBackoff = h.cloudKit.request.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(h.cloudKit.request.mock.calls).toHaveLength(requestsBeforeBackoff);
+      await vi.advanceTimersByTimeAsync(20000);
       expect(h.controller.getState()).toMatchObject({
         user: { id: 'owner-a' },
         workbooks: [{ id: 'book-a' }]
@@ -713,7 +744,7 @@ describe('browser iCloud background refresh', () => {
     try {
       await h.controller.initialize();
       const held = h.hold('list');
-      const polling = vi.advanceTimersByTimeAsync(30000);
+      const polling = vi.advanceTimersByTimeAsync(10000);
       await held.started.promise;
       h.controller.dispose();
       h.sent.length = 0;

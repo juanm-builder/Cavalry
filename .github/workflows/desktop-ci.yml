@@ -59,10 +59,8 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - name: Test native account storage and callbacks
-        run: |
-          node apps/desktop/scripts/verify-cloudkit-durability.mjs
-          node apps/desktop/scripts/verify-cloudkit-account-events.mjs
+      - name: Test native sync recovery, account storage, and callbacks
+        run: npm run test:cloudkit:native --workspace @cavalry/desktop
 
       - name: Install current stable Rust
         shell: bash

@@ -56,7 +56,10 @@ function text(value, maximum) {
 function date(value) {
   const result = text(value, 64);
   if (!Number.isFinite(Date.parse(result))) throw fail();
-  return result;
+  // Native CloudKit clients use ISO8601DateFormatter. Date.parse also accepts
+  // legacy workbook dates that formatter rejects (for example a date only).
+  // Always write the interoperable UTC representation, including conflict dates.
+  return new Date(result).toISOString();
 }
 
 function positiveInteger(value) {

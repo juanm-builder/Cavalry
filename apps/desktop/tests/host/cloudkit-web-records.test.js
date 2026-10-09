@@ -118,6 +118,20 @@ describe('CloudKit Web Services field encoding contract', () => {
     expect(workbookFields(REQUEST, 8, RECEIPT)).toEqual(EXPECTED_WORKBOOK_FIELDS);
   });
 
+  it.each([
+    ['2026-10-09', '2026-10-09T00:00:00.000Z'],
+    ['2026-10-09T21:00:00+08:00', '2026-10-09T13:00:00.000Z'],
+    ['Fri, 09 Oct 2026 13:00:00 GMT', '2026-10-09T13:00:00.000Z']
+  ])('canonicalizes legacy workbook date %s for native CloudKit readers', (input, expected) => {
+    const fields = workbookFields({ ...REQUEST, updatedAt: input }, 8, RECEIPT);
+    expect(fields.sourceUpdatedAt.value).toBe(expected);
+    expect(metadata({ ...nativeRecord(), fields }).updatedAt).toBe(expected);
+  });
+
+  it('rejects invalid dates before writing a workbook record', () => {
+    expect(() => workbookFields({ ...REQUEST, updatedAt: 'not a date' }, 8, RECEIPT)).toThrow();
+  });
+
   it.each([null, undefined])('keeps the optional year INT64 when its value is %s', (year) => {
     expect(workbookFields({ ...REQUEST, year }, 8, RECEIPT)).toEqual({
       ...EXPECTED_WORKBOOK_FIELDS,
