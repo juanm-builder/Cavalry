@@ -455,13 +455,29 @@
     text-align: right;
   }
 }
-@container account-register (min-width: 860px) {
+@container account-register (min-width: 660px) {
   .accounts-register-toolbar {
     grid-template-columns: auto auto minmax(0, 1fr);
     gap: 16px;
   }
   .accounts-register-filters {
     grid-column: auto;
+    grid-template-columns: minmax(140px, 0.45fr) minmax(100px, 1fr) auto;
+  }
+}
+
+@container account-register (max-width: 659px) {
+  .accounts-register-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .accounts-register-filters {
+    grid-template-columns: minmax(132px, 0.8fr) minmax(0, 1fr);
+    gap: 6px;
+  }
+  .accounts-search,
+  .accounts-search input {
+    min-width: 0;
   }
 }
 
