@@ -30,6 +30,8 @@ const MAX_HOST_LINE_BYTES: usize = MAX_REQUEST_BYTES + 1024;
 type CloudKitEventCallback = extern "C" fn(*const c_char);
 
 unsafe extern "C" {
+    #[cfg(target_os = "macos")]
+    fn cavalry_install_window_bounds(window: *mut std::ffi::c_void);
     fn cavalry_cloudkit_request(request: *const c_char) -> *mut c_char;
     fn cavalry_cloudkit_free_string(value: *mut c_char);
     fn cavalry_cloudkit_set_event_callback(callback: Option<CloudKitEventCallback>);
@@ -500,6 +502,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // The bounds check must see the frame restored by the preceding plugin.
+        .plugin(
+            tauri::plugin::Builder::<_, ()>::new("window-bounds")
+                .on_window_ready(|window| {
+                    #[cfg(target_os = "macos")]
+                    if window.label() == "main" {
+                        if let Ok(native) = window.ns_window() {
+                            // Tauri runs window-ready callbacks on the AppKit main thread.
+                            unsafe { cavalry_install_window_bounds(native) };
+                        }
+                    }
+                })
+                .build(),
+        )
         .manage(managed_state)
         .manage(ExitState::default())
         .invoke_handler(tauri::generate_handler![

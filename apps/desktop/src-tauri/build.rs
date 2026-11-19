@@ -43,6 +43,7 @@ fn compile_cloudkit_bridge() {
     let source_dir = manifest_dir.join("src/cloudkit");
     let store = source_dir.join("CavalryCloudKitStore.swift");
     let bridge = source_dir.join("CavalryCloudKitBridge.swift");
+    let window_bounds = PathBuf::from("src/CavalryWindowBounds.swift");
     let output_dir = PathBuf::from(env::var("OUT_DIR").expect("Cargo did not provide OUT_DIR."));
     let module_cache = output_dir.join("swift-module-cache");
     let library = output_dir.join("libCavalryCloudKit.a");
@@ -76,6 +77,7 @@ fn compile_cloudkit_bridge() {
         ])
         .arg(&store)
         .arg(&bridge)
+        .arg(&window_bounds)
         .arg("-o")
         .arg(&library)
         .status()
@@ -92,6 +94,7 @@ fn compile_cloudkit_bridge() {
 
     println!("cargo:rerun-if-changed={}", store.display());
     println!("cargo:rerun-if-changed={}", bridge.display());
+    println!("cargo:rerun-if-changed={}", window_bounds.display());
     println!("cargo:rustc-link-search=native={}", output_dir.display());
     println!("cargo:rustc-link-search=native={}", swift_runtime.display());
     println!("cargo:rustc-link-search=native={sdk}/usr/lib/swift");
@@ -100,6 +103,7 @@ fn compile_cloudkit_bridge() {
     // runnable without copying Apple's Swift runtime into the repository.
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     println!("cargo:rustc-link-lib=static=CavalryCloudKit");
+    println!("cargo:rustc-link-lib=framework=AppKit");
     println!("cargo:rustc-link-lib=framework=CloudKit");
     println!("cargo:rustc-link-lib=framework=CryptoKit");
     println!("cargo:rustc-link-lib=framework=Foundation");
