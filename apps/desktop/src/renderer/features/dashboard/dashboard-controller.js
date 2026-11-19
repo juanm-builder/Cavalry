@@ -2,7 +2,7 @@ import {
   buildDashboardCategoryDrilldownViewModel,
   buildDashboardFlowDrilldownViewModel
 } from '@cavalry/finance-core';
-import { buildDashboardRouteModel } from './dashboard-route-model.js';
+import { buildDashboardRouteModel, normalizeDashboardLayout } from './dashboard-route-model.js';
 
 export const DASHBOARD_EVENT_TYPES = Object.freeze({
   navigate: 'route/navigate',
@@ -320,6 +320,34 @@ export function createDashboardController(dependencies = {}) {
         }
         if (actionType === 'open-dashboard-customizer') {
           return handleCustomization(context, buildModel);
+        }
+        if (
+          actionType === 'close-dashboard-customizer' ||
+          actionType === 'apply-dashboard-layout'
+        ) {
+          const result = success({ type: 'close-overlay', id: 'dashboard-customizer' });
+          if (actionType === 'close-dashboard-customizer') return result;
+          if (!context.workbook || !Array.isArray(payload.layout)) {
+            return failure(
+              'dashboard.layout.invalid',
+              'A workbook and dashboard layout are required.'
+            );
+          }
+          const workbook = context.workbook;
+          return {
+            ...result,
+            workbook: {
+              ...workbook,
+              settings: {
+                ...workbook.settings,
+                dashboardLayout: normalizeDashboardLayout(payload.layout)
+              }
+            },
+            events: [
+              ...result.events,
+              { type: 'schedule-save', reason: 'dashboard_layout_changed' }
+            ]
+          };
         }
         if (actionType === 'export-workbook') {
           return handleExport(payload, context);

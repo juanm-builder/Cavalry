@@ -1,6 +1,8 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useState } from 'react';
 
+import { DashboardCustomizer } from './DashboardCustomizer.jsx';
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { formatCurrencyAmount } from '../../shared/currency-format.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
@@ -362,7 +364,7 @@ function TransactionSummaryModal({ group, model, onClose }) {
   const transactions = asArray(group?.transactions);
   const dismiss = useModalDismiss(onClose, !!group);
   if (!group) return null;
-  return (
+  return renderInBody(
     <div
       className="modal-backdrop dashboard-transaction-summary-backdrop"
       data-react-modal="dashboard-transaction-summary"
@@ -1030,10 +1032,11 @@ function DashboardRouteView({ model }) {
   );
 }
 
-export function DashboardRoute({ model, onAction }) {
+export function DashboardRoute({ model, onAction, customizer }) {
   return (
     <ActionBindingProvider onAction={onAction}>
       <DashboardRouteView model={model} />
+      {customizer ? <DashboardCustomizer layout={customizer.layout} /> : null}
     </ActionBindingProvider>
   );
 }

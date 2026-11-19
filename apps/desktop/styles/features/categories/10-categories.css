@@ -1463,15 +1463,24 @@
     padding-left: 18px;
   }
 
-  .category-icon-picker {
-    grid-template-columns: repeat(5, 1fr);
+  .category-icon-picker,
+  .category-color-picker {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .category-choice-fieldset {
+    min-width: 0;
+  }
+
+  .category-create-footer {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .category-rule-row {
-    grid-template-columns: 1fr 32px;
+    grid-template-columns: minmax(0, 1fr) 32px;
   }
 
-  .category-rule-row select {
+  .category-rule-row > .cavalry-select {
     grid-column: 1 / -1;
   }
 }

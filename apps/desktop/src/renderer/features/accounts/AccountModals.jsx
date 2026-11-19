@@ -1,3 +1,4 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useState } from 'react';
 import { getStatementCheck } from '@cavalry/finance-core';
@@ -18,7 +19,7 @@ function ModalFrame({ title, error, children, onCancel, className = '' }) {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [onCancel]);
 
-  return (
+  return renderInBody(
     <div
       className="modal-backdrop"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}

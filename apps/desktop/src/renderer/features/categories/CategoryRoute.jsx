@@ -1,3 +1,4 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -270,7 +271,7 @@ function CategoryGallery({
 
 function ModalFrame({ title, eyebrow = '', error, children, onCancel, className = '' }) {
   const dismiss = useModalDismiss(onCancel);
-  return (
+  return renderInBody(
     <div className="modal-backdrop" onMouseDown={dismiss}>
       <PrivateValue
         as="section"

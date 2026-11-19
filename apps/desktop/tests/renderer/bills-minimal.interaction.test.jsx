@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { BillsRoute } from '../../src/renderer/features/recurring/BillsRoute.jsx';
@@ -32,6 +32,65 @@ const candidate = {
 };
 
 describe('minimal bills page', () => {
+  it('shows labeled row actions and dismisses the menu on Escape, outside click, or selection', async () => {
+    const user = userEvent.setup();
+    const row = { ...candidate, actions: { canEdit: true, canArchive: true } };
+    render(<BillsRoute model={{ header: { sheetId: 'september' }, rows: [row] }} />);
+    const trigger = screen.getByLabelText('Bill actions');
+    const menu = trigger.closest('details');
+    await user.click(trigger);
+    expect(within(menu).getByText('Edit recurring item')).toBeTruthy();
+
+    await user.keyboard('{Escape}');
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    await user.click(trigger);
+    await user.click(screen.getByRole('heading', { name: 'Bills & Subscriptions' }));
+    expect(menu.open).toBe(false);
+
+    await user.click(trigger);
+    await user.click(within(menu).getByRole('button', { name: 'Archive recurring item' }));
+    expect(menu.open).toBe(false);
+    expect(screen.getByRole('dialog', { name: 'Archive recurring item' })).toBeTruthy();
+  });
+
+  it('keeps actions clear of the bottom navigation when the trigger moves', async () => {
+    const user = userEvent.setup();
+    const row = { ...candidate, actions: { canEdit: true, canArchive: true } };
+    const view = render(
+      <div className="app-shell">
+        <aside className="nav-rail" />
+        <header className="top-strip" />
+        <BillsRoute model={{ rows: [row] }} />
+      </div>
+    );
+    const trigger = screen.getByLabelText('Bill actions');
+    const menu = trigger.closest('details');
+    const popover = menu.querySelector('.action-menu-popover');
+    const nav = view.container.querySelector('.nav-rail');
+    const header = view.container.querySelector('.top-strip');
+    const anchor = vi.spyOn(menu, 'getBoundingClientRect');
+    const dock = vi.spyOn(nav, 'getBoundingClientRect');
+    anchor.mockReturnValue({ left: 707, right: 743, top: 560, bottom: 596 });
+    dock.mockReturnValue({ left: 0, right: 787, top: 532 });
+    vi.spyOn(header, 'getBoundingClientRect').mockReturnValue({ bottom: 70 });
+    Object.defineProperty(popover, 'scrollHeight', { value: 124 });
+
+    await user.click(trigger);
+    expect(menu.hasAttribute('data-open-above')).toBe(true);
+    expect(popover.style.getPropertyValue('--bill-menu-offset')).toBe('28px');
+
+    anchor.mockReturnValue({ left: 707, right: 743, top: 160, bottom: 196 });
+    fireEvent.scroll(window);
+    expect(menu.hasAttribute('data-open-above')).toBe(false);
+    expect(popover.style.getPropertyValue('--bill-menu-offset')).toBe('0px');
+
+    dock.mockReturnValue({ left: 0, right: 787, top: 280 });
+    fireEvent.resize(window);
+    expect(menu.hasAttribute('data-open-above')).toBe(true);
+    expect(popover.style.getPropertyValue('--bill-menu-room')).toBe('82px');
+  });
+
   it('keeps automatic evidence collapsed and opens the linked transaction without changing its record', async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();

@@ -1,6 +1,6 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { renderInBody } from '../../shared/render-in-body.js';
 
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
@@ -28,10 +28,6 @@ const PLAN_COPY = Object.freeze({
     description: 'Choose an income category and the amount you expect this month.'
   }
 });
-
-function renderInBody(content) {
-  return typeof document === 'undefined' ? content : createPortal(content, document.body);
-}
 
 function BudgetEditorForm({ editor, categories }) {
   const actions = useActionBindings();

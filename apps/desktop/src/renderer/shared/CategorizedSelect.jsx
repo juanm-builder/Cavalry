@@ -3,6 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { CavalryIcon } from './CavalryIcon.jsx';
+import { selectMenuPosition } from './select-menu-position.js';
 import { CavalrySelect } from './CavalrySelect.jsx';
 
 const GROUP_ORDER = [
@@ -311,22 +312,7 @@ export function CategorizedSelect({
 
   const positionMenu = () => {
     const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const viewportPadding = 12;
-    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
-    const availableAbove = rect.top - viewportPadding;
-    const openAbove = availableBelow < 260 && availableAbove > availableBelow;
-    const maxHeight = Math.max(
-      180,
-      Math.min(420, openAbove ? availableAbove - 8 : availableBelow - 8)
-    );
-    setMenuStyle({
-      left: `${Math.max(viewportPadding, rect.left)}px`,
-      top: openAbove ? 'auto' : `${rect.bottom + 7}px`,
-      bottom: openAbove ? `${window.innerHeight - rect.top + 7}px` : 'auto',
-      width: `${Math.min(rect.width, window.innerWidth - viewportPadding * 2)}px`,
-      maxHeight: `${maxHeight}px`
-    });
+    if (rect) setMenuStyle(selectMenuPosition(rect));
   };
 
   useEffect(() => {

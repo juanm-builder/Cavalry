@@ -571,3 +571,37 @@ button.legend-row:focus-visible {
   color: var(--text-dim);
   font-size: 12px;
 }
+
+.dashboard-customizer {
+  max-width: 480px;
+}
+
+.dashboard-section-choices {
+  min-width: 0;
+  border: 0;
+}
+
+.dashboard-section-choices legend {
+  margin-bottom: 8px;
+  color: var(--text-soft);
+}
+
+.dashboard-section-choices label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+
+.dashboard-section-choices input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.dashboard-customizer .modal-actions {
+  flex-wrap: wrap;
+}

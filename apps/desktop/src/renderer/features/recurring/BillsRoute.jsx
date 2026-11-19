@@ -1,8 +1,8 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { CavalryIcon, CavalryIconDisc } from '../../shared/CavalryIcon.jsx';
-import { createPortal } from 'react-dom';
+import { renderInBody } from '../../shared/render-in-body.js';
 
 import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
@@ -32,10 +32,6 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function renderInBody(content) {
-  return typeof document === 'undefined' ? content : createPortal(content, document.body);
-}
-
 function emit(onAction, type, payload = {}) {
   return typeof onAction === 'function' ? onAction({ type, payload }) : undefined;
 }
@@ -56,16 +52,15 @@ function PageHeader({ title, subtitle, children }) {
 
 function ControlSelect({ icon, label, options = [], value, className = '', onChange }) {
   return (
-    <div className={`bill-control-select ${className}`}>
-      <CavalrySelect
-        aria-label={label}
-        leadingIcon={icon || ''}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        options={asArray(options)}
-        showLeadingIcon={Boolean(icon)}
-        value={value || ''}
-      />
-    </div>
+    <CavalrySelect
+      className={className}
+      aria-label={label}
+      leadingIcon={icon || ''}
+      onChange={(event) => onChange(event.currentTarget.value)}
+      options={asArray(options)}
+      showLeadingIcon={Boolean(icon)}
+      value={value || ''}
+    />
   );
 }
 
@@ -105,8 +100,63 @@ function KindTabs({ activeKind, onAction }) {
 }
 
 function ActionMenu({ children }) {
+  const menuRef = useRef(null);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const menu = menuRef.current;
+    const popover = menu.querySelector('.action-menu-popover');
+    const frame = menu.closest('.app-shell');
+    const rail = frame?.querySelector('.nav-rail');
+    const header = frame?.querySelector('.top-strip');
+
+    function positionMenu() {
+      const trigger = menu.getBoundingClientRect();
+      const nav = rail?.getBoundingClientRect();
+      const bottomDock = nav && nav.right > trigger.left && nav.left < trigger.right;
+      const viewportBottom = bottomDock ? nav.top : window.innerHeight;
+      const viewportTop = Math.max(0, header?.getBoundingClientRect().bottom || 0);
+      // An anchor scrolled with "nearest" can sit behind the fixed navigation.
+      // Keep the menu itself inside the unobstructed part of the window.
+      const belowAnchor = Math.max(viewportTop, trigger.bottom);
+      const aboveAnchor = Math.min(viewportBottom, trigger.top);
+      const roomBelow = Math.max(0, viewportBottom - belowAnchor - 8);
+      const roomAbove = Math.max(0, aboveAnchor - viewportTop - 8);
+      const menuHeight = popover.scrollHeight + popover.offsetHeight - popover.clientHeight;
+      const above = menuHeight > roomBelow && roomAbove > roomBelow;
+      menu.toggleAttribute('data-open-above', above);
+      const offset = above ? trigger.top - aboveAnchor : belowAnchor - trigger.bottom;
+      popover.style.setProperty('--bill-menu-offset', `${offset}px`);
+      popover.style.setProperty('--bill-menu-room', `${above ? roomAbove : roomBelow}px`);
+    }
+    positionMenu();
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    const closeOutside = (event) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    };
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
   return (
-    <details className="action-menu">
+    <details
+      className="action-menu"
+      ref={menuRef}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
       <summary
         className="btn btn-icon action-menu-trigger"
         title="Bill actions"
@@ -114,10 +164,24 @@ function ActionMenu({ children }) {
       >
         <Icon name="more_vert" />
       </summary>
-      <PrivateValue as="div" className="action-menu-popover">
+      <div
+        className="action-menu-popover"
+        onClick={() => {
+          menuRef.current.open = false;
+        }}
+      >
         {children}
-      </PrivateValue>
+      </div>
     </details>
+  );
+}
+
+function BillMenuButton({ label, icon, onClick }) {
+  return (
+    <button type="button" aria-label={label} onClick={onClick}>
+      <Icon name={icon} />
+      {label}
+    </button>
   );
 }
 
@@ -241,10 +305,8 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
       <div className="bill-register-actions">
         <ActionMenu>
           {row.actions && row.actions.canPay && reconciliation.state !== 'candidate' ? (
-            <button
-              className="btn btn-icon"
-              type="button"
-              aria-label="Post linked transaction"
+            <BillMenuButton
+              label="Post linked transaction"
               onClick={() =>
                 emit(onAction, 'pay-bill-row', {
                   sheetId,
@@ -267,16 +329,12 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
                   recurringOccurrenceDate: row.dueDate
                 })
               }
-            >
-              <Icon name="payments" />
-            </button>
+              icon="payments"
+            />
           ) : null}
           {row.actions && row.actions.canOpenTransaction && linkedTransaction ? (
-            <PrivateValue
-              as="button"
-              className="btn btn-icon"
-              type="button"
-              aria-label={
+            <BillMenuButton
+              label={
                 reconciliation.state === 'unmatched'
                   ? 'View paid transaction'
                   : 'View matched transaction'
@@ -284,55 +342,38 @@ function BillRow({ row, sheetId, onAction, onEdit, onArchive, onSelect }) {
               onClick={() =>
                 emit(onAction, 'open-transaction-detail', { transactionId: linkedTransaction.id })
               }
-            >
-              <Icon name="visibility" />
-            </PrivateValue>
+              icon="visibility"
+            />
           ) : null}
           {row.actions && row.actions.canReviewPossibleTransaction && row.possibleTransaction ? (
-            <button
-              className="btn btn-icon"
-              type="button"
-              aria-label="Review possible matching transaction"
+            <BillMenuButton
+              label="Review possible matching transaction"
               onClick={() =>
                 emit(onAction, 'open-transaction-detail', {
                   transactionId: row.possibleTransaction.id
                 })
               }
-            >
-              <Icon name="rule" />
-            </button>
+              icon="rule"
+            />
           ) : null}
           {reconciliation.canUndo && reconciliationPayload.transactionId ? (
-            <button
-              className="btn btn-icon"
-              type="button"
-              aria-label="Undo matched transaction"
+            <BillMenuButton
+              label="Undo matched transaction"
               onClick={() =>
                 emit(onAction, 'undo-recurring-transaction-match', reconciliationPayload)
               }
-            >
-              <Icon name="undo" />
-            </button>
+              icon="undo"
+            />
           ) : null}
           {row.actions && row.actions.canEdit ? (
-            <button
-              className="btn btn-icon"
-              type="button"
-              aria-label="Edit recurring item"
-              onClick={() => onEdit(row)}
-            >
-              <Icon name="edit" />
-            </button>
+            <BillMenuButton label="Edit recurring item" onClick={() => onEdit(row)} icon="edit" />
           ) : null}
           {row.actions && row.actions.canArchive ? (
-            <button
-              className="btn btn-icon"
-              type="button"
-              aria-label="Archive recurring item"
+            <BillMenuButton
+              label="Archive recurring item"
               onClick={() => onArchive(row)}
-            >
-              <Icon name="archive" />
-            </button>
+              icon="archive"
+            />
           ) : null}
         </ActionMenu>
       </div>
@@ -402,41 +443,44 @@ function FilterPanel({ filters, options, header, onAction }) {
         emit(onAction, 'apply-bills-filter', draft);
       }}
     >
-      <div className="bills-filter-row">
-        <div className="bill-search-field">
-          <Icon name="search" />
-          <input
-            aria-label="Search bills"
-            type="search"
-            name="search"
-            value={draft.search || ''}
-            onChange={(event) => update('search', event.currentTarget.value)}
-            placeholder="Search items"
-          />
-          <button className="bill-search-submit" type="submit" aria-label="Apply bill search">
-            <Icon name="chevron_right" />
+      <div className="bills-minimal-toolbar">
+        <KindTabs activeKind={filters.filterKind || 'all'} onAction={onAction} />
+        <div className="bills-filter-row">
+          <div className="bill-search-field">
+            <Icon name="search" />
+            <input
+              aria-label="Search bills"
+              type="search"
+              name="search"
+              value={draft.search || ''}
+              onChange={(event) => update('search', event.currentTarget.value)}
+              placeholder="Search items"
+            />
+            <button className="bill-search-submit" type="submit" aria-label="Apply bill search">
+              <Icon name="chevron_right" />
+            </button>
+          </div>
+          <button
+            className="btn btn-quiet bills-scan-button"
+            disabled={!header.sheetId || header.scanDisabled}
+            onClick={() =>
+              emit(onAction, 'scan-subscription-review', { sheetId: header.sheetId || '' })
+            }
+            type="button"
+          >
+            <Icon name={header.scanIcon || 'manage_search'} />
+            {header.scanDisabled ? header.scanLabel : 'Find recurring'}
+          </button>
+          <button
+            className="btn btn-quiet btn-icon"
+            type="button"
+            onClick={() => emit(onAction, 'toggle-bills-filter')}
+            aria-expanded={draft.filterOpen ? 'true' : 'false'}
+            aria-label="Filter and sort bills"
+          >
+            <Icon name="filter_alt" />
           </button>
         </div>
-        <button
-          className="btn btn-quiet bills-scan-button"
-          disabled={!header.sheetId || header.scanDisabled}
-          onClick={() =>
-            emit(onAction, 'scan-subscription-review', { sheetId: header.sheetId || '' })
-          }
-          type="button"
-        >
-          <Icon name={header.scanIcon || 'manage_search'} />
-          {header.scanDisabled ? header.scanLabel : 'Find recurring'}
-        </button>
-        <button
-          className="btn btn-quiet btn-icon"
-          type="button"
-          onClick={() => emit(onAction, 'toggle-bills-filter')}
-          aria-expanded={draft.filterOpen ? 'true' : 'false'}
-          aria-label="Filter and sort bills"
-        >
-          <Icon name="filter_alt" />
-        </button>
       </div>
       {draft.filterOpen ? (
         <div className="bill-filter-panel">
@@ -773,24 +817,21 @@ export function BillsRoute({
         ))}
       </section>
       <article className="reference-card bills-minimal-register">
-        <div className="bills-minimal-toolbar">
-          <KindTabs activeKind={filters.filterKind || 'all'} onAction={onAction} />
-          <FilterPanel
-            key={[
-              filters.search,
-              filters.status,
-              filters.categoryId,
-              filters.accountId,
-              filters.date,
-              filters.sort,
-              data.filterOpen
-            ].join('|')}
-            filters={{ ...filters, filterOpen: data.filterOpen === true }}
-            header={header}
-            options={options}
-            onAction={onAction}
-          />
-        </div>
+        <FilterPanel
+          key={[
+            filters.search,
+            filters.status,
+            filters.categoryId,
+            filters.accountId,
+            filters.date,
+            filters.sort,
+            data.filterOpen
+          ].join('|')}
+          filters={{ ...filters, filterOpen: data.filterOpen === true }}
+          header={header}
+          options={options}
+          onAction={onAction}
+        />
         {asArray(data.filterChips).some((chip) => chip !== 'All recurring items') ? (
           <div className="bills-active-filter-note">
             <PrivateValue as="span">

@@ -109,7 +109,7 @@ function getDefaultRange(workbook, currentDate) {
   return { start, end: currentDate };
 }
 
-function normalizeLayout(rawLayout) {
+export function normalizeDashboardLayout(rawLayout) {
   const rawItems = Array.isArray(rawLayout)
     ? rawLayout
     : asObject(rawLayout) === rawLayout
@@ -167,7 +167,7 @@ function getDashboardViewState(workbook, viewState, currentDate) {
     spendingPreset,
     spendingStartMonth: normalizeMonthKey(source.spendingStartMonth),
     spendingEndMonth: normalizeMonthKey(source.spendingEndMonth),
-    layout: normalizeLayout(rawLayout)
+    layout: normalizeDashboardLayout(rawLayout)
   };
 }
 

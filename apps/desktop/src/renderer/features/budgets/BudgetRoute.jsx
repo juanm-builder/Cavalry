@@ -2,7 +2,7 @@ import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
-import { createPortal } from 'react-dom';
+import { renderInBody } from '../../shared/render-in-body.js';
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
 import { BudgetEditorModal } from './BudgetEditorModal.jsx';
 import { BudgetTransactionsModal } from './BudgetTransactionsModal.jsx';
@@ -14,10 +14,6 @@ import {
   getRowStatusDetail,
   getUsageTone
 } from './budget-view-helpers.jsx';
-
-function renderInBody(content) {
-  return typeof document === 'undefined' ? content : createPortal(content, document.body);
-}
 
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;

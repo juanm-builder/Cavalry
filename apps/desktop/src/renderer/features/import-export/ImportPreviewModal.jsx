@@ -1,3 +1,4 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 // React CSV import preview. File selection and persistence stay behind injected app adapters.
 
@@ -107,7 +108,7 @@ function ImportPreviewModalView({ model }) {
   const dismissAction = actions.action(actionName);
   const dismiss = useModalDismiss(dismissAction.onClick);
 
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-react-modal="csv-import-preview" onMouseDown={dismiss}>
       <div
         className="modal-card modal-card-wide"

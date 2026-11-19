@@ -20,6 +20,19 @@
   table-layout: fixed;
 }
 
+.transaction-register-card .finance-table-shell {
+  overflow-x: auto;
+}
+
+.transaction-register-card .finance-table-shell table {
+  min-width: 38rem;
+  table-layout: auto;
+}
+
+.transaction-register-card .transaction-table-with-balance table {
+  min-width: 46rem;
+}
+
 .finance-table-shell th,
 .finance-table-shell td {
   overflow-wrap: anywhere;
@@ -630,13 +643,12 @@
 }
 
 .transaction-detail-field strong {
+  min-width: 0;
   max-width: 62%;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-size: 11px;
   text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .transaction-running-balance {
@@ -1282,12 +1294,10 @@
 }
 
 .transaction-wizard-title h2 {
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-size: 23px;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .transaction-wizard-back,
@@ -1473,6 +1483,10 @@
   min-height: 52px;
   border-radius: 12px;
   background: var(--control-bg);
+}
+
+.transaction-wizard .categorized-select-trigger .placeholder {
+  white-space: normal;
 }
 
 .transaction-wizard .field textarea {

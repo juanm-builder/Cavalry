@@ -1766,7 +1766,8 @@ table tbody tr:hover {
 }
 
 .landing-input input,
-.landing-input select {
+.landing-input select,
+.landing-input .cavalry-select-trigger {
   width: 100%;
   padding-left: 48px;
 }

@@ -233,11 +233,8 @@
 }
 
 .bills-minimal-page .bill-month-picker {
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  width: 220px;
+  max-width: 100%;
 }
 
 .bills-minimal-page .bills-overview {
@@ -287,7 +284,6 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px 22px;
-  margin-bottom: 12px;
 }
 
 .bill-kind-tabs {
@@ -312,17 +308,30 @@
 }
 
 .bills-minimal-page .bills-filter-shell {
-  flex: 0 1 510px;
   min-width: 0;
-  margin: 0;
+  margin: 0 0 12px;
 }
 
 .bills-minimal-page .bills-filter-row {
-  grid-template-columns: minmax(150px, 1fr) max-content 38px;
+  display: flex;
+  flex: 0 1 510px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
   gap: 8px;
 }
 
+.bills-minimal-page .bill-filter-panel {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+}
+
+.bills-minimal-page .bill-filter-actions {
+  flex-wrap: wrap;
+}
+
 .bills-minimal-page .bill-search-field {
+  flex: 1 1 150px;
+  min-width: 0;
   min-height: 38px;
   border-radius: var(--radius-md);
 }
@@ -358,7 +367,7 @@
 }
 
 .bills-minimal-page .bill-register-head,
-.bills-minimal-page .bill-register-row {
+.bills-minimal-page .bill-register-list .bill-register-row {
   display: grid;
   grid-template-columns: minmax(190px, 1.5fr) 92px minmax(125px, 0.55fr) minmax(125px, 0.65fr) 36px;
   align-items: center;
@@ -389,7 +398,7 @@
   gap: 0;
 }
 
-.bills-minimal-page .bill-register-row {
+.bills-minimal-page .bill-register-list .bill-register-row {
   min-height: 78px;
   border: 0;
   border-bottom: 1px solid var(--line-soft);
@@ -455,6 +464,39 @@
   text-decoration: underline;
 }
 
+.bills-minimal-page .action-menu-popover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + var(--bill-menu-offset, 0px));
+  right: 0;
+  width: 215px;
+  max-height: min(350px, 50vh, var(--bill-menu-room, 50vh));
+  overflow: auto;
+  background: var(--panel);
+}
+
+.bills-minimal-page .action-menu[data-open-above] .action-menu-popover {
+  top: auto;
+  bottom: calc(100% + var(--bill-menu-offset, 0px));
+  margin: 0 0 5px;
+}
+
+.bills-minimal-page .action-menu-popover button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+}
+
+.bills-minimal-page .action-menu-popover button:hover,
+.bills-minimal-page .action-menu-popover button:focus-visible {
+  background: var(--control-hover);
+}
+
 .bills-minimal-page .action-menu-trigger {
   border-color: transparent;
   background: transparent;
@@ -481,23 +523,23 @@
   margin-top: 8px;
 }
 
-@media (max-width: 1000px) {
+@container ledger-workspace (max-width: 1000px) {
   .bills-minimal-page .bill-register-head,
-  .bills-minimal-page .bill-register-row {
+  .bills-minimal-page .bill-register-list .bill-register-row {
     grid-template-columns: minmax(155px, 1fr) 68px minmax(108px, 0.6fr) minmax(100px, 0.7fr) 30px;
     gap: 10px;
   }
 }
 
-@media (max-width: 700px) {
-  .bills-minimal-page .bills-filter-shell {
+@container ledger-workspace (max-width: 700px) {
+  .bills-minimal-page .bills-filter-row {
     flex-basis: 100%;
   }
   .bills-minimal-page .bill-register-head {
     display: none;
   }
-  .bills-minimal-page .bill-register-row {
-    grid-template-columns: minmax(0, 1fr) auto 30px;
+  .bills-minimal-page .bill-register-list .bill-register-row {
+    grid-template-columns: minmax(0, 1fr) auto 36px;
     gap: 8px;
   }
   .bills-minimal-page .bill-register-main {
@@ -527,7 +569,7 @@
   }
 }
 
-@media (max-width: 470px) {
+@container ledger-workspace (max-width: 470px) {
   .bills-minimal-page .bills-overview {
     grid-template-columns: 1fr;
     padding: 4px 14px;

@@ -885,10 +885,14 @@ export function useFinanceApplicationController({
       workbook
     ]
   );
+  const dashboardCustomizer = state.overlays.find(
+    (overlay) => overlay.type === 'dashboard-customizer'
+  );
   const routeProps = useMemo(
     () => ({
       dashboard: {
         model: dashboardModel,
+        customizer: dashboardCustomizer?.model,
         onAction: handleDashboardAction
       },
       budgets: {
@@ -973,6 +977,7 @@ export function useFinanceApplicationController({
       consumeRecurringReferenceTarget,
       dashboardContext,
       dashboardModel,
+      dashboardCustomizer,
       featureServices,
       handleAccountAction,
       handleAccountCreateRequest,

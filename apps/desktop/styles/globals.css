@@ -71,6 +71,7 @@ svg {
   font-size: 20px;
   line-height: 1;
   display: inline-block;
-  overflow: visible;
+  /* WebKit can paint an entire unscaled path when a layout squeezes an SVG to zero. */
+  overflow: hidden;
   vertical-align: -0.125em;
 }

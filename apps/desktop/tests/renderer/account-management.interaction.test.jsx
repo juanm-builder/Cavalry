@@ -139,6 +139,7 @@ describe('account management interactions', () => {
     await user.click(screen.getByLabelText('More account options'));
     await user.click(screen.getByRole('button', { name: 'Check statement' }));
     const dialog = screen.getByRole('dialog', { name: 'Check statement' });
+    expect(dialog.closest('.modal-backdrop').parentElement).toBe(document.body);
     const save = within(dialog).getByRole('button', { name: 'Save matched statement' });
     expect(save.disabled).toBe(true);
     const date = within(dialog).getByLabelText('Closing date');

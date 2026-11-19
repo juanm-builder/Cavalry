@@ -1,3 +1,4 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useMemo, useState } from 'react';
 
@@ -528,7 +529,7 @@ function ConfirmationModal({
   children
 }) {
   const dismiss = useModalDismiss(onCancel);
-  return (
+  return renderInBody(
     <div className="modal-backdrop" onMouseDown={dismiss}>
       <PrivateValue
         as="section"

@@ -99,6 +99,47 @@ function makePorts(overrides = {}) {
 }
 
 describe('finance application composition', () => {
+  it('opens dashboard customization, applies saved visibility, and keeps canceled changes out of the workbook', async () => {
+    const user = userEvent.setup();
+    const { ports, save } = makePorts();
+    const workbook = makeApplicationWorkbook();
+    workbook.settings.dashboardLayout = [
+      { id: 'money_shape', visible: true },
+      { id: 'command', visible: false },
+      { id: 'flows', visible: true }
+    ];
+    const app = render(<AppShell initialWorkbook={workbook} ports={ports} routeId="dashboard" />);
+    const visibleModules = () =>
+      [...app.container.querySelectorAll('[data-dashboard-module]')].map(
+        (node) => node.dataset.dashboardModule
+      );
+    const open = async () => {
+      await user.click(screen.getByRole('button', { name: 'Customize', exact: true }));
+      return within(await screen.findByRole('dialog', { name: 'Customize dashboard' }));
+    };
+    expect(visibleModules()).toEqual(['money_shape', 'flows']);
+    let dialog = await open();
+    await user.click(dialog.getByRole('button', { name: 'Reset defaults' }));
+    expect(dialog.getByRole('checkbox', { name: 'Net worth and cash flow' }).checked).toBe(true);
+    await user.click(dialog.getByRole('button', { name: 'Cancel' }));
+    expect(visibleModules()).toEqual(['money_shape', 'flows']);
+    expect(save).not.toHaveBeenCalled();
+
+    dialog = await open();
+    await user.click(dialog.getByRole('button', { name: 'Reset defaults' }));
+    await user.click(dialog.getByRole('checkbox', { name: 'Assets and obligations' }));
+    await user.click(dialog.getByRole('button', { name: 'Apply' }));
+    expect(screen.queryByRole('dialog', { name: 'Customize dashboard' })).toBeNull();
+    expect(visibleModules()).toEqual(['command', 'flows']);
+    await waitFor(() =>
+      expect(save.mock.calls.at(-1)?.[0].settings.dashboardLayout).toEqual([
+        { id: 'command', visible: true },
+        { id: 'flows', visible: true },
+        { id: 'money_shape', visible: false }
+      ])
+    );
+  });
+
   it('opens the account wizard from the global quick-add shortcut', async () => {
     const user = userEvent.setup();
     const { ports } = makePorts();

@@ -2875,7 +2875,7 @@ body > .modal-backdrop {
   }
 
   .settings-section-nav button {
-    flex: 0 0 auto;
+    flex: 1 0 auto;
   }
 }
 

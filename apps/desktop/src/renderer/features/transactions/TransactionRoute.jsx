@@ -1,3 +1,4 @@
+import { renderInBody } from '../../shared/render-in-body.js';
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React from 'react';
 
@@ -321,7 +322,7 @@ function LegacyComposerModal({ modal }) {
     selectedAccountCurrencies.some((currency) => currency !== draft.currency);
   const fieldBinding = (field, bindingOptions) =>
     actions.change('transaction-composer-change', { field }, bindingOptions);
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-react-modal="transaction-composer" onMouseDown={dismiss}>
       <PrivateValue
         as="div"
@@ -817,7 +818,7 @@ function CreateTransactionWizard({ modal }) {
   const actions = useActionBindings();
   const closeModal = actions.action('close-modal');
   const dismiss = useModalDismiss(closeModal.onClick);
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-react-modal="transaction-composer" onMouseDown={dismiss}>
       <PrivateValue
         as="div"
@@ -847,7 +848,7 @@ function DeleteModal({ modal }) {
   const actions = useActionBindings();
   const closeModal = actions.action('close-modal');
   const dismiss = useModalDismiss(closeModal.onClick);
-  return (
+  return renderInBody(
     <div className="modal-backdrop" data-react-modal="transaction-delete" onMouseDown={dismiss}>
       <div className="modal-card" role="dialog" aria-modal="true" aria-label="Delete transaction">
         <ModalHeader

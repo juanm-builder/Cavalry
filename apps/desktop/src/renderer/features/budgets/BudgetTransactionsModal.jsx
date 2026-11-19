@@ -1,6 +1,6 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { renderInBody } from '../../shared/render-in-body.js';
 
 import { useActionBindings } from '../../shared/action-binding.jsx';
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
@@ -14,10 +14,6 @@ import {
 
 function Icon({ name, className = '' }) {
   return <CavalryIcon className={className} name={name} />;
-}
-
-function renderInBody(content) {
-  return typeof document === 'undefined' ? content : createPortal(content, document.body);
 }
 
 export function BudgetTransactionsModal({ row, currency, onClose, periodLabel, sheetId }) {

@@ -70,6 +70,7 @@ describe.each(APPEARANCE_THEMES.map(({ id }) => id))('budget category rendering 
       expect(layout.borderRadius).toBe('10px');
       expect(getComputedStyle(glyph).width).toBe('1em');
       expect(getComputedStyle(glyph).height).toBe('1em');
+      expect(getComputedStyle(glyph).overflow).toBe('hidden');
       expect(Number.parseFloat(getComputedStyle(glyph).fontSize)).toBeLessThan(
         Number.parseFloat(layout.width)
       );

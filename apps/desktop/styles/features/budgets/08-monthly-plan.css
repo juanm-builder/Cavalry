@@ -231,6 +231,15 @@
   overflow-wrap: anywhere;
 }
 
+.budget-plan-page .budget-category-list-row > .amount:nth-child(2) {
+  display: block;
+}
+
+.budget-plan-page .budget-category-list-row > .cavalry-glyph {
+  grid-column: 4;
+  grid-row: 1;
+}
+
 .budget-plan-page .budget-category-list-copy strong {
   font-size: 13px;
 }
@@ -304,6 +313,24 @@
 
   .budget-plan-page .monthly-plan-category-workspace {
     padding: 12px;
+  }
+}
+
+@container budget-plan (max-width: 460px) {
+  .budget-plan-page .budget-category-list-head,
+  .budget-plan-page .budget-category-list-row,
+  .budget-plan-page .budget-section-total {
+    grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) 14px;
+    gap: 6px;
+  }
+
+  .budget-plan-page .budget-category-list-row .budget-category-avatar {
+    display: none;
+  }
+
+  .budget-plan-page .budget-category-list-copy :is(strong, small) {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

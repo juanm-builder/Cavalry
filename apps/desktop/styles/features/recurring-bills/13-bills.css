@@ -823,57 +823,6 @@ button.bill-register-main {
   flex-wrap: wrap;
 }
 
-.bill-control-select {
-  min-height: 46px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
-  color: var(--text);
-  padding: 0 38px 0 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.bill-control-select > .cavalry-glyph:first-child {
-  color: var(--text);
-  font-size: 24px;
-}
-
-.bill-control-select select {
-  min-width: 150px;
-  height: 44px;
-  border: 0;
-  outline: 0;
-  appearance: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-
-.bill-month-picker select {
-  min-width: 230px;
-}
-
-.bill-sort-select select {
-  min-width: 150px;
-}
-
-.bill-control-select .select-caret {
-  position: absolute;
-  right: 12px;
-  pointer-events: none;
-  color: var(--text-soft);
-}
-
-.bill-control-select:focus-within {
-  border-color: rgba(137, 177, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(137, 177, 255, 0.12);
-}
-
 .bill-filter-panel {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
