@@ -125,6 +125,7 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
       }`}
       data-account-group={row.group || 'asset'}
       data-account-id={row.id}
+      data-subtype={row.subtype}
       role="listitem"
       style={row.institutionColor ? { '--account-brand': row.institutionColor } : undefined}
     >
@@ -153,6 +154,15 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
             {row.activityCopy}
           </PrivateValue>
         </span>
+        {view === 'grid' ? (
+          <>
+            <span className="account-card-currency">{row.balanceCurrency || row.currency}</span>
+            {['bank', 'checking', 'savings', 'credit_card'].includes(row.subtype) ? (
+              <span aria-hidden="true" className="account-card-chip" />
+            ) : null}
+            {row.isSelected ? <Icon className="account-card-selected" name="check" /> : null}
+          </>
+        ) : null}
         {view === 'list' ? (
           <Icon className="account-list-card-chevron" name="chevron_right" />
         ) : null}
