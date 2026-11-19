@@ -170,6 +170,27 @@ describe('account management interactions', () => {
     expect(screen.getByLabelText('Last checked statement').textContent).toMatch(/20.00 difference/);
   });
 
+  it('reserves the payment-card face for credit card accounts, including legacy cards', async () => {
+    const user = userEvent.setup();
+    const workbook = makeWorkbook();
+    for (const subtype of ['savings', 'checking', 'loan', 'credit_card', 'card']) {
+      workbook.accounts.push({
+        ...workbook.accounts[0],
+        id: subtype,
+        name: subtype,
+        group: ['savings', 'checking'].includes(subtype) ? 'asset' : 'liability',
+        subtype
+      });
+    }
+    render(<AccountHarness initialWorkbook={workbook} onResult={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Grid view' }));
+    const creditCards = Array.from(
+      document.querySelectorAll('.account-card-chip'),
+      (chip) => chip.closest('[data-account-id]').dataset.accountId
+    );
+    expect(creditCards.sort()).toEqual(['card', 'credit_card']);
+  });
+
   it('keeps Create account inside the collection in list and grid views', async () => {
     const user = userEvent.setup();
     render(<AccountHarness initialWorkbook={makeWorkbook()} onResult={vi.fn()} />);

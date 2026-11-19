@@ -101,6 +101,7 @@ const ACCOUNT_GROUPS = Object.freeze([
 
 function AccountCard({ row, index, total, groupLabel, view, actions, onSelect }) {
   const payload = { accountId: row.id };
+  const accountKind = row.contextKind || row.subtype;
   const accessibleLabel = [
     ...new Set(
       [
@@ -125,7 +126,7 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
       }`}
       data-account-group={row.group || 'asset'}
       data-account-id={row.id}
-      data-subtype={row.subtype}
+      data-account-kind={accountKind}
       role="listitem"
       style={row.institutionColor ? { '--account-brand': row.institutionColor } : undefined}
     >
@@ -157,7 +158,7 @@ function AccountCard({ row, index, total, groupLabel, view, actions, onSelect })
         {view === 'grid' ? (
           <>
             <span className="account-card-currency">{row.balanceCurrency || row.currency}</span>
-            {['bank', 'checking', 'savings', 'credit_card'].includes(row.subtype) ? (
+            {accountKind === 'credit_card' ? (
               <span aria-hidden="true" className="account-card-chip" />
             ) : null}
             {row.isSelected ? <Icon className="account-card-selected" name="check" /> : null}
