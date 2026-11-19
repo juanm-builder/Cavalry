@@ -8,6 +8,8 @@ import {
   findAccountById,
   findInstitutionById,
   getAccountUsage,
+  getStatementCheck,
+  saveStatementCheck,
   getAccountCurrencyIntegrity,
   isNaturalDebitGroup,
   isTimeDepositSubtype,
@@ -29,6 +31,7 @@ import { formatCurrencyAmount } from '../../shared/currency-format.js';
 export const ACCOUNT_ACTIONS = Object.freeze({
   CREATE: 'account/create',
   UPDATE: 'account/update',
+  CHECK_STATEMENT: 'account/check-statement',
   ARCHIVE: 'account/archive',
   RESTORE: 'account/restore',
   RETIRE: 'account/retire',
@@ -94,10 +97,20 @@ export function executeAccountCommand(workbook, action, services = {}) {
   const type = asText(action?.type);
   const payload = action?.payload && typeof action.payload === 'object' ? action.payload : {};
   const accountId = asText(payload.accountId);
-  const nextWorkbook = cloneWorkbook(workbook);
-  const commandServices = deterministicServices(nextWorkbook, action, services);
-
   try {
+    if (type === ACCOUNT_ACTIONS.CHECK_STATEMENT) {
+      const result = saveStatementCheck(workbook, accountId, payload.date, payload.balance);
+      return result.ok
+        ? commandOk(result.workbook, { events: [{ type: 'account.statement_checked', accountId }] })
+        : errorResult(workbook, {
+            code: 'account.statement_check_failed',
+            message: result.message
+          });
+    }
+
+    const nextWorkbook = cloneWorkbook(workbook);
+    const commandServices = deterministicServices(nextWorkbook, action, services);
+
     if (type === ACCOUNT_ACTIONS.CREATE) {
       const operation = createAccount(nextWorkbook, payload, commandServices);
       return changedOrError(workbook, nextWorkbook, operation, {
@@ -388,6 +401,11 @@ function getAccountHistoryRows(
             : template === 'opening_balance'
               ? 'Opening balance'
               : 'Uncategorized'),
+        splitRows: asArray(transaction.categorySplits).map((split) => ({
+          id: split.categoryId,
+          label: categoryById.get(split.categoryId)?.name || 'Category',
+          value: formatAccountMoney(split.amount, transactionCurrency)
+        })),
         relatedAccountNames: relatedAccounts,
         relatedAccountCopy: template === 'transfer' ? relatedAccounts.join(', ') : '',
         note: asText(transaction?.note),
@@ -413,6 +431,30 @@ function getAccountHistoryRows(
           .join(' - ')
       };
     });
+}
+
+function latestAccountStatement(workbook, account) {
+  const saved = asArray(account?.statementChecks).reduce(
+    (latest, entry) => (entry?.date && (!latest || entry.date > latest.date) ? entry : latest),
+    null
+  );
+  if (!saved) return null;
+  const check = getStatementCheck(workbook, account.id, saved.date, saved.balance);
+  const sameCurrency = check.ok && check.currency === saved.currency;
+  const matches = sameCurrency && check.matches;
+  const status = !check.ok
+    ? check.message
+    : !sameCurrency
+      ? 'Review account currency'
+      : matches
+        ? 'Matches the ledger'
+        : `${formatAccountMoney(Math.abs(check.difference), check.currency)} difference`;
+  return {
+    date: saved.date,
+    balanceCopy: formatAccountMoney(saved.balance, saved.currency),
+    matches,
+    status
+  };
 }
 
 export function buildAccountsFeatureModel(workbook, options = {}) {
@@ -555,6 +597,8 @@ export function buildAccountsFeatureModel(workbook, options = {}) {
                 } postings.`
             : '',
           repairPreview: selectedRepairPreview,
+          canCheckStatement: ['asset', 'liability'].includes(selectedAccount.group),
+          latestStatement: latestAccountStatement(workbook, selectedAccount),
           canRepairCurrency:
             selectedRepairPreview?.ok === true &&
             selectedRepairPreview?.requiresConfirmation === true,

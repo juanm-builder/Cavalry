@@ -1,6 +1,7 @@
 import { classifyAdvisorTransactionSemantics } from '@cavalry/advisor/domain/advisor/financial-semantics.js';
 import { buildAdvisorAccountSnapshotPacket } from '@cavalry/advisor/domain/advisor/packets.js';
 import { roundMoney } from '@cavalry/finance-core/domain/money.js';
+import { getTransactionCategoryAllocations } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import {
   createCategoryChangeDraftGroup,
   createExternalDraftGroupFromActionPlan,
@@ -106,9 +107,9 @@ function buildWorkbookReadSummary(workbook, query = {}) {
     total_outflow: 0,
     net_cash_flow: 0
   };
-  const categories = {};
+  const categories = Object.create(null);
   transactions.forEach((transaction) => {
-    const amount = roundMoney(transaction.amount || transaction.baseAmount || 0);
+    const amount = roundMoney(transaction.baseAmount ?? transaction.amount ?? 0);
     const direction = inferDirection(transaction);
     if (direction === 'income') {
       totals.income = roundMoney(totals.income + amount);
@@ -126,8 +127,12 @@ function buildWorkbookReadSummary(workbook, query = {}) {
     }
     totals.total_outflow = roundMoney(totals.total_outflow + amount);
     totals.net_cash_flow = roundMoney(totals.net_cash_flow - amount);
-    const categoryName = getCategoryName(workbook, transaction.categoryId) || 'Uncategorized';
-    categories[categoryName] = roundMoney((categories[categoryName] || 0) + amount);
+    for (const allocation of getTransactionCategoryAllocations(transaction, amount)) {
+      const categoryName = getCategoryName(workbook, allocation.categoryId) || 'Uncategorized';
+      categories[categoryName] = roundMoney(
+        (categories[categoryName] || 0) + allocation.baseAmount
+      );
+    }
   });
   const topCategories = Object.keys(categories)
     .map((name) => ({
@@ -170,7 +175,10 @@ function serializeRecentTransaction(workbook, transaction) {
     ),
     direction: inferDirection(transaction),
     account_display: getAccountName(workbook, getPrimaryAccountId(transaction)),
-    category_display: getCategoryName(workbook, transaction.categoryId),
+    category_display: getTransactionCategoryAllocations(transaction)
+      .map(({ categoryId }) => getCategoryName(workbook, categoryId))
+      .filter(Boolean)
+      .join(' · '),
     semantic_class: semantics.economicFlow,
     recurrence_hint: semantics.recurrence
   };

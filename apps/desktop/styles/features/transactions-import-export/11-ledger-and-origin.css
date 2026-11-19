@@ -1745,3 +1745,51 @@
     grid-template-columns: 1fr;
   }
 }
+
+.transaction-splits {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.transaction-splits legend {
+  padding: 0 4px;
+  font-weight: 650;
+}
+
+.transaction-split-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 0.5fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.transaction-split-row .field {
+  min-width: 0;
+}
+
+.transaction-split-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transaction-split-link {
+  width: fit-content;
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  color: var(--info);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.transaction-split-link:hover {
+  text-decoration: underline;
+}

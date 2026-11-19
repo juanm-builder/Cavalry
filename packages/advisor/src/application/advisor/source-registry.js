@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import { getAssetLiabilityTotalsAsOf } from '@cavalry/finance-core/domain/ledger/balances.js';
 import { getLedgerTransactionBaseAmount } from '@cavalry/finance-core/domain/ledger/transactions.js';
 import { getPeriodActivitySummary } from '@cavalry/finance-core/domain/ledger/summaries.js';
@@ -38,8 +39,8 @@ export function buildAdvisorSourceRegistry(workbook, options = {}) {
     if (!category || !category.id) {
       return;
     }
-    const transactions = period.transactions.filter(
-      (transaction) => transaction && transaction.categoryId === category.id
+    const transactions = period.transactions.filter((transaction) =>
+      transactionHasCategory(transaction, category.id)
     );
     const sourceRef = `category_spend:${category.id}`;
     sources[sourceRef] = sourceEntry(

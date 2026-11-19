@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -122,6 +122,53 @@ function rowFor(name) {
 }
 
 describe('account management interactions', () => {
+  it('matches a signed statement balance as of its closing date and flags a later backdated change', async () => {
+    const user = userEvent.setup();
+    const workbook = makeWorkbook();
+    for (const line of workbook.transactions[0].lines) line.currency = 'PHP';
+    const onCommandResult = vi.fn();
+    const showAccounts = (value) => (
+      <AccountRoute
+        workbook={value}
+        initialSelectedAccountId="bank"
+        asOfDate="2026-06-30"
+        onCommandResult={onCommandResult}
+      />
+    );
+    const { rerender } = render(showAccounts(workbook));
+    await user.click(screen.getByLabelText('More account options'));
+    await user.click(screen.getByRole('button', { name: 'Check statement' }));
+    const dialog = screen.getByRole('dialog', { name: 'Check statement' });
+    const save = within(dialog).getByRole('button', { name: 'Save matched statement' });
+    expect(save.disabled).toBe(true);
+    const date = within(dialog).getByLabelText('Closing date');
+    const balance = within(dialog).getByLabelText('Statement closing balance (PHP)');
+    fireEvent.change(date, { target: { value: '2026-05-31' } });
+    fireEvent.change(balance, { target: { value: '-100' } });
+    expect(within(dialog).getByText('Difference').nextElementSibling.textContent).toContain(
+      '100.00'
+    );
+    expect(save.disabled).toBe(true);
+    fireEvent.change(date, { target: { value: '2026-06-01' } });
+    expect(save.disabled).toBe(false);
+    await user.click(save);
+    const next = onCommandResult.mock.calls[0][0].workbook;
+    expect(next.accounts.find((account) => account.id === 'bank').statementChecks).toEqual([
+      { date: '2026-06-01', balance: -100, currency: 'PHP' }
+    ]);
+    expect(next.transactions).toEqual(workbook.transactions);
+    rerender(showAccounts(next));
+    expect(screen.getByLabelText('Last checked statement').textContent).toContain(
+      'Matches the ledger'
+    );
+
+    const corrected = structuredClone(next);
+    corrected.transactions[0].amount = corrected.transactions[0].baseAmount = 120;
+    for (const line of corrected.transactions[0].lines) line.amount = line.baseAmount = 120;
+    rerender(showAccounts(corrected));
+    expect(screen.getByLabelText('Last checked statement').textContent).toMatch(/20.00 difference/);
+  });
+
   it('keeps Create account inside the collection in list and grid views', async () => {
     const user = userEvent.setup();
     render(<AccountHarness initialWorkbook={makeWorkbook()} onResult={vi.fn()} />);

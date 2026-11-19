@@ -1,3 +1,4 @@
+import { getStoredCategorySplitIssue } from './category-splits.js';
 import { roundMoney } from '../money.js';
 
 export function isTransactionBalanced(transaction) {
@@ -35,6 +36,8 @@ export function validateLedgerWorkbook(workbook) {
     if (!isTransactionBalanced(transaction)) {
       errors.push('unbalanced transaction');
     }
+    const splitIssue = getStoredCategorySplitIssue(workbook, transaction);
+    if (splitIssue) errors.push(splitIssue.message);
     if (transaction.categoryId && !categoryIds.has(transaction.categoryId)) {
       errors.push('missing category');
     }

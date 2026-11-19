@@ -1,5 +1,7 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getStatementCheck } from '@cavalry/finance-core';
+import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 
@@ -60,6 +62,87 @@ function formatCurrency(value, currency) {
   } catch (_error) {
     return `${code} ${(Number(value) || 0).toFixed(2)}`;
   }
+}
+
+export function AccountStatementModal({
+  account,
+  workbook,
+  defaultDate,
+  error,
+  onCancel,
+  onSubmit
+}) {
+  const [date, setDate] = useState(defaultDate);
+  const [balance, setBalance] = useState('');
+  const hasBalance = balance !== '' && balance !== '-';
+  const check = useMemo(
+    () => getStatementCheck(workbook, account.id, date, hasBalance ? balance : 0),
+    [workbook, account.id, date, hasBalance, balance]
+  );
+  const canSave = check.ok && check.matches && hasBalance;
+  return (
+    <ModalFrame title="Check statement" onCancel={onCancel} error={error}>
+      <form
+        className="stack-list"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSave) onSubmit({ accountId: account.id, date, balance });
+        }}
+      >
+        <PrivateValue as="strong">{account.name}</PrivateValue>
+        <div className="field">
+          <label htmlFor="statement-closing-date">Closing date</label>
+          <input
+            id="statement-closing-date"
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="statement-closing-balance">
+            Statement closing balance ({account.currency || workbook.currency})
+          </label>
+          <FinancialValueInput
+            id="statement-closing-balance"
+            value={balance}
+            onChange={(event) => setBalance(event.currentTarget.value)}
+          />
+          {account.group === 'liability' ? (
+            <small>Enter the amount owed as positive and a credit balance as negative.</small>
+          ) : null}
+        </div>
+        {check.ok ? (
+          <div className="account-detail-grid" aria-live="polite">
+            <span>Ledger balance on closing date</span>
+            <PrivateValue as="b">
+              {formatCurrency(check.ledgerBalance, check.currency)}
+            </PrivateValue>
+            {hasBalance ? (
+              <>
+                <span>Difference</span>
+                <PrivateValue as="b" className={check.matches ? 'good' : 'status-warn'}>
+                  {formatCurrency(Math.abs(check.difference), check.currency)}
+                </PrivateValue>
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <PrivateValue as="p" className="panel-note status-warn" role="status">
+            {check.message}
+          </PrivateValue>
+        )}
+        <div className="modal-actions">
+          <button className="btn" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" type="submit" disabled={!canSave}>
+            Save matched statement
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
 }
 
 export function AccountCurrencyRepairModal({ account, preview, error, onCancel, onConfirm }) {

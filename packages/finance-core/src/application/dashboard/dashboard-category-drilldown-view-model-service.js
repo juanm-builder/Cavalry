@@ -1,6 +1,10 @@
+import {
+  getTransactionCategoryAllocations,
+  transactionHasCategory
+} from '../../domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import { isNaturalDebitGroup } from '../../domain/ledger/balances.js';
-import { getLedgerTransactionBaseAmount } from '../../domain/ledger/transactions.js';
+
 import {
   asArray,
   asString,
@@ -136,15 +140,12 @@ function describeTransactionAccounts(workbook, transaction) {
   return debitAccount.name + ' ← ' + creditAccount.name;
 }
 
-function describeTransactionFlow(workbook, transaction) {
+function describeTransactionFlow(workbook, transaction, selectedCategory) {
   const counterparty =
     transaction && transaction.counterpartyId
       ? getCounterpartyById(workbook, transaction.counterpartyId)
       : null;
-  const category =
-    transaction && transaction.categoryId
-      ? getCategoryById(workbook, transaction.categoryId)
-      : null;
+  const category = selectedCategory;
   const debitLine = asArray(transaction && transaction.lines).find(
     (line) => line.direction === 'debit'
   );
@@ -280,7 +281,7 @@ function getTransactionImpact(workbook, transaction) {
 }
 
 function transactionMatchesDrilldown(transaction, category, rangeModel) {
-  if (!(transaction && category && transaction.categoryId === category.id)) {
+  if (!(transaction && category && transactionHasCategory(transaction, category.id))) {
     return false;
   }
   if (rangeModel.dateRange) {
@@ -305,7 +306,10 @@ function sortTransactionsNewestFirst(transactions) {
   });
 }
 
-function buildTransactionRow(workbook, transaction) {
+function buildTransactionRow(workbook, transaction, category) {
+  const allocation = getTransactionCategoryAllocations(transaction).find(
+    (item) => item.categoryId === category.id
+  );
   return {
     transaction: clonePlain(transaction),
     transactionId: asString(transaction && transaction.id),
@@ -313,10 +317,10 @@ function buildTransactionRow(workbook, transaction) {
     description: asString(transaction && transaction.description),
     template: asString(transaction && transaction.template),
     templateLabel: getTemplateLabel(transaction && transaction.template),
-    flowLabel: describeTransactionFlow(workbook, transaction),
-    amount: Number(transaction && transaction.amount) || 0,
+    flowLabel: describeTransactionFlow(workbook, transaction, category),
+    amount: allocation.amount,
     originalCurrency: asString(transaction && transaction.originalCurrency),
-    baseAmount: getLedgerTransactionBaseAmount(transaction),
+    baseAmount: allocation.baseAmount,
     tone: getTransactionImpact(workbook, transaction).tone
   };
 }
@@ -331,7 +335,7 @@ export function buildDashboardCategoryDrilldownRows(workbook, options = {}) {
     asArray(workbook && workbook.transactions).filter((transaction) => {
       return transactionMatchesDrilldown(transaction, category, rangeModel);
     })
-  ).map((transaction) => buildTransactionRow(workbook, transaction));
+  ).map((transaction) => buildTransactionRow(workbook, transaction, category));
 }
 
 export function buildDashboardCategoryDrilldownSummary(workbook, options = {}) {

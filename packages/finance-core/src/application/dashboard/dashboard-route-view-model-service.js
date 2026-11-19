@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '../../domain/ledger/category-splits.js';
 import { roundMoney } from '../../domain/money.js';
 import {
   getAccountBalanceSnapshotAsOf,
@@ -289,8 +290,8 @@ function buildSpendingRows(workbook, totals, type, limit) {
         category: clonePlain(category),
         total: roundMoney(categoryTotals[category.id] || 0),
         transactions: clonePlain(
-          asArray(totals && totals.transactions).filter(
-            (transaction) => transaction && transaction.categoryId === category.id
+          asArray(totals && totals.transactions).filter((transaction) =>
+            transactionHasCategory(transaction, category.id)
           )
         )
       };

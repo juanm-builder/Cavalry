@@ -1,3 +1,7 @@
+import {
+  addCategoryTotals,
+  getTransactionCategoryAllocations
+} from '../../domain/ledger/category-splits.js';
 import { roundMoney } from '../../domain/money.js';
 import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
 import {
@@ -253,16 +257,18 @@ export function getBudgetStatus(category, planned, actual) {
 
 export function getSheetActualByCategory(workbook, sheet) {
   const monthKey = monthKeyFromSheet(workbook, sheet);
-  const totals = {};
+  const totals = Object.create(null);
   asArray(workbook && workbook.transactions).forEach((transaction) => {
     if (transactionMonthKey(transaction) !== monthKey) return;
     const contribution = getTransactionContributions(workbook, transaction);
     if (!contribution.resolved) return;
     if (!['inflow', 'expense', 'savings', 'debt'].includes(contribution.flowKind)) return;
-    const categoryId = contribution.categoryId || '__uncategorized';
-    totals[categoryId] = roundMoney((totals[categoryId] || 0) + contribution.signedBaseAmount);
+    addCategoryTotals(
+      totals,
+      getTransactionCategoryAllocations(transaction, contribution.signedBaseAmount)
+    );
   });
-  return totals;
+  return { ...totals };
 }
 
 export function buildBudgetSummary(workbook, sheet) {

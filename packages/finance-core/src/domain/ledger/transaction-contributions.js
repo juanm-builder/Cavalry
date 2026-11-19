@@ -1,3 +1,4 @@
+import { getTransactionCategoryAllocations } from './category-splits.js';
 import { roundMoney } from '../money.js';
 
 export const TRANSACTION_EVENT_KINDS = Object.freeze([
@@ -389,6 +390,28 @@ function eventCanContributeToMetric(eventKind, metric) {
   return true;
 }
 
+export function getCategoryContribution(transaction, contribution, categoryId) {
+  if (!categoryId || !transaction?.categorySplits?.length) return contribution;
+  const allocation = getTransactionCategoryAllocations(transaction, contribution.baseAmount).find(
+    (part) => part.categoryId === categoryId
+  );
+  if (!allocation) return null;
+  const metrics = Object.fromEntries(
+    Object.entries(contribution.metrics).map(([name, value]) => [
+      name,
+      Math.sign(value) * allocation.baseAmount
+    ])
+  );
+  return {
+    ...contribution,
+    categoryId,
+    nativeAmount: allocation.amount,
+    baseAmount: allocation.baseAmount,
+    signedBaseAmount: Math.sign(contribution.signedBaseAmount) * allocation.baseAmount,
+    metrics
+  };
+}
+
 export function buildTransactionCalculationReceipt(
   workbook,
   transactions,
@@ -404,10 +427,15 @@ export function buildTransactionCalculationReceipt(
       if ((start || end) && !date) return false;
       return (!start || date >= start) && (!end || date <= end);
     })
-    .map((transaction) => ({
-      transaction,
-      contribution: readContribution(transaction)
-    }));
+    .map((transaction) => {
+      const contribution = getCategoryContribution(
+        transaction,
+        readContribution(transaction),
+        selectedCategoryId
+      );
+      return { transaction, contribution };
+    })
+    .filter(({ contribution }) => contribution);
   const contributions = evaluated
     .filter(({ contribution }) => {
       if (!contribution.resolved) return false;

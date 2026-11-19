@@ -1,3 +1,4 @@
+import { getTransactionCategoryAllocations } from '../../domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
 import {
@@ -126,9 +127,11 @@ function collectReportLimitations(workbook, transactions) {
     limitations.push('multi_currency_base_amounts');
   }
   if (
-    transactions.some(
-      (transaction) =>
-        transaction && transaction.categoryId && !categories.has(asString(transaction.categoryId))
+    transactions.some((transaction) =>
+      getTransactionCategoryAllocations(transaction).some(
+        ({ categoryId }) =>
+          categoryId !== '__uncategorized' && !categories.has(asString(categoryId))
+      )
     )
   ) {
     limitations.push('missing_category_references');
@@ -189,6 +192,7 @@ export function buildCategorySpendingReport(workbook, options = {}) {
   const transactions = getReportTransactions(workbook, options);
   let total = 0;
   let transferCount = 0;
+  let transactionCount = 0;
   transactions.forEach((transaction) => {
     const contribution = getTransactionContributions(workbook || {}, transaction || {});
     if (contribution.eventKind === 'transfer') {
@@ -198,31 +202,31 @@ export function buildCategorySpendingReport(workbook, options = {}) {
     if (!contribution.resolved || contribution.flowKind !== 'expense') {
       return;
     }
-    const categoryId = asString(transaction && transaction.categoryId);
-    const category = categoryId ? categories.get(categoryId) || null : null;
-    if (!category && options.includeMissingCategories === false) {
-      return;
+    let included = false;
+    for (const allocation of getTransactionCategoryAllocations(
+      transaction,
+      contribution.metrics.expense
+    )) {
+      const rowKey = allocation.categoryId;
+      const categoryId = rowKey === '__uncategorized' ? '' : rowKey;
+      const category = categories.get(categoryId);
+      if (!category && options.includeMissingCategories === false) continue;
+      const current = rows.get(rowKey) || makeCategoryRow(categoryId, category, 0, transaction);
+      current.total = roundMoney(current.total + allocation.baseAmount);
+      current.transactionCount += 1;
+      const date = getReportTransactionDate(transaction);
+      if (!current.firstDate || date < current.firstDate) current.firstDate = date;
+      if (!current.lastDate || date > current.lastDate) current.lastDate = date;
+      rows.set(rowKey, current);
+      total = roundMoney(total + allocation.baseAmount);
+      included = true;
     }
-    const rowKey = categoryId || '__uncategorized';
-    const amount = contribution.metrics.expense;
-    const current = rows.get(rowKey) || makeCategoryRow(categoryId, category, 0, transaction);
-    current.total = roundMoney(current.total + amount);
-    current.transactionCount += 1;
-    current.firstDate =
-      current.firstDate && current.firstDate < getReportTransactionDate(transaction)
-        ? current.firstDate
-        : getReportTransactionDate(transaction);
-    current.lastDate =
-      current.lastDate && current.lastDate > getReportTransactionDate(transaction)
-        ? current.lastDate
-        : getReportTransactionDate(transaction);
-    rows.set(rowKey, current);
-    total = roundMoney(total + amount);
+    if (included) transactionCount += 1;
   });
   return {
     currency: baseCurrency(workbook),
     total,
-    transactionCount: Array.from(rows.values()).reduce((sum, row) => sum + row.transactionCount, 0),
+    transactionCount,
     transferCount,
     rows: Array.from(rows.values()).sort(
       (a, b) => b.total - a.total || a.categoryName.localeCompare(b.categoryName)

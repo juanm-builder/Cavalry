@@ -650,6 +650,19 @@ function buildCategoryChangeDraft(workbook, action, _parentPlan, index) {
     category_hint: action.suggested_category_hint
   });
   pushIssue(issues, categoryMatch.issue);
+  if (transaction?.categorySplits?.length) {
+    issues.push(
+      createValidationIssue(
+        'split_category_selection_required',
+        'Choose the part of the purchase to recategorize in the transaction editor.',
+        {
+          severity: 'blocked',
+          field: 'suggested_category_id',
+          actionId
+        }
+      )
+    );
+  }
   const currentCategory =
     transaction && transaction.categoryId
       ? (workbook.categories || []).find((category) => category.id === transaction.categoryId) ||
@@ -1537,6 +1550,13 @@ function applyCategoryChangeDraft(workbook, draft) {
     throw new ExternalDraftServiceError('external_ref_not_found', 'Transaction no longer exists.', {
       status: 409
     });
+  }
+  if (transaction.categorySplits?.length) {
+    throw new ExternalDraftServiceError(
+      'split_category_selection_required',
+      'Choose the part of the purchase to recategorize in the transaction editor.',
+      { status: 409 }
+    );
   }
   transaction.categoryId = values.suggested_category_id || transaction.categoryId;
   return transaction.id;

@@ -73,6 +73,30 @@ describe('Cavalry API controller', () => {
     ).toThrow(CavalryApiError);
   });
 
+  it('reports each category share in workbook currency and counts the receipt once', () => {
+    const workbook = makeWorkbook();
+    workbook.categories.push({ id: 'office', name: 'Office', type: 'expense' });
+    Object.assign(workbook.transactions[0], {
+      originalCurrency: 'USD',
+      amount: 2,
+      baseAmount: 110,
+      categorySplits: [
+        { categoryId: 'software', amount: 1.5 },
+        { categoryId: 'office', amount: 0.5 }
+      ]
+    });
+    const api = createCavalryApiController({ workbooks: [workbook] });
+    const summary = api.getWorkbookSummary({
+      caller: caller([CAVALRY_API_SCOPES.READ_SUMMARY]),
+      workbookId: 'wb_1'
+    });
+    expect(summary.totals.consumption_spending).toBe(110);
+    expect(summary.top_categories).toEqual([
+      { display_name: 'Software', amount: 82.5, currency: 'PHP' },
+      { display_name: 'Office', amount: 27.5, currency: 'PHP' }
+    ]);
+  });
+
   it('reads summaries with read scope and rejects cross-workbook access', () => {
     const controller = createCavalryApiController({ workbooks: [makeWorkbook()] });
     const summary = controller.getWorkbookSummary({

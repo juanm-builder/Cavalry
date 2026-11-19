@@ -4,11 +4,10 @@ import React from 'react';
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
-import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
+import { TransactionCategoryField } from './TransactionCategoryField.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { ImportPreviewModal } from '../import-export/ImportPreviewModal.jsx';
-import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
 import { TransactionCell } from './TransactionCell.jsx';
 import { TransactionEditModal } from './TransactionEditModal.jsx';
@@ -388,19 +387,11 @@ function LegacyComposerModal({ modal }) {
                 {...fieldBinding('currency')}
               />
             </div>
-            <div className="field">
-              <label htmlFor="transaction-category">Category</label>
-              <CategorizedSelect
-                aria-label="Category"
-                createCategoryType={categoryTypeForTemplate(draft.template)}
-                id="transaction-category"
-                onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
-                options={options.categories}
-                placeholder="Choose category"
-                value={draft.categoryId || ''}
-                {...fieldBinding('categoryId')}
-              />
-            </div>
+            <TransactionCategoryField
+              categoryType={categoryTypeForTemplate(draft.template)}
+              draft={draft}
+              options={asArray(options.categories)}
+            />
             <div className="field">
               <label htmlFor="transaction-primary-account">Primary account</label>
               <CavalrySelect
@@ -700,21 +691,13 @@ function TransactionDetailsStep({ modal }) {
           />
         </div>
         {!isTransfer ? (
-          <div className="field">
-            <PrivateValue as="label" htmlFor="transaction-category">
-              {isIncome ? 'Source' : 'Category'}
-            </PrivateValue>
-            <CategorizedSelect
-              aria-label={isIncome ? 'Source' : 'Category'}
-              createCategoryType={isIncome ? 'income' : 'expense'}
-              id="transaction-category"
-              onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
-              options={options.categories}
-              placeholder={isIncome ? 'Choose source' : 'Choose category'}
-              value={draft.categoryId || ''}
-              {...fieldBinding('categoryId')}
-            />
-          </div>
+          <TransactionCategoryField
+            categoryType={isIncome ? 'income' : 'expense'}
+            draft={draft}
+            label={isIncome ? 'Source' : 'Category'}
+            options={asArray(options.categories)}
+            placeholder={isIncome ? 'Choose source' : 'Choose category'}
+          />
         ) : null}
         {!isTransfer ? (
           <div className="field">
@@ -779,7 +762,7 @@ function TransactionReviewStep({ modal }) {
       <TransactionKindBadge kind={data.kind} />
       <div className="transaction-review-card">
         {asArray(data.reviewRows).map((row) => (
-          <div className="transaction-review-row" key={row.label}>
+          <div className="transaction-review-row" key={row.id || row.label}>
             <PrivateValue as="span">{row.label}</PrivateValue>
             <strong className={row.tone || ''}>
               <PrivateValue as="span">
@@ -978,7 +961,13 @@ function DetailSidePanel({ modal }) {
       </div>
       <div className="transaction-detail-card">
         <DetailField label={data.accountLabel || 'Account'} value={data.account} />
-        <DetailField label="Category" value={data.category} />
+        {data.splitRows?.length ? (
+          data.splitRows.map((row) => (
+            <DetailField key={row.id} label={row.label} value={row.value} />
+          ))
+        ) : (
+          <DetailField label="Category" value={data.category} />
+        )}
         <DetailField label="Type" value={data.typeLabel} tone={data.tone || ''} />
         <DetailField label="Note" value={data.note} />
       </div>

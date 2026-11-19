@@ -1,3 +1,5 @@
+import { getCategorySplitIssue } from '../../domain/ledger/category-splits.js';
+
 function asString(value) {
   return String(value == null ? '' : value).trim();
 }
@@ -75,6 +77,7 @@ export function normalizeTransactionComposerInput(rawInput, workbook, options = 
     fxRateToBase: parseNumericInput(rawFxRate),
     description: asString(getRawValue(rawInput, 'description', defaults.description)),
     categoryId: asLegacyId(getRawValue(rawInput, 'categoryId', defaults.categoryId)),
+    ...(rawInput?.categorySplits !== undefined ? { categorySplits: rawInput.categorySplits } : {}),
     primaryAccountId: asLegacyId(
       getRawValue(rawInput, 'primaryAccountId', defaults.primaryAccountId)
     ),
@@ -98,6 +101,8 @@ export function buildTransactionComposerValidationModel(input, workbook, options
     normalized.currency === 'USD' &&
     (normalized.template === 'expense_paid' || normalized.template === 'expense_charged');
   const issues = [];
+  const splitIssue = getCategorySplitIssue(workbook, normalized, options.existingTransaction);
+  if (splitIssue) issues.push(splitIssue);
 
   if (!(normalized.amount > 0)) {
     issues.push({

@@ -228,7 +228,13 @@ function buildTransactionRow(workbook, transaction) {
     date: asString(transaction && transaction.date),
     description: asString(transaction && transaction.description),
     categoryId: asString(transaction && transaction.categoryId),
-    categoryName: category ? asString(category.name) : 'Uncategorized',
+    categoryName: transaction.categorySplits?.length
+      ? transaction.categorySplits
+          .map((split) => getCategoryById(workbook, split.categoryId)?.name || 'Missing category')
+          .join(', ')
+      : category
+        ? asString(category.name)
+        : 'Uncategorized',
     template: asString(transaction && transaction.template),
     templateLabel: getTemplateLabel(transaction && transaction.template),
     amount: Number(transaction && transaction.amount) || 0,

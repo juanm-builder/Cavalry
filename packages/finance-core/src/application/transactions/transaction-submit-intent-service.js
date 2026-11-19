@@ -1,5 +1,6 @@
 // Keeps manual transaction submit decisions testable without owning DOM, workbook mutation, save, or render side effects.
 
+import { getCategorySplitIssue, sameCategorySplits } from '../../domain/ledger/category-splits.js';
 import {
   normalizeRecurringFrequency,
   normalizeRecurringKind
@@ -268,6 +269,7 @@ function hasUnchangedPostingShape(workbook, existingTransaction, composerInput) 
       ).toUpperCase() &&
     numericFxRate(composerInput.fxRateToBase || composerInput.usdExpenseRate) ===
       (Number(existingTransaction.fxRateToBase) || 0) &&
+    sameCategorySplits(composerInput.categorySplits, existingTransaction.categorySplits, true) &&
     asLegacyId(composerInput.categoryId) === asLegacyId(existingTransaction.categoryId) &&
     asLegacyId(composerInput.primaryAccountId) === assignments.primaryAccountId &&
     asLegacyId(composerInput.secondaryAccountId) === assignments.secondaryAccountId
@@ -378,7 +380,9 @@ function getDuplicateCandidate(workbook, composerInput, existingIndex) {
         ).toUpperCase() === currency &&
         normalizeDateKey(transaction && transaction.date) === date &&
         roundMoney(Number(transaction && transaction.amount) || 0) === amount &&
-        asLegacyId(transaction && transaction.categoryId) === categoryId &&
+        (composerInput.categorySplits?.length ||
+          asLegacyId(transaction && transaction.categoryId) === categoryId) &&
+        sameCategorySplits(transaction.categorySplits, composerInput.categorySplits) &&
         normalizeDuplicateDescription(transaction && transaction.description) === description &&
         assignments.primaryAccountId === primaryAccountId &&
         (!movesBetweenAccounts || assignments.secondaryAccountId === secondaryAccountId)
@@ -431,6 +435,11 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
     getRawValue(rawInput, 'usdExpenseRate', '')
   );
   const primaryAccountId = asLegacyId(getRawValue(rawInput, 'primaryAccountId', ''));
+  const existingTransaction = isEdit ? transactions[existingIndex] : null;
+  const categorySplits =
+    rawInput.categorySplits === undefined
+      ? existingTransaction?.categorySplits
+      : rawInput.categorySplits;
   const composerInput = {
     template: routeExpenseTemplateByAccount(
       workbook,
@@ -443,7 +452,11 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
     fxRateToBase: rawFxRateToBase,
     usdExpenseRate: getRawValue(rawInput, 'usdExpenseRate', rawFxRateToBase),
     description: asString(getRawValue(rawInput, 'description', '')),
-    categoryId: asLegacyId(getRawValue(rawInput, 'categoryId', '')),
+    categoryId:
+      Array.isArray(categorySplits) && categorySplits.length
+        ? asLegacyId(categorySplits[0]?.categoryId)
+        : asLegacyId(getRawValue(rawInput, 'categoryId', '')),
+    ...(categorySplits !== undefined ? { categorySplits } : {}),
     primaryAccountId,
     secondaryAccountId: asLegacyId(getRawValue(rawInput, 'secondaryAccountId', '')),
     counterpartyId: asLegacyId(getRawValue(rawInput, 'counterpartyId', '')),
@@ -456,8 +469,9 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
         ? asString(transactions[existingIndex] && transactions[existingIndex].recurringItemId)
         : '')
   };
-  const assignmentIssue = buildAssignmentIssue(workbook, composerInput);
-  const existingTransaction = existingIndex >= 0 ? transactions[existingIndex] : null;
+  const assignmentIssue =
+    getCategorySplitIssue(workbook, composerInput, existingTransaction) ||
+    buildAssignmentIssue(workbook, composerInput);
   const preserveExistingPostings = hasUnchangedPostingShape(
     workbook,
     existingTransaction,

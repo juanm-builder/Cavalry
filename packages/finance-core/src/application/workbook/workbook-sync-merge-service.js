@@ -1,3 +1,5 @@
+import { validStatementCheckHistory } from '../accounts/statement-check-service.js';
+
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -487,6 +489,41 @@ function selectedConflictValue(
   return { selected: false };
 }
 
+// A date identifies a statement within an account. All other account fields
+// retain the usual whole-record conflict policy.
+function mergeAccountStatementChecks(base, local, remote) {
+  const snapshots = [base, local, remote];
+  if (!snapshots.every((account) => account && validStatementCheckHistory(account.statementChecks)))
+    return null;
+  if (!snapshots.some((account) => account.statementChecks?.length)) return null;
+
+  const [baseAttributes, localAttributes, remoteAttributes] = snapshots.map(
+    ({ statementChecks: _checks, ...rest }) => rest
+  );
+  let account;
+  if (entitiesEqual(localAttributes, remoteAttributes)) account = local;
+  else if (entitiesEqual(baseAttributes, localAttributes)) account = remote;
+  else if (entitiesEqual(baseAttributes, remoteAttributes)) account = local;
+  else return null;
+
+  const [oldChecks, localChecks, remoteChecks] = snapshots.map(
+    (item) => new Map((item.statementChecks || []).map((check) => [check.date, check]))
+  );
+  const dates = new Set([...oldChecks.keys(), ...localChecks.keys(), ...remoteChecks.keys()]);
+  const statementChecks = [];
+  for (const date of [...dates].sort().reverse()) {
+    const old = oldChecks.get(date);
+    const left = localChecks.get(date);
+    const right = remoteChecks.get(date);
+    let selected;
+    if (deepEqual(left, right) || deepEqual(old, right)) selected = left;
+    else if (deepEqual(old, left)) selected = right;
+    else return null;
+    if (selected !== undefined) statementChecks.push(selected);
+  }
+  return withMergedEntityBookkeeping({ ...account, statementChecks }, ...snapshots);
+}
+
 function mergeIdCollection(
   base,
   local,
@@ -530,6 +567,14 @@ function mergeIdCollection(
         merged.set(id, withMergedEntityBookkeeping(localValue, baseValue, localValue, remoteValue));
       }
       continue;
+    }
+
+    if (path === 'accounts' && baseHas && localHas && remoteHas) {
+      const account = mergeAccountStatementChecks(baseValue, localValue, remoteValue);
+      if (account) {
+        merged.set(id, account);
+        continue;
+      }
     }
 
     if (isAutomaticCollectionPath(path) && !prefersLocalConflicts(conflictPolicy)) {

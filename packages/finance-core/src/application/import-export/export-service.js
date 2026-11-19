@@ -86,6 +86,8 @@ export function exportTransactionsCsv(workbook, options = {}) {
   const transactions = Array.isArray(workbook && workbook.transactions)
     ? workbook.transactions
     : [];
+  const includeSplits = transactions.some((transaction) => transaction?.categorySplits?.length);
+  if (includeSplits) rows[0].push('category_breakdown', 'category_splits', 'fx_rate_to_base');
   transactions.forEach((transaction) => {
     if (
       options.excludeTransfers === true &&
@@ -110,7 +112,19 @@ export function exportTransactionsCsv(workbook, options = {}) {
       category && category.name,
       transaction && transaction.note,
       transaction && transaction.reference,
-      transaction && transaction.source
+      transaction && transaction.source,
+      ...(includeSplits
+        ? [
+            transaction.categorySplits
+              ?.map(
+                ({ categoryId, amount }) =>
+                  (categories.get(categoryId)?.name || categoryId) + ' ' + Number(amount).toFixed(2)
+              )
+              .join(' / ') || '',
+            transaction.categorySplits?.length ? JSON.stringify(transaction.categorySplits) : '',
+            transaction.fxRateToBase || ''
+          ]
+        : [])
     ]);
   });
   return formatCsv(rows);

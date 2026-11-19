@@ -172,6 +172,80 @@ describe('credit-card expense creation', () => {
     ]);
   });
 
+  it('records one card purchase across categories and can edit it back to one category', async () => {
+    const user = userEvent.setup();
+    const workbook = makeCreditCardExpenseWorkbook();
+    workbook.accounts.push({
+      id: 'supplies-expense',
+      name: 'Supplies',
+      group: 'expense',
+      currency: 'PHP'
+    });
+    workbook.categories.push({
+      id: 'supplies',
+      name: 'Supplies',
+      type: 'expense',
+      linkedAccountId: 'supplies-expense'
+    });
+    const results = [];
+    render(
+      <TransactionHarness
+        initialWorkbook={workbook}
+        onCommandResult={(result) => results.push(result)}
+      />
+    );
+
+    const details = await openExpenseDetails(user);
+    await fillExpenseDetails(user, details, {
+      accountLabel: 'BPI Credit Card',
+      accountId: 'credit-card',
+      amount: '125',
+      description: 'Market receipt'
+    });
+    await user.click(within(details).getByRole('button', { name: 'Split by category' }));
+    expect(within(details).getByRole('combobox', { name: 'Category 1' }).textContent).toContain(
+      'Food'
+    );
+    await user.type(within(details).getByLabelText('Amount for category 1'), '100');
+    await user.click(within(details).getByRole('combobox', { name: 'Category 2' }));
+    expect(screen.queryByRole('option', { name: 'Food' })).toBeNull();
+    await user.click(screen.getByRole('option', { name: 'Supplies' }));
+    await user.type(within(details).getByLabelText('Amount for category 2'), '20');
+    expect(within(details).getByText(/5.00 left to assign/)).toBeTruthy();
+    await user.click(within(details).getByRole('button', { name: 'Next' }));
+    expect(within(details).getByRole('alert').textContent).toMatch(/total/i);
+
+    const suppliesAmount = within(details).getByLabelText('Amount for category 2');
+    await user.clear(suppliesAmount);
+    await user.type(suppliesAmount, '25');
+    await user.click(within(details).getByRole('button', { name: 'Next' }));
+    const review = screen.getByRole('dialog', { name: 'Review Transaction' });
+    expect(getReviewRow(review, 'Food').textContent).toMatch(/100.00/);
+    expect(getReviewRow(review, 'Supplies').textContent).toMatch(/25.00/);
+    await user.click(within(review).getByRole('button', { name: 'Add Transaction' }));
+    await waitFor(() => expect(screen.getByLabelText('transaction-count').textContent).toBe('1'));
+    expect(results.at(-1).transaction.categorySplits).toEqual([
+      { categoryId: 'food', amount: 100 },
+      { categoryId: 'supplies', amount: 25 }
+    ]);
+
+    await user.click(screen.getByText('Market receipt'));
+    const panel = screen.getByRole('dialog', { name: 'Transaction detail' });
+    expect(within(panel).getByText('Supplies').parentElement.textContent).toMatch(/25.00/);
+    await user.click(within(panel).getByRole('button', { name: 'Edit Transaction' }));
+    const edit = screen.getByRole('dialog', { name: 'Edit Transaction' });
+    expect(within(edit).getByLabelText('Amount for category 1').value).toBe('100.00');
+    await user.click(within(edit).getByRole('button', { name: 'Use one category' }));
+    expect(within(edit).getByRole('combobox', { name: 'Category' }).textContent).toContain('Food');
+    await user.click(within(edit).getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Edit Transaction' })).toBeNull()
+    );
+    expect(results.at(-1).transaction.categorySplits?.length || 0).toBe(0);
+    expect(results.at(-1).transaction.lines).toHaveLength(2);
+    expect(screen.getByLabelText('transaction-count').textContent).toBe('1');
+  });
+
   it('turns the same Expense flow into a card charge and previews balance owed', async () => {
     const user = userEvent.setup();
     const commandResults = [];

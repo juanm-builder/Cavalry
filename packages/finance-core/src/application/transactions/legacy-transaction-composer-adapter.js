@@ -196,7 +196,11 @@ export function buildLegacyTransactionFromComposerFields(
   const template = normalizeTemplate(clean.template, services) || 'expense_paid';
   const amount = Number(clean.amount || 0) || 0;
   const currency = asString(clean.currency || (workbook && workbook.currency)).toUpperCase();
-  const categoryId = asLegacyId(clean.categoryId);
+  const splits =
+    clean.categorySplits === undefined ? existingTransaction?.categorySplits : clean.categorySplits;
+  const categoryId = asLegacyId(
+    Array.isArray(splits) && splits.length ? splits[0]?.categoryId : clean.categoryId
+  );
   const primaryAccountId = asLegacyId(clean.primaryAccountId);
   const secondaryAccountId = asLegacyId(clean.secondaryAccountId);
   const counterparty = resolveCounterparty(workbook, clean, services);

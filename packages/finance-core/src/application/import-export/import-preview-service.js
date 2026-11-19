@@ -1,3 +1,4 @@
+import { sameCategorySplits } from '../../domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import { buildManualLedgerTransaction } from '../../domain/ledger/transactions.js';
 import { normalizeCsvHeader, parseCsv, parseCsvNumber } from './csv-import-parser.js';
@@ -14,6 +15,8 @@ const COLUMN_ALIASES = Object.freeze({
   accountId: ['account_id', 'primary_account_id'],
   category: ['category', 'category_name'],
   categoryId: ['category_id'],
+  categorySplits: ['category_splits'],
+  fxRateToBase: ['fx_rate_to_base'],
   template: ['template', 'type', 'direction', 'transaction_type'],
   note: ['note', 'notes'],
   reference: ['reference', 'ref']
@@ -395,8 +398,9 @@ function findDuplicateTransaction(workbook, candidate) {
           asString(transaction && transaction.date) === asString(candidate && candidate.date) &&
           roundMoney(Number(transaction && transaction.amount) || 0) ===
             roundMoney(Number(candidate && candidate.amount) || 0) &&
-          asString(transaction && transaction.categoryId) ===
-            asString(candidate && candidate.categoryId) &&
+          (candidate.categorySplits?.length ||
+            asString(transaction?.categoryId) === asString(candidate?.categoryId)) &&
+          sameCategorySplits(transaction?.categorySplits, candidate?.categorySplits) &&
           getPrimaryAccountId(workbook, transaction) === candidateAccountId &&
           textKey(transaction && transaction.description) === candidateDescription
         );
@@ -455,6 +459,36 @@ function buildRowPreview(workbook, row, rowIndex, mapping, options) {
       `csv:${String(row.lineNumber || rowIndex + 2)}`
   };
 
+  const splitText = asString(valueFor(row, mapping, 'categorySplits'));
+  if (splitText) {
+    try {
+      fields.categorySplits = JSON.parse(splitText);
+      if (
+        !Array.isArray(fields.categorySplits) ||
+        fields.categorySplits.length < 2 ||
+        fields.categorySplits[0]?.categoryId !== fields.categoryId
+      ) {
+        issues.push(
+          makeIssue(
+            'error',
+            'invalid_category_splits',
+            'Invalid split categories or primary category.'
+          )
+        );
+      }
+    } catch {
+      issues.push(
+        makeIssue('error', 'invalid_category_splits', 'Could not read the split categories.')
+      );
+    }
+  }
+  const rawRate = asString(valueFor(row, mapping, 'fxRateToBase'));
+  if (rawRate) {
+    const rate = Number(rawRate);
+    if (Number.isFinite(rate) && rate > 0) fields.fxRateToBase = rate;
+    else
+      issues.push(makeIssue('error', 'invalid_exchange_rate', 'Enter a positive exchange rate.'));
+  }
   let transaction = null;
   if (!hasError(issues)) {
     try {

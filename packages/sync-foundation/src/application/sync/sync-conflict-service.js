@@ -102,8 +102,12 @@ function detectReferenceConflictsForChange(workbook, change) {
         );
       }
     });
-    const categoryId = asString(entity.categoryId || entity.category_id);
-    if (categoryId && !findById(workbook && workbook.categories, categoryId)) {
+    const categoryIds = new Set([
+      asString(entity.categoryId || entity.category_id),
+      ...asArray(entity.categorySplits).map((split) => asString(split?.categoryId))
+    ]);
+    for (const categoryId of categoryIds) {
+      if (!categoryId || findById(workbook && workbook.categories, categoryId)) continue;
       conflicts.push(
         createSyncIssue(
           'missing_category_reference',

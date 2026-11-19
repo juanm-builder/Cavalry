@@ -66,6 +66,29 @@ describe('sync conflict service foundation', () => {
     ]);
   });
 
+  it('detects a missing secondary category when syncing a split purchase', () => {
+    const workbook = makeMinimalWorkbook();
+    const change = createSyncChange({
+      workbook,
+      entityType: 'transaction',
+      entityId: 'market',
+      after: {
+        id: 'market',
+        categoryId: 'food',
+        categorySplits: [
+          { categoryId: 'food', amount: 70 },
+          { categoryId: 'missing-household', amount: 30 }
+        ]
+      },
+      device: { deviceId: 'phone' },
+      createId: makeCreateId()
+    });
+    const result = detectSyncConflicts({ workbook, remoteChanges: [change] });
+    expect(result.blockingConflicts).toContainEqual(
+      expect.objectContaining({ code: 'missing_category_reference', value: 'missing-household' })
+    );
+  });
+
   it('detects missing account and category references in incoming transaction changes', () => {
     const workbook = cloneFixture(makeMinimalWorkbook());
     const change = createSyncChange({

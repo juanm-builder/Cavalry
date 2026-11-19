@@ -1,3 +1,9 @@
+import {
+  addCategoryTotals,
+  getCategorySplitIssue,
+  getStoredCategorySplitIssue,
+  getTransactionCategoryAllocations
+} from './category-splits.js';
 import { normalizeDateKey, roundMoney } from '../money.js';
 import { isTransactionBalanced } from './validation.js';
 import {
@@ -360,6 +366,17 @@ export function normalizeLedgerTransaction(transaction, index = 0, workbook = {}
     description: asString(source.description) || 'Ledger Transaction',
     reference: String(source.reference || ''),
     categoryId: asString(source.categoryId),
+    ...(source.categorySplits === undefined
+      ? {}
+      : {
+          categorySplits: Array.isArray(source.categorySplits)
+            ? source.categorySplits.map((split) =>
+                split && typeof split === 'object'
+                  ? { categoryId: split.categoryId, amount: split.amount }
+                  : split
+              )
+            : source.categorySplits
+        }),
     counterpartyId: asString(source.counterpartyId),
     recurringItemId: asString(source.recurringItemId),
     ...(normalizeDateKey(source.recurringOccurrenceDate)
@@ -392,7 +409,19 @@ export function buildManualLedgerTransaction(
   const currency = asString(fields.currency).toUpperCase() || baseCurrency(workbook);
   const date = normalizeDateKey(fields.date) || '';
   const description = asString(fields.description);
-  const categoryId = asString(fields.categoryId);
+  const categorySplits =
+    fields.categorySplits === undefined
+      ? existingTransaction?.categorySplits
+      : fields.categorySplits;
+  const splitIssue = getCategorySplitIssue(
+    workbook,
+    { template, amount, categorySplits },
+    existingTransaction
+  );
+  if (splitIssue) throw new Error(splitIssue.message);
+  const categoryId = categorySplits?.length
+    ? categorySplits[0].categoryId
+    : asString(fields.categoryId);
   const primaryAccountId = asString(fields.primaryAccountId);
   const secondaryAccountId = asString(fields.secondaryAccountId);
   const note = asString(fields.note);
@@ -455,21 +484,33 @@ export function buildManualLedgerTransaction(
       )
     );
     resolvedDescription = resolvedDescription || `${category.name} received`;
-  } else if (template === 'expense_paid') {
+  } else if (template === 'expense_paid' || template === 'expense_charged') {
     if (!(category && category.type === 'expense')) throw new Error('Pick an expense category.');
-    if (!(primaryAccount && primaryAccount.group === 'asset'))
-      throw new Error('Choose an asset account to fund the payment.');
-    lines.push(
-      createLedgerLine(
+    const charged = template === 'expense_charged';
+    if (primaryAccount?.group !== (charged ? 'liability' : 'asset')) {
+      throw new Error(
+        charged
+          ? 'Choose a liability account such as a credit card.'
+          : 'Choose an asset account to fund the payment.'
+      );
+    }
+    const allocations = getTransactionCategoryAllocations(
+      { categoryId, categorySplits, amount },
+      convertAmountToBase(workbook, amount, currency, transactionFxRateToBase)
+    );
+    for (const allocation of allocations) {
+      const line = createLedgerLine(
         workbook,
-        getCategoryLinkedAccountId(workbook, category.id),
+        getCategoryLinkedAccountId(workbook, allocation.categoryId),
         'debit',
-        amount,
+        allocation.amount,
         currency,
         'Category debit',
-        makeLineOptions(0)
-      )
-    );
+        makeLineOptions(lines.length)
+      );
+      line.baseAmount = allocation.baseAmount;
+      lines.push(line);
+    }
     lines.push(
       createLedgerLine(
         workbook,
@@ -477,39 +518,13 @@ export function buildManualLedgerTransaction(
         'credit',
         amount,
         currency,
-        'Asset funding',
-        makeLineOptions(1)
-      )
-    );
-    resolvedDescription = resolvedDescription || `${category.name} paid`;
-  } else if (template === 'expense_charged') {
-    if (!(category && category.type === 'expense')) throw new Error('Pick an expense category.');
-    if (!(primaryAccount && primaryAccount.group === 'liability'))
-      throw new Error('Choose a liability account such as a credit card.');
-    lines.push(
-      createLedgerLine(
-        workbook,
-        getCategoryLinkedAccountId(workbook, category.id),
-        'debit',
-        amount,
-        currency,
-        'Category debit',
-        makeLineOptions(0)
-      )
-    );
-    lines.push(
-      createLedgerLine(
-        workbook,
-        primaryAccount.id,
-        'credit',
-        amount,
-        currency,
-        'Liability funding',
-        makeLineOptions(1)
+        charged ? 'Liability funding' : 'Asset funding',
+        makeLineOptions(lines.length)
       )
     );
     resolvedDescription =
-      resolvedDescription || `${category.name} charged to ${primaryAccount.name}`;
+      resolvedDescription ||
+      (charged ? `${category.name} charged to ${primaryAccount.name}` : `${category.name} paid`);
   } else if (template === 'merchant_refund') {
     if (!(category && category.type === 'expense'))
       throw new Error('Pick the original expense category.');
@@ -667,6 +682,14 @@ export function buildManualLedgerTransaction(
         inferTransactionEventKind(workbook, { template, categoryId: finalCategoryId }),
       description: resolvedDescription,
       categoryId: finalCategoryId,
+      ...(categorySplits?.length
+        ? {
+            categorySplits: categorySplits.map((split) => ({
+              categoryId: split.categoryId,
+              amount: Number(split.amount)
+            }))
+          }
+        : {}),
       counterpartyId: existingTransaction
         ? existingTransaction.counterpartyId
         : asString(fields.counterpartyId),
@@ -691,6 +714,8 @@ export function buildManualLedgerTransaction(
       createId: sourceOptions.createId
     }
   );
+  const storedSplitIssue = getStoredCategorySplitIssue(workbook, transaction);
+  if (storedSplitIssue) throw new Error(storedSplitIssue.message);
   if (!isTransactionBalanced(transaction)) {
     throw new Error('Transaction is not balanced after rebuild.');
   }
@@ -715,7 +740,7 @@ export function summarizeLedgerActivity(workbook, options = {}) {
     debt: 0,
     outflow: 0,
     net: 0,
-    categoryTotals: {},
+    categoryTotals: Object.create(null),
     transactionCount: 0
   };
   (workbook && Array.isArray(workbook.transactions) ? workbook.transactions : []).forEach(
@@ -733,9 +758,9 @@ export function summarizeLedgerActivity(workbook, options = {}) {
       if (kind === 'savings') summary.savings = roundMoney(summary.savings + amount);
       if (kind === 'debt') summary.debt = roundMoney(summary.debt + amount);
       if (['inflow', 'expense', 'savings', 'debt'].includes(kind)) {
-        const categoryId = contribution.categoryId;
-        summary.categoryTotals[categoryId] = roundMoney(
-          (summary.categoryTotals[categoryId] || 0) + amount
+        addCategoryTotals(
+          summary.categoryTotals,
+          getTransactionCategoryAllocations(transaction, amount)
         );
         summary.transactionCount += 1;
       }
@@ -743,5 +768,6 @@ export function summarizeLedgerActivity(workbook, options = {}) {
   );
   summary.outflow = roundMoney(summary.expense + summary.savings + summary.debt);
   summary.net = roundMoney(summary.income - summary.outflow);
+  summary.categoryTotals = { ...summary.categoryTotals };
   return summary;
 }

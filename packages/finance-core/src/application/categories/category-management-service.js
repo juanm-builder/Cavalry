@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '../../domain/ledger/category-splits.js';
 export class CategoryManagementError extends Error {
   constructor(code, message, details = {}) {
     super(message);
@@ -205,7 +206,7 @@ export function getCategoryUsageSummary(workbook, categoryId) {
   const targetId = String(categoryId || '');
   const transactionCount = (workbook && workbook.transactions ? workbook.transactions : []).filter(
     (transaction) => {
-      return transaction.categoryId === targetId;
+      return transactionHasCategory(transaction, targetId);
     }
   ).length;
   const recurringItemCount = (
@@ -455,6 +456,16 @@ export function replaceCategoryLinkedAccount(workbook, input = {}, services = {}
   );
 
   workbook.accounts.push(replacementAccount);
+  if (
+    archivedPreviousAccount &&
+    (workbook.transactions || []).some((transaction) =>
+      transaction.categorySplits?.some((split) => split?.categoryId === category.id)
+    )
+  ) {
+    category.previousLinkedAccountIds = [
+      ...new Set([...(category.previousLinkedAccountIds || []), currentAccount.id])
+    ];
+  }
   category.linkedAccountId = replacementAccount.id;
 
   return {
@@ -506,6 +517,17 @@ export function deleteCategory(workbook, input = {}, services = {}) {
   }
 
   const usage = getCategoryUsageSummary(workbook, categoryId);
+  if (
+    workbook.transactions?.some((transaction) =>
+      transaction.categorySplits?.some((split) => split.categoryId === categoryId)
+    )
+  ) {
+    throw new CategoryManagementError(
+      'category_in_use',
+      'A split purchase uses this category. Hide it or reassign its purchases before deleting it.',
+      { usage }
+    );
+  }
   if (usage.hasReferences && !allowReferencedDelete) {
     throw new CategoryManagementError(
       'category_in_use',

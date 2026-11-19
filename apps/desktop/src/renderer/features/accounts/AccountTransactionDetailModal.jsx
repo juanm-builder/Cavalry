@@ -97,7 +97,13 @@ export function AccountTransactionDetailModal({ transaction, onClose }) {
 
         <dl className="account-transaction-detail-list">
           <DetailField label="Account" value={transaction.accountName} />
-          <DetailField label="Category" value={transaction.categoryName} />
+          {transaction.splitRows?.length ? (
+            transaction.splitRows.map((row) => (
+              <DetailField key={row.id} label={row.label} value={row.value} />
+            ))
+          ) : (
+            <DetailField label="Category" value={transaction.categoryName} />
+          )}
           <DetailField label="Transaction total" value={transaction.amountCopy} />
           {transaction.relatedAccountCopy ? (
             <DetailField label="Related account" value={transaction.relatedAccountCopy} />

@@ -1,5 +1,6 @@
 // Reporting preserves the established posted-flow classification used by schema-v2 workbooks.
 
+import { addCategoryTotals, getTransactionCategoryAllocations } from './category-splits.js';
 import { roundMoney } from '../money.js';
 import {
   createTransactionContributionReader,
@@ -148,9 +149,9 @@ export function getFlowBreakdown(workbook, transactions) {
   const readContribution = createTransactionContributionReader(workbook);
   asArray(transactions).forEach((transaction) => {
     const contribution = readContribution(transaction);
-    const categoryId = contribution.categoryId;
-    categoryTotals[categoryId] = roundMoney(
-      (categoryTotals[categoryId] || 0) + contribution.signedBaseAmount
+    addCategoryTotals(
+      categoryTotals,
+      getTransactionCategoryAllocations(transaction, contribution.signedBaseAmount)
     );
   });
   return Object.keys(categoryTotals)
@@ -212,9 +213,9 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
       summary.debt = roundMoney(summary.debt + amount);
     }
     if (kind === 'inflow' || kind === 'expense' || kind === 'savings' || kind === 'debt') {
-      const categoryId = contribution.categoryId;
-      summary.categoryTotals[categoryId] = roundMoney(
-        (summary.categoryTotals[categoryId] || 0) + amount
+      addCategoryTotals(
+        summary.categoryTotals,
+        getTransactionCategoryAllocations(transaction, amount)
       );
     }
   });

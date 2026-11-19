@@ -43,6 +43,84 @@ describe('workbook sync merge service', () => {
     expect(result.workbook.updatedAt).toBe('2026-08-29T10:02:00.000Z');
   });
 
+  it('merges independent statement dates on an existing account and keeps its other edits', () => {
+    const base = workbook();
+    const local = cloneFixture(base);
+    const remote = cloneFixture(base);
+    const first = { date: '2026-07-31', balance: -100, currency: 'PHP' };
+    const next = { date: '2026-08-31', balance: 200, currency: 'PHP' };
+    local.accounts[0].statementChecks = [first];
+    remote.accounts[0].statementChecks = [next];
+    remote.accounts[0].name = 'Renamed cash';
+    for (const [left, right] of [
+      [local, remote],
+      [remote, local]
+    ]) {
+      const result = mergeWorkbookSnapshots({ base, local: left, remote: right });
+      expect(result.ok).toBe(true);
+      expect(result.workbook.accounts[0]).toMatchObject({
+        name: 'Renamed cash',
+        statementChecks: [next, first]
+      });
+      const repeated = mergeWorkbookSnapshots({ base, local: result.workbook, remote: right });
+      expect(repeated.workbook.accounts).toEqual(result.workbook.accounts);
+    }
+    // Without a common baseline an absent statement may represent a deletion.
+    expect(mergeWorkbookSnapshots({ local, remote }).ok).toBe(false);
+  });
+
+  it('keeps explicit account review for competing same-date balances, attribute edits and deletion', () => {
+    const base = workbook();
+    const local = cloneFixture(base);
+    const remote = cloneFixture(base);
+    const prior = { date: '2026-07-31', balance: 100, currency: 'PHP' };
+    base.accounts[0].statementChecks = [prior];
+    const left = { ...prior, balance: 200 };
+    const right = { ...prior, balance: 250 };
+    local.accounts[0].statementChecks = [left];
+    remote.accounts[0].statementChecks = [right];
+    const path = 'accounts["cash"]';
+    const check = () => mergeWorkbookSnapshots({ base, local, remote });
+    expect(check()).toMatchObject({
+      ok: false,
+      conflicts: [{ path, kind: 'same_record_changed' }]
+    });
+    const chosen = reconcileWorkbookSnapshots({
+      base,
+      local,
+      remote,
+      choices: [{ path, side: 'remote' }]
+    });
+    expect(chosen.workbook.accounts[0]).toEqual(remote.accounts[0]);
+    remote.accounts[0].statementChecks = [prior, { ...right, date: '2026-08-31' }];
+    local.accounts[0].name = 'Phone rename';
+    remote.accounts[0].note = 'Independent account edit';
+    expect(check()).toMatchObject({
+      ok: false,
+      conflicts: [{ path, kind: 'same_record_changed' }]
+    });
+    local.accounts = local.accounts.filter((account) => account.id !== 'cash');
+    expect(check()).toMatchObject({ ok: false, conflicts: [{ path, kind: 'delete_vs_change' }] });
+  });
+
+  it('keeps a proven statement deletion and never resolves an edit against deletion silently', () => {
+    const base = workbook();
+    const first = { date: '2026-07-31', balance: -100, currency: 'PHP' };
+    const next = { date: '2026-08-31', balance: 200, currency: 'PHP' };
+    base.accounts[0].statementChecks = [first];
+    const local = cloneFixture(base);
+    const remote = cloneFixture(base);
+    delete local.accounts[0].statementChecks;
+    remote.accounts[0].statementChecks = [next, first];
+    const result = mergeWorkbookSnapshots({ base, local, remote });
+    expect(result.workbook.accounts[0].statementChecks).toEqual([next]);
+    remote.accounts[0].statementChecks = [next, { ...first, balance: 123 }];
+    expect(mergeWorkbookSnapshots({ base, local, remote })).toMatchObject({
+      ok: false,
+      conflicts: [{ path: 'accounts["cash"]', kind: 'same_record_changed' }]
+    });
+  });
+
   it('keeps the latest bookkeeping timestamp while merging independent changes', () => {
     const base = workbook([transaction('base')]);
     base.settings.lastSavedAt = '2026-08-29T10:00:00.000Z';

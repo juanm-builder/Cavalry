@@ -88,6 +88,30 @@ function makeWorkbook() {
 }
 
 describe('category controller', () => {
+  it('shows only the allocated share when the first category on a receipt is hidden', () => {
+    const workbook = makeWorkbook();
+    workbook.categories.find((category) => category.id === 'food').isActive = false;
+    const receipt = workbook.transactions[0];
+    receipt.categorySplits = [
+      { categoryId: 'food', amount: 100 },
+      { categoryId: 'unused', amount: 25 }
+    ];
+    receipt.lines[0] = { ...receipt.lines[0], amount: 100, baseAmount: 100 };
+    receipt.lines.push({
+      accountId: 'unused-expense',
+      direction: 'debit',
+      amount: 25,
+      baseAmount: 25
+    });
+
+    const model = buildCategoriesFeatureModel(workbook);
+    expect(model.categoryRows.find((row) => row.id === 'unused')).toMatchObject({
+      spent: 25,
+      transactionCount: 1
+    });
+    expect(model.spendingRows).toEqual([{ category: { id: 'unused', name: 'Unused' }, total: 25 }]);
+  });
+
   it('creates a category and linked account on a cloned workbook', () => {
     const workbook = makeWorkbook();
     const result = executeCategoryCommand(workbook, {

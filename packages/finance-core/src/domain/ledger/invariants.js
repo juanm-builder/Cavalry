@@ -1,3 +1,4 @@
+import { getStoredCategorySplitIssue } from './category-splits.js';
 import { normalizeDateKey, roundMoney } from '../money.js';
 import { getLedgerHistoricalBalances } from './balances.js';
 import { getAccountCurrencyIntegrity } from './account-currency-integrity.js';
@@ -169,6 +170,8 @@ export function validateLedgerInvariants(workbook) {
         )
       );
     }
+    const splitIssue = getStoredCategorySplitIssue(workbook, transaction);
+    if (splitIssue) errors.push(issue(splitIssue.code, splitIssue.message, String(id || index)));
     const categoryId = String((transaction && transaction.categoryId) || '');
     if (categoryId) {
       const category = categoryById.get(categoryId);

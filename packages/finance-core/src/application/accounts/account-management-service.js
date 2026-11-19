@@ -238,6 +238,7 @@ export function normalizeAccount(account = {}, index = 0, baseCurrency = 'PHP', 
     ),
     note: String(account.note || ''),
     details: sanitizeAccountDetails(account.details),
+    ...(account.statementChecks !== undefined ? { statementChecks: account.statementChecks } : {}),
     openedDate: asString(account.openedDate) || today(),
     placementDate: asString(account.placementDate),
     maturityDate: asString(account.maturityDate),
@@ -379,8 +380,10 @@ export function getAccountUsage(workbook, accountId) {
   const openingOnly =
     relatedTransactions.length > 0 &&
     relatedTransactions.every((transaction) => transaction.template === 'opening_balance');
-  const totalReferences =
-    relatedTransactions.length + recurringItemCount + budgetLineItemCount + sheetEntryCount;
+  const statementCheckCount = findAccountById(workbook, id)?.statementChecks?.length || 0;
+  const nonPostingReferences =
+    recurringItemCount + budgetLineItemCount + sheetEntryCount + statementCheckCount;
+  const totalReferences = relatedTransactions.length + nonPostingReferences;
   return {
     accountId: id,
     relatedTransactions,
@@ -389,12 +392,11 @@ export function getAccountUsage(workbook, accountId) {
     budgetLineItemCount,
     sheetEntryCount,
     totalReferences,
-    hasHistory: relatedTransactions.length > 0,
+    hasHistory: relatedTransactions.length > 0 || statementCheckCount > 0,
     openingOnly,
     hasReferences: totalReferences > 0,
     hasNonOpeningReferences:
-      recurringItemCount + budgetLineItemCount + sheetEntryCount > 0 ||
-      (relatedTransactions.length > 0 && !openingOnly)
+      nonPostingReferences > 0 || (relatedTransactions.length > 0 && !openingOnly)
   };
 }
 

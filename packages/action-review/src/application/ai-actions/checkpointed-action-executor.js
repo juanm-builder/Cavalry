@@ -777,6 +777,19 @@ function applyCategoryAction({ workbook, action, actionType, createId, index, op
           actionId: actionId(action, index)
         })
       );
+    if (transaction?.categorySplits?.length) {
+      issues.push(
+        createValidationIssue(
+          'split_category_selection_required',
+          'Choose the part of the purchase to recategorize in the transaction editor.',
+          {
+            severity: 'blocked',
+            field: 'suggested_category_id',
+            actionId: actionId(action, index)
+          }
+        )
+      );
+    }
     const before = transaction ? clonePlain(transaction) : null;
     const after = transaction
       ? Object.assign(clonePlain(transaction), {

@@ -278,6 +278,11 @@ function formatDirectionalTransactionMoney(transaction, currency) {
 }
 
 function getTransactionCategoryName(model, transaction) {
+  if (transaction?.categorySplits?.length) {
+    return transaction.categorySplits
+      .map(({ categoryId }) => model.categoryLookup?.[categoryId]?.name || 'Uncategorized')
+      .join(' · ');
+  }
   const category = asObject(asObject(model.categoryLookup)[transaction?.categoryId]);
   return category.name || 'Uncategorized';
 }

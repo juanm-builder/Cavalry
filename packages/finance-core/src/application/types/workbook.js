@@ -12,6 +12,7 @@
  *   amount?: number,
  *   accountId?: string,
  *   categoryId?: string,
+ *   categorySplits?: Array<{ categoryId: string, amount: number }>,
  *   lines?: Array<Record<string, unknown>>,
  *   [key: string]: unknown
  * }} WorkbookTransaction

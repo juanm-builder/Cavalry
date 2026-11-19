@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '../../domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import {
   buildManualLedgerTransaction,
@@ -5,6 +6,7 @@ import {
 } from '../../domain/ledger/transactions.js';
 import {
   createTransactionContributionReader,
+  getCategoryContribution,
   getTransactionContributions
 } from '../../domain/ledger/transaction-contributions.js';
 
@@ -95,6 +97,13 @@ export function resolveTransactionRowReferences(workbook, transaction, options =
   const lines = asArray(transaction && transaction.lines);
   const categoryId = asString(transaction && transaction.categoryId);
   const category = categoryId ? categoryById.get(categoryId) || null : null;
+  const splitCategories = Array.isArray(transaction?.categorySplits)
+    ? transaction.categorySplits.map((split) => categoryById.get(split?.categoryId))
+    : [];
+  const categoryMissing = !!(categoryId && !category) || splitCategories.some((item) => !item);
+  const categoryArchived =
+    !!(category && category.isActive === false) ||
+    splitCategories.some((item) => item?.isActive === false);
   const counterpartyId = asString(transaction && transaction.counterpartyId);
   const counterparty = counterpartyId ? counterpartyById.get(counterpartyId) || null : null;
   const accounts = lines.map((line) => {
@@ -115,10 +124,16 @@ export function resolveTransactionRowReferences(workbook, transaction, options =
   return {
     category,
     categoryId,
-    categoryLabel: category ? category.name : categoryId ? 'Missing category' : 'Uncategorized',
+    categoryLabel: splitCategories.length
+      ? splitCategories.map((item) => item?.name || 'Missing category').join(', ')
+      : category
+        ? category.name
+        : categoryId
+          ? 'Missing category'
+          : 'Uncategorized',
     categoryType: category ? asString(category.type) : '',
-    categoryMissing: !!(categoryId && !category),
-    categoryArchived: !!(category && category.isActive === false),
+    categoryMissing,
+    categoryArchived,
     counterparty,
     counterpartyLabel: counterparty ? counterparty.name : '',
     primaryAccount,
@@ -131,9 +146,8 @@ export function resolveTransactionRowReferences(workbook, transaction, options =
     accounts,
     missingAccountIds,
     archivedAccountIds,
-    hasMissingReference: !!(categoryId && !category) || missingAccountIds.length > 0,
-    hasArchivedReference:
-      !!(category && category.isActive === false) || archivedAccountIds.length > 0
+    hasMissingReference: categoryMissing || missingAccountIds.length > 0,
+    hasArchivedReference: categoryArchived || archivedAccountIds.length > 0
   };
 }
 
@@ -319,7 +333,12 @@ export function filterTransactionRows(rows, filters = {}) {
       )
     )
       return false;
-    if (categoryId && row.categoryId !== categoryId) return false;
+    if (
+      categoryId &&
+      row.categoryId !== categoryId &&
+      !transactionHasCategory(row.transaction, categoryId)
+    )
+      return false;
     if (includeMissing && !row.hasMissingReference) return false;
     if (includeArchived && !row.hasArchivedReference) return false;
     return true;
@@ -484,7 +503,30 @@ function normalizeAmountFilter(value) {
 export function buildTransactionTableView(workbook, viewState = {}) {
   const state = validateTransactionTableViewState(viewState);
   const builtRows = buildTransactionRows(workbook);
-  const filteredRows = filterTransactionRows(searchTransactionRows(builtRows, state.search), state);
+  const categoryRows = state.categoryId
+    ? builtRows.map((row) => {
+        if (!row.transaction?.categorySplits?.length) return row;
+        const share = getCategoryContribution(row.transaction, row.contributions, state.categoryId);
+        if (!share) return row;
+        const category = workbook.categories?.find((item) => item.id === state.categoryId);
+        const projected = {
+          ...row,
+          categoryId: state.categoryId,
+          category,
+          categoryLabel: category?.name || 'Missing category',
+          amount: share.nativeAmount,
+          baseAmount: share.baseAmount,
+          signedBaseAmount: share.signedBaseAmount,
+          contributions: share
+        };
+        projected.searchText = buildRowSearchText(projected);
+        return projected;
+      })
+    : builtRows;
+  const filteredRows = filterTransactionRows(
+    searchTransactionRows(categoryRows, state.search),
+    state
+  );
   const sortedRows = sortTransactionRows(filteredRows, state.sort);
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / state.pageSize));
   const page = Math.min(state.page, totalPages);
@@ -577,6 +619,9 @@ function getTransactionEditDraft(workbook, transaction) {
       'PHP',
     fxRateToBase: Number(transaction && transaction.fxRateToBase) || 0,
     categoryId: asString(transaction && transaction.categoryId),
+    ...(transaction?.categorySplits?.length
+      ? { categorySplits: transaction.categorySplits.map((split) => ({ ...split })) }
+      : {}),
     counterpartyId: asString(transaction && transaction.counterpartyId),
     primaryAccountId: primaryAccountId || asString(transaction && transaction.primaryAccountId),
     secondaryAccountId:
@@ -623,6 +668,13 @@ export function previewTransactionTableInlineEdit(
   const nextFields = Object.assign({}, draft);
   const values =
     patch.values && typeof patch.values === 'object' ? patch.values : { [field]: patch.value };
+  if (
+    draft.categorySplits &&
+    values.categoryId !== undefined &&
+    values.categoryId !== draft.categoryId
+  ) {
+    return { ok: false, error: 'Open the purchase to edit its split categories.' };
+  }
   Object.keys(values).forEach((key) => {
     if (!EDITABLE_INLINE_FIELDS.includes(key)) return;
     if (key === 'amount') {

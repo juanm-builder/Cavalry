@@ -15,6 +15,7 @@ import {
   commandError,
   commandOk
 } from '@cavalry/finance-core/application/types/command-result.js';
+import { getTransactionCategoryAllocations } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import { isSupportedCategoryIcon, matchCategoryIcon } from './category-options.js';
 
 export const CATEGORY_ACTIONS = Object.freeze({
@@ -384,13 +385,19 @@ export function buildCategoriesFeatureModel(workbook, options = {}) {
     .filter(Boolean);
   const categoryById = new Map(categories.map((category) => [asText(category.id), category]));
   const spendByCategory = transactions.reduce((totals, transaction) => {
-    const categoryId = asText(transaction?.categoryId);
-    const category = categoryById.get(categoryId);
-    if (categoryId && category) {
-      totals[categoryId] = roundMoney(
-        (totals[categoryId] || 0) +
-          transactionCategoryActivity(workbook, transaction, category.type)
-      );
+    const category = categoryById.get(asText(transaction?.categoryId));
+    // The first category of a split receipt may be hidden from this view.
+    const type = transaction.categorySplits?.length ? 'expense' : category?.type;
+    if (type) {
+      const activity = transactionCategoryActivity(workbook, transaction, type);
+      for (const { categoryId, baseAmount } of getTransactionCategoryAllocations(
+        transaction,
+        activity
+      )) {
+        if (categoryById.has(categoryId)) {
+          totals[categoryId] = roundMoney((totals[categoryId] || 0) + baseAmount);
+        }
+      }
     }
     return totals;
   }, {});

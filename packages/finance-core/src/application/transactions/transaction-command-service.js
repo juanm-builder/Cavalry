@@ -477,7 +477,10 @@ export function getLedgerTransactionReplacementPrecondition(
     if (secondaryId) accountIds.add(secondaryId);
   });
   const categoryIds = new Set([asString(transaction && transaction.categoryId)]);
-  replacementInputs.forEach((input) => {
+  [transaction, ...replacementInputs].forEach((input) => {
+    if (Array.isArray(input?.categorySplits)) {
+      input.categorySplits.forEach((split) => categoryIds.add(asString(split?.categoryId)));
+    }
     const categoryId = asString(input && input.categoryId);
     if (categoryId) categoryIds.add(categoryId);
   });

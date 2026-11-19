@@ -1,3 +1,4 @@
+import { validStatementCheckHistory } from '../accounts/statement-check-service.js';
 import { validateLedgerInvariants } from '../../domain/ledger/invariants.js';
 import { normalizeLedgerTransaction } from '../../domain/ledger/transactions.js';
 import { normalizeDateKey } from '../../domain/money.js';
@@ -309,6 +310,17 @@ export function validateWorkbookAfterLoad(workbook, options = {}) {
     }
   });
   warnings.push(...versionIssues(options.rawWorkbook || workbook));
+  for (const account of asArray(source.accounts)) {
+    if (!validStatementCheckHistory(account?.statementChecks)) {
+      errors.push(
+        issue(
+          'invalid_statement_checks',
+          'Account has invalid saved statement checks.',
+          asString(account?.id)
+        )
+      );
+    }
+  }
 
   const invariants = validateLedgerInvariants(source);
   const invariantIssues = invariants.errors.map((item) =>

@@ -1,3 +1,5 @@
+import { buildManualLedgerTransaction } from '@cavalry/finance-core/domain/ledger/transactions.js';
+import { transactionHasCategory } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import {
   normalizeDateKey as normalizeDomainDateKey,
   roundMoney
@@ -448,7 +450,9 @@ export function getMeaningfulLedgerCleanupPayload(workbook, payload, services = 
 
 function categoryHasReferences(workbook, categoryId) {
   return (
-    (workbook.transactions || []).some((item) => item.categoryId === categoryId) ||
+    (workbook.transactions || []).some((transaction) =>
+      transactionHasCategory(transaction, categoryId)
+    ) ||
     (workbook.recurringItems || []).some((item) => item.categoryId === categoryId) ||
     (workbook.sheets || []).some(
       (sheet) =>
@@ -459,9 +463,32 @@ function categoryHasReferences(workbook, categoryId) {
 }
 
 function moveCategoryReferences(workbook, fromId, toId) {
-  (workbook.transactions || []).forEach((transaction) => {
-    if (transaction.categoryId === fromId) transaction.categoryId = toId;
+  const updated = (workbook.transactions || []).map((transaction, index) => {
+    if (!transactionHasCategory(transaction, fromId)) return transaction;
+    if (!transaction.categorySplits?.length) return { ...transaction, categoryId: toId };
+    const amounts = new Map();
+    for (const part of transaction.categorySplits) {
+      const id = part.categoryId === fromId ? toId : part.categoryId;
+      amounts.set(id, roundMoney((amounts.get(id) || 0) + part.amount));
+    }
+    const splits = Array.from(amounts, ([categoryId, amount]) => ({ categoryId, amount }));
+    const rebuilt = buildManualLedgerTransaction(
+      workbook,
+      {
+        ...transaction,
+        categoryId: splits[0].categoryId,
+        categorySplits: splits.length > 1 ? splits : [],
+        currency: transaction.originalCurrency,
+        primaryAccountId: transaction.lines.find((line) => line.direction === 'credit')?.accountId
+      },
+      transaction,
+      index
+    );
+    const result = { ...transaction, ...rebuilt };
+    if (!rebuilt.categorySplits) delete result.categorySplits;
+    return result;
   });
+  workbook.transactions = updated;
   (workbook.recurringItems || []).forEach((item) => {
     if (item.categoryId === fromId) item.categoryId = toId;
   });
@@ -779,6 +806,13 @@ export function validateLedgerCleanupDraft(workbook, draft, services = {}) {
   proposed.transactionPatches.forEach((patch) => {
     const transaction = findTransactionById(simulatedWorkbook, patch.transactionId);
     if (!transaction) throw new Error('Transaction not found: ' + patch.transactionId);
+    if (
+      transaction.categorySplits?.length &&
+      patch.categoryId &&
+      patch.categoryId !== transaction.categoryId
+    ) {
+      throw new Error('Choose the part of the purchase to recategorize in the transaction editor.');
+    }
     const getLedgerCleanupTransactionFields = requireService(
       services,
       'getLedgerCleanupTransactionFields'

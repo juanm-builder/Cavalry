@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import {
   AI_DRAFT_OBJECT_TYPES,
   AI_DRAFT_OPERATIONS,
@@ -151,7 +152,7 @@ function categoryHasReferences(workbook, categoryId) {
   const id = asString(categoryId);
   if (!id) return false;
   return (
-    (workbook.transactions || []).some((item) => item.categoryId === id) ||
+    (workbook.transactions || []).some((transaction) => transactionHasCategory(transaction, id)) ||
     (workbook.recurringItems || []).some((item) => item.categoryId === id) ||
     (workbook.sheets || []).some(
       (sheet) =>

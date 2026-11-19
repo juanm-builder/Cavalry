@@ -44,3 +44,16 @@ export * from './application/workbook/workbook-persistence-service.js';
 export * from './application/workbook/workbook-sync-merge-service.js';
 export * from './application/workbook/workbook-session-command-service.js';
 export * from './application/workbook/workbook-factory.js';
+
+export {
+  getCategorySplitIssue,
+  getStoredCategorySplitIssue,
+  getTransactionCategoryAllocations,
+  sameCategorySplits,
+  transactionHasCategory
+} from './domain/ledger/category-splits.js';
+export {
+  getStatementCheck,
+  saveStatementCheck,
+  validStatementCheckHistory
+} from './application/accounts/statement-check-service.js';

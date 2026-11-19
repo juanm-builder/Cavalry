@@ -1,3 +1,4 @@
+import { getTransactionCategoryAllocations } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '@cavalry/finance-core/domain/money.js';
 import { getLedgerHistoricalBalancesAsOf } from '@cavalry/finance-core/domain/ledger/balances.js';
 import {
@@ -587,28 +588,22 @@ function getAdvisorCategorySortRank(category) {
 }
 
 function buildAdvisorCategoryUsageMap(transactions, services = {}) {
-  return (Array.isArray(transactions) ? transactions : []).reduce((map, transaction) => {
-    const categoryId = String((transaction && transaction.categoryId) || '').trim();
-    if (!categoryId) {
-      return map;
-    }
-    if (!map[categoryId]) {
-      map[categoryId] = {
-        count: 0,
-        amount: 0,
-        source_refs: []
-      };
-    }
-    map[categoryId].count += 1;
-    map[categoryId].amount = roundMoney(
-      map[categoryId].amount + Math.abs(getTransactionBaseAmountForPacket(transaction, services))
-    );
+  const usage = Object.create(null);
+  for (const transaction of transactions || []) {
+    if (!transaction?.categoryId) continue;
+    const amount = getTransactionBaseAmountForPacket(transaction, services);
     const ref = getAdvisorTransactionSourceRef(transaction);
-    if (ref && map[categoryId].source_refs.indexOf(ref) < 0) {
-      map[categoryId].source_refs.push(ref);
+    for (const { categoryId, baseAmount } of getTransactionCategoryAllocations(
+      transaction,
+      amount
+    )) {
+      const row = (usage[categoryId] ??= { count: 0, amount: 0, source_refs: [] });
+      row.count += 1;
+      row.amount = roundMoney(row.amount + Math.abs(baseAmount));
+      if (ref && !row.source_refs.includes(ref)) row.source_refs.push(ref);
     }
-    return map;
-  }, {});
+  }
+  return usage;
 }
 
 export function buildAdvisorCategoryInventoryPacket(
@@ -1917,8 +1912,25 @@ export function getAdvisorTransactionImpactRow(workbook, transaction, services =
     description:
       transaction && transaction.description ? transaction.description : 'Ledger Transaction',
     account: getTransactionAccountLabelForPacket(workbook, transaction, services),
-    category: category ? category.name : 'Uncategorized',
+    category: transaction?.categorySplits?.length
+      ? transaction.categorySplits
+          .map(({ categoryId }) => getCategoryById(workbook, categoryId)?.name || 'Uncategorized')
+          .join(' · ')
+      : category
+        ? category.name
+        : 'Uncategorized',
     category_id: category ? category.id : '__uncategorized',
+    ...(transaction?.categorySplits?.length
+      ? {
+          category_allocations: getTransactionCategoryAllocations(transaction, impact).map(
+            (part) => ({
+              category_id: part.categoryId,
+              name: getCategoryById(workbook, part.categoryId)?.name || 'Uncategorized',
+              impact: part.baseAmount
+            })
+          )
+        }
+      : {}),
     flow_kind: kind,
     amount: advisorDecimal(amount),
     amount_display: formatMoneyForPacket(amount, workbook, services),
@@ -1955,30 +1967,35 @@ export function buildAdvisorNetWorthImpactPacket(workbook, context, options = {}
   const negativeRows = impactRows.filter((row) => Number(row.net_worth_impact) < 0);
   const positiveRows = impactRows.filter((row) => Number(row.net_worth_impact) > 0);
   const neutralRows = rows.filter((row) => Math.abs(Number(row.net_worth_impact) || 0) <= 0.0001);
-  const categoryMap = {};
+  const categoryMap = Object.create(null);
   impactRows.forEach((row) => {
-    const key = row.category_id || '__uncategorized';
-    if (!categoryMap[key]) {
-      categoryMap[key] = {
-        category_id: key,
-        name: row.category || 'Uncategorized',
-        total_impact: 0,
-        positive_impact: 0,
-        negative_impact: 0,
-        transaction_count: 0,
-        source_refs: []
-      };
-    }
-    const impact = Number(row.net_worth_impact) || 0;
-    categoryMap[key].total_impact = roundMoney(categoryMap[key].total_impact + impact);
-    if (impact > 0) {
-      categoryMap[key].positive_impact = roundMoney(categoryMap[key].positive_impact + impact);
-    } else if (impact < 0) {
-      categoryMap[key].negative_impact = roundMoney(categoryMap[key].negative_impact + impact);
-    }
-    categoryMap[key].transaction_count += 1;
-    if (row.source_ref) {
-      categoryMap[key].source_refs.push(row.source_ref);
+    const allocations = row.category_allocations || [
+      { category_id: row.category_id, name: row.category, impact: row.net_worth_impact }
+    ];
+    for (const allocation of allocations) {
+      const key = allocation.category_id || '__uncategorized';
+      if (!categoryMap[key]) {
+        categoryMap[key] = {
+          category_id: key,
+          name: allocation.name || 'Uncategorized',
+          total_impact: 0,
+          positive_impact: 0,
+          negative_impact: 0,
+          transaction_count: 0,
+          source_refs: []
+        };
+      }
+      const impact = Number(allocation.impact) || 0;
+      categoryMap[key].total_impact = roundMoney(categoryMap[key].total_impact + impact);
+      if (impact > 0) {
+        categoryMap[key].positive_impact = roundMoney(categoryMap[key].positive_impact + impact);
+      } else if (impact < 0) {
+        categoryMap[key].negative_impact = roundMoney(categoryMap[key].negative_impact + impact);
+      }
+      categoryMap[key].transaction_count += 1;
+      if (row.source_ref) {
+        categoryMap[key].source_refs.push(row.source_ref);
+      }
     }
   });
   const categorySummary = Object.keys(categoryMap)

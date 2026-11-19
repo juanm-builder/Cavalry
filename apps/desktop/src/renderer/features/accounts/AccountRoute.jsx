@@ -1,6 +1,8 @@
 import { PrivateValue } from '../../shared/PrivateValue.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { formatUiDateTime } from '../../shared/date-format.js';
+import { localDateKey } from '../../platform/ports.js';
 import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
@@ -12,7 +14,8 @@ import {
 import {
   AccountConfirmationModal,
   AccountCreateWizard,
-  AccountCurrencyRepairModal
+  AccountCurrencyRepairModal,
+  AccountStatementModal
 } from './AccountModals.jsx';
 import { AccountEditModal } from './AccountEditModal.jsx';
 import { AccountTransactionDetailModal } from './AccountTransactionDetailModal.jsx';
@@ -488,7 +491,7 @@ function AccountHistoryVisual({
 }
 
 function AccountDetailMenu({ selected, actions, onOpenModal }) {
-  if (selected.isSystem) return null;
+  if (selected.isSystem && !selected.canCheckStatement) return null;
   return (
     <details className="account-detail-menu">
       <summary
@@ -499,29 +502,45 @@ function AccountDetailMenu({ selected, actions, onOpenModal }) {
         <Icon name="more_vert" />
       </summary>
       <div className="account-detail-menu-popover">
-        <PrivateValue
-          as="button"
-          className="account-detail-menu-item"
-          type="button"
-          {...withClick(
-            actions.action(selected.isArchived ? 'restore-account' : 'archive-account', {
-              accountId: selected.id
-            }),
-            () => onOpenModal(selected.isArchived ? 'restore' : 'archive', selected)
-          )}
-        >
-          <Icon name={selected.isArchived ? 'unarchive' : 'archive'} />
-          {selected.isArchived ? 'Restore Account' : 'Archive Account'}
-        </PrivateValue>
-        <button
-          className="account-detail-menu-item danger"
-          type="button"
-          {...withClick(actions.action('delete-account', { accountId: selected.id }), () =>
-            onOpenModal('delete', selected)
-          )}
-        >
-          <Icon name="delete" /> Delete Account
-        </button>
+        {selected.canCheckStatement ? (
+          <button
+            className="account-detail-menu-item"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onOpenModal('statement', selected);
+            }}
+            type="button"
+          >
+            <Icon name="receipt_long" /> Check statement
+          </button>
+        ) : null}
+        {!selected.isSystem ? (
+          <>
+            <PrivateValue
+              as="button"
+              className="account-detail-menu-item"
+              type="button"
+              {...withClick(
+                actions.action(selected.isArchived ? 'restore-account' : 'archive-account', {
+                  accountId: selected.id
+                }),
+                () => onOpenModal(selected.isArchived ? 'restore' : 'archive', selected)
+              )}
+            >
+              <Icon name={selected.isArchived ? 'unarchive' : 'archive'} />
+              {selected.isArchived ? 'Restore Account' : 'Archive Account'}
+            </PrivateValue>
+            <button
+              className="account-detail-menu-item danger"
+              type="button"
+              {...withClick(actions.action('delete-account', { accountId: selected.id }), () =>
+                onOpenModal('delete', selected)
+              )}
+            >
+              <Icon name="delete" /> Delete Account
+            </button>
+          </>
+        ) : null}
       </div>
     </details>
   );
@@ -600,6 +619,21 @@ function AccountDetail({
         ) : null}
         <AccountDetailMenu actions={actions} onOpenModal={onOpenModal} selected={selected} />
       </div>
+      {selected.latestStatement ? (
+        <div className="panel-note" aria-label="Last checked statement">
+          <strong>Last checked statement</strong>
+          <PrivateValue as="div">
+            {formatUiDateTime(selected.latestStatement.date)} ·{' '}
+            {selected.latestStatement.balanceCopy}
+          </PrivateValue>
+          <PrivateValue
+            as="small"
+            className={selected.latestStatement.matches ? 'good' : 'status-warn'}
+          >
+            {selected.latestStatement.status}
+          </PrivateValue>
+        </div>
+      ) : null}
       {selected.changeCopy ? (
         <div className={`selected-account-delta ${selected.changeTone || ''}`}>
           <PrivateValue as="span">{selected.changeCopy}</PrivateValue>
@@ -909,6 +943,16 @@ function AccountRouteController({
           error={activeModal.error}
           onCancel={() => setModal(null)}
           onSubmit={(payload) => runCommand({ type: ACCOUNT_ACTIONS.UPDATE, payload })}
+        />
+      ) : null}
+      {activeModal?.kind === 'statement' && modalAccount && workbook ? (
+        <AccountStatementModal
+          account={modalAccount}
+          defaultDate={asOfDate || services?.today?.() || localDateKey()}
+          error={activeModal.error}
+          onCancel={() => setModal(null)}
+          onSubmit={(payload) => runCommand({ type: ACCOUNT_ACTIONS.CHECK_STATEMENT, payload })}
+          workbook={workbook}
         />
       ) : null}
       {activeModal?.kind === 'repair-currency' ? (

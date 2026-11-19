@@ -1,3 +1,4 @@
+import { transactionHasCategory } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import { roundMoney } from '@cavalry/finance-core/domain/money.js';
 import { advisorTransactionTextKey } from './transaction-drafts.js';
 
@@ -88,7 +89,7 @@ function categoryHasEntityReferences(workbook, categoryId) {
     return false;
   }
   return (
-    (workbook.transactions || []).some((transaction) => transaction.categoryId === id) ||
+    (workbook.transactions || []).some((transaction) => transactionHasCategory(transaction, id)) ||
     (workbook.recurringItems || []).some((item) => item.categoryId === id) ||
     (workbook.sheets || []).some(
       (sheet) =>
@@ -215,6 +216,16 @@ export function applyCategoryAiDraftMutation(workbook, draft, services = {}) {
   if (draft && draft.operation === 'delete') {
     const category = getCategoryById(workbook, draft.targetId || proposed.id);
     if (!category) throw new Error('Category not found.');
+    if (
+      workbook.transactions?.some(
+        (transaction) =>
+          transaction.categorySplits?.length && transactionHasCategory(transaction, category.id)
+      )
+    ) {
+      throw new Error(
+        'This category is used on a split purchase. Archive it to keep the receipt history.'
+      );
+    }
     workbook.categories = (workbook.categories || []).filter((item) => item.id !== category.id);
     (workbook.transactions || []).forEach((transaction) => {
       if (transaction.categoryId === category.id) transaction.categoryId = '';

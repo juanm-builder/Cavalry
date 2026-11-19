@@ -47,6 +47,7 @@ export function buildChatGptContextPack(workbook, options = {}) {
     ? asString(options.privacyMode)
     : 'redacted_details';
   const transactions = mode === 'summary_only' ? [] : getTransactions(workbook || {}, options);
+  const includeSplits = transactions.some((transaction) => transaction.categorySplits?.length);
   const transactionRows = [
     [
       'transaction_id',
@@ -56,7 +57,8 @@ export function buildChatGptContextPack(workbook, options = {}) {
       'currency',
       'category_id',
       'account_id',
-      'note'
+      'note',
+      ...(includeSplits ? ['category_splits'] : [])
     ]
   ].concat(
     transactions.map((transaction) => [
@@ -67,7 +69,10 @@ export function buildChatGptContextPack(workbook, options = {}) {
       transaction.originalCurrency || transaction.currency || workbook.currency || 'PHP',
       transaction.categoryId || '',
       transaction.primaryAccountId || '',
-      options.excludeNotes === true ? '' : mask(transaction.note, mode, options)
+      options.excludeNotes === true ? '' : mask(transaction.note, mode, options),
+      ...(includeSplits
+        ? [transaction.categorySplits?.length ? JSON.stringify(transaction.categorySplits) : '']
+        : [])
     ])
   );
   const accounts = mode === 'summary_only' ? [] : workbook.accounts || [];

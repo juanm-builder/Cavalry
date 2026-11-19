@@ -1,5 +1,6 @@
 // Tests for Advisor ledger draft semantics.
 
+import { buildManualLedgerTransaction, getStoredCategorySplitIssue } from '@cavalry/finance-core';
 import { describe, expect, it } from 'vitest';
 import {
   applyLedgerCleanupAiDraftMutation,
@@ -328,6 +329,55 @@ describe('advisor ledger draft domain', () => {
     const meaningful = getMeaningfulLedgerCleanupPayload(workbook, cleanup, services);
     expect(meaningful.categoryChanges).toHaveLength(1);
     expect(meaningful.transactionPatches.map((patch) => patch.transactionId)).toEqual(['txn-misc']);
+  });
+
+  it('reposts a merged receipt category and combines the shares when the categories become one', () => {
+    const workbook = makeWorkbook();
+    const original = buildManualLedgerTransaction(
+      workbook,
+      {
+        template: 'expense_paid',
+        date: '2026-06-08',
+        currency: 'PHP',
+        primaryAccountId: 'cash',
+        amount: 85,
+        description: 'Market',
+        categorySplits: [
+          { categoryId: 'food', amount: 60 },
+          { categoryId: 'misc', amount: 25 }
+        ]
+      },
+      null,
+      10
+    );
+    workbook.transactions.push(original);
+    const merge = (from, to) =>
+      applyLedgerCleanupAiDraftMutation(
+        workbook,
+        {
+          objectType: 'ledgerCleanup',
+          operation: 'edit',
+          proposed: {
+            categoryChanges: [{ action: 'merge', categoryId: from, replacementCategoryId: to }]
+          }
+        },
+        services
+      );
+    merge('misc', 'gifts');
+    const receipt = () =>
+      workbook.transactions.find((transaction) => transaction.id === original.id);
+    expect(getStoredCategorySplitIssue(workbook, receipt())).toBeNull();
+    expect(receipt().categorySplits).toEqual([
+      { categoryId: 'food', amount: 60 },
+      { categoryId: 'gifts', amount: 25 }
+    ]);
+    merge('gifts', 'food');
+    expect(receipt().categorySplits).toBeUndefined();
+    expect(receipt().categoryId).toBe('food');
+    expect(receipt().lines.map(({ accountId, amount }) => [accountId, amount])).toEqual([
+      ['food-account', 85],
+      ['cash', 85]
+    ]);
   });
 
   it('applies cleanup drafts with created references and merged references', () => {

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { getCategorySplitIssue } from '@cavalry/finance-core/domain/ledger/category-splits.js';
 import {
   deleteLedgerTransactionCommand,
   submitManualTransactionCommand,
@@ -174,7 +175,10 @@ function validateCreateComposerDetails(workbook, draft) {
         )
       );
     }
-    if (!(category && category.type === 'expense')) {
+    if (draft.categorySplits?.length) {
+      const splitIssue = getCategorySplitIssue(workbook, draft);
+      if (splitIssue) issues.push(splitIssue);
+    } else if (!(category && category.type === 'expense')) {
       issues.push(
         composerIssue('invalid_expense_category', 'categoryId', 'Pick an expense category.')
       );
@@ -296,6 +300,16 @@ function updateComposer(state, update) {
 function updateComposerField(workbook, state, field, value) {
   const update = { [field]: value };
   const draft = state.modal && state.modal.type === 'composer' ? state.modal.draft : null;
+  if (field === 'categorySplits') {
+    update.categoryId = value[0]?.categoryId ?? draft?.categoryId ?? '';
+  }
+  if (
+    field === 'template' &&
+    draft?.categorySplits?.length &&
+    createTransactionKind(value) !== 'expense'
+  ) {
+    update.categorySplits = [];
+  }
   if (
     draft &&
     !draft.transactionId &&
@@ -334,6 +348,7 @@ function openComposer(workbook, state, transactionId, services, preset = {}) {
     'fxRateToBase',
     'description',
     'categoryId',
+    'categorySplits',
     'primaryAccountId',
     'secondaryAccountId',
     'counterpartyId',
@@ -395,6 +410,7 @@ function chooseCreateTransactionType(state, template) {
       draft: {
         ...state.modal.draft,
         template: resolvedTemplate,
+        ...(typeChanged && state.modal.draft.categorySplits?.length ? { categorySplits: [] } : {}),
         categoryId: typeChanged ? '' : state.modal.draft.categoryId,
         primaryAccountId: typeChanged ? '' : state.modal.draft.primaryAccountId,
         secondaryAccountId:

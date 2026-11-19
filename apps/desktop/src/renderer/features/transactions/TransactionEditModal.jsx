@@ -5,12 +5,11 @@ import { CavalryIcon } from '../../shared/CavalryIcon.jsx';
 import { createPortal } from 'react-dom';
 
 import { ActionBindingProvider, useActionBindings } from '../../shared/action-binding.jsx';
-import { CategorizedSelect } from '../../shared/CategorizedSelect.jsx';
+import { TransactionCategoryField } from './TransactionCategoryField.jsx';
 import { FinancialValueInput } from '../../shared/FinancialValueInput.jsx';
 import { CavalrySelect } from '../../shared/CavalrySelect.jsx';
 import { InstitutionMark } from '../../shared/InstitutionSelect.jsx';
 import { useModalDismiss } from '../../shared/use-modal-dismiss.js';
-import { CATEGORY_ACTIONS } from '../categories/category-controller.js';
 
 const CONTEXT_KINDS = new Set([
   'bank',
@@ -429,25 +428,18 @@ function TransactionEditModalContent({ modal }) {
 
           <div
             className={`transaction-edit-grid transaction-edit-grid-2 transaction-edit-copy-grid${
-              showCategory ? '' : ' single'
+              showCategory && !draft.categorySplits?.length ? '' : ' single'
             }`}
           >
             {showCategory ? (
-              <div className="field transaction-edit-field">
-                <PrivateValue as="label" htmlFor="transaction-category">
-                  {category.label}
-                </PrivateValue>
-                <CategorizedSelect
-                  aria-label={category.label}
-                  createCategoryType={expectedCategoryType(template) || 'expense'}
-                  id="transaction-category"
-                  onCreateCategory={(payload) => actions.dispatch(CATEGORY_ACTIONS.CREATE, payload)}
-                  options={categories}
-                  placeholder={category.placeholder}
-                  value={draft.categoryId || ''}
-                  {...fieldBinding('categoryId')}
-                />
-              </div>
+              <TransactionCategoryField
+                categoryType={expectedCategoryType(template) || 'expense'}
+                className="field transaction-edit-field"
+                draft={draft}
+                label={category.label}
+                options={categories}
+                placeholder={category.placeholder}
+              />
             ) : null}
             <div className="field transaction-edit-field">
               <label htmlFor="transaction-description">Description</label>
