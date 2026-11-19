@@ -340,31 +340,129 @@
   font-size: 20px;
 }
 
-/* List view keeps one row per account but lets long names wrap instead of
-   truncating, and reserves a fixed column for the balance. Guarded so the
-   narrow-width stacked layout in 12-accounts.css still wins below 760px. */
-@media (min-width: 761px) {
-  .account-compact-list .account-list-card-main {
-    grid-template-columns: 44px minmax(0, 1fr) minmax(150px, max-content) 20px;
-    align-items: center;
-  }
+/* Size the register to its own column, including when the detail pane is open. */
+.accounts-layout-grid > .reference-card:has(.account-compact-list) {
+  container: account-register / inline-size;
 }
-
-.account-compact-list .account-list-card-copy strong {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 14px;
-  line-height: 1.3;
+.account-collection[data-account-view='list'] {
+  gap: 14px;
+  margin-top: 10px;
+}
+.account-collection[data-account-view='list'] .account-group {
+  gap: 0;
+}
+.account-compact-list {
+  gap: 0;
+  margin-top: 0;
+}
+.account-compact-list .account-list-card {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.account-compact-list .account-list-card-main {
+  grid-template: 'mark name balance arrow' auto / 28px minmax(0, 1fr) minmax(0, max-content) 12px;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 10px;
+}
+.account-compact-list .account-list-card-main > .mini-icon,
+.account-compact-list .account-list-card-main > .institution-mark.institution-mark {
+  grid-area: mark;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+}
+.account-compact-list .mini-icon .cavalry-glyph {
+  font-size: 15px;
+}
+.account-compact-list .account-list-card-chevron {
+  grid-area: arrow;
+  font-size: 12px;
+}
+.account-compact-list .account-list-card-copy {
+  grid-area: name;
+}
+.account-compact-list .account-list-card-copy strong,
+.account-compact-list .account-list-card-copy small {
+  margin: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
 }
-
+.account-compact-list .account-list-card-copy strong {
+  font-size: 13px;
+}
+.account-compact-list .account-list-card-financial {
+  display: grid;
+  grid-area: balance;
+  justify-content: end;
+  justify-items: end;
+  gap: 0;
+}
 .account-compact-list .account-list-card-financial b {
-  font-family: var(--font-ledger);
-  white-space: nowrap;
+  font: 700 14px/1.3 var(--font-ledger);
+  overflow-wrap: anywhere;
+}
+.account-compact-list .account-list-card-main:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.account-compact-list .account-create-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 0;
+  border-bottom: 1px dashed var(--line);
+  border-radius: 0;
+}
+.account-compact-list .account-create-entry .cavalry-glyph {
+  width: 16px;
+  height: 16px;
+  padding: 3px;
+  font-size: 16px;
+}
+.account-compact-list .account-create-entry small {
+  display: none;
+}
+@container account-register (min-width: 640px) {
+  .account-compact-list .account-list-card-main {
+    grid-template:
+      'mark name meta activity balance arrow' auto /
+      28px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 1fr) 12px;
+    min-height: 40px;
+  }
+  .account-compact-list .account-list-card-copy,
+  .account-compact-list .account-list-card-financial {
+    display: contents;
+  }
+  .account-compact-list .account-list-card-copy strong {
+    grid-area: name;
+  }
+  .account-compact-list .account-list-card-copy small {
+    grid-area: meta;
+  }
+  .account-compact-list .account-list-card-financial small {
+    grid-area: activity;
+    justify-self: end;
+    white-space: normal;
+  }
+  .account-compact-list .account-list-card-financial b {
+    grid-area: balance;
+    justify-self: end;
+    text-align: right;
+  }
+}
+@container account-register (min-width: 860px) {
+  .accounts-register-toolbar {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 16px;
+  }
+  .accounts-register-filters {
+    grid-column: auto;
+  }
 }
 
 /* ------------------------------------------------------------ Balance chart
