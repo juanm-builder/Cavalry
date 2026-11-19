@@ -144,6 +144,94 @@ describe('split purchases', () => {
     expect(getStoredCategorySplitIssue(empty, imported)).toBeNull();
   });
 
+  it.each(['cash', 'credit-card'])(
+    'recovers equal shares from distinct preserved debits after a legacy re-save on %s',
+    (accountId) => {
+      const categorySplits = fields.categorySplits.map(({ categoryId }) => ({
+        categoryId,
+        amount: 5
+      }));
+      const source = workbook();
+      source.categories = source.categories.filter(
+        (category) => category.id !== 'archived-shopping'
+      );
+      const original = submitManualTransactionCommand(source, {
+        ...fields,
+        categorySplits,
+        primaryAccountId: accountId,
+        currency: 'USD',
+        fxRateToBase: 55.555,
+        allowCurrencyConversion: true
+      });
+      const legacyWorkbook = structuredClone(original.workbook);
+      delete legacyWorkbook.transactions[0].categorySplits;
+      const recovered = deserializeWorkbookFromFile(JSON.stringify(legacyWorkbook), {
+        rejectInvalid: true
+      }).workbook;
+      expect(recovered.transactions).toEqual(original.workbook.transactions);
+      expect(getLedgerNativeBalances(recovered)).toEqual(
+        getLedgerNativeBalances(original.workbook)
+      );
+      expect(summarizeLedgerActivity(recovered).categoryTotals).toEqual({
+        food: 277.78,
+        shopping: 277.77
+      });
+      expect(
+        deserializeWorkbookFromFile(serializeWorkbookForSave(recovered).html, {
+          rejectInvalid: true
+        }).workbook.transactions
+      ).toEqual(recovered.transactions);
+    }
+  );
+
+  it('requires unambiguous category links, exact stored totals, and a purchase template before recovery', () => {
+    const source = workbook();
+    source.categories = source.categories.filter((category) => category.id !== 'archived-shopping');
+    const posted = submitManualTransactionCommand(source, fields);
+    function loadAfter(change) {
+      const ledger = structuredClone(posted.workbook);
+      const tx = ledger.transactions[0];
+      delete tx.categorySplits;
+      change(ledger, tx);
+      return deserializeWorkbookFromFile(JSON.stringify(ledger));
+    }
+    for (const change of [
+      (ledger) =>
+        ledger.categories.push({
+          ...ledger.categories.find((item) => item.id === 'shopping'),
+          id: 'also-shopping'
+        }),
+      (_ledger, tx) => {
+        tx.categoryId = 'shopping';
+      },
+      (_ledger, tx) => {
+        tx.template = 'manual_journal';
+      },
+      (_ledger, tx) => {
+        tx.lines.at(-1).amount += 1;
+      },
+      (_ledger, tx) => {
+        delete tx.baseAmount;
+      },
+      (_ledger, tx) => {
+        tx.lines[0].baseAmount -= 0.01;
+        tx.lines[1].baseAmount += 0.01;
+      },
+      (_ledger, tx) => {
+        tx.lines[1].accountId = tx.lines[0].accountId;
+      }
+    ]) {
+      expect(loadAfter(change).workbook.transactions[0].categorySplits).toBeUndefined();
+    }
+    const explicit = loadAfter((_ledger, tx) => {
+      tx.categorySplits = [];
+    });
+    expect(explicit.workbook.transactions[0].categorySplits).toEqual([]);
+    expect(explicit.validation.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'invalid_category_splits' })])
+    );
+  });
+
   it('keeps omitted allocations on edits, rebuilds changed allocations and explicitly removes them', () => {
     const { workbook: ledger, transaction } = submitManualTransactionCommand(workbook(), fields);
     const edit = {

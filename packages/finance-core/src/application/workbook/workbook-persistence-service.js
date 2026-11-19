@@ -1,3 +1,4 @@
+import { getStoredCategorySplitIssue } from '../../domain/ledger/category-splits.js';
 import { validStatementCheckHistory } from '../accounts/statement-check-service.js';
 import { validateLedgerInvariants } from '../../domain/ledger/invariants.js';
 import { normalizeLedgerTransaction } from '../../domain/ledger/transactions.js';
@@ -165,8 +166,50 @@ function normalizeRecurringReconciliationForPersistence(reconciliation, index, o
   });
 }
 
+// Older clients omit categorySplits when saving, but preserve the posted lines.
+function recoverCategorySplits(transaction, workbook) {
+  if (
+    transaction?.categorySplits !== undefined ||
+    !['expense_paid', 'expense_charged'].includes(transaction?.template) ||
+    !Array.isArray(transaction.lines) ||
+    transaction.lines.length < 3 ||
+    typeof transaction.amount !== 'number' ||
+    !transaction.originalCurrency
+  )
+    return transaction;
+
+  const funding = transaction.lines.at(-1);
+  // If the funding amount uses a third currency, only the persisted base-to-USD
+  // rate can substantiate its native amount; current rates cannot prove it.
+  if (
+    funding?.currency !== transaction.originalCurrency &&
+    funding?.currency !== workbook.currency &&
+    !(
+      transaction.originalCurrency === workbook.currency &&
+      funding?.currency === 'USD' &&
+      transaction.fxRateToBase > 0
+    )
+  )
+    return transaction;
+
+  const categorySplits = [];
+  for (const line of transaction.lines.slice(0, -1)) {
+    if (line?.direction !== 'debit' || !line.accountId) return transaction;
+    const matches = workbook.categories.filter(
+      (category) =>
+        category.linkedAccountId === line.accountId ||
+        (Array.isArray(category.previousLinkedAccountIds) &&
+          category.previousLinkedAccountIds.includes(line.accountId))
+    );
+    if (matches.length !== 1 || matches[0].type !== 'expense') return transaction;
+    categorySplits.push({ categoryId: matches[0].id, amount: line.amount });
+  }
+  const candidate = { ...transaction, categorySplits };
+  return getStoredCategorySplitIssue(workbook, candidate) ? transaction : candidate;
+}
+
 function normalizeTransactionForPersistence(transaction, index, workbook, options) {
-  return normalizeLedgerTransaction(transaction, index, workbook, {
+  return normalizeLedgerTransaction(recoverCategorySplits(transaction, workbook), index, workbook, {
     createId: options.createId
   });
 }
