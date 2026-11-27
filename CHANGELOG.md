@@ -2,6 +2,14 @@
 
 Notable user-visible and compatibility-relevant changes are recorded here. Release entries follow the [changelog policy](docs/development/changelog-policy.md).
 
+## 2.2.17 - 2026-11-27
+
+- Foreign-currency entries use the confirmed exchange rate in both directions. Fully spent foreign balances return to zero. Previously saved conversions keep their recorded values.
+- A purchase corrected to a refund reduces spending. Credit purchases count when charged, and bank payments count once in cash flow when the card is paid.
+- Saving an open edit after a transaction was deleted now reports that the transaction is gone.
+- Add split purchases and check statement balances. The Accounts list fits more rows, and only credit card accounts use payment card styling.
+- No workbook migration is required. Release verification and signed installer details are recorded on the GitHub release.
+
 ## 2.2.15 - 2026-09-29
 
 ### Fixed and improved
