@@ -195,8 +195,8 @@ describe('ledger summaries', () => {
     expect(summary.expense).toBe(2029);
     expect(summary.savings).toBe(3000);
     expect(summary.debt).toBe(1200);
-    expect(summary.outflow).toBe(6229);
-    expect(summary.net).toBe(43771);
+    expect(summary.outflow).toBe(2029);
+    expect(summary.net).toBe(47971);
     expect(summary.categoryTotals).toMatchObject({
       salary: 50000,
       food: 250,
@@ -223,25 +223,21 @@ describe('ledger summaries', () => {
     ]);
     expect(summary.income).toBe(0);
     expect(summary.expense).toBe(1779);
-    expect(summary.net).toBe(-1779);
+    expect(summary.net).toBe(-579);
   });
 
   it('builds monthly flow breakdowns sorted by absolute category total', () => {
     const workbook = addSummarySpecificTransactions(makeIncomeAndExpenseWorkbook());
     const breakdown = getMonthlyFlowBreakdown(workbook, '2026-06', 'outflow');
 
-    expect(breakdown.total).toBe(6229);
+    expect(breakdown.total).toBe(2029);
     expect(breakdown.transactions.map((transaction) => transaction.id)).toEqual([
       'txn-food-cash',
       'txn-transport-cash',
-      'txn-card-shopping',
       'txn-subscription',
-      'txn-savings',
       'txn-debt'
     ]);
     expect(breakdown.rows.map((row) => row.id)).toEqual([
-      'emergency-fund',
-      'shopping',
       'card-payment',
       'subscriptions',
       'food',

@@ -370,7 +370,10 @@ function buildSpendingRows(rows, limit = 6) {
 }
 
 export function buildBudgetPeriodSummaryViewModel(workbook, range, _options = {}) {
-  return clonePlain(getPeriodActivitySummary(workbook, normalizeDateRange(range)));
+  const actual = clonePlain(getPeriodActivitySummary(workbook, normalizeDateRange(range)));
+  // Budget variance compares posted category allocations to their planned amounts.
+  const outflow = roundMoney(actual.expense + actual.savings + actual.debt);
+  return { ...actual, outflow, net: roundMoney(actual.income - outflow) };
 }
 
 export function buildBudgetPlanVsActualViewModel(workbook, range, _options = {}) {

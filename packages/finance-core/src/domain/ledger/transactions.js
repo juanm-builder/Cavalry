@@ -1,3 +1,4 @@
+import { getConfiguredFxRate } from './balances.js';
 import {
   addCategoryTotals,
   getCategorySplitIssue,
@@ -7,6 +8,7 @@ import {
 import { normalizeDateKey, roundMoney } from '../money.js';
 import { isTransactionBalanced } from './validation.js';
 import {
+  addCashMovement,
   getTransactionContributions,
   inferTransactionEventKind,
   normalizeTransactionEventKind
@@ -229,26 +231,11 @@ function getFxRateBetweenCurrencies(workbook, fromCurrency, toCurrency, fxRateOv
   }
   const base = baseCurrency(workbook);
   const overrideRate = Number(fxRateOverride) || 0;
-  if (overrideRate > 0) {
-    if (from === 'USD' && to === base) return overrideRate;
-    if (from === base && to === 'USD') return 1 / overrideRate;
+  if (Number.isFinite(overrideRate) && overrideRate > 0) {
+    if (to === base) return overrideRate;
+    if (from === base) return 1 / overrideRate;
   }
-  const rates = Array.isArray(workbook && workbook.fxRates) ? workbook.fxRates : [];
-  const exact = rates.find(
-    (rate) => rate && rate.fromCurrency === from && rate.toCurrency === to && Number(rate.rate) > 0
-  );
-  if (exact) return Number(exact.rate);
-  const inverse = rates.find(
-    (rate) => rate && rate.fromCurrency === to && rate.toCurrency === from && Number(rate.rate) > 0
-  );
-  if (inverse) return 1 / Number(inverse.rate);
-  const usdToBaseRate =
-    Number(workbook && workbook.settings && workbook.settings.usdToBaseRate) || 0;
-  if (usdToBaseRate > 0) {
-    if (from === 'USD' && to === base) return usdToBaseRate;
-    if (from === base && to === 'USD') return 1 / usdToBaseRate;
-  }
-  return 0;
+  return getConfiguredFxRate(workbook, from, to);
 }
 
 function convertAmountBetweenCurrencies(
@@ -265,7 +252,10 @@ function convertAmountBetweenCurrencies(
     return roundMoney(numeric);
   }
   const rate = getFxRateBetweenCurrencies(workbook, from, to, fxRateOverride);
-  return rate > 0 ? roundMoney(numeric * rate) : roundMoney(numeric);
+  if (!(rate > 0 && Number.isFinite(rate))) {
+    throw new Error(`Enter an exchange rate for ${from} to ${to} before posting.`);
+  }
+  return roundMoney(numeric * rate);
 }
 
 function convertAmountToBase(workbook, amount, currency, fxRateOverride) {
@@ -341,7 +331,13 @@ export function normalizeLedgerTransaction(transaction, index = 0, workbook = {}
           baseAmount: roundMoney(
             typeof (line && line.baseAmount) === 'number'
               ? line.baseAmount
-              : convertAmountToBase(workbook, amount, currency, fxRateToBase)
+              : amount *
+                  getFxRateBetweenCurrencies(
+                    workbook,
+                    currency,
+                    baseCurrency(workbook),
+                    fxRateToBase
+                  )
           ),
           note: String(line && line.note ? line.note : '')
         };
@@ -430,6 +426,8 @@ export function buildManualLedgerTransaction(
     currency === 'USD' &&
     baseCurrency(workbook) === 'PHP' &&
     (template === 'expense_paid' || template === 'expense_charged');
+  if (!Number.isFinite(fxRateToBase) || fxRateToBase < 0)
+    throw new Error('Enter a finite positive exchange rate.');
   const transactionFxRateToBase =
     fxRateToBase > 0
       ? fxRateToBase
@@ -453,6 +451,16 @@ export function buildManualLedgerTransaction(
   const secondaryAccount = secondaryAccountId
     ? findLedgerAccount(workbook, secondaryAccountId)
     : null;
+  if (transactionFxRateToBase > 0) {
+    const postingCurrencies = [currency, primaryAccount?.currency, secondaryAccount?.currency];
+    const foreign = new Set(
+      postingCurrencies.filter((value) => value && value !== baseCurrency(workbook))
+    );
+    if (foreign.size > 1)
+      throw new Error(
+        'One exchange rate cannot price two foreign currencies. Record each conversion through the base currency.'
+      );
+  }
   const lines = [];
   let finalCategoryId = categoryId;
   let resolvedDescription = description;
@@ -678,7 +686,10 @@ export function buildManualLedgerTransaction(
       template,
       eventKind:
         normalizeTransactionEventKind(fields.eventKind) ||
-        normalizeTransactionEventKind(existingTransaction && existingTransaction.eventKind) ||
+        (existingTransaction &&
+          normalizeTransactionEventKind(existingTransaction.template) ===
+            normalizeTransactionEventKind(template) &&
+          inferTransactionEventKind(workbook, existingTransaction)) ||
         inferTransactionEventKind(workbook, { template, categoryId: finalCategoryId }),
       description: resolvedDescription,
       categoryId: finalCategoryId,
@@ -738,6 +749,7 @@ export function summarizeLedgerActivity(workbook, options = {}) {
     expense: 0,
     savings: 0,
     debt: 0,
+    inflow: 0,
     outflow: 0,
     net: 0,
     categoryTotals: Object.create(null),
@@ -751,6 +763,7 @@ export function summarizeLedgerActivity(workbook, options = {}) {
       }
       const contribution = getTransactionContributions(workbook, transaction);
       if (!contribution.resolved) return;
+      addCashMovement(summary, contribution);
       const kind = contribution.flowKind;
       const amount = contribution.signedBaseAmount;
       if (kind === 'inflow') summary.income = roundMoney(summary.income + amount);
@@ -766,8 +779,6 @@ export function summarizeLedgerActivity(workbook, options = {}) {
       }
     }
   );
-  summary.outflow = roundMoney(summary.expense + summary.savings + summary.debt);
-  summary.net = roundMoney(summary.income - summary.outflow);
   summary.categoryTotals = { ...summary.categoryTotals };
   return summary;
 }

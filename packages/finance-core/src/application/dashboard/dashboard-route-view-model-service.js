@@ -4,7 +4,8 @@ import {
   getAccountBalanceSnapshotAsOf,
   getAssetLiabilityTotalsAsOf
 } from '../../domain/ledger/balances.js';
-import { getPeriodActivitySummary, getTransactionFlowKind } from '../../domain/ledger/summaries.js';
+import { createTransactionContributionReader } from '../../domain/ledger/transaction-contributions.js';
+import { getPeriodActivitySummary } from '../../domain/ledger/summaries.js';
 import { getAccountViewItems } from '../accounts/account-view-model-service.js';
 import { buildBudgetRouteViewModel } from '../budgets/budget-route-view-model-service.js';
 import { buildReportsCategoryBreakdownViewModel } from '../reports/reports-route-view-model-service.js';
@@ -181,7 +182,7 @@ function getMonthlyFlowRows(workbook, range) {
         monthLabel: getMonthLabel(sheet),
         range: summaryRange,
         totals: {
-          income: summary.income,
+          income: summary.inflow,
           expense: summary.expense,
           outflow: summary.outflow,
           actualNet: summary.net
@@ -211,6 +212,7 @@ function buildTimelineSummaryRow(workbook, start, end, options = {}) {
     end: formatTimelineDateKey(end)
   };
   const summary = getPeriodActivitySummary(workbook, range);
+  const readContribution = createTransactionContributionReader(workbook);
   return {
     id: options.id || `timeline-${range.start}`,
     periodKey: options.periodKey || range.start,
@@ -219,12 +221,16 @@ function buildTimelineSummaryRow(workbook, start, end, options = {}) {
     label: options.label || '',
     shortLabel: options.shortLabel || options.label || '',
     range,
-    transactions: clonePlain(summary.transactions).map((transaction) => ({
-      ...transaction,
-      flowKind: getTransactionFlowKind(transaction, workbook)
-    })),
+    transactions: clonePlain(summary.transactions).map((transaction) => {
+      const contribution = readContribution(transaction);
+      return {
+        ...transaction,
+        flowKind: contribution.flowKind,
+        cashFlow: contribution.metrics.cashFlow
+      };
+    }),
     totals: {
-      income: summary.income,
+      income: summary.inflow,
       expense: summary.expense,
       outflow: summary.outflow,
       actualNet: summary.net
@@ -367,7 +373,7 @@ function getDashboardTimelineAverages(periodSummary, range) {
   const weekCount = Math.max(1, dayCount / 7);
   const monthCount = Math.max(1, dayCount / 30.4375);
   const yearCount = Math.max(1, dayCount / 365.25);
-  const income = Number(periodSummary && periodSummary.income) || 0;
+  const income = Number(periodSummary && periodSummary.inflow) || 0;
   const outflow = Number(periodSummary && periodSummary.outflow) || 0;
   const spending = Number(periodSummary && periodSummary.expense) || 0;
   const net = Number(periodSummary && periodSummary.net) || 0;
@@ -452,7 +458,7 @@ export function buildDashboardStatCardsViewModel(workbook, options = {}) {
     range,
     asOfDate,
     period: {
-      income: periodSummary.income,
+      income: periodSummary.inflow,
       expense: periodSummary.expense,
       outflow: periodSummary.outflow,
       net: periodSummary.net
@@ -475,7 +481,7 @@ export function buildDashboardStatCardsViewModel(workbook, options = {}) {
       {
         id: 'total_inflows',
         label: 'Total Inflows',
-        value: periodSummary.income,
+        value: periodSummary.inflow,
         tone: 'good',
         icon: 'trending_up',
         action: 'open-dashboard-flow',
@@ -539,7 +545,7 @@ function buildDashboardTimeframeView(workbook, range, asOfDate, currentDate) {
     periodSummary,
     stats: buildDashboardStatCardsViewModel(workbook, { range, asOfDate: effectiveAsOfDate }),
     period: {
-      income: periodSummary.income,
+      income: periodSummary.inflow,
       expense: periodSummary.outflow,
       net: periodSummary.net
     },
@@ -604,7 +610,7 @@ export function buildDashboardRouteViewModel(workbook, options = {}) {
     periodSummary,
     stats: buildDashboardStatCardsViewModel(workbook, { range, asOfDate }),
     period: {
-      income: periodSummary.income,
+      income: periodSummary.inflow,
       expense: periodSummary.outflow,
       net: periodSummary.net
     },

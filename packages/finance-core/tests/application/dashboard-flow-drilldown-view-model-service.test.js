@@ -63,11 +63,11 @@ describe('dashboard flow drilldown view-model service', () => {
       rangeLabel: 'June 1 - 30, 2026'
     });
     expect(model.summary).toMatchObject({
-      total: 2029,
+      total: 829,
       totalInflow: 0,
-      totalOutflow: 2029,
-      transactionCount: 4,
-      categoryCount: 4
+      totalOutflow: 829,
+      transactionCount: 3,
+      categoryCount: 3
     });
   });
 
@@ -161,7 +161,7 @@ describe('dashboard flow drilldown view-model service', () => {
 
     expect(model.summary).toMatchObject({
       total: 2029,
-      totalOutflow: 2029,
+      totalOutflow: 829,
       transactionCount: 4
     });
     expect(model.rows.map((row) => row.transactionId)).toEqual([
@@ -241,8 +241,8 @@ describe('dashboard flow drilldown view-model service', () => {
     expect(net.rows.map((row) => row.transactionId)).not.toContain('txn-transfer-bank-cash');
     expect(net.summary).toMatchObject({
       totalInflow: 50000,
-      totalOutflow: 3329,
-      total: 46671
+      totalOutflow: 1129,
+      total: 48871
     });
   });
 
@@ -384,10 +384,10 @@ describe('dashboard flow drilldown view-model service', () => {
 
     expect(model.summary).toMatchObject({
       totalInflow: 50000,
-      totalOutflow: 2029,
-      total: 47971
+      totalOutflow: 829,
+      total: 49171
     });
-    expect(summary.total).toBe(47971);
+    expect(summary.total).toBe(49171);
   });
 
   it('does not mutate workbook input or leak mutable transaction references', () => {

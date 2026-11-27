@@ -35,7 +35,7 @@ describe('reporting service', () => {
 
     expect(report.summary.income).toBe(50000);
     expect(report.summary.expense).toBe(2029);
-    expect(report.summary.net).toBe(47971);
+    expect(report.summary.net).toBe(49171);
     expect(report.summary.transferCount).toBe(1);
     expect(report.months).toHaveLength(1);
   });
@@ -49,7 +49,7 @@ describe('reporting service', () => {
 
     expect(report.income).toBe(0);
     expect(report.expense).toBe(1280);
-    expect(report.net).toBe(-1280);
+    expect(report.net).toBe(-80);
   });
 
   it('nets merchant refunds across cash flow, categories, and descriptions', () => {
@@ -62,8 +62,10 @@ describe('reporting service', () => {
 
     expect(cashFlow.summary).toMatchObject({
       expense: 1979,
-      outflow: 1979,
-      net: -1979,
+      income: 0,
+      inflow: 50,
+      outflow: 829,
+      net: -779,
       transactionCount: 5
     });
     expect(spending).toMatchObject({ total: 1979, transactionCount: 5 });

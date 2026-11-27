@@ -294,3 +294,39 @@ describe('transaction create wizard controller', () => {
     expect(workbook).toEqual(originalWorkbook);
   });
 });
+
+describe('posting reviewed ledger changes', () => {
+  it('credits the reviewed dollar amount when pesos are received into a USD account', () => {
+    const workbook = { ...makeIncomeAndExpenseWorkbook(), currency: 'USD', transactions: [] };
+    const draft = dispatch(workbook, {}, 'open-ledger-composer', {
+      template: 'income_received',
+      categoryId: 'salary',
+      primaryAccountId: 'wallet-usd',
+      amount: '5800',
+      currency: 'PHP',
+      fxRateToBase: '0.0172',
+      date: '2026-06-12'
+    }).state;
+    const reviewed = dispatch(workbook, draft, 'review-transaction');
+    expect(reviewed.state.modal.step).toBe('review');
+    const pending = dispatch(workbook, reviewed.state, 'submit-transaction');
+    expect(pending.commandResult.warnings[0].rateDisclosure).toBe('1 PHP = USD 0.0172');
+    const confirmed = dispatch(workbook, pending.state, 'confirm-transaction-warnings');
+    expect(confirmed.commandResult.transaction.lines[0]).toMatchObject({
+      accountId: 'wallet-usd',
+      currency: 'USD',
+      amount: 99.76,
+      baseAmount: 99.76
+    });
+  });
+
+  it('shows the deletion error when an open editor no longer has a transaction', () => {
+    const workbook = makeIncomeAndExpenseWorkbook();
+    const transactionId = workbook.transactions[0].id;
+    const editor = dispatch(workbook, {}, 'open-transaction-editor', { transactionId }).state;
+    const changed = { ...workbook, transactions: workbook.transactions.slice(1) };
+    const saved = dispatch(changed, editor, 'submit-transaction');
+    expect(saved.commandResult.workbook).toBe(changed);
+    expect(saved.state.modal.errors[0].code).toBe('update_transaction_not_found');
+  });
+});

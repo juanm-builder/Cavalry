@@ -1,6 +1,10 @@
 import { getTransactionCategoryAllocations } from '../../domain/ledger/category-splits.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
-import { getTransactionContributions } from '../../domain/ledger/transaction-contributions.js';
+import {
+  addCashMovement,
+  createTransactionContributionReader,
+  getTransactionContributions
+} from '../../domain/ledger/transaction-contributions.js';
 import {
   getAssetLiabilityTotalsAsOf,
   getLedgerHistoricalBalances
@@ -76,6 +80,7 @@ export function getReportTransactions(workbook, options = {}) {
 function makeCashFlowBucket(monthKey = '') {
   return {
     monthKey,
+    inflow: 0,
     income: 0,
     expense: 0,
     savings: 0,
@@ -88,10 +93,7 @@ function makeCashFlowBucket(monthKey = '') {
 }
 
 function addFlowAmount(bucket, contribution) {
-  if (contribution.eventKind === 'transfer') {
-    bucket.transferCount += 1;
-    return;
-  }
+  if (contribution.eventKind === 'transfer') bucket.transferCount += 1;
   if (!contribution.resolved) return;
   const kind = contribution.flowKind;
   const amount = contribution.signedBaseAmount;
@@ -108,8 +110,8 @@ function addFlowAmount(bucket, contribution) {
     bucket.debt = roundMoney(bucket.debt + amount);
     bucket.transactionCount += 1;
   }
-  bucket.outflow = roundMoney(bucket.expense + bucket.savings + bucket.debt);
-  bucket.net = roundMoney(bucket.income - bucket.outflow);
+  addCashMovement(bucket, contribution);
+  if (kind === 'transfer' && contribution.metrics.cashFlow !== 0) bucket.transactionCount += 1;
 }
 
 function collectReportLimitations(workbook, transactions) {
@@ -152,8 +154,9 @@ export function buildMonthlyCashFlowReport(workbook, options = {}) {
   const transactions = getReportTransactions(workbook, options);
   const months = new Map();
   const summary = makeCashFlowBucket('');
+  const readContribution = createTransactionContributionReader(workbook);
   transactions.forEach((transaction) => {
-    const contribution = getTransactionContributions(workbook || {}, transaction || {});
+    const contribution = readContribution(transaction);
     const monthKey = getReportMonthKey(transaction) || 'unknown';
     if (!months.has(monthKey)) {
       months.set(monthKey, makeCashFlowBucket(monthKey));
@@ -236,17 +239,19 @@ export function buildCategorySpendingReport(workbook, options = {}) {
 }
 
 export function buildIncomeExpenseBreakdown(workbook, options = {}) {
-  const cashFlow = buildMonthlyCashFlowReport(workbook, options);
+  const { currency, summary, limitations } = buildMonthlyCashFlowReport(workbook, options);
+  const { income, inflow, expense, savings, debt, outflow, net, transferCount } = summary;
   return {
-    currency: cashFlow.currency,
-    income: cashFlow.summary.income,
-    expense: cashFlow.summary.expense,
-    savings: cashFlow.summary.savings,
-    debt: cashFlow.summary.debt,
-    outflow: cashFlow.summary.outflow,
-    net: cashFlow.summary.net,
-    transferCount: cashFlow.summary.transferCount,
-    limitations: cashFlow.limitations
+    currency,
+    income,
+    inflow,
+    expense,
+    savings,
+    debt,
+    outflow,
+    net,
+    transferCount,
+    limitations
   };
 }
 

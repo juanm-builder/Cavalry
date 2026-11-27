@@ -79,7 +79,7 @@ describe('transaction table filtering', () => {
         resolved: true,
         metrics: {
           expense: -50,
-          outflow: -50,
+          outflow: 0,
           categoryBudget: -50,
           cashFlow: 50
         }

@@ -60,8 +60,8 @@ describe('reports route view-model service', () => {
       expense: 2029,
       savings: 0,
       debt: 0,
-      outflow: 2029,
-      net: 47971,
+      outflow: 829,
+      net: 49171,
       transactionCount: 5
     });
     expect(summary.categoryTotals).toMatchObject({
@@ -82,7 +82,7 @@ describe('reports route view-model service', () => {
 
     expect(summary.income).toBe(0);
     expect(summary.expense).toBe(1280);
-    expect(summary.net).toBe(-1280);
+    expect(summary.net).toBe(-80);
     expect(summary.transactions.map((transaction) => transaction.id)).toEqual([
       'txn-transport-cash',
       'txn-card-shopping'
@@ -116,15 +116,15 @@ describe('reports route view-model service', () => {
     expect(cashFlow.summary).toMatchObject({
       income: 50000,
       expense: 2029,
-      outflow: 2029,
-      net: 47971
+      outflow: 829,
+      net: 49171
     });
     expect(cashFlow.months).toHaveLength(1);
     expect(cashFlow.months[0]).toMatchObject({
       monthKey: '2026-06',
       income: 50000,
       expense: 2029,
-      net: 47971
+      net: 49171
     });
   });
 
@@ -133,10 +133,16 @@ describe('reports route view-model service', () => {
       range: { start: '2026-06-01', end: '2026-06-30' }
     });
 
-    expect(model.periodSummary).toMatchObject({ expense: 1979, outflow: 1979, net: -1979 });
+    expect(model.periodSummary).toMatchObject({ expense: 1979, outflow: 829, net: -779 });
     expect(model.categoryBreakdown).toMatchObject({ total: 1979, transactionCount: 5 });
     expect(model.categoryBreakdown.categoryTotals.food).toBe(200);
-    expect(model.cashFlow.summary).toMatchObject({ expense: 1979, outflow: 1979, net: -1979 });
+    expect(model.cashFlow.summary).toMatchObject({
+      income: 0,
+      inflow: 50,
+      expense: 1979,
+      outflow: 829,
+      net: -779
+    });
     expect(model.cashFlow.limitations).not.toContain('refunds_are_not_separately_modeled');
   });
 

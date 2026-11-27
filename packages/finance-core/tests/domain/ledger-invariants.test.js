@@ -21,8 +21,8 @@ describe('ledger invariants', () => {
     expect(result.summary.transactionCount).toBe(5);
     expect(result.summary.income).toBe(50000);
     expect(result.summary.expense).toBe(2029);
-    expect(result.summary.outflow).toBe(2029);
-    expect(result.summary.net).toBe(47971);
+    expect(result.summary.outflow).toBe(829);
+    expect(result.summary.net).toBe(49171);
     expect(result.summary.categoryTotals.food).toBe(250);
   });
 

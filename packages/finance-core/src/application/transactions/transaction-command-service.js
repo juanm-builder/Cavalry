@@ -222,7 +222,7 @@ export function submitManualTransactionCommand(workbook, rawInput = {}, services
       composerFields,
       existingTransaction,
       transactionIndex,
-      intent.sourceOptions,
+      { ...intent.sourceOptions, preserveExistingPostings: intent.preserveExistingPostings },
       services
     );
     if (existingTransaction && intent.preserveExistingPostings) {

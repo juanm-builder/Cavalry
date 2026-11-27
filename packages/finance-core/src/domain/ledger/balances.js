@@ -77,7 +77,7 @@ function getWorkbookBaseCurrency(workbook) {
   return normalizeCurrency(workbook && workbook.currency, 'PHP') || 'PHP';
 }
 
-function getConfiguredFxRate(workbook, fromCurrency, toCurrency) {
+export function getConfiguredFxRate(workbook, fromCurrency, toCurrency) {
   const from = normalizeCurrency(fromCurrency, getWorkbookBaseCurrency(workbook));
   const to = normalizeCurrency(toCurrency, getWorkbookBaseCurrency(workbook));
   if (from === to) {
@@ -89,7 +89,8 @@ function getConfiguredFxRate(workbook, fromCurrency, toCurrency) {
     (rate) =>
       normalizeCurrency(rate && rate.fromCurrency) === from &&
       normalizeCurrency(rate && rate.toCurrency) === to &&
-      Number(rate && rate.rate) > 0
+      Number.isFinite(Number(rate?.rate)) &&
+      Number(rate?.rate) > 0
   );
   if (exact) {
     return Number(exact.rate);
@@ -98,7 +99,8 @@ function getConfiguredFxRate(workbook, fromCurrency, toCurrency) {
     (rate) =>
       normalizeCurrency(rate && rate.fromCurrency) === to &&
       normalizeCurrency(rate && rate.toCurrency) === from &&
-      Number(rate && rate.rate) > 0
+      Number.isFinite(Number(rate?.rate)) &&
+      Number(rate?.rate) > 0
   );
   if (inverse) {
     return 1 / Number(inverse.rate);
@@ -107,7 +109,7 @@ function getConfiguredFxRate(workbook, fromCurrency, toCurrency) {
   const base = getWorkbookBaseCurrency(workbook);
   const usdToBaseRate =
     Number(workbook && workbook.settings && workbook.settings.usdToBaseRate) || 0;
-  if (usdToBaseRate > 0) {
+  if (Number.isFinite(usdToBaseRate) && usdToBaseRate > 0) {
     if (from === 'USD' && to === base) {
       return usdToBaseRate;
     }
@@ -151,25 +153,42 @@ export function getLedgerValuationBalancesAsOf(workbook, asOfDate = '') {
   const cutoff = normalizeDateKey(asOfDate);
   const accounts = indexAccounts(workbook);
   const balances = Object.create(null);
-  (workbook && workbook.accounts ? workbook.accounts : []).forEach((account) => {
-    balances[account.id] = 0;
-  });
-  (workbook && workbook.transactions ? workbook.transactions : []).forEach((transaction) => {
-    const date = normalizeDateKey(transaction && transaction.date);
-    if (cutoff && date && date > cutoff) {
-      return;
-    }
-    (transaction.lines || []).forEach((line) => {
+  const nativeTotals = new Map();
+  const base = getWorkbookBaseCurrency(workbook);
+  for (const account of accounts.values()) balances[account.id] = 0;
+  for (const transaction of workbook?.transactions || []) {
+    const date = normalizeDateKey(transaction.date);
+    if (cutoff && date && date > cutoff) continue;
+    for (const line of transaction.lines || []) {
       const account = accounts.get(line.accountId);
-      if (!account) {
-        return;
+      if (!account) continue;
+      const currency = getLineCurrency(workbook, account, line);
+      const sign = getLineBalanceSign(account, line);
+      if (!Number.isFinite(Number(line.amount))) {
+        balances[account.id] = roundMoney(
+          balances[account.id] + sign * (Number(line.baseAmount) || 0)
+        );
+        continue;
       }
-      balances[account.id] = roundMoney(
-        (balances[account.id] || 0) +
-          getLineBalanceSign(account, line) * convertLedgerLineToBase(workbook, line, account)
-      );
-    });
-  });
+      if (!nativeTotals.has(account.id)) nativeTotals.set(account.id, new Map());
+      const totals = nativeTotals.get(account.id);
+      const bucket = totals.get(currency) || { cents: 0, historicalCents: 0 };
+      bucket.cents += sign * Math.round(Number(line.amount) * 100);
+      bucket.historicalCents += sign * Math.round((Number(line.baseAmount) || 0) * 100);
+      totals.set(currency, bucket);
+    }
+  }
+  for (const [id, totals] of nativeTotals) {
+    for (const [currency, bucket] of totals) {
+      if (bucket.cents === 0) continue;
+      const rate = getConfiguredFxRate(workbook, currency, base);
+      const value =
+        rate > 0
+          ? Math.sign(bucket.cents) * roundMoney((Math.abs(bucket.cents) / 100) * rate)
+          : bucket.historicalCents / 100;
+      balances[id] = roundMoney(balances[id] + value);
+    }
+  }
   return { ...balances };
 }
 

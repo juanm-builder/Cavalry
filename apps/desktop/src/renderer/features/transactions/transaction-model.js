@@ -572,7 +572,6 @@ function buildCreateComposerModel(workbook, modal) {
     draft.template === 'expense_charged' &&
     isCreateCreditCard(selection.primaryAccount);
   const isCardPayment = isCreateCardPayment(kind, selection);
-  const accountCurrencies = new Set(accounts.map((account) => account.currency));
   const selectedBalanceAccounts = [selection.primaryAccount, selection.secondaryAccount].filter(
     (account) => account && ['asset', 'liability'].includes(account.group)
   );
@@ -580,11 +579,7 @@ function buildCreateComposerModel(workbook, modal) {
   const needsAccountCurrencyConversion = selectedBalanceAccounts.some(
     (account) => asString(account.currency).toUpperCase() !== transactionCurrency
   );
-  const showFxRate =
-    needsAccountCurrencyConversion ||
-    (['expense', 'refund'].includes(kind?.kind) &&
-      transactionCurrency === 'USD' &&
-      workbookCurrency !== 'USD');
+  const showFxRate = needsAccountCurrencyConversion || transactionCurrency !== workbookCurrency;
   const step = ['type', 'details', 'review'].includes(modal.step)
     ? modal.step
     : kind
@@ -658,8 +653,7 @@ function buildCreateComposerModel(workbook, modal) {
               message: 'This reduces the card balance and will not be counted as another expense.'
             }
           : null,
-    showCurrency:
-      accountCurrencies.size > 1 || asString(draft.currency).toUpperCase() !== workbookCurrency,
+    showCurrency: options.currencies.length > 1,
     showFxRate,
     fxRateLabel:
       workbookCurrency === 'PHP' &&
@@ -786,6 +780,7 @@ function buildTransactionModalModel(workbook, state) {
     return {
       type: 'composer',
       mode: 'edit',
+      baseCurrency: workbook.currency,
       title: 'Edit Transaction',
       draft,
       errors: asArray(modal.errors),

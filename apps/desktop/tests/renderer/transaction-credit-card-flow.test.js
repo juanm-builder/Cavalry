@@ -189,7 +189,7 @@ describe('unified credit-card expense flow', () => {
     ]);
 
     const summaryAfterCharge = summarizeLedgerActivity(charge.workbook);
-    expect(summaryAfterCharge).toMatchObject({ expense: 900, debt: 0, outflow: 900 });
+    expect(summaryAfterCharge).toMatchObject({ expense: 900, debt: 0, outflow: 0 });
     expect(getLedgerHistoricalBalances(charge.workbook)).toMatchObject({
       'credit-card': 900,
       cash: 0
@@ -213,7 +213,7 @@ describe('unified credit-card expense flow', () => {
     expect(summarizeLedgerActivity(payment.workbook)).toMatchObject({
       expense: 900,
       debt: 0,
-      outflow: 900
+      outflow: 400
     });
     expect(getLedgerHistoricalBalances(payment.workbook)).toMatchObject({
       'credit-card': 500,

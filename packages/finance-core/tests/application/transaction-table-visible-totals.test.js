@@ -17,8 +17,8 @@ describe('transaction table visible totals', () => {
     expect(totals).toMatchObject({
       income: 50000,
       expense: 1850,
-      outflow: 1850,
-      net: 48150,
+      outflow: 650,
+      net: 49350,
       count: 7,
       transferCount: 1,
       currency: 'base'
@@ -33,7 +33,7 @@ describe('transaction table visible totals', () => {
     );
 
     expect(coffeeTotals).toMatchObject({ income: 0, expense: 250, net: -250, count: 1 });
-    expect(filteredTotals).toMatchObject({ income: 0, expense: 1450, net: -1450, count: 2 });
+    expect(filteredTotals).toMatchObject({ income: 0, expense: 1450, net: -250, count: 2 });
   });
 
   it('excludes transfers and handles archived or missing references without crashing', () => {
@@ -73,14 +73,14 @@ describe('transaction table visible totals', () => {
 
     expect(allTotals).toMatchObject({
       expense: 1979,
-      outflow: 1979,
-      net: -1979,
+      outflow: 829,
+      net: -779,
       count: 5,
       refundCount: 1
     });
     expect(refundTotals).toMatchObject({
       expense: -50,
-      outflow: -50,
+      outflow: 0,
       cashFlow: 50,
       net: 50,
       count: 1,

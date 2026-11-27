@@ -118,8 +118,8 @@ describe('dashboard route view-model service', () => {
     expect(stats.period).toEqual({
       income: 50000,
       expense: 2029,
-      outflow: 2029,
-      net: 47971
+      outflow: 829,
+      net: 49171
     });
     expect(stats.money).toEqual({
       // Include the fixture's overdrawn cash account (-330).
@@ -316,8 +316,8 @@ describe('dashboard route view-model service', () => {
 
     expect(model.period).toEqual({
       income: 0,
-      expense: 1280,
-      net: -1280
+      expense: 80,
+      net: -80
     });
     expect(model.recentTransactions.map((transaction) => transaction.id)).toEqual([
       'txn-card-shopping',
@@ -332,8 +332,8 @@ describe('dashboard route view-model service', () => {
       },
       totals: {
         income: 0,
-        outflow: 1280,
-        actualNet: -1280
+        outflow: 80,
+        actualNet: -80
       }
     });
   });
@@ -422,7 +422,7 @@ describe('dashboard route view-model service', () => {
       currentDate: '2026-06-15'
     });
 
-    expect(model.period.expense).toBe(2029);
+    expect(model.period.expense).toBe(829);
     expect(model.money.balanceAccounts.map((account) => account.id)).not.toContain('cash');
   });
 

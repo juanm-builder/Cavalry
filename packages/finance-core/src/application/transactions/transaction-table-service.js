@@ -398,11 +398,11 @@ export function calculateVisibleTransactionTotals(rows) {
             typeof row.contributions.metrics === 'object'
           ? row.contributions.metrics
           : row.type === 'income'
-            ? { income: fallbackAmount }
+            ? { income: fallbackAmount, cashFlow: fallbackAmount }
             : row.type === 'refund'
-              ? { expense: -fallbackAmount, outflow: -fallbackAmount }
+              ? { expense: -fallbackAmount, cashFlow: fallbackAmount }
               : row.categoryType === 'expense' || row.type === 'expense'
-                ? { expense: fallbackAmount, outflow: fallbackAmount }
+                ? { expense: fallbackAmount, outflow: fallbackAmount, cashFlow: -fallbackAmount }
                 : {};
       [
         'income',
@@ -430,7 +430,7 @@ export function calculateVisibleTransactionTotals(rows) {
         totals.unresolvedCount += 1;
       }
       totals.count += 1;
-      totals.net = roundMoney(totals.income - totals.outflow);
+      totals.net = totals.cashFlow;
       return totals;
     },
     {

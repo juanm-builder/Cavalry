@@ -1,4 +1,7 @@
-import { getAccountBalanceSnapshotAsOf } from '../../domain/ledger/balances.js';
+import {
+  getAccountBalanceSnapshotAsOf,
+  getConfiguredFxRate
+} from '../../domain/ledger/balances.js';
 import { buildAccountCurrencyRepairPreview } from './account-currency-repair-service.js';
 import {
   findInstitutionById,
@@ -544,6 +547,16 @@ export function createAccount(workbook, input = {}, services = {}) {
     );
   }
 
+  if (
+    parseNumericInput(clean.openingBalance) > 0 &&
+    !getConfiguredFxRate(workbook, currency, getWorkbookCurrency(workbook)) &&
+    !services.createLine
+  ) {
+    throw new AccountManagementError(
+      'opening_balance_rate_required',
+      'Set the exchange rate before posting this opening balance.'
+    );
+  }
   const account = normalizeViaService(
     workbook,
     {

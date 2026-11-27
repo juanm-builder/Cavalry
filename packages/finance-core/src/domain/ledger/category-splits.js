@@ -93,12 +93,10 @@ export function getStoredCategorySplitIssue(workbook, transaction) {
     (transaction.originalCurrency === workbook.currency &&
       transaction.baseAmount !== transaction.amount) ||
     (transaction.originalCurrency === workbook.currency &&
-      funding.currency === 'USD' &&
       funding.currency !== workbook.currency &&
       transaction.fxRateToBase > 0 &&
       funding.amount !== roundMoney(transaction.amount * (1 / transaction.fxRateToBase))) ||
-    (transaction.originalCurrency === 'USD' &&
-      workbook.currency !== 'USD' &&
+    (transaction.originalCurrency !== workbook.currency &&
       transaction.fxRateToBase > 0 &&
       transaction.baseAmount !== roundMoney(transaction.amount * transaction.fxRateToBase))
   ) {

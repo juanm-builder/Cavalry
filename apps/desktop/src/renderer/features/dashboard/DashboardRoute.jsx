@@ -290,6 +290,11 @@ function getTransactionCategoryName(model, transaction) {
 }
 
 function transactionMatchesFlow(transaction, flowType) {
+  if (Number.isFinite(transaction?.cashFlow)) {
+    if (flowType === 'inflow') return transaction.cashFlow > 0;
+    if (flowType === 'outflow') return transaction.cashFlow < 0;
+    return transaction.cashFlow !== 0;
+  }
   const kind = String(transaction?.flowKind || '');
   if (flowType === 'inflow') return kind === 'inflow';
   if (flowType === 'outflow') return ['expense', 'savings', 'debt'].includes(kind);

@@ -271,7 +271,7 @@ function TransactionEditModalContent({ modal }) {
     (option) => option.value === draft.secondaryAccountId
   );
   const showFxRate =
-    draft.currency === 'USD' ||
+    draft.currency !== (data.baseCurrency || 'PHP') ||
     [selectedPrimary, selectedSecondary]
       .filter(Boolean)
       .some((account) => account.currency && account.currency !== draft.currency);

@@ -58,6 +58,7 @@ export function buildReportsPeriodSummaryViewModel(workbook, range, _options = {
     currency: getWorkbookCurrency(workbook),
     range: dateRange,
     income: summary.income,
+    inflow: summary.inflow,
     expense: summary.expense,
     savings: summary.savings,
     debt: summary.debt,

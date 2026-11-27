@@ -3,6 +3,7 @@
 import { addCategoryTotals, getTransactionCategoryAllocations } from './category-splits.js';
 import { roundMoney } from '../money.js';
 import {
+  addCashMovement,
   createTransactionContributionReader,
   getTransactionContributions
 } from './transaction-contributions.js';
@@ -129,6 +130,14 @@ export function flowKindMatches(kind, requestedType) {
   return false;
 }
 
+function flowAmount(contribution, type) {
+  const cash = contribution.metrics.cashFlow;
+  if (type === 'inflow') return Math.max(0, cash);
+  if (type === 'outflow') return Math.max(0, -cash);
+  if (type === 'both') return cash;
+  return contribution.signedBaseAmount;
+}
+
 export function getFlowTransactions(workbook, rangeOrMonthKey, type, options = {}) {
   const fallbackRange = options.defaultRange || {};
   const range =
@@ -140,10 +149,15 @@ export function getFlowTransactions(workbook, rangeOrMonthKey, type, options = {
     workbook && workbook.transactions ? workbook.transactions : [],
     range && range.start,
     range && range.end
-  ).filter((transaction) => flowKindMatches(readContribution(transaction).flowKind, type));
+  ).filter((transaction) => {
+    const contribution = readContribution(transaction);
+    if (['both', 'outflow', 'inflow'].includes(type))
+      return contribution.resolved && flowAmount(contribution, type) !== 0;
+    return flowKindMatches(contribution.flowKind, type);
+  });
 }
 
-export function getFlowBreakdown(workbook, transactions) {
+export function getFlowBreakdown(workbook, transactions, type) {
   // Imported identifiers may also be Object prototype names.
   const categoryTotals = Object.create(null);
   const readContribution = createTransactionContributionReader(workbook);
@@ -151,7 +165,7 @@ export function getFlowBreakdown(workbook, transactions) {
     const contribution = readContribution(transaction);
     addCategoryTotals(
       categoryTotals,
-      getTransactionCategoryAllocations(transaction, contribution.signedBaseAmount)
+      getTransactionCategoryAllocations(transaction, flowAmount(contribution, type))
     );
   });
   return Object.keys(categoryTotals)
@@ -173,16 +187,16 @@ export function getMonthlyFlowBreakdown(workbook, monthKey, type, options = {}) 
   const readContribution = createTransactionContributionReader(workbook);
   return {
     transactions,
-    rows: getFlowBreakdown(workbook, transactions),
+    rows: getFlowBreakdown(workbook, transactions, type),
     total: roundMoney(
       transactions.reduce((sum, transaction) => {
-        return sum + readContribution(transaction).signedBaseAmount;
+        return sum + flowAmount(readContribution(transaction), type);
       }, 0)
     )
   };
 }
 
-export function getPeriodActivitySummary(workbook, range, _options = {}) {
+export function getPeriodActivitySummary(workbook, range) {
   const transactions = getTransactionsForDateRange(
     workbook && workbook.transactions ? workbook.transactions : [],
     range && range.start,
@@ -193,6 +207,7 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
     expense: 0,
     savings: 0,
     debt: 0,
+    inflow: 0,
     outflow: 0,
     net: 0,
     categoryTotals: Object.create(null),
@@ -201,6 +216,7 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
   const readContribution = createTransactionContributionReader(workbook);
   transactions.forEach((transaction) => {
     const contribution = readContribution(transaction);
+    addCashMovement(summary, contribution);
     const kind = contribution.flowKind;
     const amount = contribution.signedBaseAmount;
     if (kind === 'inflow') {
@@ -219,8 +235,6 @@ export function getPeriodActivitySummary(workbook, range, _options = {}) {
       );
     }
   });
-  summary.outflow = roundMoney(summary.expense + summary.savings + summary.debt);
-  summary.net = roundMoney(summary.income - summary.outflow);
   summary.categoryTotals = { ...summary.categoryTotals };
   return summary;
 }

@@ -1,3 +1,4 @@
+import { createTransactionContributionReader } from '../../domain/ledger/transaction-contributions.js';
 import { normalizeDateKey, roundMoney } from '../../domain/money.js';
 import { isNaturalDebitGroup } from '../../domain/ledger/balances.js';
 import { getLedgerTransactionBaseAmount } from '../../domain/ledger/transactions.js';
@@ -249,8 +250,8 @@ function getCategoryRowTone(row) {
   return row.type === 'income' ? 'good' : row.type === 'other' ? 'info' : 'bad';
 }
 
-function buildCategoryRows(workbook, transactions) {
-  const rows = getFlowBreakdown(workbook, transactions);
+function buildCategoryRows(workbook, transactions, flowType) {
+  const rows = getFlowBreakdown(workbook, transactions, flowType);
   const maxTotal = Math.max.apply(null, rows.map((row) => Math.abs(row.total)).concat([1]));
   return rows.map((row) => {
     const width = Math.max(4, Math.round((Math.abs(row.total) / maxTotal) * 100));
@@ -266,31 +267,6 @@ function buildCategoryRows(workbook, transactions) {
   });
 }
 
-function getTotalInflow(workbook, transactions) {
-  return roundMoney(
-    transactions
-      .filter((transaction) => {
-        return getTransactionFlowKind(transaction, workbook) === 'inflow';
-      })
-      .reduce((sum, transaction) => {
-        return sum + getLedgerTransactionBaseAmount(transaction);
-      }, 0)
-  );
-}
-
-function getTotalOutflow(workbook, transactions) {
-  return roundMoney(
-    transactions
-      .filter((transaction) => {
-        const kind = getTransactionFlowKind(transaction, workbook);
-        return kind === 'expense' || kind === 'savings' || kind === 'debt';
-      })
-      .reduce((sum, transaction) => {
-        return sum + getLedgerTransactionBaseAmount(transaction);
-      }, 0)
-  );
-}
-
 export function buildDashboardFlowDrilldownRows(workbook, options = {}) {
   const flowType = normalizeFlowType(options.flowType || options.type);
   const rangeModel = normalizeFlowRange(options);
@@ -303,15 +279,25 @@ export function buildDashboardFlowDrilldownSummary(workbook, options = {}) {
   const flowType = normalizeFlowType(options.flowType || options.type);
   const transactionRows = options.rows || buildDashboardFlowDrilldownRows(workbook, options);
   const transactions = transactionRows.map((row) => row.transaction).filter(Boolean);
-  const totalInflow = getTotalInflow(workbook, transactions);
-  const totalOutflow = getTotalOutflow(workbook, transactions);
+  let totalInflow = 0;
+  let totalOutflow = 0;
+  let booked = 0;
+  const readContribution = createTransactionContributionReader(workbook);
+  for (const transaction of transactions) {
+    const { metrics, signedBaseAmount } = readContribution(transaction);
+    booked = roundMoney(booked + signedBaseAmount);
+    totalInflow = roundMoney(totalInflow + Math.max(0, metrics.cashFlow));
+    totalOutflow = roundMoney(totalOutflow + Math.max(0, -metrics.cashFlow));
+  }
+  const categoryRows = options.categoryRows || buildCategoryRows(workbook, transactions, flowType);
   const total =
     flowType === 'both'
       ? roundMoney(totalInflow - totalOutflow)
-      : roundMoney(
-          transactionRows.reduce((sum, row) => sum + (Number(row && row.baseAmount) || 0), 0)
-        );
-  const categoryRows = options.categoryRows || buildCategoryRows(workbook, transactions);
+      : flowType === 'inflow'
+        ? totalInflow
+        : flowType === 'outflow'
+          ? totalOutflow
+          : booked;
   return {
     flowType,
     title: getFlowTitle(flowType),
@@ -331,7 +317,7 @@ export function buildDashboardFlowDrilldownViewModel(workbook, options = {}) {
     getFlowTransactions(workbook, rangeModel.range, flowType)
   );
   const rows = transactions.map((transaction) => buildTransactionRow(workbook, transaction));
-  const categoryRows = buildCategoryRows(workbook, transactions);
+  const categoryRows = buildCategoryRows(workbook, transactions, flowType);
   const summary = buildDashboardFlowDrilldownSummary(workbook, {
     flowType,
     rows,

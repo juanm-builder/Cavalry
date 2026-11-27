@@ -142,35 +142,17 @@ function resolveBaseAmount(workbook, transaction) {
 }
 
 function cashFlowFor(workbook, transaction, eventKind, amount, lookups) {
+  if (eventKind === 'opening_balance' || eventKind === 'adjustment') return 0;
   const accounts = lookups ? lookups.accounts : accountMap(workbook);
-  const hasAssetDebit = asArray(transaction && transaction.lines).some(
-    (line) =>
-      line &&
-      line.direction === 'debit' &&
-      accounts.get(asIdentifier(line.accountId))?.group === 'asset'
-  );
-  const hasAssetCredit = asArray(transaction && transaction.lines).some(
-    (line) =>
-      line &&
-      line.direction === 'credit' &&
-      accounts.get(asIdentifier(line.accountId))?.group === 'asset'
-  );
-
-  if (eventKind === 'income_received' || eventKind === 'reimbursement') {
-    return hasAssetDebit ? amount : 0;
+  let cash = 0;
+  for (const line of asArray(transaction?.lines)) {
+    if (!line || accounts.get(asIdentifier(line.accountId))?.group !== 'asset') continue;
+    // Older two-line entries sometimes store the converted amount only on the transaction.
+    const value = Number(line.baseAmount ?? amount);
+    if (!Number.isFinite(value)) continue;
+    cash += line.direction === 'debit' ? value : -value;
   }
-  if (eventKind === 'merchant_refund') {
-    return hasAssetDebit ? amount : 0;
-  }
-  if (
-    eventKind === 'purchase' ||
-    eventKind === 'debt_interest_or_fee' ||
-    eventKind === 'debt_principal_payment' ||
-    eventKind === 'savings_contribution'
-  ) {
-    return hasAssetCredit ? roundMoney(-amount) : 0;
-  }
-  return 0;
+  return roundMoney(cash);
 }
 
 export function normalizeTransactionEventKind(value) {
@@ -184,10 +166,26 @@ export function inferTransactionEventKind(workbook, transaction) {
 
 function inferEventKind(workbook, transaction, lookups) {
   const explicit = normalizeTransactionEventKind(transaction && transaction.eventKind);
-  if (explicit) return explicit;
 
   const template = normalizedToken(transaction && transaction.template);
   const fromTemplate = normalizeTransactionEventKind(template);
+  // Old edits could leave a purchase classification on refund postings (or vice versa).
+  if (
+    (fromTemplate === 'merchant_refund' && explicit === 'purchase') ||
+    (fromTemplate === 'purchase' && explicit === 'merchant_refund')
+  ) {
+    const accounts = lookups?.accounts || accountMap(workbook);
+    const expenseDirection = fromTemplate === 'merchant_refund' ? 'credit' : 'debit';
+    if (
+      asArray(transaction.lines).some(
+        (line) =>
+          line?.direction === expenseDirection &&
+          accounts.get(asIdentifier(line.accountId))?.group === 'expense'
+      )
+    )
+      return fromTemplate;
+  }
+  if (explicit) return explicit;
   // A small set of templates carries stronger meaning than the category.
   // In particular, a refund deliberately uses the original expense category,
   // so category-first classification would incorrectly turn it back into a
@@ -210,61 +208,52 @@ function inferEventKind(workbook, transaction, lookups) {
 }
 
 function metricsFor(workbook, transaction, eventKind, amount, lookups) {
-  const zero = {
+  const cashFlow = cashFlowFor(workbook, transaction, eventKind, amount, lookups);
+  const movement = {
     income: 0,
     expense: 0,
     savings: 0,
     debt: 0,
-    outflow: 0,
+    outflow: Math.max(0, -cashFlow),
     categoryBudget: 0,
     debtPrincipal: 0,
-    cashFlow: 0
+    cashFlow
   };
-  const cashFlow = cashFlowFor(workbook, transaction, eventKind, amount, lookups);
 
   if (eventKind === 'purchase' || eventKind === 'debt_interest_or_fee') {
     return {
-      ...zero,
+      ...movement,
       expense: amount,
-      outflow: amount,
-      categoryBudget: amount,
-      cashFlow
+      categoryBudget: amount
     };
   }
   if (eventKind === 'merchant_refund') {
     return {
-      ...zero,
+      ...movement,
       expense: roundMoney(-amount),
-      outflow: roundMoney(-amount),
-      categoryBudget: roundMoney(-amount),
-      cashFlow
+      categoryBudget: roundMoney(-amount)
     };
   }
   if (eventKind === 'income_received' || eventKind === 'reimbursement') {
     return {
-      ...zero,
-      income: amount,
-      cashFlow
+      ...movement,
+      income: amount
     };
   }
   if (eventKind === 'savings_contribution') {
     return {
-      ...zero,
-      savings: amount,
-      outflow: amount,
-      cashFlow
+      ...movement,
+      savings: amount
     };
   }
   if (eventKind === 'debt_principal_payment') {
     return {
-      ...zero,
+      ...movement,
       debt: amount,
-      outflow: amount,
-      debtPrincipal: amount,
-      cashFlow
+      debtPrincipal: amount
     };
   }
-  return zero;
+  return movement;
 }
 
 function flowKindFor(eventKind) {
@@ -356,6 +345,14 @@ function evaluateTransactionContributions(workbook, transaction, lookups) {
   };
 }
 
+export function addCashMovement(totals, contribution) {
+  if (!contribution.resolved) return;
+  const amount = contribution.metrics.cashFlow;
+  totals.inflow = roundMoney(totals.inflow + Math.max(0, amount));
+  totals.outflow = roundMoney(totals.outflow + Math.max(0, -amount));
+  totals.net = roundMoney(totals.inflow - totals.outflow);
+}
+
 export function getTransactionSignedFlowAmount(workbook, transaction) {
   return getTransactionContributions(workbook, transaction).signedBaseAmount;
 }
@@ -375,17 +372,8 @@ function eventCanContributeToMetric(eventKind, metric) {
   if (metric === 'debt' || metric === 'debtPrincipal') {
     return eventKind === 'debt_principal_payment';
   }
-  if (metric === 'outflow') {
-    return [
-      'purchase',
-      'merchant_refund',
-      'savings_contribution',
-      'debt_principal_payment',
-      'debt_interest_or_fee'
-    ].includes(eventKind);
-  }
-  if (metric === 'cashFlow') {
-    return !['opening_balance', 'adjustment', 'transfer'].includes(eventKind);
+  if (metric === 'outflow' || metric === 'cashFlow') {
+    return !['opening_balance', 'adjustment'].includes(eventKind);
   }
   return true;
 }

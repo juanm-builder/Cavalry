@@ -400,6 +400,18 @@ export function buildManualTransactionSubmitIntent(workbook, rawInput = {}) {
       )
     : -1;
   const isEdit = existingIndex >= 0;
+  if (transactionId && !isEdit) {
+    return {
+      transactionId,
+      existingIndex,
+      isEdit,
+      error: {
+        code: 'update_transaction_not_found',
+        field: 'transactionId',
+        message: 'This transaction was deleted. Close the editor to refresh the ledger.'
+      }
+    };
+  }
 
   const advisorThreadId = asString(getRawValue(rawInput, 'advisorThreadId', ''));
   const advisorMessageId = asString(getRawValue(rawInput, 'advisorMessageId', ''));

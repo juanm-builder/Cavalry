@@ -47,7 +47,7 @@ describe('ledger balances and summaries', () => {
     const summary = summarizeLedgerActivity(workbook);
     expect(balances.bank).toBe(99501);
     expect(summary.income).toBe(100000);
-    expect(summary.net).toBe(97971);
+    expect(summary.net).toBe(99171);
   });
 
   it('credit card expenses increase liability balances according to the current model', () => {

@@ -1,3 +1,5 @@
+import { normalizeDateKey } from '../../domain/money.js';
+import { inferTransactionEventKind } from '../../domain/ledger/transaction-contributions.js';
 import {
   buildManualLedgerTransaction,
   findLedgerAccount,
@@ -215,6 +217,27 @@ export function buildLegacyTransactionFromComposerFields(
     ? findAccount(workbook, secondaryAccountId, services)
     : null;
   assertLegacyResolution(template, category, primaryAccount, secondaryAccount);
+  const description = legacyFallbackDescription(
+    template,
+    asString(clean.description),
+    category,
+    primaryAccount,
+    secondaryAccount,
+    counterparty
+  );
+  if (existingTransaction && sourceOptions.preserveExistingPostings) {
+    const date = normalizeDateKey(clean.date);
+    if (!date) throw new Error('Enter a valid transaction date.');
+    return {
+      ...existingTransaction,
+      date,
+      monthKey: date.slice(0, 7),
+      eventKind: inferTransactionEventKind(workbook, existingTransaction),
+      description: description || existingTransaction.description,
+      counterpartyId: counterparty?.id || '',
+      note: asString(clean.note)
+    };
+  }
   const createId = makeLegacyIdFactory(services);
   const transaction = buildManualLedgerTransaction(
     workbook,
@@ -231,14 +254,7 @@ export function buildLegacyTransactionFromComposerFields(
         : recurringItem
           ? recurringItem.id
           : '',
-      description: legacyFallbackDescription(
-        template,
-        asString(clean.description),
-        category,
-        primaryAccount,
-        secondaryAccount,
-        counterparty
-      ),
+      description,
       note: asString(clean.note)
     }),
     existingTransaction,
